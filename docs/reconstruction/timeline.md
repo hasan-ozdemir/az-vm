@@ -27,3 +27,4 @@ Format:
 - [2026-03-01 10:24] Requested direct status check for fallback presence and westindia VM SKU availability.
 - [2026-03-01 10:28] Required Git/Python/Node installation exclusively through Chocolatey.
 - [2026-03-01 10:32] Required refreshenv after each install and immediate version command verification.
+- [2026-03-01 10:36] Required duplicate-safe PATH repair when binaries remain unresolved after install.
