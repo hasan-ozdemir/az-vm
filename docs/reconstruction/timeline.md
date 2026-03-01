@@ -33,3 +33,4 @@ Format:
 - [2026-03-01 10:48] Requested faster availability checks via az rest or equivalent filtered query.
 - [2026-03-01 10:52] Requested server-side filtering by region and size to reduce precheck latency.
 - [2026-03-01 10:56] Required concise user-friendly error handling with corrective hint and graceful exit.
+- [2026-03-01 11:00] Added runtime mode model: default interactive, optional auto via --auto / -a.
