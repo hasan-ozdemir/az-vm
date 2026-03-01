@@ -83,3 +83,4 @@ Format:
 - [2026-03-01 14:08] User requested direct implementation of shared architecture plan without further delay.
 - [2026-03-01 14:12] Requested moving *.cmd launchers to repository root while preserving both launch paths.
 - [2026-03-01 14:16] Requested scan for unreferenced files and deletion only after explicit user approval.
+- [2026-03-01 14:20] Requested complete realistic .env.example templates covering all active config keys.
