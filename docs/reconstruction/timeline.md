@@ -70,3 +70,4 @@ Format:
 - [2026-03-01 13:16] Required step/task terminology update across code comments and user-facing logs.
 - [2026-03-01 13:20] Requested same step/task semantic cleanup to be applied on linux side as well.
 - [2026-03-01 13:24] Required synchronization of recent windows robustness improvements to linux flow.
+- [2026-03-01 13:28] User requested not running tests immediately after major refactor synchronization.
