@@ -77,3 +77,4 @@ Format:
 - [2026-03-01 13:44] Required step mode task-splitting and combined-mode single-call behavior for both shells.
 - [2026-03-01 13:48] User confirmed implementation of the planned parity refactor changes.
 - [2026-03-01 13:52] Requested windows script run in --auto mode only for immediate verification.
+- [2026-03-01 13:56] Required non-step mode to write and execute az-vm-win-update.ps1 from disk.
