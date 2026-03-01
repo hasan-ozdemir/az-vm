@@ -73,3 +73,4 @@ Format:
 - [2026-03-01 13:28] User requested not running tests immediately after major refactor synchronization.
 - [2026-03-01 13:32] Requested explicit confirmation whether previously assigned changes were fully completed.
 - [2026-03-01 13:36] Asked if any logical mismatch remained between win and lin outside platform necessities.
+- [2026-03-01 13:40] Required splitting linux monolithic guest update into sensible tasks like windows model.
