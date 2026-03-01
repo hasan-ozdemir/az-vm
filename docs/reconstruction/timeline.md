@@ -26,3 +26,4 @@ Format:
 - [2026-03-01 10:20] Added policy: no fallback injection; update script only when region/image exists.
 - [2026-03-01 10:24] Requested direct status check for fallback presence and westindia VM SKU availability.
 - [2026-03-01 10:28] Required Git/Python/Node installation exclusively through Chocolatey.
+- [2026-03-01 10:32] Required refreshenv after each install and immediate version command verification.
