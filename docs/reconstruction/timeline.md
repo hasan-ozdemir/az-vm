@@ -88,3 +88,4 @@ Format:
 - [2026-03-01 14:28] Required port 11434 in NSG and guest firewall/update scripts for all auto and step modes.
 - [2026-03-01 14:32] Requested seamless SSH port migration to 444 for both linux and windows flows.
 - [2026-03-01 14:36] Required replacing interactive confirmation wording with explicit auto-mode notice during RG deletion.
+- [2026-03-01 14:40] Requested parallel execution tests using --auto only on both linux and windows scripts.
