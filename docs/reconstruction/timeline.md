@@ -35,3 +35,4 @@ Format:
 - [2026-03-01 10:56] Required concise user-friendly error handling with corrective hint and graceful exit.
 - [2026-03-01 11:00] Added runtime mode model: default interactive, optional auto via --auto / -a.
 - [2026-03-01 11:04] Requested preventing infinite waits in interactive mode during automated checks.
+- [2026-03-01 11:08] Requested linux region sync to westindia and maximal parity with windows script flow.
