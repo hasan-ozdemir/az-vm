@@ -9,3 +9,4 @@ Format:
 - [2026-03-01 09:12] Requested static review to ensure two-stage rename/content updates caused no broken references.
 - [2026-03-01 09:16] Requested az-vm-win.cmd and az-vm-win.ps1 with linux-equivalent behavior and windows adaptation.
 - [2026-03-01 09:20] Added requirement for RDP readiness, broad client compatibility, and same user credentials as SSH.
+- [2026-03-01 09:24] Required post-create guest update workflow conversion from .sh to PowerShell for windows VM.
