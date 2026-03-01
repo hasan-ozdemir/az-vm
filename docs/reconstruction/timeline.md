@@ -50,3 +50,4 @@ Format:
 - [2026-03-01 11:56] Required naming semantics: top-level steps 1..9, Step 8 internals called tasks.
 - [2026-03-01 12:00] Required same task-array definitions for both step and combined execution in windows flow.
 - [2026-03-01 12:04] Required linux flow to mirror windows task-array architecture for reuse and maintainability.
+- [2026-03-01 12:08] Required auto and step semantics to match cross-platform without drift.
