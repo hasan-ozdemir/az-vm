@@ -92,3 +92,4 @@ Format:
 - [2026-03-01 14:44] Requested removing extra refreshenv calls and keeping only intended invocation points.
 - [2026-03-01 14:48] Requested enabling Chocolatey global confirmation immediately after Chocolatey installation.
 - [2026-03-01 14:52] Required allowGlobalConfirmation to be configured exactly once in bootstrap phase.
+- [2026-03-01 14:56] Requested git repo initialization and creation of AGENTS-style convention guide for ongoing work.
