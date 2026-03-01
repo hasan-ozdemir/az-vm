@@ -38,3 +38,4 @@ Format:
 - [2026-03-01 11:08] Requested linux region sync to westindia and maximal parity with windows script flow.
 - [2026-03-01 11:12] Requested linux and windows scripts remain identical except unavoidable OS differences.
 - [2026-03-01 11:16] Required polite early termination in linux auto mode when prechecks fail.
+- [2026-03-01 11:20] Reconfirmed naming contract: linux VM otherexamplevm, windows VM examplevm.
