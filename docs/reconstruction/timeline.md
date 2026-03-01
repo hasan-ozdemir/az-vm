@@ -14,3 +14,4 @@ Format:
 - [2026-03-01 09:32] Requested highly compatible Windows Datacenter-oriented image strategy for server workloads.
 - [2026-03-01 09:36] Requested optimal disk sizing and cost-efficient Standard SSD selection for windows flow.
 - [2026-03-01 09:40] Set windows VM size target to Standard_B2as_v2 for practical performance baseline.
+- [2026-03-01 09:44] Required explicit python install command via choco upgrade python312 -y without fallback path.
