@@ -80,3 +80,4 @@ Format:
 - [2026-03-01 13:56] Required non-step mode to write and execute az-vm-win-update.ps1 from disk.
 - [2026-03-01 14:00] Required carrying latest combine-mode architecture from windows into linux without regressions.
 - [2026-03-01 14:04] Requested creation of co-vm shared scripts and platform wrappers for common logic reuse.
+- [2026-03-01 14:08] User requested direct implementation of shared architecture plan without further delay.
