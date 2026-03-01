@@ -7,3 +7,4 @@ Format:
 - [2026-03-01 09:04] Requested renaming az-vm-* files to linux-focused naming to reflect linux-only deployment scope.
 - [2026-03-01 09:08] Corrected naming convention so files should end with lin.* and not require deploy suffix.
 - [2026-03-01 09:12] Requested static review to ensure two-stage rename/content updates caused no broken references.
+- [2026-03-01 09:16] Requested az-vm-win.cmd and az-vm-win.ps1 with linux-equivalent behavior and windows adaptation.
