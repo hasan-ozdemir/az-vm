@@ -60,3 +60,4 @@ Format:
 - [2026-03-01 12:36] Required script comments/UI strings/messages to be normalized into English tone.
 - [2026-03-01 12:40] Requested applying config/language changes without introducing regressions.
 - [2026-03-01 12:44] Requested windows disk sizing finalized to 128 GB in .env and code defaults.
+- [2026-03-01 12:48] Required configuration precedence: CLI override > .env > hard-coded default.
