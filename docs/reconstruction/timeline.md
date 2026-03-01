@@ -20,3 +20,4 @@ Format:
 - [2026-03-01 09:56] Added requirement to call refreshenv.cmd before PATH-based app checks.
 - [2026-03-01 10:00] Repository organization changed: linux and windows scripts grouped into dedicated folders.
 - [2026-03-01 10:04] Asked whether latest Windows 11 Pro image exists in Azure image listings.
+- [2026-03-01 10:08] Asked for potential latest combined Windows 11 + Microsoft 365 image option.
