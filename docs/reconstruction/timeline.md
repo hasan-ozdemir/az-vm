@@ -84,3 +84,4 @@ Format:
 - [2026-03-01 14:12] Requested moving *.cmd launchers to repository root while preserving both launch paths.
 - [2026-03-01 14:16] Requested scan for unreferenced files and deletion only after explicit user approval.
 - [2026-03-01 14:20] Requested complete realistic .env.example templates covering all active config keys.
+- [2026-03-01 14:24] Requested validation that every configured TCP port is opened at NSG and Windows firewall layers.
