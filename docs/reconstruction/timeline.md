@@ -68,3 +68,4 @@ Format:
 - [2026-03-01 13:08] Clarified behavior: with --step tasks are granular; without --step Step 8 must run as one batch.
 - [2026-03-01 13:12] User explicitly requested no testing for that specific semantic fix step.
 - [2026-03-01 13:16] Required step/task terminology update across code comments and user-facing logs.
+- [2026-03-01 13:20] Requested same step/task semantic cleanup to be applied on linux side as well.
