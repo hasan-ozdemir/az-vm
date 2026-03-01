@@ -64,3 +64,4 @@ Format:
 - [2026-03-01 12:52] Requested windows execution path validation with --auto only; step run not required then.
 - [2026-03-01 12:56] Required check-before-add behavior to avoid duplicate membership/system error 1378.
 - [2026-03-01 13:00] Requested reduced latency by avoiding excessive per-task invoke overhead where possible.
+- [2026-03-01 13:04] Requested performance observation of --auto execution after reliability improvements.
