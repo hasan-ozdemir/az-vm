@@ -47,3 +47,4 @@ Format:
 - [2026-03-01 11:44] User introduced additional linux ports and requested NSG plus OS-level opening sync.
 - [2026-03-01 11:48] Required same expanded network model on windows at both Azure and guest firewall levels.
 - [2026-03-01 11:52] Requested refactor/update/analysis pass only, with test execution deferred by user.
+- [2026-03-01 11:56] Required naming semantics: top-level steps 1..9, Step 8 internals called tasks.
