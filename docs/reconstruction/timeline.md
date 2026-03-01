@@ -94,3 +94,4 @@ Format:
 - [2026-03-01 14:52] Required allowGlobalConfirmation to be configured exactly once in bootstrap phase.
 - [2026-03-01 14:56] Requested git repo initialization and creation of AGENTS-style convention guide for ongoing work.
 - [2026-03-01 15:00] Requested scanning codex history.jsonl and session jsonl files referencing this workspace.
+- [2026-03-01 15:04] Added rule: assistant should make meaningful contextual English commit before final summary.
