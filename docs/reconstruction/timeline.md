@@ -41,3 +41,4 @@ Format:
 - [2026-03-01 11:20] Reconfirmed naming contract: linux VM otherexamplevm, windows VM examplevm.
 - [2026-03-01 11:24] Required both linux and windows defaults to use austriaeast region.
 - [2026-03-01 11:28] Requested parallel end-to-end rebuilds after deleting existing resource groups.
+- [2026-03-01 11:32] Reported potential deadlock/console-lock in windows Step 8 execution path.
