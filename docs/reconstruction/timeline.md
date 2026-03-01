@@ -45,3 +45,4 @@ Format:
 - [2026-03-01 11:36] Required --step/-s option to execute Step 8 tasks incrementally for troubleshooting.
 - [2026-03-01 11:40] Requested full rerun from resource-group deletion with --step logging for rapid diagnosis.
 - [2026-03-01 11:44] User introduced additional linux ports and requested NSG plus OS-level opening sync.
+- [2026-03-01 11:48] Required same expanded network model on windows at both Azure and guest firewall levels.
