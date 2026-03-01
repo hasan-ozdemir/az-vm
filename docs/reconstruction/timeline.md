@@ -21,3 +21,4 @@ Format:
 - [2026-03-01 10:00] Repository organization changed: linux and windows scripts grouped into dedicated folders.
 - [2026-03-01 10:04] Asked whether latest Windows 11 Pro image exists in Azure image listings.
 - [2026-03-01 10:08] Asked for potential latest combined Windows 11 + Microsoft 365 image option.
+- [2026-03-01 10:12] Requested assignment of win11-25h2-avd-m365 image where available.
