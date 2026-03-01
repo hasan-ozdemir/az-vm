@@ -46,3 +46,4 @@ Format:
 - [2026-03-01 11:40] Requested full rerun from resource-group deletion with --step logging for rapid diagnosis.
 - [2026-03-01 11:44] User introduced additional linux ports and requested NSG plus OS-level opening sync.
 - [2026-03-01 11:48] Required same expanded network model on windows at both Azure and guest firewall levels.
+- [2026-03-01 11:52] Requested refactor/update/analysis pass only, with test execution deferred by user.
