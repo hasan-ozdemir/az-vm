@@ -32,3 +32,4 @@ Format:
 - [2026-03-01 10:44] Required region/sku availability validation at beginning before destructive operations.
 - [2026-03-01 10:48] Requested faster availability checks via az rest or equivalent filtered query.
 - [2026-03-01 10:52] Requested server-side filtering by region and size to reduce precheck latency.
+- [2026-03-01 10:56] Required concise user-friendly error handling with corrective hint and graceful exit.
