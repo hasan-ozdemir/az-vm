@@ -86,3 +86,4 @@ Format:
 - [2026-03-01 14:20] Requested complete realistic .env.example templates covering all active config keys.
 - [2026-03-01 14:24] Requested validation that every configured TCP port is opened at NSG and Windows firewall layers.
 - [2026-03-01 14:28] Required port 11434 in NSG and guest firewall/update scripts for all auto and step modes.
+- [2026-03-01 14:32] Requested seamless SSH port migration to 444 for both linux and windows flows.
