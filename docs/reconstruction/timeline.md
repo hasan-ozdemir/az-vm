@@ -96,3 +96,4 @@ Format:
 - [2026-03-01 15:00] Requested scanning codex history.jsonl and session jsonl files referencing this workspace.
 - [2026-03-01 15:04] Added rule: assistant should make meaningful contextual English commit before final summary.
 - [2026-03-01 15:08] Consolidated timeline into granular commit history for memory-friendly change recall.
+- [2026-03-01 15:12] Synced reconstruction documentation with current folder architecture and cross-platform conventions.
