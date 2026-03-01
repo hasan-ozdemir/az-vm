@@ -91,3 +91,4 @@ Format:
 - [2026-03-01 14:40] Requested parallel execution tests using --auto only on both linux and windows scripts.
 - [2026-03-01 14:44] Requested removing extra refreshenv calls and keeping only intended invocation points.
 - [2026-03-01 14:48] Requested enabling Chocolatey global confirmation immediately after Chocolatey installation.
+- [2026-03-01 14:52] Required allowGlobalConfirmation to be configured exactly once in bootstrap phase.
