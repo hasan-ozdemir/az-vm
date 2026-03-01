@@ -31,3 +31,4 @@ Format:
 - [2026-03-01 10:40] Requested implementing all package/path fixes first, then running E2E integration tests.
 - [2026-03-01 10:44] Required region/sku availability validation at beginning before destructive operations.
 - [2026-03-01 10:48] Requested faster availability checks via az rest or equivalent filtered query.
+- [2026-03-01 10:52] Requested server-side filtering by region and size to reduce precheck latency.
