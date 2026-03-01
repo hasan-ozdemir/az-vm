@@ -11,3 +11,4 @@ Format:
 - [2026-03-01 09:20] Added requirement for RDP readiness, broad client compatibility, and same user credentials as SSH.
 - [2026-03-01 09:24] Required post-create guest update workflow conversion from .sh to PowerShell for windows VM.
 - [2026-03-01 09:28] Set windows server/vm name requirement to examplevm while linux stays otherexamplevm.
+- [2026-03-01 09:32] Requested highly compatible Windows Datacenter-oriented image strategy for server workloads.
