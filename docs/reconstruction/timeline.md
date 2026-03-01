@@ -17,3 +17,4 @@ Format:
 - [2026-03-01 09:44] Required explicit python install command via choco upgrade python312 -y without fallback path.
 - [2026-03-01 09:48] Required automatic Chocolatey installation and unattended setup before package operations.
 - [2026-03-01 09:52] Requested region move to nearest India location for better latency profile from Turkey.
+- [2026-03-01 09:56] Added requirement to call refreshenv.cmd before PATH-based app checks.
