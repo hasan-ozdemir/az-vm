@@ -63,3 +63,4 @@ Format:
 - [2026-03-01 12:48] Required configuration precedence: CLI override > .env > hard-coded default.
 - [2026-03-01 12:52] Requested windows execution path validation with --auto only; step run not required then.
 - [2026-03-01 12:56] Required check-before-add behavior to avoid duplicate membership/system error 1378.
+- [2026-03-01 13:00] Requested reduced latency by avoiding excessive per-task invoke overhead where possible.
