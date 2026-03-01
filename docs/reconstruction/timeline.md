@@ -5,3 +5,4 @@ Format:
 
 - [2026-03-01 09:00] Requested non-interactive execution of linux deployment script with default values and SSH verification.
 - [2026-03-01 09:04] Requested renaming az-vm-* files to linux-focused naming to reflect linux-only deployment scope.
+- [2026-03-01 09:08] Corrected naming convention so files should end with lin.* and not require deploy suffix.
