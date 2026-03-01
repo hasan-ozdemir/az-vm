@@ -66,3 +66,4 @@ Format:
 - [2026-03-01 13:00] Requested reduced latency by avoiding excessive per-task invoke overhead where possible.
 - [2026-03-01 13:04] Requested performance observation of --auto execution after reliability improvements.
 - [2026-03-01 13:08] Clarified behavior: with --step tasks are granular; without --step Step 8 must run as one batch.
+- [2026-03-01 13:12] User explicitly requested no testing for that specific semantic fix step.
