@@ -18,3 +18,4 @@ Format:
 - [2026-03-01 09:48] Required automatic Chocolatey installation and unattended setup before package operations.
 - [2026-03-01 09:52] Requested region move to nearest India location for better latency profile from Turkey.
 - [2026-03-01 09:56] Added requirement to call refreshenv.cmd before PATH-based app checks.
+- [2026-03-01 10:00] Repository organization changed: linux and windows scripts grouped into dedicated folders.
