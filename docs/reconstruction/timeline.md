@@ -51,3 +51,4 @@ Format:
 - [2026-03-01 12:00] Required same task-array definitions for both step and combined execution in windows flow.
 - [2026-03-01 12:04] Required linux flow to mirror windows task-array architecture for reuse and maintainability.
 - [2026-03-01 12:08] Required auto and step semantics to match cross-platform without drift.
+- [2026-03-01 12:12] Requested repeated linux --auto --step rebuild until all issues are resolved.
