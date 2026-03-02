@@ -97,3 +97,4 @@ Format:
 - [2026-03-01 15:04] Added rule: assistant should make meaningful contextual English commit before final summary.
 - [2026-03-01 15:08] Consolidated timeline into granular commit history for memory-friendly change recall.
 - [2026-03-01 15:12] Synced reconstruction documentation with current folder architecture and cross-platform conventions.
+- [2026-03-03 02:30] Recorded evidence that linux and windows auto runs completed with SSH port 444 in austriaeast.
