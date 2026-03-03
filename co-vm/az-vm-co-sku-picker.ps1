@@ -18,7 +18,7 @@ function Get-PriceHoursFromConfig {
 function Get-AzLocationCatalog {
     $locationsJson = az account list-locations `
         --only-show-errors `
-        --query "[].{Name:name,DisplayName:displayName}" `
+        --query "[?metadata.regionType=='Physical'].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
         -o json
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($locationsJson)) {
         Throw-FriendlyError `
@@ -30,11 +30,21 @@ function Get-AzLocationCatalog {
 
     $locations = @($locationsJson | ConvertFrom-Json)
     if (-not $locations -or $locations.Count -eq 0) {
+        $fallbackJson = az account list-locations `
+            --only-show-errors `
+            --query "[].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
+            -o json
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fallbackJson)) {
+            $fallbackLocations = @($fallbackJson | ConvertFrom-Json)
+            $locations = @($fallbackLocations | Where-Object { $_.RegionType -eq "Physical" })
+        }
+    }
+    if (-not $locations -or $locations.Count -eq 0) {
         Throw-FriendlyError `
-            -Detail "Azure returned an empty location list." `
+            -Detail "Azure returned an empty physical deployment region list." `
             -Code 26 `
             -Summary "Azure region list could not be loaded." `
-            -Hint "Check Azure account and subscription context."
+            -Hint "Check Azure account/subscription context and location metadata availability."
     }
 
     return @($locations | Sort-Object DisplayName, Name)
