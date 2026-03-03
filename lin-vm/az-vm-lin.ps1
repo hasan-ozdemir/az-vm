@@ -25,6 +25,7 @@ $coVmScripts = @(
     "az-vm-co-core.ps1",
     "az-vm-co-config.ps1",
     "az-vm-co-azure.ps1",
+    "az-vm-co-guest.ps1",
     "az-vm-co-orchestration.ps1",
     "az-vm-co-runcommand.ps1",
     "az-vm-co-sku-picker.ps1"
@@ -117,111 +118,27 @@ Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be
 
 # 5) Cloud-init file preparation:
 Invoke-Step "Step 5/9 - cloud-init file will be prepared..." {
-$cloudInitTemplate = @'
-#cloud-config
-package_update: true
-package_upgrade: false
-timezone: UTC
-users:
-  - default
-  - name: __VM_USER__
-    groups: sudo
-    shell: /bin/bash
-    sudo: ALL=(ALL) NOPASSWD:ALL
-    lock_passwd: false
-chpasswd:
-  expire: false
-  users:
-    - name: __VM_USER__
-      password: __VM_PASS__
-ssh_pwauth: true
-'@
-
-$cloudInitContent = $cloudInitTemplate.Replace("__VM_USER__", $vmUser).Replace("__VM_PASS__", $vmPass)
-Write-TextFileNormalized `
-    -Path $vmCloudInitScriptFile `
-    -Content $cloudInitContent `
-    -Encoding "utf8NoBom" `
-    -LineEnding "lf" `
-    -EnsureTrailingNewline
+    $cloudInitContent = Get-CoVmLinuxCloudInitContent -VmUser $vmUser -VmPass $vmPass
+    $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "linux"
+    Write-TextFileNormalized `
+        -Path $vmCloudInitScriptFile `
+        -Content $cloudInitContent `
+        -Encoding $writeSettings.Encoding `
+        -LineEnding $writeSettings.LineEnding `
+        -EnsureTrailingNewline
 }
 
 # 6) VM update shell script preparation:
 Invoke-Step "Step 6/9 - VM update shell script will be prepared..." {
-$tcpPortsBash = ($tcpPorts -join " ")
-$tcpPortsRegex = ($tcpPorts | ForEach-Object { [regex]::Escape($_) }) -join "|"
-$updateTemplate = @'
-#!/usr/bin/env bash
-set -euo pipefail
-exec 2>&1
-
-VM_USER="__VM_USER__"
-VM_PASS="__VM_PASS__"
-SSHD_CONFIG="/etc/ssh/sshd_config"
-
-echo "Update phase started."
-
-if ! id -u "${VM_USER}" >/dev/null 2>&1; then
-  sudo useradd -m -s /bin/bash "${VM_USER}"
-fi
-
-echo "${VM_USER}:${VM_PASS}" | sudo chpasswd
-echo "root:${VM_PASS}" | sudo chpasswd
-sudo passwd -u "${VM_USER}" || true
-sudo passwd -u root || true
-sudo chage -E -1 "${VM_USER}" || true
-sudo chage -E -1 root || true
-
-sudo DEBIAN_FRONTEND=noninteractive apt update -y
-sudo DEBIAN_FRONTEND=noninteractive apt install --upgrade -y apt-utils ufw nodejs npm git curl python-is-python3 python3-venv
-
-sudo sed -i -E 's/^#?Port .*/Port __SSH_PORT__/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?PasswordAuthentication .*/PasswordAuthentication yes/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?PubkeyAuthentication .*/PubkeyAuthentication no/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?PermitRootLogin .*/PermitRootLogin yes/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?AllowTcpForwarding .*/AllowTcpForwarding yes/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?GatewayPorts .*/GatewayPorts yes/' "${SSHD_CONFIG}"
-
-sudo ufw --force reset
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-TCP_PORTS=(__TCP_PORTS_BASH__)
-for PORT in "${TCP_PORTS[@]}"; do
-  sudo ufw allow "${PORT}/tcp"
-done
-
-sudo ufw --force enable
-sudo setcap 'cap_net_bind_service=+ep' /usr/bin/node || true
-sudo setcap 'cap_net_bind_service=+ep' /usr/sbin/sshd || true
-
-sudo systemctl daemon-reload
-sudo systemctl disable --now ssh.socket || true
-sudo systemctl unmask ssh.service || true
-sudo systemctl enable --now ssh.service
-sudo systemctl restart ssh.service
-
-echo "Version Info:"
-lsb_release -a || true
-
-echo "OPEN Ports:"
-ss -tlnp | grep -E ':(__TCP_PORTS_REGEX__)\b' || true
-
-echo "Firewall STATUS:"
-sudo ufw status verbose
-
-echo "SSHD CONFIG:"
-grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|AllowTcpForwarding|GatewayPorts)" "${SSHD_CONFIG}" || true
-
-echo "Update phase completed."
-'@
-
-$updateScript = $updateTemplate.Replace("__VM_USER__", $vmUser).Replace("__VM_PASS__", $vmPass).Replace("__TCP_PORTS_BASH__", $tcpPortsBash).Replace("__TCP_PORTS_REGEX__", $tcpPortsRegex).Replace("__SSH_PORT__", $sshPort)
-Write-TextFileNormalized `
-    -Path $vmUpdateScriptFile `
-    -Content $updateScript `
-    -Encoding "utf8NoBom" `
-    -LineEnding "lf" `
-    -EnsureTrailingNewline
+    $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "linux" -Context $step1Context
+    $updateScript = Get-CoVmUpdateScriptContentFromTasks -Platform "linux" -TaskBlocks $taskBlocks
+    $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "linux"
+    Write-TextFileNormalized `
+        -Path $vmUpdateScriptFile `
+        -Content $updateScript `
+        -Encoding $writeSettings.Encoding `
+        -LineEnding $writeSettings.LineEnding `
+        -EnsureTrailingNewline
 }
 
 # 7) Virtual machine creation:
@@ -249,112 +166,7 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
-    $tcpPortsBash = ($tcpPorts -join " ")
-    $tcpPortsRegex = ($tcpPorts | ForEach-Object { [regex]::Escape($_) }) -join "|"
-    $taskBlocks = @(
-        @{
-            Name = "00-ensure-linux-user-passwords"
-            Script = @'
-set -euo pipefail
-VM_USER="__VM_USER__"
-VM_PASS="__VM_PASS__"
-if ! id -u "${VM_USER}" >/dev/null 2>&1; then
-  sudo useradd -m -s /bin/bash "${VM_USER}"
-fi
-echo "${VM_USER}:${VM_PASS}" | sudo chpasswd
-echo "root:${VM_PASS}" | sudo chpasswd
-sudo passwd -u "${VM_USER}" || true
-sudo passwd -u root || true
-sudo chage -E -1 "${VM_USER}" || true
-sudo chage -E -1 root || true
-echo "linux-user-passwords-ready"
-'@
-        },
-        @{
-            Name = "01-packages-update-install"
-            Script = @'
-set -euo pipefail
-sudo DEBIAN_FRONTEND=noninteractive apt update -y
-sudo DEBIAN_FRONTEND=noninteractive apt install --upgrade -y apt-utils ufw nodejs npm git curl python-is-python3 python3-venv
-echo "linux-packages-ready"
-'@
-        },
-        @{
-            Name = "02-sshd-config-port"
-            Script = @'
-set -euo pipefail
-SSHD_CONFIG="/etc/ssh/sshd_config"
-sudo sed -i -E 's/^#?Port .*/Port __SSH_PORT__/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?PasswordAuthentication .*/PasswordAuthentication yes/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?PubkeyAuthentication .*/PubkeyAuthentication no/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?PermitRootLogin .*/PermitRootLogin yes/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?AllowTcpForwarding .*/AllowTcpForwarding yes/' "${SSHD_CONFIG}"
-sudo sed -i -E 's/^#?GatewayPorts .*/GatewayPorts yes/' "${SSHD_CONFIG}"
-echo "linux-sshd-config-ready"
-'@
-        },
-        @{
-            Name = "03-firewall-rules"
-            Script = @'
-set -euo pipefail
-sudo ufw --force reset
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-TCP_PORTS=(__TCP_PORTS_BASH__)
-for PORT in "${TCP_PORTS[@]}"; do
-  sudo ufw allow "${PORT}/tcp"
-done
-sudo ufw --force enable
-echo "linux-firewall-ready"
-'@
-        },
-        @{
-            Name = "04-node-sshd-capabilities"
-            Script = @'
-set -euo pipefail
-sudo setcap 'cap_net_bind_service=+ep' /usr/bin/node || true
-sudo setcap 'cap_net_bind_service=+ep' /usr/sbin/sshd || true
-echo "linux-capabilities-ready"
-'@
-        },
-        @{
-            Name = "05-sshd-service-restart"
-            Script = @'
-set -euo pipefail
-sudo systemctl daemon-reload
-sudo systemctl disable --now ssh.socket || true
-sudo systemctl unmask ssh.service || true
-sudo systemctl enable --now ssh.service
-sudo systemctl restart ssh.service
-echo "linux-sshd-service-ready"
-'@
-        },
-        @{
-            Name = "06-health-snapshot"
-            Script = @'
-set -euo pipefail
-SSHD_CONFIG="/etc/ssh/sshd_config"
-echo "Version Info:"
-lsb_release -a || true
-echo "OPEN Ports:"
-ss -tlnp | grep -E ':(__TCP_PORTS_REGEX__)\b' || true
-echo "Firewall STATUS:"
-sudo ufw status verbose
-echo "SSHD CONFIG:"
-grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|AllowTcpForwarding|GatewayPorts)" "${SSHD_CONFIG}" || true
-'@
-        }
-    )
-
-    $taskBlocks = Apply-CoVmTaskBlockReplacements `
-        -TaskBlocks $taskBlocks `
-        -Replacements @{
-            VM_USER = $vmUser
-            VM_PASS = $vmPass
-            TCP_PORTS_BASH = $tcpPortsBash
-            TCP_PORTS_REGEX = $tcpPortsRegex
-            SSH_PORT = $sshPort
-        }
+    $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "linux" -Context $step1Context
 
     Invoke-CoVmStep8RunCommand `
         -SubstepMode:$script:SubstepMode `
@@ -368,14 +180,15 @@ grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Allo
 
 # 9) VM connection details:
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
-    $vmConnectionInfo = Get-CoVmVmDetails -Context $step1Context
-    $publicIP = [string]$vmConnectionInfo.PublicIP
-    $vmFqdn = [string]$vmConnectionInfo.VmFqdn
+    $connectionModel = Get-CoVmConnectionDisplayModel `
+        -Context $step1Context `
+        -VmUser $vmUser `
+        -SshPort $sshPort
 
     Write-Host "VM Public IP Address:"
-    Write-Host "$publicIP"
+    Write-Host ([string]$connectionModel.PublicIP)
     Write-Host "SSH Connection Command:"
-    Write-Host "ssh -p $sshPort $vmUser@$vmFqdn"
+    Write-Host ([string]$connectionModel.SshCommand)
 }
 
 # End of setup:

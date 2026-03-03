@@ -271,6 +271,41 @@ function Test-SkuFilterBehaviorWithMockAz {
     }
 }
 
+function Test-GuestTaskAndScriptBuild {
+    $context = [ordered]@{
+        VmUser = "manager"
+        VmPass = "demo-pass"
+        SshPort = "444"
+        TcpPorts = @("444", "11434", "3389")
+        ResourceGroup = "rg-demo"
+        VmName = "vm-demo"
+        AzLocation = "austriaeast"
+    }
+
+    $linuxTasks = Resolve-CoVmGuestTaskBlocks -Platform "linux" -Context $context
+    Assert-True -Condition (@($linuxTasks).Count -ge 7) -Message "Linux task list should contain expected tasks"
+    $linuxScript = Get-CoVmUpdateScriptContentFromTasks -Platform "linux" -TaskBlocks $linuxTasks
+    Assert-True -Condition ($linuxScript -like "*Update phase started.*") -Message "Linux update script should include update start marker"
+    Assert-True -Condition ($linuxScript -like "*Port 444*") -Message "Linux update script should include resolved SSH port"
+    Assert-True -Condition ($linuxScript -like "*11434*") -Message "Linux update script should include resolved TCP ports"
+
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-guest-task-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+    try {
+        $initPath = Join-Path $tmpDir "init.ps1"
+        Write-TextFileNormalized -Path $initPath -Content (Get-CoVmWindowsInitScriptContent) -Encoding "utf8NoBom" -LineEnding "crlf" -EnsureTrailingNewline
+        $windowsTasks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $context -VmInitScriptFile $initPath
+        Assert-True -Condition (@($windowsTasks).Count -ge 10) -Message "Windows task list should contain expected tasks"
+        $windowsScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $windowsTasks
+        Assert-True -Condition ($windowsScript -like "*Update phase started.*") -Message "Windows update script should include update start marker"
+        Assert-True -Condition ($windowsScript -like "*Allow-SSH-444*") -Message "Windows update script should include resolved SSH firewall rule"
+        Assert-True -Condition ($windowsScript -like "*11434*") -Message "Windows update script should include resolved TCP port values"
+    }
+    finally {
+        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "Running compatibility smoke tests in host: $($PSVersionTable.PSVersion.ToString())"
 Write-Host "Repo root: $RepoRoot"
 
@@ -282,6 +317,7 @@ try {
         "az-vm-co-core.ps1",
         "az-vm-co-config.ps1",
         "az-vm-co-azure.ps1",
+        "az-vm-co-guest.ps1",
         "az-vm-co-orchestration.ps1",
         "az-vm-co-runcommand.ps1",
         "az-vm-co-sku-picker.ps1"
@@ -304,6 +340,7 @@ Invoke-TestCase -Name "Config fallback behavior" -Action { Test-ConfigFallbackBe
 Invoke-TestCase -Name "Deterministic UTF-8 no-BOM + line-ending policy" -Action { Test-NormalizedFileWritePolicy }
 Invoke-TestCase -Name "Run-command JSON parser behavior" -Action { Test-RunCommandJsonBehavior }
 Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-SkuFilterBehaviorWithMockAz }
+Invoke-TestCase -Name "Guest task catalog and update-script build behavior" -Action { Test-GuestTaskAndScriptBuild }
 
 if (Get-Command Write-TextFileNormalized -ErrorAction SilentlyContinue) {
     $fingerprint = Get-CompatFingerprint

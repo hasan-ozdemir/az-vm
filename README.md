@@ -74,6 +74,7 @@ az-vm/
     az-vm-co-core.ps1
     az-vm-co-config.ps1
     az-vm-co-azure.ps1
+    az-vm-co-guest.ps1
     az-vm-co-orchestration.ps1
     az-vm-co-runcommand.ps1
     az-vm-co-sku-picker.ps1
@@ -184,6 +185,7 @@ Network provisioning:
 Guest script preparation:
 - Linux: cloud-init + bash update script.
 - Windows: init PowerShell + update PowerShell script.
+- Step 6 update scripts are generated from the same Task catalog used in Step 8.
 
 ### Step 7
 VM create (with existence/return checks).
@@ -339,6 +341,7 @@ Representative failure classes:
 
 - Shared logic belongs in `co-vm/`.
 - Step 1/2/3/4/7/9 orchestration flow is centralized in `co-vm/az-vm-co-orchestration.ps1`.
+- Step 5/6/8 guest task catalog and script generation flow is centralized in `co-vm/az-vm-co-guest.ps1`.
 - Keep Linux/Windows top-level flow aligned; diverge only for OS-specific needs.
 - Prefer updating `.env.example` when introducing/changing config keys.
 - Follow `AGENTS.md` for project conventions and commit discipline.
