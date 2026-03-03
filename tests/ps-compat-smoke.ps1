@@ -302,12 +302,24 @@ function Test-GuestTaskAndScriptBuild {
         $windowsTasks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $context -VmInitScriptFile $initPath
         Assert-True -Condition (@($windowsTasks).Count -ge 10) -Message "Windows task list should contain expected tasks"
         $windowsScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $windowsTasks
+        $tokens = $null
+        $parseErrors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseInput($windowsScript, [ref]$tokens, [ref]$parseErrors)
+        Assert-Equal -Expected 0 -Actual (@($parseErrors).Count) -Message "Windows update script should be syntactically parseable after task replacement"
         Assert-True -Condition ($windowsScript -like "*Update phase started.*") -Message "Windows update script should include update start marker"
         Assert-True -Condition ($windowsScript -like "*Allow-SSH-444*") -Message "Windows update script should include resolved SSH firewall rule"
         Assert-True -Condition ($windowsScript -like "*11434*") -Message "Windows update script should include resolved TCP port values"
         Assert-True -Condition ($windowsScript -like '*$assistantUser = "assistant"*') -Message "Windows update script should include assistant user variable replacement"
         Assert-True -Condition ($windowsScript -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows update script should ensure assistant local power admin rights"
         Assert-True -Condition ($windowsScript -like "*system error 1378*") -Message "Windows update script should treat local-group already-member exit code 1378 as a non-failing condition"
+        Assert-True -Condition ($windowsScript -like "*windows-ux-performance-tuning*") -Message "Windows update script should include UX/performance tuning task"
+        Assert-True -Condition ($windowsScript -like "*LaunchTo*") -Message "Windows update script should include Explorer launch-to-This-PC setting"
+        Assert-True -Condition ($windowsScript -like "*ShowSuperHidden*") -Message "Windows update script should include protected OS files visibility setting"
+        Assert-True -Condition ($windowsScript -like "*86ca1aa0-34aa-4e8b-a509-50c905bae2a2*") -Message "Windows update script should include classic context-menu setting"
+        Assert-True -Condition ($windowsScript -like "*DisablePrivacyExperience*") -Message "Windows update script should include welcome/privacy suppression policy"
+        Assert-True -Condition ($windowsScript -like "*Microsoft.WindowsNotepad*") -Message "Windows update script should include modern Notepad removal logic"
+        Assert-True -Condition ($windowsScript -like "*CoVmTextFile*") -Message "Windows update script should include legacy text association class"
+        Assert-True -Condition ($windowsScript -like "*powercfg /setactive*") -Message "Windows update script should include maximum-performance power scheme activation"
     }
     finally {
         Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
