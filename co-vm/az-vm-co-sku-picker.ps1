@@ -131,7 +131,14 @@ function Get-LocationSkusForSelection {
 
     $needle = ""
     if (-not [string]::IsNullOrWhiteSpace($SkuLike)) {
-        $needle = $SkuLike.Trim().ToLowerInvariant()
+        $needle = $SkuLike.Trim().Trim('"').Trim("'").ToLowerInvariant()
+    }
+    $needleNormalized = $needle -replace '[^a-z0-9]', ''
+    $needleWithoutStandard = if ($needleNormalized.StartsWith("standard")) {
+        $needleNormalized.Substring("standard".Length)
+    }
+    else {
+        $needleNormalized
     }
 
     $raw = az vm list-sizes -l $Location --only-show-errors -o json
@@ -146,9 +153,31 @@ function Get-LocationSkusForSelection {
     $allSkus = @($raw | ConvertFrom-Json)
     return @(
         $allSkus | Where-Object {
-            $_.name -and
-            $_.name.StartsWith("Standard_", [System.StringComparison]::OrdinalIgnoreCase) -and
-            ($needle -eq "" -or $_.name.ToLowerInvariant().Contains($needle))
+            if (-not $_.name) { return $false }
+            $name = [string]$_.name
+            if (-not $name.StartsWith("Standard_", [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $false
+            }
+
+            if ($needle -eq "") {
+                return $true
+            }
+
+            $nameLower = $name.ToLowerInvariant()
+            if ($nameLower.Contains($needle)) {
+                return $true
+            }
+
+            $nameNormalized = $nameLower -replace '[^a-z0-9]', ''
+            if ($needleNormalized -ne "" -and $nameNormalized.Contains($needleNormalized)) {
+                return $true
+            }
+
+            if ($needleWithoutStandard -ne "" -and $nameNormalized.Contains($needleWithoutStandard)) {
+                return $true
+            }
+
+            return $false
         } | Sort-Object name -Unique
     )
 }
