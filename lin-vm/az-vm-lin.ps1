@@ -101,6 +101,18 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
     $vmCloudInitScriptFile = [string]$step1Context.VmCloudInitScriptFile
     $vmUpdateScriptFile = [string]$step1Context.VmUpdateScriptFile
     $tcpPorts = @($step1Context.TcpPorts)
+
+    if ($script:AutoMode) {
+        Show-CoVmRuntimeConfigurationSnapshot `
+            -Platform "linux" `
+            -ScriptName "az-vm-lin.ps1" `
+            -ScriptRoot $PSScriptRoot `
+            -AutoMode:$script:AutoMode `
+            -SubstepMode:$script:SubstepMode `
+            -ConfigMap $configMap `
+            -ConfigOverrides $script:ConfigOverrides `
+            -Context $step1Context
+    }
 }
 
 # 2) Resource availability check:

@@ -415,3 +415,154 @@ function Resolve-CoVmFriendlyError {
         Code = $code
     }
 }
+
+function ConvertTo-CoVmDisplayValue {
+    param(
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return ""
+    }
+
+    if ($Value -is [string]) {
+        return [string]$Value
+    }
+
+    if ($Value -is [System.Array]) {
+        return ((@($Value) | ForEach-Object { [string]$_ }) -join ", ")
+    }
+
+    if ($Value -is [System.Collections.IDictionary]) {
+        $pairs = @()
+        foreach ($key in @($Value.Keys | Sort-Object)) {
+            $pairs += ("{0}={1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $Value[$key]))
+        }
+        return ($pairs -join "; ")
+    }
+
+    if ($Value -is [System.Collections.IEnumerable]) {
+        return ((@($Value) | ForEach-Object { [string]$_ }) -join ", ")
+    }
+
+    return [string]$Value
+}
+
+function Get-CoVmAzAccountSnapshot {
+    $snapshot = [ordered]@{
+        SubscriptionName = ""
+        SubscriptionId = ""
+        TenantName = ""
+        TenantId = ""
+        UserName = ""
+    }
+
+    $accountJson = az account show -o json --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$accountJson)) {
+        return $snapshot
+    }
+
+    $accountObj = ConvertFrom-JsonCompat -InputObject $accountJson
+    if (-not $accountObj) {
+        return $snapshot
+    }
+
+    $snapshot.SubscriptionName = [string]$accountObj.name
+    $snapshot.SubscriptionId = [string]$accountObj.id
+    $snapshot.TenantId = [string]$accountObj.tenantId
+    $snapshot.UserName = [string]$accountObj.user.name
+
+    $tenantName = ""
+    if (-not [string]::IsNullOrWhiteSpace($snapshot.TenantId)) {
+        $tenantJson = az account tenant list -o json --only-show-errors 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$tenantJson)) {
+            $tenantList = ConvertFrom-JsonArrayCompat -InputObject $tenantJson
+            foreach ($tenant in @($tenantList)) {
+                if ([string]$tenant.tenantId -ne $snapshot.TenantId) {
+                    continue
+                }
+
+                $tenantName = [string]$tenant.displayName
+                if ([string]::IsNullOrWhiteSpace($tenantName)) {
+                    $tenantName = [string]$tenant.defaultDomain
+                }
+                if ([string]::IsNullOrWhiteSpace($tenantName)) {
+                    $tenantName = [string]$tenant.tenantId
+                }
+                break
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($tenantName)) {
+        $tenantName = [string]$snapshot.TenantId
+    }
+    $snapshot.TenantName = $tenantName
+    return $snapshot
+}
+
+function Show-CoVmRuntimeConfigurationSnapshot {
+    param(
+        [string]$Platform,
+        [string]$ScriptName,
+        [string]$ScriptRoot,
+        [switch]$AutoMode,
+        [switch]$SubstepMode,
+        [hashtable]$ConfigMap,
+        [hashtable]$ConfigOverrides,
+        [hashtable]$Context
+    )
+
+    Write-Host ""
+    Write-Host "Configuration Snapshot ($ScriptName / platform=$Platform):" -ForegroundColor DarkCyan
+
+    $azAccount = Get-CoVmAzAccountSnapshot
+    Write-Host "Azure account:"
+    Write-Host ("- Subscription Name: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.SubscriptionName))
+    Write-Host ("- Subscription ID: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.SubscriptionId))
+    Write-Host ("- Tenant Name: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.TenantName))
+    Write-Host ("- Tenant ID: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.TenantId))
+    Write-Host ("- Account User: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.UserName))
+
+    if ($Context) {
+        Write-Host "Selected deployment values:"
+        Write-Host ("- Azure Resource Group: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.ResourceGroup))
+        Write-Host ("- Azure Region: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.AzLocation))
+        Write-Host ("- Azure VM SKU: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.VmSize))
+        Write-Host ("- VM Disk Size GB: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.VmDiskSize))
+        Write-Host ("- VM OS Image: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.VmImage))
+    }
+
+    Write-Host "Runtime flags and app parameters:"
+    Write-Host ("- Auto mode: {0}" -f (ConvertTo-CoVmDisplayValue -Value ([bool]$AutoMode)))
+    Write-Host ("- Substep mode: {0}" -f (ConvertTo-CoVmDisplayValue -Value ([bool]$SubstepMode)))
+    Write-Host ("- Script root: {0}" -f (ConvertTo-CoVmDisplayValue -Value $ScriptRoot))
+    Write-Host ("- Script name: {0}" -f (ConvertTo-CoVmDisplayValue -Value $ScriptName))
+
+    Write-Host ".env loaded values:"
+    if (-not $ConfigMap -or $ConfigMap.Count -eq 0) {
+        Write-Host "- (none)"
+    }
+    else {
+        foreach ($key in @($ConfigMap.Keys | Sort-Object)) {
+            Write-Host ("- {0} = {1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $ConfigMap[$key]))
+        }
+    }
+
+    Write-Host "Runtime overrides:"
+    if (-not $ConfigOverrides -or $ConfigOverrides.Count -eq 0) {
+        Write-Host "- (none)"
+    }
+    else {
+        foreach ($key in @($ConfigOverrides.Keys | Sort-Object)) {
+            Write-Host ("- {0} = {1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $ConfigOverrides[$key]))
+        }
+    }
+
+    if ($Context) {
+        Write-Host "Resolved effective values:"
+        foreach ($key in @($Context.Keys | Sort-Object)) {
+            Write-Host ("- {0} = {1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $Context[$key]))
+        }
+    }
+}

@@ -348,6 +348,49 @@ function Test-ConnectionDisplayModelDualUsers {
     }
 }
 
+function Test-RuntimeConfigurationSnapshotFormatting {
+    function global:Get-CoVmAzAccountSnapshot {
+        return [ordered]@{
+            SubscriptionName = "demo-subscription"
+            SubscriptionId = "00000000-0000-0000-0000-000000000000"
+            TenantName = "demo-tenant"
+            TenantId = "11111111-1111-1111-1111-111111111111"
+            UserName = "<email>"
+        }
+    }
+
+    try {
+        $context = [ordered]@{
+            ResourceGroup = "rg-demo"
+            AzLocation = "austriaeast"
+            VmSize = "Standard_B2as_v2"
+            VmDiskSize = "128"
+            VmImage = "demo:image:urn"
+            TcpPorts = @("444","3389")
+        }
+        $configMap = @{
+            AZ_LOCATION = "austriaeast"
+            VM_SIZE = "Standard_B2as_v2"
+        }
+        $configOverrides = @{
+            SERVER_NAME = "demo"
+        }
+
+        Show-CoVmRuntimeConfigurationSnapshot `
+            -Platform "linux" `
+            -ScriptName "az-vm-lin.ps1" `
+            -ScriptRoot $RepoRoot `
+            -AutoMode `
+            -SubstepMode `
+            -ConfigMap $configMap `
+            -ConfigOverrides $configOverrides `
+            -Context $context
+    }
+    finally {
+        Remove-Item -Path Function:\global:Get-CoVmAzAccountSnapshot -ErrorAction SilentlyContinue
+    }
+}
+
 Write-Host "Running compatibility smoke tests in host: $($PSVersionTable.PSVersion.ToString())"
 Write-Host "Repo root: $RepoRoot"
 
@@ -384,6 +427,7 @@ Invoke-TestCase -Name "Run-command JSON parser behavior" -Action { Test-RunComma
 Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-SkuFilterBehaviorWithMockAz }
 Invoke-TestCase -Name "Guest task catalog and update-script build behavior" -Action { Test-GuestTaskAndScriptBuild }
 Invoke-TestCase -Name "Connection display model dual-user behavior" -Action { Test-ConnectionDisplayModelDualUsers }
+Invoke-TestCase -Name "Runtime configuration snapshot formatting behavior" -Action { Test-RuntimeConfigurationSnapshotFormatting }
 
 if (Get-Command Write-TextFileNormalized -ErrorAction SilentlyContinue) {
     $fingerprint = Get-CompatFingerprint
