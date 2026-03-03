@@ -25,6 +25,7 @@ $coVmScripts = @(
     "az-vm-co-core.ps1",
     "az-vm-co-config.ps1",
     "az-vm-co-azure.ps1",
+    "az-vm-co-orchestration.ps1",
     "az-vm-co-runcommand.ps1",
     "az-vm-co-sku-picker.ps1"
 )
@@ -60,174 +61,58 @@ $configMap = Read-DotEnvFile -Path $envFilePath
 Start-Transcript -Path "$PSScriptRoot\az-vm-win-log.txt" -Force
 $script:TranscriptStarted = $true
 Invoke-Step "Step 1/9 - initial parameters will be configured..." {
-    $serverNameDefault = Get-ConfigValue -Config $configMap -Key "SERVER_NAME" -DefaultValue "examplevm"
-    $serverName = $serverNameDefault
-    do {
-        if ($script:AutoMode) {
-            $userInput = $serverNameDefault
-        }
-        else {
-            $userInput = Read-Host "Enter server name (default=$serverNameDefault)"
-        }
+    $step1Context = Invoke-CoVmStep1Common `
+        -ConfigMap $configMap `
+        -EnvFilePath $envFilePath `
+        -AutoMode:$script:AutoMode `
+        -ScriptRoot $PSScriptRoot `
+        -ServerNameDefault "examplevm" `
+        -VmImageDefault "MicrosoftWindowsDesktop:office-365:win11-25h2-avd-m365:latest" `
+        -VmDiskSizeDefault "128" `
+        -VmInitConfigKey "VM_INIT_SCRIPT_FILE" `
+        -VmInitDefault "az-vm-win-init.ps1" `
+        -VmUpdateConfigKey "VM_UPDATE_SCRIPT_FILE" `
+        -VmUpdateDefault "az-vm-win-update.ps1" `
+        -ConfigOverrides $script:ConfigOverrides
 
-        if ([string]::IsNullOrWhiteSpace($userInput)) {
-            $userInput = $serverNameDefault
-        }
-
-        if ($userInput -match '^[a-zA-Z][a-zA-Z0-9\-]{2,15}$') {
-            $isValid = $true
-        }
-        else {
-            Write-Host "Invalid VM name. Try again." -ForegroundColor Red
-            $isValid = $false
-        }
-    } until ($isValid)
-
-    $serverName = $userInput
-    $script:ConfigOverrides["SERVER_NAME"] = $serverName
-    if (-not $script:AutoMode) {
-        Set-DotEnvValue -Path $envFilePath -Key "SERVER_NAME" -Value $serverName
-    }
-    Write-Host "Server name '$serverName' will be used." -ForegroundColor Green
-    $resourceGroup = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "RESOURCE_GROUP" -DefaultValue "rg-{SERVER_NAME}") -ServerName $serverName
-    $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "AZ_LOCATION" -DefaultValue "austriaeast") -ServerName $serverName
-    $VNET = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VNET_NAME" -DefaultValue "vnet-{SERVER_NAME}") -ServerName $serverName
-    $SUBNET = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "SUBNET_NAME" -DefaultValue "subnet-{SERVER_NAME}") -ServerName $serverName
-    $NSG = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "NSG_NAME" -DefaultValue "nsg-{SERVER_NAME}") -ServerName $serverName
-    $nsgRule = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "NSG_RULE_NAME" -DefaultValue "nsg-rule-{SERVER_NAME}") -ServerName $serverName
-
-    $IP = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "PUBLIC_IP_NAME" -DefaultValue "ip-{SERVER_NAME}") -ServerName $serverName
-    $NIC = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "NIC_NAME" -DefaultValue "nic-{SERVER_NAME}") -ServerName $serverName
-    $vmName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_NAME" -DefaultValue "{SERVER_NAME}") -ServerName $serverName
-    $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_IMAGE" -DefaultValue "MicrosoftWindowsDesktop:office-365:win11-25h2-avd-m365:latest") -ServerName $serverName
-    $vmStorageSku = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -ServerName $serverName
-    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_SIZE" -DefaultValue "Standard_B2as_v2") -ServerName $serverName
-    $azLocation = $defaultAzLocation
-    $vmSize = $defaultVmSize
-    if (-not $script:AutoMode) {
-        $priceHours = Get-PriceHoursFromConfig -Config $configMap -DefaultHours 730
-        $azLocation = Select-AzLocationInteractive -DefaultLocation $defaultAzLocation
-        $vmSize = Select-VmSkuInteractive -Location $azLocation -DefaultVmSize $defaultVmSize -PriceHours $priceHours
-        $script:ConfigOverrides["AZ_LOCATION"] = $azLocation
-        $script:ConfigOverrides["VM_SIZE"] = $vmSize
-        Set-DotEnvValue -Path $envFilePath -Key "AZ_LOCATION" -Value $azLocation
-        Set-DotEnvValue -Path $envFilePath -Key "VM_SIZE" -Value $vmSize
-        Write-Host "Interactive selection -> AZ_LOCATION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
-    }
-    $vmDiskName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_DISK_NAME" -DefaultValue "disk-{SERVER_NAME}") -ServerName $serverName
-    $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_DISK_SIZE_GB" -DefaultValue "128") -ServerName $serverName
-    $vmUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_USER" -DefaultValue "manager") -ServerName $serverName
-    $vmPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
-    $sshPort = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "SSH_PORT" -DefaultValue "444") -ServerName $serverName
-
-    $vmInitScriptName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_INIT_SCRIPT_FILE" -DefaultValue "az-vm-win-init.ps1") -ServerName $serverName
-    $vmUpdateScriptName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_UPDATE_SCRIPT_FILE" -DefaultValue "az-vm-win-update.ps1") -ServerName $serverName
-    $vmInitScriptFile = Resolve-ConfigPath -PathValue $vmInitScriptName -RootPath $PSScriptRoot
-    $vmUpdateScriptFile = Resolve-ConfigPath -PathValue $vmUpdateScriptName -RootPath $PSScriptRoot
-
-    $defaultPortsCsv = "80,443,444,8444,3389,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434"
-    $tcpPortsCsv = Get-ConfigValue -Config $configMap -Key "TCP_PORTS" -DefaultValue $defaultPortsCsv
-    $tcpPorts = @($tcpPortsCsv -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' })
-    if (-not ($sshPort -match '^\d+$')) {
-        throw "Invalid SSH port '$sshPort'."
-    }
-    if ($tcpPorts -notcontains $sshPort) {
-        $tcpPorts += $sshPort
-    }
-    if (-not $tcpPorts -or $tcpPorts.Count -eq 0) {
-        throw "No valid TCP ports were found in TCP_PORTS."
-    }
+    $serverName = [string]$step1Context.ServerName
+    $resourceGroup = [string]$step1Context.ResourceGroup
+    $defaultAzLocation = [string]$step1Context.DefaultAzLocation
+    $VNET = [string]$step1Context.VNET
+    $SUBNET = [string]$step1Context.SUBNET
+    $NSG = [string]$step1Context.NSG
+    $nsgRule = [string]$step1Context.NsgRule
+    $IP = [string]$step1Context.IP
+    $NIC = [string]$step1Context.NIC
+    $vmName = [string]$step1Context.VmName
+    $vmImage = [string]$step1Context.VmImage
+    $vmStorageSku = [string]$step1Context.VmStorageSku
+    $defaultVmSize = [string]$step1Context.DefaultVmSize
+    $azLocation = [string]$step1Context.AzLocation
+    $vmSize = [string]$step1Context.VmSize
+    $vmDiskName = [string]$step1Context.VmDiskName
+    $vmDiskSize = [string]$step1Context.VmDiskSize
+    $vmUser = [string]$step1Context.VmUser
+    $vmPass = [string]$step1Context.VmPass
+    $sshPort = [string]$step1Context.SshPort
+    $vmInitScriptFile = [string]$step1Context.VmInitScriptFile
+    $vmUpdateScriptFile = [string]$step1Context.VmUpdateScriptFile
+    $tcpPorts = @($step1Context.TcpPorts)
 }
 
 # 2) Resource availability check:
 Invoke-Step "Step 2/9 - region, image, and VM size availability will be checked..." {
-    Assert-LocationExists -Location $azLocation
-    Assert-VmImageAvailable -Location $azLocation -ImageUrn $vmImage
-    Assert-VmSkuAvailableViaRest -Location $azLocation -VmSize $vmSize
-    Assert-VmOsDiskSizeCompatible -Location $azLocation -ImageUrn $vmImage -VmDiskSizeGb $vmDiskSize
+    Invoke-CoVmPrecheckStep -Context $step1Context
 }
 
 # 3) Resource group check:
 Invoke-Step "Step 3/9 - resource group will be checked..." {
-    Write-Host "'$resourceGroup'"
-    $resourceExists = az group exists -n $resourceGroup
-    Assert-LastExitCode "az group exists"
-    if ($resourceExists -eq 'true') {
-        Write-Host "Resource group '$resourceGroup' will be deleted."
-        $shouldDelete = $true
-        if ($script:AutoMode) {
-            Write-Host "Auto mode: deletion was confirmed automatically."
-        }
-        else {
-            $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
-        }
-
-        if ($shouldDelete) {
-            Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
-                az group delete -n $resourceGroup --yes --no-wait
-                Assert-LastExitCode "az group delete"
-            }
-            Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
-                az group wait -n $resourceGroup --deleted
-                Assert-LastExitCode "az group wait deleted"
-            }
-            Write-Host "Resource group '$resourceGroup' was deleted."
-        }
-        else {
-            Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with existing resource group." -ForegroundColor Yellow
-        }
-    }
-    Write-Host "Creating resource group '$resourceGroup'..."
-    Invoke-TrackedAction -Label "az group create -n $resourceGroup -l $azLocation" -Action {
-        az group create -n $resourceGroup -l $azLocation
-        Assert-LastExitCode "az group create"
-    }
+    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode
 }
 
 # 4) Network components provisioning:
 Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created..." {
-    Invoke-TrackedAction -Label "az network vnet create -g $resourceGroup -n $VNET" -Action {
-        az network vnet create -g $resourceGroup -n $VNET --address-prefix 10.20.0.0/16 `
-            --subnet-name $SUBNET --subnet-prefix 10.20.0.0/24 -o table
-        Assert-LastExitCode "az network vnet create"
-    }
-    Invoke-TrackedAction -Label "az network nsg create -g $resourceGroup -n $NSG" -Action {
-        az network nsg create -g $resourceGroup -n $NSG -o table
-        Assert-LastExitCode "az network nsg create"
-    }
-
-    $ports = $tcpPorts
-    $priority = 101
-    Invoke-TrackedAction -Label "az network nsg rule create -g $resourceGroup --nsg-name $NSG --name $nsgRule" -Action {
-        az network nsg rule create `
-            -g $resourceGroup `
-            --nsg-name $NSG `
-            --name "$nsgRule" `
-            --priority $priority `
-            --direction Inbound `
-            --protocol Tcp `
-            --access Allow `
-            --destination-port-ranges $ports `
-            --source-address-prefixes "*" `
-            --source-port-ranges "*" `
-            -o table
-        Assert-LastExitCode "az network nsg rule create"
-    }
-
-    Write-Host "Creating public IP '$IP'..."
-    Invoke-TrackedAction -Label "az network public-ip create -g $resourceGroup -n $IP" -Action {
-        az network public-ip create -g $resourceGroup -n $IP --allocation-method Static --sku Standard --dns-name $vmName -o table
-        Assert-LastExitCode "az network public-ip create"
-    }
-
-    Write-Host "Creating network NIC '$NIC'..."
-    Invoke-TrackedAction -Label "az network nic create -g $resourceGroup -n $NIC" -Action {
-        az network nic create -g $resourceGroup -n $NIC --vnet-name $VNET --subnet $SUBNET `
-            --network-security-group $NSG `
-            --public-ip-address $IP `
-            -o table
-        Assert-LastExitCode "az network nic create"
-    }
+    Invoke-CoVmNetworkStep -Context $step1Context
 }
 
 # 5) VM init PowerShell script preparation:
@@ -679,77 +564,24 @@ Write-TextFileNormalized `
 
 # 7) Virtual machine creation:
 Invoke-Step "Step 7/9 - virtual machine will be created..." {
-    $existingVM = az vm list `
-        --resource-group $resourceGroup `
-        --query "[?name=='$vmName'].name | [0]" `
-        -o tsv
-    Assert-LastExitCode "az vm list"
-
-    $shouldDeleteVm = $false
-    if ($existingVM) {
-        Write-Host "VM '$vmName' exists in resource group '$resourceGroup'."
-        if ($script:AutoMode) {
-            $shouldDeleteVm = $true
-            Write-Host "Auto mode: VM deletion was confirmed automatically."
+    Invoke-CoVmVmCreateStep `
+        -Context $step1Context `
+        -AutoMode:$script:AutoMode `
+        -CreateVmAction {
+            az vm create `
+                --resource-group $resourceGroup `
+                --name $vmName `
+                --image $vmImage `
+                --size $vmSize `
+                --storage-sku $vmStorageSku `
+                --os-disk-name $vmDiskName `
+                --os-disk-size-gb $vmDiskSize `
+                --admin-username $vmUser `
+                --admin-password $vmPass `
+                --authentication-type password `
+                --nics $NIC `
+                -o json
         }
-        else {
-            $shouldDeleteVm = Confirm-YesNo -PromptText "Are you sure you want to delete VM '$vmName'?" -DefaultYes $false
-        }
-
-        if ($shouldDeleteVm) {
-            Write-Output "VM '$vmName' will be deleted..."
-            Invoke-TrackedAction -Label "az vm delete --name $vmName --resource-group $resourceGroup --yes" -Action {
-                az vm delete --name $vmName --resource-group $resourceGroup --yes -o table
-                Assert-LastExitCode "az vm delete"
-            }
-            Write-Output "VM '$vmName' was deleted from resource group '$resourceGroup'."
-        }
-        else {
-            Write-Host "VM '$vmName' was not deleted by user choice; continuing with az vm create on existing VM." -ForegroundColor Yellow
-        }
-    }
-    else {
-        Write-Output "VM '$vmName' is not present in resource group '$resourceGroup'. Creating..."
-    }
-
-    $vmCreateJson = Invoke-TrackedAction -Label "az vm create --resource-group $resourceGroup --name $vmName" -Action {
-        $result = az vm create `
-            --resource-group $resourceGroup `
-            --name $vmName `
-            --image $vmImage `
-            --size $vmSize `
-            --storage-sku $vmStorageSku `
-            --os-disk-name $vmDiskName `
-            --os-disk-size-gb $vmDiskSize `
-            --admin-username $vmUser `
-            --admin-password $vmPass `
-            --authentication-type password `
-            --nics $NIC `
-            -o json
-
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "az vm create returned a non-zero code; checking VM existence."
-            $vmExistsAfterCreate = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv 2>$null
-            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($vmExistsAfterCreate)) {
-                Write-Host "VM exists; details will be retrieved via az vm show -d."
-                $result = az vm show -g $resourceGroup -n $vmName -d -o json
-                Assert-LastExitCode "az vm show -d after vm create non-zero"
-            }
-            else {
-                throw "az vm create failed with exit code $LASTEXITCODE."
-            }
-        }
-
-        $result
-    }
-
-    $vmCreateObj = ConvertFrom-JsonCompat -InputObject $vmCreateJson
-    if (-not $vmCreateObj.id) {
-        throw "az vm create completed but VM id was not returned."
-    }
-
-    Write-Host "Printing az vm create output..."
-    Write-Host $vmCreateJson
 }
 
 # 8) VM init/update script execution:
@@ -1044,21 +876,9 @@ Get-Content $sshdConfig | Select-String -Pattern "^(Port|PasswordAuthentication|
 
 # 9) VM connection details:
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
-    $vmDetailsJson = Invoke-TrackedAction -Label "az vm show -g $resourceGroup -n $vmName -d" -Action {
-        $result = az vm show -g $resourceGroup -n $vmName -d -o json
-        Assert-LastExitCode "az vm show -d"
-        $result
-    }
-    $vmDetails = ConvertFrom-JsonCompat -InputObject $vmDetailsJson
-    if (-not $vmDetails) {
-        throw "VM detail output could not be parsed."
-    }
-
-    $publicIP = $vmDetails.publicIps
-    $vmFqdn = $vmDetails.fqdns
-    if ([string]::IsNullOrWhiteSpace($vmFqdn)) {
-        $vmFqdn = "$vmName.$azLocation.cloudapp.azure.com"
-    }
+    $vmConnectionInfo = Get-CoVmVmDetails -Context $step1Context
+    $publicIP = [string]$vmConnectionInfo.PublicIP
+    $vmFqdn = [string]$vmConnectionInfo.VmFqdn
 
     Write-Host "VM Public IP Address:"
     Write-Host "$publicIP"
@@ -1074,58 +894,18 @@ Invoke-Step "Step 9/9 - VM connection details will be printed..." {
 Write-Host "All console output was saved to 'az-vm-win-log.txt'."
 }
 catch {
-    $errorMessage = $_.Exception.Message
-    $summary = $script:DefaultErrorSummary
-    $hint = $script:DefaultErrorHint
-    $code = 99
-
-    if ($_.Exception.Data -and $_.Exception.Data.Contains("ExitCode")) {
-        $code = [int]$_.Exception.Data["ExitCode"]
-        if ($_.Exception.Data.Contains("Summary")) {
-            $summary = [string]$_.Exception.Data["Summary"]
-        }
-        if ($_.Exception.Data.Contains("Hint")) {
-            $hint = [string]$_.Exception.Data["Hint"]
-        }
-    }
-    elseif ($errorMessage -match "^VM size '(.+)' is available in region '(.+)' but not available for this subscription\.$") {
-        $summary = "VM size exists in region but is not available for this subscription."
-        $hint = "Choose another size in the same region or fix subscription quota/permissions."
-        $code = 21
-    }
-    elseif ($errorMessage -match "^az group create failed with exit code") {
-        $summary = "Resource group creation step failed."
-        $hint = "Check region, policy, and subscription permissions."
-        $code = 30
-    }
-    elseif ($errorMessage -match "^az vm create failed with exit code") {
-        $summary = "VM creation step failed."
-        $hint = "Check Step-2 precheck results, vmSize/image compatibility, and quota status."
-        $code = 40
-    }
-    elseif ($errorMessage -match "^az vm run-command invoke") {
-        $summary = "Configuration command inside VM failed."
-        $hint = "Check VM running state and RunCommand availability."
-        $code = 50
-    }
-    elseif ($errorMessage -match "^VM task '(.+)' failed:") {
-        $summary = "A task failed in substep mode."
-        $hint = "Review the task name in the error detail and fix the related command."
-        $code = 51
-    }
-    elseif ($errorMessage -match "^VM task batch execution failed") {
-        $summary = "One or more tasks failed in auto mode."
-        $hint = "Review the related task in the log file and fix the command."
-        $code = 52
-    }
+    $resolvedError = Resolve-CoVmFriendlyError `
+        -ErrorRecord $_ `
+        -DefaultErrorSummary $script:DefaultErrorSummary `
+        -DefaultErrorHint $script:DefaultErrorHint
 
     Write-Host ""
     Write-Host "Script exited gracefully." -ForegroundColor Yellow
-    Write-Host "Reason: $summary" -ForegroundColor Red
-    Write-Host "Detail: $errorMessage"
-    Write-Host "Suggested action: $hint" -ForegroundColor Cyan
+    Write-Host "Reason: $($resolvedError.Summary)" -ForegroundColor Red
+    Write-Host "Detail: $($resolvedError.ErrorMessage)"
+    Write-Host "Suggested action: $($resolvedError.Hint)" -ForegroundColor Cyan
     $script:HadError = $true
-    $script:ExitCode = $code
+    $script:ExitCode = [int]$resolvedError.Code
 }
 finally {
     if ($script:TranscriptStarted) {

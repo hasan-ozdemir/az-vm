@@ -282,6 +282,7 @@ try {
         "az-vm-co-core.ps1",
         "az-vm-co-config.ps1",
         "az-vm-co-azure.ps1",
+        "az-vm-co-orchestration.ps1",
         "az-vm-co-runcommand.ps1",
         "az-vm-co-sku-picker.ps1"
     )

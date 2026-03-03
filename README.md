@@ -74,6 +74,7 @@ az-vm/
     az-vm-co-core.ps1
     az-vm-co-config.ps1
     az-vm-co-azure.ps1
+    az-vm-co-orchestration.ps1
     az-vm-co-runcommand.ps1
     az-vm-co-sku-picker.ps1
   lin-vm/
@@ -337,6 +338,7 @@ Representative failure classes:
 ## Developer Notes
 
 - Shared logic belongs in `co-vm/`.
+- Step 1/2/3/4/7/9 orchestration flow is centralized in `co-vm/az-vm-co-orchestration.ps1`.
 - Keep Linux/Windows top-level flow aligned; diverge only for OS-specific needs.
 - Prefer updating `.env.example` when introducing/changing config keys.
 - Follow `AGENTS.md` for project conventions and commit discipline.
