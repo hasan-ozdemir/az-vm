@@ -40,6 +40,44 @@ function Get-AzLocationCatalog {
     return @($locations | Sort-Object DisplayName, Name)
 }
 
+function Write-RegionSelectionGrid {
+    param(
+        [object[]]$Locations,
+        [int]$DefaultIndex,
+        [int]$Columns = 10
+    )
+
+    if (-not $Locations -or $Locations.Count -eq 0) {
+        return
+    }
+
+    if ($Columns -lt 1) {
+        $Columns = 1
+    }
+
+    $labels = @()
+    for ($i = 0; $i -lt $Locations.Count; $i++) {
+        $regionName = [string]$Locations[$i].Name
+        $isDefault = (($i + 1) -eq $DefaultIndex)
+        $defaultMark = if ($isDefault) { "*" } else { "" }
+        $labels += ("[{0}] {1}{2}" -f ($i + 1), $regionName, $defaultMark)
+    }
+
+    $maxLength = ($labels | Measure-Object -Property Length -Maximum).Maximum
+    $cellWidth = [int]$maxLength + 3
+
+    for ($start = 0; $start -lt $labels.Count; $start += $Columns) {
+        $end = [math]::Min($start + $Columns - 1, $labels.Count - 1)
+        $lineBuilder = New-Object System.Text.StringBuilder
+        for ($idx = $start; $idx -le $end; $idx++) {
+            [void]$lineBuilder.Append(($labels[$idx]).PadRight($cellWidth))
+        }
+        Write-Host $lineBuilder.ToString().TrimEnd()
+    }
+
+    Write-Host "* default region" -ForegroundColor DarkGray
+}
+
 function Select-AzLocationInteractive {
     param(
         [string]$DefaultLocation
@@ -56,16 +94,7 @@ function Select-AzLocationInteractive {
 
     Write-Host ""
     Write-Host "Available Azure regions (select by number):" -ForegroundColor Cyan
-    $rows = for ($i = 0; $i -lt $locations.Count; $i++) {
-        $location = $locations[$i]
-        [PSCustomObject]@{
-            No          = $i + 1
-            Region      = $location.Name
-            DisplayName = $location.DisplayName
-            Default     = if (($i + 1) -eq $defaultIndex) { "*" } else { "" }
-        }
-    }
-    $rows | Format-Table -AutoSize
+    Write-RegionSelectionGrid -Locations $locations -DefaultIndex $defaultIndex -Columns 10
 
     while ($true) {
         $inputValue = Read-Host "Enter region number (default=$defaultIndex)"
@@ -363,7 +392,7 @@ function Select-VmSkuInteractive {
         Write-Host ""
         Write-Host ("Available VM SKUs in region '{0}' (prices use {1} hours/month):" -f $Location, $PriceHours) -ForegroundColor Cyan
         $rows = Build-VmSkuSelectionRows -Skus $skus -AvailabilityMap $availabilityMap -PriceMap $priceMap -PriceHours $PriceHours
-        $rows | Format-Table -AutoSize
+        $rows | Format-Table -AutoSize | Out-Host
 
         $defaultIndex = 1
         for ($i = 0; $i -lt $rows.Count; $i++) {
