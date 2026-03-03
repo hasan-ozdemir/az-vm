@@ -15,6 +15,55 @@ function Get-PriceHoursFromConfig {
     return $DefaultHours
 }
 
+function ConvertFrom-JsonArrayCompat {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$JsonText
+    )
+
+    if ($null -eq $JsonText) {
+        return @()
+    }
+
+    $parsed = $null
+    if ($JsonText -is [string]) {
+        $parsed = $JsonText | ConvertFrom-Json
+    }
+    elseif ($JsonText -is [System.Array]) {
+        if ($JsonText.Length -eq 0) {
+            return @()
+        }
+
+        $first = $JsonText[0]
+        if ($first -is [string]) {
+            $jsonJoined = (($JsonText | ForEach-Object { [string]$_ }) -join "`n")
+            $parsed = $jsonJoined | ConvertFrom-Json
+        }
+        else {
+            $parsed = $JsonText
+        }
+    }
+    else {
+        $text = [string]$JsonText
+        if (-not [string]::IsNullOrWhiteSpace($text) -and ($text.TrimStart().StartsWith("{") -or $text.TrimStart().StartsWith("["))) {
+            $parsed = $text | ConvertFrom-Json
+        }
+        else {
+            $parsed = @($JsonText)
+        }
+    }
+
+    if ($null -eq $parsed) {
+        return @()
+    }
+
+    if ($parsed -is [System.Array]) {
+        return $parsed
+    }
+
+    return @($parsed)
+}
+
 function Get-AzLocationCatalog {
     $locationsJson = az account list-locations `
         --only-show-errors `
@@ -28,14 +77,14 @@ function Get-AzLocationCatalog {
             -Hint "Run az login and verify subscription access."
     }
 
-    $locations = @($locationsJson | ConvertFrom-Json)
+    $locations = ConvertFrom-JsonArrayCompat -JsonText $locationsJson
     if (-not $locations -or $locations.Count -eq 0) {
         $fallbackJson = az account list-locations `
             --only-show-errors `
             --query "[].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
             -o json
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fallbackJson)) {
-            $fallbackLocations = @($fallbackJson | ConvertFrom-Json)
+            $fallbackLocations = ConvertFrom-JsonArrayCompat -JsonText $fallbackJson
             $locations = @($fallbackLocations | Where-Object { $_.RegionType -eq "Physical" })
         }
     }
@@ -153,36 +202,36 @@ function Get-LocationSkusForSelection {
             -Hint "Verify the selected region and Azure subscription permissions."
     }
 
-    $allSkus = @($raw | ConvertFrom-Json)
-    return @(
+    $allSkus = ConvertFrom-JsonArrayCompat -JsonText $raw
+    $standardSkus = @(
         $allSkus | Where-Object {
-            if (-not $_.name) { return $false }
-            $name = [string]$_.name
-            if (-not $name.StartsWith("Standard_", [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $false
-            }
-
-            if ($needle -eq "") {
-                return $true
-            }
-
-            $nameLower = $name.ToLowerInvariant()
-            if ($nameLower.Contains($needle)) {
-                return $true
-            }
-
-            $nameNormalized = $nameLower -replace '[^a-z0-9]', ''
-            if ($needleNormalized -ne "" -and $nameNormalized.Contains($needleNormalized)) {
-                return $true
-            }
-
-            if ($needleWithoutStandard -ne "" -and $nameNormalized.Contains($needleWithoutStandard)) {
-                return $true
-            }
-
-            return $false
-        } | Sort-Object name -Unique
+            $_.name -and ([string]$_.name).StartsWith("Standard_", [System.StringComparison]::OrdinalIgnoreCase)
+        }
     )
+
+    if ($needle -eq "") {
+        return @($standardSkus | Sort-Object name -Unique)
+    }
+
+    $filtered = foreach ($sku in $standardSkus) {
+        $name = [string]$sku.name
+        $nameLower = $name.ToLowerInvariant()
+        $nameNormalized = $nameLower -replace '[^a-z0-9]', ''
+
+        $isMatch = $nameLower.Contains($needle)
+        if (-not $isMatch -and $needleNormalized -ne "") {
+            $isMatch = $nameNormalized.Contains($needleNormalized)
+        }
+        if (-not $isMatch -and $needleWithoutStandard -ne "") {
+            $isMatch = $nameNormalized.Contains($needleWithoutStandard)
+        }
+
+        if ($isMatch) {
+            $sku
+        }
+    }
+
+    return @($filtered | Sort-Object name -Unique)
 }
 
 function Get-SkuAvailabilityMap {
