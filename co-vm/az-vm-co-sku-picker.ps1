@@ -69,8 +69,12 @@ function Write-RegionSelectionGrid {
     for ($i = 0; $i -lt $Locations.Count; $i++) {
         $regionName = [string]$Locations[$i].Name
         $isDefault = (($i + 1) -eq $DefaultIndex)
-        $defaultMark = if ($isDefault) { "*" } else { "" }
-        $labels += ("[{0}] {1}{2}" -f ($i + 1), $regionName, $defaultMark)
+        if ($isDefault) {
+            $labels += ("*{0}-{1}." -f ($i + 1), $regionName)
+        }
+        else {
+            $labels += ("{0}-{1}." -f ($i + 1), $regionName)
+        }
     }
 
     $maxLength = ($labels | Measure-Object -Property Length -Maximum).Maximum
@@ -85,7 +89,6 @@ function Write-RegionSelectionGrid {
         Write-Host $lineBuilder.ToString().TrimEnd()
     }
 
-    Write-Host "* default region" -ForegroundColor DarkGray
 }
 
 function Select-AzLocationInteractive {
