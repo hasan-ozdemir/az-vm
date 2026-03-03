@@ -89,3 +89,50 @@ function Resolve-ConfigPath {
 
     return Join-Path $RootPath $PathValue
 }
+
+function Set-DotEnvValue {
+    param(
+        [string]$Path,
+        [string]$Key,
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Set-DotEnvValue requires a valid file path."
+    }
+    if ([string]::IsNullOrWhiteSpace($Key)) {
+        throw "Set-DotEnvValue requires a non-empty key."
+    }
+    if ($null -eq $Value) {
+        $Value = ""
+    }
+
+    $lines = @()
+    if (Test-Path -LiteralPath $Path) {
+        $lines = @((Get-Content -Path $Path -ErrorAction Stop))
+    }
+
+    $pattern = "^\s*" + [regex]::Escape($Key) + "\s*="
+    $updated = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        if ($lines[$i] -match $pattern) {
+            $lines[$i] = "$Key=$Value"
+            $updated = $true
+            break
+        }
+    }
+
+    if (-not $updated) {
+        if ($lines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace($lines[$lines.Count - 1])) {
+            $lines += ""
+        }
+        $lines += "$Key=$Value"
+    }
+
+    $parent = Split-Path -Path $Path -Parent
+    if (-not [string]::IsNullOrWhiteSpace($parent) -and -not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+
+    Set-Content -Path $Path -Value $lines -Encoding UTF8
+}

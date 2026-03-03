@@ -38,6 +38,7 @@ Copy-Item win-vm/.env.example win-vm/.env
 - Linux log: `lin-vm/az-vm-lin-log.txt`
 - Windows log: `win-vm/az-vm-win-log.txt`
 - Final outputs include public IP/FQDN and ready-to-run connection commands.
+- In interactive mode, Step 1 also provides numbered Azure region/SKU selection with price and availability listing.
 
 ---
 
@@ -94,6 +95,7 @@ Both Linux and Windows scripts support the same CLI flags:
 
 - `interactive` (default)
   - Step-by-step confirmation model via `Invoke-Step`.
+  - Step 1 includes interactive region and VM SKU pickers.
 - `--auto` / `-a`
   - Non-interactive execution path.
 - `--step` / `-s`
@@ -120,6 +122,7 @@ Runtime configuration order is:
 ### Environment files
 - Local `.env` files are runtime inputs and should stay untracked.
 - `.env.example` files are the templates to share.
+- In interactive mode, selected `SERVER_NAME`, `AZ_LOCATION`, and `VM_SIZE` are written back to local `.env`.
 
 ### Key variables (Linux and Windows)
 
@@ -133,6 +136,7 @@ Runtime configuration order is:
 | `VM_IMAGE` | Image URN. |
 | `VM_STORAGE_SKU` | Disk SKU (`StandardSSD_LRS`). |
 | `VM_SIZE` | VM size (default `Standard_B2as_v2`). |
+| `PRICE_HOURS` | Monthly pricing multiplier for SKU table (fallback default `730`). |
 | `VM_DISK_NAME`, `VM_DISK_SIZE_GB` | OS disk naming/size. |
 | `VM_USER`, `VM_PASS` | Login account credentials. |
 | `SSH_PORT` | SSH port (default `444`). |
@@ -147,7 +151,7 @@ Platform-specific:
 ## End-to-End Provisioning Flow
 
 ### Step 1
-Resolve parameters from `.env` + defaults and validate key inputs.
+Resolve parameters from `.env` + defaults, validate key inputs, and (interactive mode) select region + VM SKU from numbered lists.
 
 ### Step 2
 Pre-check availability (fail fast):

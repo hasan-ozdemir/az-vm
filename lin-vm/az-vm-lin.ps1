@@ -25,7 +25,8 @@ $coVmScripts = @(
     "az-vm-co-core.ps1",
     "az-vm-co-config.ps1",
     "az-vm-co-azure.ps1",
-    "az-vm-co-runcommand.ps1"
+    "az-vm-co-runcommand.ps1",
+    "az-vm-co-sku-picker.ps1"
 )
 foreach ($coVmScript in $coVmScripts) {
     $coVmPath = Join-Path $coVmRoot $coVmScript
@@ -84,9 +85,12 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
 
     $serverName = $userInput
     $script:ConfigOverrides["SERVER_NAME"] = $serverName
+    if (-not $script:AutoMode) {
+        Set-DotEnvValue -Path $envFilePath -Key "SERVER_NAME" -Value $serverName
+    }
     Write-Host "Server name '$serverName' will be used." -ForegroundColor Green
     $resourceGroup = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "RESOURCE_GROUP" -DefaultValue "rg-{SERVER_NAME}") -ServerName $serverName
-    $azLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "AZ_LOCATION" -DefaultValue "austriaeast") -ServerName $serverName
+    $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "AZ_LOCATION" -DefaultValue "austriaeast") -ServerName $serverName
     $VNET = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VNET_NAME" -DefaultValue "vnet-{SERVER_NAME}") -ServerName $serverName
     $SUBNET = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "SUBNET_NAME" -DefaultValue "subnet-{SERVER_NAME}") -ServerName $serverName
     $NSG = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "NSG_NAME" -DefaultValue "nsg-{SERVER_NAME}") -ServerName $serverName
@@ -97,7 +101,19 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
     $vmName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_NAME" -DefaultValue "{SERVER_NAME}") -ServerName $serverName
     $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_IMAGE" -DefaultValue "Canonical:ubuntu-24_04-lts:server:latest") -ServerName $serverName
     $vmStorageSku = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -ServerName $serverName
-    $vmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_SIZE" -DefaultValue "Standard_B2as_v2") -ServerName $serverName
+    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_SIZE" -DefaultValue "Standard_B2as_v2") -ServerName $serverName
+    $azLocation = $defaultAzLocation
+    $vmSize = $defaultVmSize
+    if (-not $script:AutoMode) {
+        $priceHours = Get-PriceHoursFromConfig -Config $configMap -DefaultHours 730
+        $azLocation = Select-AzLocationInteractive -DefaultLocation $defaultAzLocation
+        $vmSize = Select-VmSkuInteractive -Location $azLocation -DefaultVmSize $defaultVmSize -PriceHours $priceHours
+        $script:ConfigOverrides["AZ_LOCATION"] = $azLocation
+        $script:ConfigOverrides["VM_SIZE"] = $vmSize
+        Set-DotEnvValue -Path $envFilePath -Key "AZ_LOCATION" -Value $azLocation
+        Set-DotEnvValue -Path $envFilePath -Key "VM_SIZE" -Value $vmSize
+        Write-Host "Interactive selection -> AZ_LOCATION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
+    }
     $vmDiskName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_DISK_NAME" -DefaultValue "disk-{SERVER_NAME}") -ServerName $serverName
     $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_DISK_SIZE_GB" -DefaultValue "40") -ServerName $serverName
     $vmUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $configMap -Key "VM_USER" -DefaultValue "manager") -ServerName $serverName
