@@ -277,6 +277,7 @@ function Test-GuestTaskAndScriptBuild {
         VmPass = "demo-pass"
         VmAssistantUser = "assistant"
         VmAssistantPass = "<runtime-secret>"
+        ServerName = "examplevm"
         SshPort = "444"
         TcpPorts = @("444", "11434", "3389")
         ResourceGroup = "rg-demo"
@@ -300,7 +301,7 @@ function Test-GuestTaskAndScriptBuild {
         $initPath = Join-Path $tmpDir "init.ps1"
         Write-TextFileNormalized -Path $initPath -Content (Get-CoVmWindowsInitScriptContent) -Encoding "utf8NoBom" -LineEnding "crlf" -EnsureTrailingNewline
         $windowsTasks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $context -VmInitScriptFile $initPath
-        Assert-True -Condition (@($windowsTasks).Count -ge 10) -Message "Windows task list should contain expected tasks"
+        Assert-True -Condition (@($windowsTasks).Count -ge 17) -Message "Windows task list should contain expected tasks"
         $windowsScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $windowsTasks
         $tokens = $null
         $parseErrors = $null
@@ -320,6 +321,21 @@ function Test-GuestTaskAndScriptBuild {
         Assert-True -Condition ($windowsScript -like "*Microsoft.WindowsNotepad*") -Message "Windows update script should include modern Notepad removal logic"
         Assert-True -Condition ($windowsScript -like "*CoVmTextFile*") -Message "Windows update script should include legacy text association class"
         Assert-True -Condition ($windowsScript -like "*powercfg /setactive*") -Message "Windows update script should include maximum-performance power scheme activation"
+        Assert-True -Condition ($windowsScript -like "*private.local.accessibility.package*") -Message "Windows update script should include private local-only accessibility winget install command"
+        Assert-True -Condition ($windowsScript -like "*choco install ollama*") -Message "Windows update script should include choco install ollama command"
+        Assert-True -Condition ($windowsScript -like "*choco install azure-cli*") -Message "Windows update script should include choco install azure-cli command"
+        Assert-True -Condition ($windowsScript -like "*winget install -e --id Google.Chrome*") -Message "Windows update script should include Google Chrome winget install command"
+        Assert-True -Condition ($windowsScript -like '*$serverName = "examplevm"*') -Message "Windows update script should include resolved server-name variable for Chrome profile selection"
+        Assert-True -Condition ($windowsScript -like "*--profile-directory=`$serverName*") -Message "Windows update script should include Chrome profile-directory argument based on server-name variable"
+        Assert-True -Condition ($windowsScript -like "*winget install -e --id Docker.DockerDesktop*") -Message "Windows update script should include Docker Desktop winget install command"
+        Assert-True -Condition ($windowsScript -like "*wsl --update*") -Message "Windows update script should include WSL update command"
+        Assert-True -Condition ($windowsScript -like "*local-service-disable-conservative-completed*") -Message "Windows update script should include conservative service disable task marker"
+
+        $probeScript = Get-CoVmWindowsPostRebootProbeScript -ServerName "examplevm" -VmUser "manager" -AssistantUser "assistant"
+        Assert-True -Condition ($probeScript -like "*post-reboot-probe-started*") -Message "Post-reboot probe script should include start marker"
+        Assert-True -Condition ($probeScript -like "*server-name=examplevm*") -Message "Post-reboot probe script should include resolved server name"
+        Assert-True -Condition ($probeScript -like "*docker version*") -Message "Post-reboot probe script should verify Docker daemon"
+        Assert-True -Condition ($probeScript -like "*wsl --version*") -Message "Post-reboot probe script should verify WSL version"
     }
     finally {
         Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue

@@ -484,7 +484,67 @@ python --version
 '@
         },
         [pscustomobject]@{
-            Name = "08-node-install-check"
+            Name = "08-private-local-task"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+function Invoke-WingetInstall {
+    param(
+        [string]$Id
+    )
+
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Warning ("winget command is not available. Skipping package '{0}'." -f $Id)
+        return $false
+    }
+
+    & winget install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning ("winget install failed for '{0}' with exit code {1}." -f $Id, $LASTEXITCODE)
+        return $false
+    }
+
+    return $true
+}
+
+$installed = Invoke-WingetInstall -Id "private.local.accessibility.package"
+$refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
+if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
+$machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if ([string]::IsNullOrWhiteSpace($userPath)) { $env:Path = $machinePath } else { $env:Path = "$machinePath;$userPath" }
+
+$localOnlyAccessibilityCandidates = @(
+    "C:\Program Files\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe",
+    "C:\Program Files (x86)\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe"
+)
+$localOnlyAccessibilityFound = $false
+if (Get-Command jfw -ErrorAction SilentlyContinue) {
+    $localOnlyAccessibilityFound = $true
+}
+else {
+    foreach ($candidate in @($localOnlyAccessibilityCandidates)) {
+        if (Test-Path -LiteralPath $candidate) {
+            $localOnlyAccessibilityFound = $true
+            break
+        }
+    }
+}
+
+if (-not $localOnlyAccessibilityFound) {
+    if ($installed) {
+        Write-Warning "private local-only accessibility install command completed but executable path was not detected yet."
+    }
+    else {
+        Write-Warning "private local-only accessibility install step was skipped or failed."
+    }
+}
+
+Write-Output "private local-only accessibility-install-check-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "09-node-install-check"
             Script = @'
 $ErrorActionPreference = "Stop"
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
@@ -512,7 +572,321 @@ node --version
 '@
         },
         [pscustomobject]@{
-            Name = "09-windows-ux-performance-tuning"
+            Name = "10-choco-extra-packages"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+$chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
+if (-not (Test-Path $chocoExe)) {
+    Write-Warning "choco was not found. Extra package installs are skipped."
+    Write-Output "choco-extra-packages-skipped"
+    return
+}
+
+function Refresh-SessionPath {
+    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
+    if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ([string]::IsNullOrWhiteSpace($userPath)) {
+        $env:Path = $machinePath
+    }
+    else {
+        $env:Path = "$machinePath;$userPath"
+    }
+}
+
+function Install-ChocoPackageWarn {
+    param(
+        [string]$PackageId,
+        [string]$InstallCommand,
+        [string]$CommandName = "",
+        [string]$PathHint = ""
+    )
+
+    Write-Output ("Running: {0}" -f $InstallCommand)
+    & cmd.exe /d /c $InstallCommand | Out-Null
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+        Write-Warning ("choco install failed for '{0}' with exit code {1}." -f $PackageId, $LASTEXITCODE)
+        Refresh-SessionPath
+        return
+    }
+
+    Refresh-SessionPath
+
+    if (-not [string]::IsNullOrWhiteSpace($CommandName)) {
+        if (Get-Command $CommandName -ErrorAction SilentlyContinue) {
+            Write-Output ("Command check passed: {0}" -f $CommandName)
+        }
+        else {
+            Write-Warning ("Command '{0}' was not found after '{1}' install." -f $CommandName, $PackageId)
+        }
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($PathHint)) {
+        if (Test-Path -LiteralPath $PathHint) {
+            Write-Output ("Path check passed: {0}" -f $PathHint)
+        }
+        else {
+            Write-Warning ("Path '{0}' was not found after '{1}' install." -f $PathHint, $PackageId)
+        }
+    }
+}
+
+Install-ChocoPackageWarn -PackageId "ollama" -InstallCommand "choco install ollama -y --no-progress" -CommandName "ollama"
+Install-ChocoPackageWarn -PackageId "sysinternals" -InstallCommand "choco install sysinternals -y --no-progress" -PathHint "C:\ProgramData\chocolatey\lib\sysinternals\tools"
+Install-ChocoPackageWarn -PackageId "powershell-core" -InstallCommand "choco install powershell-core -y --no-progress" -CommandName "pwsh"
+Install-ChocoPackageWarn -PackageId "io-unlocker" -InstallCommand "choco install io-unlocker -y --no-progress" -CommandName "io-unlocker"
+Install-ChocoPackageWarn -PackageId "gh" -InstallCommand "choco install gh -y --no-progress" -CommandName "gh"
+Install-ChocoPackageWarn -PackageId "ffmpeg" -InstallCommand "choco install ffmpeg -y --no-progress" -CommandName "ffmpeg"
+Install-ChocoPackageWarn -PackageId "7zip" -InstallCommand "choco install 7zip -y --no-progress" -CommandName "7z"
+Install-ChocoPackageWarn -PackageId "azure-cli" -InstallCommand "choco install azure-cli -y --no-progress" -CommandName "az"
+
+Write-Output "choco-extra-packages-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "11-chrome-install-and-shortcut"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+$serverName = "__SERVER_NAME__"
+$chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$serverName https://www.google.com"
+
+function Install-ChromeWithWinget {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+        Write-Warning "winget command is not available. Google Chrome install step is skipped."
+        return $false
+    }
+
+    & winget install -e --id Google.Chrome --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning ("winget install failed for Google.Chrome with exit code {0}." -f $LASTEXITCODE)
+        return $false
+    }
+
+    return $true
+}
+
+function Resolve-ChromeExecutable {
+    $cmd = Get-Command chrome.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return [string]$cmd.Source
+    }
+
+    foreach ($candidate in @(
+        "C:\Program Files\Google\Chrome\Application\chrome.exe",
+        "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    return ""
+}
+
+function Set-ChromeShortcut {
+    param(
+        [string]$ShortcutPath,
+        [string]$ChromeExe,
+        [string]$Args
+    )
+
+    $shortcutDir = Split-Path -Path $ShortcutPath -Parent
+    if (-not (Test-Path -LiteralPath $shortcutDir)) {
+        New-Item -Path $shortcutDir -ItemType Directory -Force | Out-Null
+    }
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    $shortcut.TargetPath = $ChromeExe
+    $shortcut.Arguments = $Args
+    $shortcut.WorkingDirectory = (Split-Path -Path $ChromeExe -Parent)
+    $shortcut.IconLocation = "$ChromeExe,0"
+    $shortcut.Save()
+}
+
+$installed = Install-ChromeWithWinget
+$chromeExe = Resolve-ChromeExecutable
+if ([string]::IsNullOrWhiteSpace($chromeExe)) {
+    if ($installed) {
+        Write-Warning "Google Chrome install command completed but executable path was not detected."
+    }
+    else {
+        Write-Warning "Google Chrome install failed or was skipped."
+    }
+    Write-Output "chrome-install-and-shortcut-completed"
+    return
+}
+
+$shortcutTargets = @(
+    "C:\Users\Public\Desktop\Google Chrome.lnk",
+    "C:\Users\__VM_USER__\Desktop\Google Chrome.lnk",
+    "C:\Users\__ASSISTANT_USER__\Desktop\Google Chrome.lnk"
+)
+foreach ($shortcutPath in @($shortcutTargets)) {
+    try {
+        Set-ChromeShortcut -ShortcutPath $shortcutPath -ChromeExe $chromeExe -Args $chromeArgs
+        Write-Output ("Chrome shortcut configured: {0}" -f $shortcutPath)
+    }
+    catch {
+        Write-Warning ("Chrome shortcut configuration failed for '{0}': {1}" -f $shortcutPath, $_.Exception.Message)
+    }
+}
+
+Write-Output "chrome-install-and-shortcut-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "12-wsl2-install-update"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+function Invoke-CommandWarn {
+    param(
+        [string]$Label,
+        [scriptblock]$Action
+    )
+
+    try {
+        & $Action
+        Write-Output ("wsl-step-ok: {0}" -f $Label)
+    }
+    catch {
+        Write-Warning ("wsl-step-failed: {0} => {1}" -f $Label, $_.Exception.Message)
+    }
+}
+
+Invoke-CommandWarn -Label "enable-feature-wsl" -Action {
+    & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
+}
+Invoke-CommandWarn -Label "enable-feature-vmp" -Action {
+    & dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
+}
+Invoke-CommandWarn -Label "wsl-install-no-distro" -Action {
+    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { throw "wsl command is not available." }
+    & wsl --install --no-distribution | Out-Null
+}
+Invoke-CommandWarn -Label "wsl-update" -Action {
+    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { throw "wsl command is not available." }
+    & wsl --update | Out-Null
+}
+Invoke-CommandWarn -Label "wsl-version" -Action {
+    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { throw "wsl command is not available." }
+    & wsl --version
+}
+
+Write-Output "wsl2-install-update-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "13-docker-desktop-install-and-configure"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+function Invoke-DockerWarn {
+    param(
+        [string]$Label,
+        [scriptblock]$Action
+    )
+
+    try {
+        & $Action
+        Write-Output ("docker-step-ok: {0}" -f $Label)
+    }
+    catch {
+        Write-Warning ("docker-step-failed: {0} => {1}" -f $Label, $_.Exception.Message)
+    }
+}
+
+Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "winget command is not available." }
+    & winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+}
+
+Invoke-DockerWarn -Label "set-com-docker-service-automatic" -Action {
+    if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
+        Set-Service -Name "com.docker.service" -StartupType Automatic
+        Start-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
+    }
+    else {
+        Write-Warning "com.docker.service was not found."
+    }
+}
+
+Invoke-DockerWarn -Label "configure-docker-startup-shortcut" -Action {
+    $dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+    if (-not (Test-Path -LiteralPath $dockerDesktopExe)) { throw "Docker Desktop executable not found." }
+    $startupPath = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk"
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($startupPath)
+    $shortcut.TargetPath = $dockerDesktopExe
+    $shortcut.Arguments = "--minimized"
+    $shortcut.WorkingDirectory = (Split-Path -Path $dockerDesktopExe -Parent)
+    $shortcut.IconLocation = "$dockerDesktopExe,0"
+    $shortcut.Save()
+}
+
+Invoke-DockerWarn -Label "configure-docker-settings-json" -Action {
+    $profileRoots = @(
+        "C:\Users\__VM_USER__",
+        "C:\Users\__ASSISTANT_USER__",
+        "C:\Users\Default"
+    )
+    foreach ($profileRoot in @($profileRoots)) {
+        $roamingPath = Join-Path $profileRoot "AppData\Roaming\Docker"
+        if (-not (Test-Path -LiteralPath $roamingPath)) {
+            New-Item -Path $roamingPath -ItemType Directory -Force | Out-Null
+        }
+
+        $settingsPaths = @(
+            (Join-Path $roamingPath "settings-store.json"),
+            (Join-Path $roamingPath "settings.json")
+        )
+        $settingsPath = $settingsPaths[0]
+        $settings = @{}
+        foreach ($candidate in @($settingsPaths)) {
+            if (Test-Path -LiteralPath $candidate) {
+                $settingsPath = $candidate
+                $raw = Get-Content -Path $candidate -Raw -ErrorAction SilentlyContinue
+                if (-not [string]::IsNullOrWhiteSpace($raw)) {
+                    $parsed = $raw | ConvertFrom-Json -ErrorAction SilentlyContinue
+                    if ($parsed) {
+                        $settings = @{}
+                        foreach ($prop in $parsed.PSObject.Properties) {
+                            $settings[$prop.Name] = $prop.Value
+                        }
+                    }
+                }
+                break
+            }
+        }
+
+        $settings["autoStart"] = $true
+        $settings["startMinimized"] = $true
+        $settings["openUIOnStartupDisabled"] = $true
+        $settings["displayedOnboarding"] = $true
+        $settings["wslEngineEnabled"] = $true
+
+        ($settings | ConvertTo-Json -Depth 20) | Set-Content -Path $settingsPath -Encoding UTF8
+    }
+}
+
+Invoke-DockerWarn -Label "docker-client-version" -Action {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker command is not available." }
+    & docker --version
+}
+
+Invoke-DockerWarn -Label "docker-daemon-version" -Action {
+    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker command is not available." }
+    & docker version
+}
+
+Write-Output "docker-desktop-install-and-configure-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "14-windows-ux-performance-tuning"
             Script = @'
 $ErrorActionPreference = "Stop"
 
@@ -911,14 +1285,206 @@ Write-Output "windows-ux-tuning-ready"
 '@
         },
         [pscustomobject]@{
-            Name = "10-health-snapshot"
+            Name = "15-windows-advanced-system-settings"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+function Invoke-AdvancedWarn {
+    param(
+        [string]$Label,
+        [scriptblock]$Action
+    )
+
+    try {
+        & $Action
+        Write-Output ("advanced-step-ok: {0}" -f $Label)
+    }
+    catch {
+        Write-Warning ("advanced-step-failed: {0} => {1}" -f $Label, $_.Exception.Message)
+    }
+}
+
+function Set-DesktopIconSelection {
+    param(
+        [string]$HiveRoot
+    )
+
+    foreach ($viewKey in @("NewStartPanel", "ClassicStartMenu")) {
+        $path = "{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\{1}" -f $HiveRoot, $viewKey
+        & reg.exe add $path /v "{59031a47-3f72-44a7-89c5-5595fe6b30ee}" /t REG_DWORD /d 0 /f | Out-Null  # User Files
+        & reg.exe add $path /v "{20D04FE0-3AEA-1069-A2D8-08002B30309D}" /t REG_DWORD /d 0 /f | Out-Null  # This PC
+        & reg.exe add $path /v "{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}" /t REG_DWORD /d 0 /f | Out-Null  # Control Panel
+        & reg.exe add $path /v "{645FF040-5081-101B-9F08-00AA002F954E}" /t REG_DWORD /d 1 /f | Out-Null  # Recycle Bin hidden
+    }
+}
+
+function Set-ClassicProfileVisualSettings {
+    param(
+        [string]$HiveRoot
+    )
+
+    & reg.exe add "$HiveRoot\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "" /f | Out-Null
+    & reg.exe add "$HiveRoot\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f | Out-Null
+    & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f | Out-Null
+    & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewAlphaSelect /t REG_DWORD /d 0 /f | Out-Null
+    & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f | Out-Null
+}
+
+function Resolve-AdvancedTargetHives {
+    $targets = New-Object 'System.Collections.Generic.List[string]'
+    [void]$targets.Add("HKCU")
+
+    $loadMap = @(
+        @{ Alias = "CoVmAdvDefault"; NtUser = "C:\Users\Default\NTUSER.DAT" },
+        @{ Alias = "CoVmAdvManager"; NtUser = "C:\Users\__VM_USER__\NTUSER.DAT" },
+        @{ Alias = "CoVmAdvAssistant"; NtUser = "C:\Users\__ASSISTANT_USER__\NTUSER.DAT" }
+    )
+
+    $loaded = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($item in @($loadMap)) {
+        $alias = [string]$item.Alias
+        $ntUser = [string]$item.NtUser
+        if (-not (Test-Path -LiteralPath $ntUser)) {
+            continue
+        }
+
+        $native = "HKU\$alias"
+        & reg.exe load $native $ntUser | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            [void]$loaded.Add($native)
+            [void]$targets.Add($native)
+        }
+    }
+
+    return [pscustomobject]@{
+        Targets = @($targets)
+        Loaded = @($loaded)
+    }
+}
+
+Invoke-AdvancedWarn -Label "desktop-icons-and-classic-ui-for-target-hives" -Action {
+    $hiveState = Resolve-AdvancedTargetHives
+    try {
+        foreach ($hiveRoot in @($hiveState.Targets)) {
+            Set-DesktopIconSelection -HiveRoot $hiveRoot
+            Set-ClassicProfileVisualSettings -HiveRoot $hiveRoot
+        }
+    }
+    finally {
+        foreach ($loadedNative in @($hiveState.Loaded)) {
+            & reg.exe unload $loadedNative | Out-Null
+        }
+    }
+}
+
+Invoke-AdvancedWarn -Label "visual-effects-best-performance" -Action {
+    & reg.exe add "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" /v VisualFXSetting /t REG_DWORD /d 2 /f | Out-Null
+}
+
+Invoke-AdvancedWarn -Label "processor-background-services" -Action {
+    & reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\PriorityControl" /v Win32PrioritySeparation /t REG_DWORD /d 24 /f | Out-Null
+}
+
+Invoke-AdvancedWarn -Label "custom-pagefile-800-8192" -Action {
+    $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
+    if ($computerSystem.AutomaticManagedPagefile) {
+        Set-CimInstance -InputObject $computerSystem -Property @{ AutomaticManagedPagefile = $false } | Out-Null
+    }
+
+    $existingPageFiles = @(Get-CimInstance -ClassName Win32_PageFileSetting -ErrorAction SilentlyContinue)
+    foreach ($existingPageFile in @($existingPageFiles)) {
+        Remove-CimInstance -InputObject $existingPageFile -ErrorAction SilentlyContinue
+    }
+
+    New-CimInstance -ClassName Win32_PageFileSetting -Property @{
+        Name = "C:\\pagefile.sys"
+        InitialSize = 800
+        MaximumSize = 8192
+    } | Out-Null
+}
+
+Invoke-AdvancedWarn -Label "boot-timeout-and-dump-off" -Action {
+    & bcdedit /timeout 0 | Out-Null
+    & reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v CrashDumpEnabled /t REG_DWORD /d 0 /f | Out-Null
+    & reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v AlwaysKeepMemoryDump /t REG_DWORD /d 0 /f | Out-Null
+    & reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v LogEvent /t REG_DWORD /d 0 /f | Out-Null
+    & reg.exe add "HKLM\SYSTEM\CurrentControlSet\Control\CrashControl" /v SendAlert /t REG_DWORD /d 0 /f | Out-Null
+}
+
+Invoke-AdvancedWarn -Label "dep-always-off" -Action {
+    & bcdedit /set "{current}" nx AlwaysOff | Out-Null
+}
+
+Invoke-AdvancedWarn -Label "refresh-user-visual-parameters" -Action {
+    & rundll32.exe user32.dll,UpdatePerUserSystemParameters | Out-Null
+}
+
+Write-Output "windows-advanced-system-settings-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "16-local-service-disable-conservative"
+            Script = @'
+$ErrorActionPreference = "Stop"
+
+$protectedServices = @(
+    "TermService","sshd","ssh-agent","EventLog","RpcSs","Winmgmt","W32Time","Dnscache","LanmanWorkstation",
+    "LanmanServer","NlaSvc","Dhcp","BFE","MpsSvc","wuauserv","BITS","TrustedInstaller","vmcompute","LxssManager","com.docker.service"
+)
+$disableCandidates = @(
+    "DiagTrack","dmwappushservice","MapsBroker","RetailDemo","Fax","XblAuthManager","XblGameSave","XboxGipSvc","WSearch","WerSvc"
+)
+
+function Disable-ServiceIfSafe {
+    param(
+        [string]$ServiceName
+    )
+
+    if ($protectedServices -contains $ServiceName) {
+        Write-Output ("service-skip-protected: {0}" -f $ServiceName)
+        return
+    }
+
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if (-not $service) {
+        Write-Output ("service-not-found: {0}" -f $ServiceName)
+        return
+    }
+
+    try {
+        $dependentServices = @($service.DependentServices | Where-Object { $_.Status -eq "Running" })
+        if ($dependentServices.Count -gt 0) {
+            Write-Warning ("service-skip-dependent-running: {0}" -f $ServiceName)
+            return
+        }
+
+        if ($service.Status -eq "Running") {
+            Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+        }
+        Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Stop
+        Write-Output ("service-disabled: {0}" -f $ServiceName)
+    }
+    catch {
+        Write-Warning ("service-disable-failed: {0} => {1}" -f $ServiceName, $_.Exception.Message)
+    }
+}
+
+foreach ($candidate in @($disableCandidates)) {
+    Disable-ServiceIfSafe -ServiceName $candidate
+}
+
+Write-Output "local-service-disable-conservative-completed"
+'@
+        },
+        [pscustomobject]@{
+            Name = "17-health-snapshot"
             Script = @'
 $ErrorActionPreference = "Stop"
 $sshdConfig = "C:\ProgramData\ssh\sshd_config"
 Write-Output "Version Info:"
 Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber | Format-List
 Write-Output "APP PATH CHECKS:"
-foreach ($commandName in @("choco", "git", "node", "python", "py")) {
+foreach ($commandName in @("choco", "git", "node", "python", "py", "pwsh", "gh", "ffmpeg", "7z", "az", "docker", "wsl", "ollama")) {
     $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
     if ($cmd) { Write-Output "$commandName => $($cmd.Source)" } else { Write-Output "$commandName => not-found" }
 }
@@ -934,6 +1500,51 @@ Write-Output "SSHD CONFIG:"
 Get-Content $sshdConfig | Select-String -Pattern "^(Port|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|AllowTcpForwarding|GatewayPorts)" | ForEach-Object { $_.Line }
 Write-Output "POWER STATUS:"
 powercfg /getactivescheme
+Write-Output "DOCKER STATUS:"
+if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
+    Get-Service -Name "com.docker.service" | Select-Object Name,Status,StartType | Format-List
+}
+else {
+    Write-Output "com.docker.service => not-found"
+}
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    docker --version
+    docker version
+}
+else {
+    Write-Output "docker command not found"
+}
+Write-Output "WSL STATUS:"
+if (Get-Command wsl -ErrorAction SilentlyContinue) {
+    wsl --version
+}
+else {
+    Write-Output "wsl command not found"
+}
+Write-Output "OLLAMA STATUS:"
+if (Get-Command ollama -ErrorAction SilentlyContinue) {
+    ollama --version
+}
+else {
+    Write-Output "ollama command not found"
+}
+Write-Output "CHROME SHORTCUT STATUS:"
+$chromeShortcutCandidates = @(
+    "C:\Users\Public\Desktop\Google Chrome.lnk",
+    "C:\Users\__VM_USER__\Desktop\Google Chrome.lnk",
+    "C:\Users\__ASSISTANT_USER__\Desktop\Google Chrome.lnk"
+)
+$wsh = New-Object -ComObject WScript.Shell
+foreach ($shortcutPath in @($chromeShortcutCandidates)) {
+    if (-not (Test-Path -LiteralPath $shortcutPath)) {
+        Write-Output ("missing-shortcut => {0}" -f $shortcutPath)
+        continue
+    }
+    $shortcut = $wsh.CreateShortcut($shortcutPath)
+    Write-Output ("shortcut => {0}" -f $shortcutPath)
+    Write-Output (" target => {0}" -f [string]$shortcut.TargetPath)
+    Write-Output (" args => {0}" -f [string]$shortcut.Arguments)
+}
 Write-Output "NOTEPAD STATUS:"
 if (Test-Path "$env:WINDIR\System32\notepad.exe") { Write-Output "legacy-notepad-exe-found" } else { Write-Output "legacy-notepad-exe-not-found" }
 if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
@@ -958,6 +1569,7 @@ function Get-CoVmGuestTaskReplacementMap {
         ASSISTANT_USER = [string]$Context.VmAssistantUser
         ASSISTANT_PASS = [string]$Context.VmAssistantPass
         SSH_PORT = [string]$Context.SshPort
+        SERVER_NAME = [string]$Context.ServerName
     }
 
     if ($Platform -eq "linux") {
@@ -1095,4 +1707,78 @@ function Get-CoVmConnectionDisplayModel {
     }
 
     return $model
+}
+
+function Get-CoVmWindowsPostRebootProbeScript {
+    param(
+        [string]$ServerName = "",
+        [string]$VmUser = "",
+        [string]$AssistantUser = ""
+    )
+
+    @'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+Write-Output "post-reboot-probe-started"
+Write-Output ("server-name=__SERVER_NAME__")
+Write-Output ("manager-user=__VM_USER__")
+Write-Output ("assistant-user=__ASSISTANT_USER__")
+
+if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
+    Set-Service -Name "com.docker.service" -StartupType Automatic -ErrorAction SilentlyContinue
+    Start-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
+}
+if (Get-Service -Name "LxssManager" -ErrorAction SilentlyContinue) {
+    Set-Service -Name "LxssManager" -StartupType Automatic -ErrorAction SilentlyContinue
+    Start-Service -Name "LxssManager" -ErrorAction SilentlyContinue
+}
+
+$dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+if (Test-Path -LiteralPath $dockerDesktopExe) {
+    if (-not (Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue)) {
+        Start-Process -FilePath $dockerDesktopExe -ArgumentList "--minimized" -WindowStyle Minimized -ErrorAction SilentlyContinue | Out-Null
+        Start-Sleep -Seconds 10
+    }
+}
+
+Write-Output "service-status:"
+foreach ($serviceName in @("TermService","sshd","com.docker.service","LxssManager")) {
+    $serviceObj = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($serviceObj) {
+        Write-Output ("{0} => {1}/{2}" -f $serviceName, $serviceObj.Status, $serviceObj.StartType)
+    }
+    else {
+        Write-Output ("{0} => not-found" -f $serviceName)
+    }
+}
+
+if (Get-Command docker -ErrorAction SilentlyContinue) {
+    Write-Output "docker-client:"
+    docker --version
+    Write-Output "docker-daemon:"
+    docker version
+}
+else {
+    Write-Warning "docker command not found in post-reboot probe."
+}
+
+if (Get-Command wsl -ErrorAction SilentlyContinue) {
+    Write-Output "wsl-version:"
+    wsl --version
+}
+else {
+    Write-Warning "wsl command not found in post-reboot probe."
+}
+
+if (Get-Command ollama -ErrorAction SilentlyContinue) {
+    Write-Output "ollama-version:"
+    ollama --version
+}
+else {
+    Write-Warning "ollama command not found in post-reboot probe."
+}
+
+Write-Output "post-reboot-probe-completed"
+'@.Replace("__SERVER_NAME__", [string]$ServerName).Replace("__VM_USER__", [string]$VmUser).Replace("__ASSISTANT_USER__", [string]$AssistantUser)
 }

@@ -101,6 +101,10 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
     $vmInitScriptFile = [string]$step1Context.VmInitScriptFile
     $vmUpdateScriptFile = [string]$step1Context.VmUpdateScriptFile
     $tcpPorts = @($step1Context.TcpPorts)
+    $windowsPostRebootProbeScript = Get-CoVmWindowsPostRebootProbeScript `
+        -ServerName $serverName `
+        -VmUser $vmUser `
+        -AssistantUser $vmAssistantUser
 
     if ($script:AutoMode) {
         Show-CoVmRuntimeConfigurationSnapshot `
@@ -215,7 +219,10 @@ Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
         -CommandId "RunPowerShellScript" `
         -ScriptFilePath $vmUpdateScriptFile `
         -TaskBlocks $taskBlocks `
-        -CombinedShell "powershell"
+        -CombinedShell "powershell" `
+        -RebootAfterExecution `
+        -PostRebootProbeScript $windowsPostRebootProbeScript `
+        -PostRebootProbeCommandId "RunPowerShellScript"
 }
 
 # 9) VM connection details:

@@ -315,6 +315,114 @@ function Apply-CoVmTaskBlockReplacements {
     Write-Output -NoEnumerate $resolvedBlocks
 }
 
+function Wait-CoVmVmRunningState {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [int]$MaxAttempts = 60,
+        [int]$DelaySeconds = 10
+    )
+
+    if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $powerState = az vm get-instance-view `
+            --resource-group $ResourceGroup `
+            --name $VmName `
+            --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus | [0]" `
+            -o tsv
+        Assert-LastExitCode "az vm get-instance-view (power state)"
+
+        if ([string]::IsNullOrWhiteSpace([string]$powerState)) {
+            Write-Host ("VM power state is empty (attempt {0}/{1})." -f $attempt, $MaxAttempts) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host ("VM power state: {0} (attempt {1}/{2})" -f [string]$powerState, $attempt, $MaxAttempts)
+            if ([string]$powerState -eq "VM running") {
+                return $true
+            }
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    return $false
+}
+
+function Invoke-CoVmPostStep8RebootAndProbe {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$PostRebootProbeScript = "",
+        [string]$PostRebootProbeCommandId = "RunPowerShellScript",
+        [int]$PostRebootProbeMaxAttempts = 8,
+        [int]$PostRebootProbeRetryDelaySeconds = 20
+    )
+
+    Invoke-TrackedAction -Label ("az vm restart -g {0} -n {1}" -f $ResourceGroup, $VmName) -Action {
+        az vm restart -g $ResourceGroup -n $VmName --no-wait
+        Assert-LastExitCode "az vm restart --no-wait"
+    } | Out-Null
+
+    Write-Host "Waiting for VM restart completion..."
+    Invoke-TrackedAction -Label ("az vm wait -g {0} -n {1} --updated" -f $ResourceGroup, $VmName) -Action {
+        az vm wait -g $ResourceGroup -n $VmName --updated
+        Assert-LastExitCode "az vm wait --updated"
+    } | Out-Null
+
+    Write-Host "Checking VM power state after reboot..."
+    $isRunning = Wait-CoVmVmRunningState -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 90 -DelaySeconds 10
+    if (-not $isRunning) {
+        throw "VM did not reach 'VM running' state after reboot in Step 8."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($PostRebootProbeScript)) {
+        return
+    }
+
+    if ($PostRebootProbeMaxAttempts -lt 1) { $PostRebootProbeMaxAttempts = 1 }
+    if ($PostRebootProbeRetryDelaySeconds -lt 1) { $PostRebootProbeRetryDelaySeconds = 1 }
+
+    for ($attempt = 1; $attempt -le $PostRebootProbeMaxAttempts; $attempt++) {
+        try {
+            $probeArgs = Get-CoRunCommandScriptArgs -ScriptText $PostRebootProbeScript -CommandId $PostRebootProbeCommandId
+            $probeAzArgs = @(
+                "vm", "run-command", "invoke",
+                "--resource-group", $ResourceGroup,
+                "--name", $VmName,
+                "--command-id", $PostRebootProbeCommandId,
+                "--scripts"
+            )
+            $probeAzArgs += $probeArgs
+            $probeAzArgs += @("-o", "json")
+
+            $label = "az vm run-command invoke (post-reboot probe attempt $attempt)"
+            $probeJson = Invoke-TrackedAction -Label $label -Action {
+                $probeResult = az @probeAzArgs
+                Assert-LastExitCode "az vm run-command invoke (post-reboot probe)"
+                $probeResult
+            }
+
+            $probeMessage = Get-CoRunCommandResultMessage -TaskName "post-reboot-probe" -RawJson $probeJson -ModeLabel "post-reboot-probe"
+            Write-Host "Post-reboot probe completed."
+            if (-not [string]::IsNullOrWhiteSpace($probeMessage)) {
+                Write-Host $probeMessage
+            }
+            return
+        }
+        catch {
+            if ($attempt -ge $PostRebootProbeMaxAttempts) {
+                Write-Warning ("Post-reboot probe failed after {0} attempt(s): {1}" -f $attempt, $_.Exception.Message)
+                return
+            }
+
+            Write-Host ("Post-reboot probe attempt {0} failed: {1}" -f $attempt, $_.Exception.Message) -ForegroundColor Yellow
+            Start-Sleep -Seconds $PostRebootProbeRetryDelaySeconds
+        }
+    }
+}
+
 function Invoke-CoVmStep8RunCommand {
     param(
         [switch]$SubstepMode,
@@ -324,7 +432,12 @@ function Invoke-CoVmStep8RunCommand {
         [string]$ScriptFilePath,
         [object[]]$TaskBlocks,
         [ValidateSet("bash","powershell")]
-        [string]$CombinedShell
+        [string]$CombinedShell,
+        [switch]$RebootAfterExecution,
+        [string]$PostRebootProbeScript = "",
+        [string]$PostRebootProbeCommandId = "RunPowerShellScript",
+        [int]$PostRebootProbeMaxAttempts = 8,
+        [int]$PostRebootProbeRetryDelaySeconds = 20
     )
 
     if (-not $SubstepMode) {
@@ -335,15 +448,25 @@ function Invoke-CoVmStep8RunCommand {
             -CommandId $CommandId `
             -ScriptFilePath $ScriptFilePath `
             -ModeLabel "auto-mode update-script-file"
-        return
+    }
+    else {
+        Write-Host "Substep mode is enabled: Step 8 will execute tasks one-by-one."
+        Invoke-VmRunCommandBlocks `
+            -ResourceGroup $ResourceGroup `
+            -VmName $VmName `
+            -CommandId $CommandId `
+            -TaskBlocks $TaskBlocks `
+            -SubstepMode:$true `
+            -CombinedShell $CombinedShell
     }
 
-    Write-Host "Substep mode is enabled: Step 8 will execute tasks one-by-one."
-    Invoke-VmRunCommandBlocks `
-        -ResourceGroup $ResourceGroup `
-        -VmName $VmName `
-        -CommandId $CommandId `
-        -TaskBlocks $TaskBlocks `
-        -SubstepMode:$true `
-        -CombinedShell $CombinedShell
+    if ($RebootAfterExecution) {
+        Invoke-CoVmPostStep8RebootAndProbe `
+            -ResourceGroup $ResourceGroup `
+            -VmName $VmName `
+            -PostRebootProbeScript $PostRebootProbeScript `
+            -PostRebootProbeCommandId $PostRebootProbeCommandId `
+            -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+            -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+    }
 }
