@@ -15,55 +15,6 @@ function Get-PriceHoursFromConfig {
     return $DefaultHours
 }
 
-function ConvertFrom-JsonArrayCompat {
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$JsonText
-    )
-
-    if ($null -eq $JsonText) {
-        return @()
-    }
-
-    $parsed = $null
-    if ($JsonText -is [string]) {
-        $parsed = $JsonText | ConvertFrom-Json
-    }
-    elseif ($JsonText -is [System.Array]) {
-        if ($JsonText.Length -eq 0) {
-            return @()
-        }
-
-        $first = $JsonText[0]
-        if ($first -is [string]) {
-            $jsonJoined = (($JsonText | ForEach-Object { [string]$_ }) -join "`n")
-            $parsed = $jsonJoined | ConvertFrom-Json
-        }
-        else {
-            $parsed = $JsonText
-        }
-    }
-    else {
-        $text = [string]$JsonText
-        if (-not [string]::IsNullOrWhiteSpace($text) -and ($text.TrimStart().StartsWith("{") -or $text.TrimStart().StartsWith("["))) {
-            $parsed = $text | ConvertFrom-Json
-        }
-        else {
-            $parsed = @($JsonText)
-        }
-    }
-
-    if ($null -eq $parsed) {
-        return @()
-    }
-
-    if ($parsed -is [System.Array]) {
-        return $parsed
-    }
-
-    return @($parsed)
-}
-
 function Get-AzLocationCatalog {
     $locationsJson = az account list-locations `
         --only-show-errors `
@@ -77,14 +28,14 @@ function Get-AzLocationCatalog {
             -Hint "Run az login and verify subscription access."
     }
 
-    $locations = ConvertFrom-JsonArrayCompat -JsonText $locationsJson
+    $locations = ConvertFrom-JsonArrayCompat -InputObject $locationsJson
     if (-not $locations -or $locations.Count -eq 0) {
         $fallbackJson = az account list-locations `
             --only-show-errors `
             --query "[].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
             -o json
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fallbackJson)) {
-            $fallbackLocations = ConvertFrom-JsonArrayCompat -JsonText $fallbackJson
+            $fallbackLocations = ConvertFrom-JsonArrayCompat -InputObject $fallbackJson
             $locations = @($fallbackLocations | Where-Object { $_.RegionType -eq "Physical" })
         }
     }
@@ -202,7 +153,7 @@ function Get-LocationSkusForSelection {
             -Hint "Verify the selected region and Azure subscription permissions."
     }
 
-    $allSkus = ConvertFrom-JsonArrayCompat -JsonText $raw
+    $allSkus = ConvertFrom-JsonArrayCompat -InputObject $raw
     $standardSkus = @(
         $allSkus | Where-Object {
             $_.name -and ([string]$_.name).StartsWith("Standard_", [System.StringComparison]::OrdinalIgnoreCase)
@@ -270,7 +221,7 @@ function Get-SkuAvailabilityMap {
             -Hint "Verify Azure CLI authentication and token permissions."
     }
 
-    $accessToken = ($tokenJson | ConvertFrom-Json).accessToken
+    $accessToken = (ConvertFrom-JsonCompat -InputObject $tokenJson).accessToken
     if ([string]::IsNullOrWhiteSpace($accessToken)) {
         Throw-FriendlyError `
             -Detail "Azure access token is empty for SKU availability request." `

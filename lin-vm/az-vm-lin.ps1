@@ -350,7 +350,7 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
         }
     }
 
-    $vmCreateObj = $vmCreateJson | ConvertFrom-Json
+    $vmCreateObj = ConvertFrom-JsonCompat -InputObject $vmCreateJson
     if (-not $vmCreateObj.id) {
         throw "az vm create completed but VM id was not returned."
     }
@@ -487,7 +487,7 @@ grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Allo
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
     $vmDetailsJson = az vm show -g $resourceGroup -n $vmName -d -o json
     Assert-LastExitCode "az vm show -d"
-    $vmDetails = $vmDetailsJson | ConvertFrom-Json
+    $vmDetails = ConvertFrom-JsonCompat -InputObject $vmDetailsJson
     if (-not $vmDetails) {
         throw "VM detail output could not be parsed."
     }

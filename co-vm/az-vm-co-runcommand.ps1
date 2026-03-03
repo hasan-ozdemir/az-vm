@@ -46,16 +46,16 @@ function Get-CoRunCommandScriptArgs {
 function Get-CoRunCommandResultMessage {
     param(
         [string]$TaskName,
-        [string]$RawJson,
+        [object]$RawJson,
         [string]$ModeLabel
     )
 
-    if ([string]::IsNullOrWhiteSpace($RawJson)) {
+    if ($null -eq $RawJson -or [string]::IsNullOrWhiteSpace([string]$RawJson)) {
         throw "VM $ModeLabel task '$TaskName' run-command output is empty."
     }
 
     try {
-        $result = $RawJson | ConvertFrom-Json
+        $result = ConvertFrom-JsonCompat -InputObject $RawJson
     }
     catch {
         throw "VM $ModeLabel task '$TaskName' run-command output could not be parsed as JSON."

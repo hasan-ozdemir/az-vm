@@ -55,3 +55,64 @@ function Throw-FriendlyError {
     $ex.Data["Hint"] = $Hint
     throw $ex
 }
+
+function ConvertFrom-JsonCompat {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$InputObject
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+
+    if ($InputObject -is [string]) {
+        $text = [string]$InputObject
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            return $null
+        }
+        return ($text | ConvertFrom-Json)
+    }
+
+    if ($InputObject -is [System.Array]) {
+        if ($InputObject.Length -eq 0) {
+            return @()
+        }
+
+        $first = $InputObject[0]
+        if ($first -is [string]) {
+            $joined = (($InputObject | ForEach-Object { [string]$_ }) -join "`n")
+            if ([string]::IsNullOrWhiteSpace($joined)) {
+                return $null
+            }
+            return ($joined | ConvertFrom-Json)
+        }
+
+        return $InputObject
+    }
+
+    $asText = [string]$InputObject
+    $trimmed = $asText.TrimStart()
+    if ($trimmed.StartsWith("{") -or $trimmed.StartsWith("[")) {
+        return ($asText | ConvertFrom-Json)
+    }
+
+    return $InputObject
+}
+
+function ConvertFrom-JsonArrayCompat {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$InputObject
+    )
+
+    $parsed = ConvertFrom-JsonCompat -InputObject $InputObject
+    if ($null -eq $parsed) {
+        return @()
+    }
+    if ($parsed -is [System.Array]) {
+        return $parsed
+    }
+
+    return @($parsed)
+}
