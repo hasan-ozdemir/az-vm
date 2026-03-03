@@ -134,7 +134,7 @@ function Get-LocationSkusForSelection {
 
     $needle = ""
     if (-not [string]::IsNullOrWhiteSpace($SkuLike)) {
-        $needle = $SkuLike.Trim().Trim('"').Trim("'").ToLowerInvariant()
+        $needle = $SkuLike.Trim().ToLowerInvariant()
     }
     $needleNormalized = $needle -replace '[^a-z0-9]', ''
     $needleWithoutStandard = if ($needleNormalized.StartsWith("standard")) {
@@ -410,12 +410,16 @@ function Select-VmSkuInteractive {
     )
 
     while ($true) {
-        $skuLike = Read-Host "Enter partial VM type (examples: b2a, d2). Leave empty to list all"
-        if ($null -eq $skuLike) {
-            $skuLike = ""
+        $skuLikeRaw = Read-Host "Enter partial VM type (examples: b2a, d2). Leave empty to list all"
+        if ($null -eq $skuLikeRaw) {
+            $skuLikeRaw = ""
         }
+        $skuLike = $skuLikeRaw.Trim()
 
         $skus = Get-LocationSkusForSelection -Location $Location -SkuLike $skuLike
+        $effectiveFilter = if ([string]::IsNullOrWhiteSpace($skuLike)) { "<all>" } else { $skuLike }
+        Write-Host ("Partial VM type filter received: {0}" -f $effectiveFilter) -ForegroundColor DarkGray
+        Write-Host ("Matching SKU count: {0}" -f @($skus).Count) -ForegroundColor DarkGray
         if (-not $skus -or $skus.Count -eq 0) {
             Write-Host "No matching VM SKU found for '$skuLike' in '$Location'. Try another filter." -ForegroundColor Yellow
             continue
