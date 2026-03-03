@@ -468,12 +468,49 @@ function Build-VmSkuSelectionRows {
     return
 }
 
+function Read-StrictYesNo {
+    param(
+        [string]$PromptText
+    )
+
+    while ($true) {
+        $raw = Read-Host ("{0} (y/n)" -f $PromptText)
+        if ($null -eq $raw) {
+            $raw = ""
+        }
+
+        $value = $raw.Trim().ToLowerInvariant()
+        if ($value -eq "y") {
+            return $true
+        }
+        if ($value -eq "n") {
+            return $false
+        }
+
+        Write-Host "Invalid choice. Please enter 'y' or 'n'." -ForegroundColor Yellow
+    }
+}
+
 function Select-VmSkuInteractive {
     param(
         [string]$Location,
         [string]$DefaultVmSize,
         [int]$PriceHours
     )
+
+    $currentVmSku = ""
+    if (-not [string]::IsNullOrWhiteSpace($DefaultVmSize)) {
+        $currentVmSku = $DefaultVmSize.Trim()
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($currentVmSku)) {
+        Write-Host ""
+        Write-Host ("Current VM SKU for region '{0}': {1}" -f $Location, $currentVmSku) -ForegroundColor Cyan
+        $useCurrentSku = Read-StrictYesNo -PromptText ("Continue with VM SKU '{0}'?" -f $currentVmSku)
+        if ($useCurrentSku) {
+            return $currentVmSku
+        }
+    }
 
     while ($true) {
         $skuLikeRaw = Read-Host "Enter partial VM type (supports * and ?, examples: b2a, standard_a*, standard_b?a*v2). Leave empty to list all"
@@ -517,7 +554,14 @@ function Select-VmSkuInteractive {
         while ($true) {
             $selection = Read-Host "Enter VM SKU number (default=$defaultIndex, f=change filter)"
             if ([string]::IsNullOrWhiteSpace($selection)) {
-                return [string]$rows[$defaultIndex - 1].Sku
+                $selectedSku = [string]$rows[$defaultIndex - 1].Sku
+                $confirmSelected = Read-StrictYesNo -PromptText ("Selected VM SKU: '{0}'. Continue?" -f $selectedSku)
+                if ($confirmSelected) {
+                    return $selectedSku
+                }
+
+                Write-Host "Returning to VM SKU filter search..." -ForegroundColor DarkGray
+                break
             }
             if ($selection -match '^[fF]$') {
                 break
@@ -526,7 +570,14 @@ function Select-VmSkuInteractive {
             if ($selection -match '^\d+$') {
                 $selectedNo = [int]$selection
                 if ($selectedNo -ge 1 -and $selectedNo -le $rows.Count) {
-                    return [string]$rows[$selectedNo - 1].Sku
+                    $selectedSku = [string]$rows[$selectedNo - 1].Sku
+                    $confirmSelected = Read-StrictYesNo -PromptText ("Selected VM SKU: '{0}'. Continue?" -f $selectedSku)
+                    if ($confirmSelected) {
+                        return $selectedSku
+                    }
+
+                    Write-Host "Returning to VM SKU filter search..." -ForegroundColor DarkGray
+                    break
                 }
             }
 

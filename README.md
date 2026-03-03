@@ -99,7 +99,7 @@ Both Linux and Windows scripts support the same CLI flags:
 
 - `interactive` (default)
   - Step-by-step confirmation model via `Invoke-Step`.
-  - Step 1 includes interactive region and VM SKU pickers.
+  - Step 1 includes interactive region and VM SKU pickers with two-stage `y/n` VM SKU confirmation.
 - `--auto` / `-a`
   - Non-interactive execution path.
 - `--substep` / `-s`
@@ -155,7 +155,9 @@ Platform-specific:
 ## End-to-End Provisioning Flow
 
 ### Step 1
-Resolve parameters from `.env` + defaults, validate key inputs, and (interactive mode) select region + VM SKU from numbered lists.
+Resolve parameters from `.env` + defaults, validate key inputs, and (interactive mode) select region + VM SKU from numbered lists.  
+After region selection, current VM SKU is shown first (`y` to keep, `n` to change).  
+If changed, partial filter + SKU table selection runs, then selected SKU is confirmed again with `y/n`.
 
 ### Step 2
 Pre-check availability (fail fast):
