@@ -307,6 +307,7 @@ function Test-GuestTaskAndScriptBuild {
         Assert-True -Condition ($windowsScript -like "*11434*") -Message "Windows update script should include resolved TCP port values"
         Assert-True -Condition ($windowsScript -like '*$assistantUser = "assistant"*') -Message "Windows update script should include assistant user variable replacement"
         Assert-True -Condition ($windowsScript -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows update script should ensure assistant local power admin rights"
+        Assert-True -Condition ($windowsScript -like "*system error 1378*") -Message "Windows update script should treat local-group already-member exit code 1378 as a non-failing condition"
     }
     finally {
         Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
