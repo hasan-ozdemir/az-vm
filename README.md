@@ -166,7 +166,9 @@ Pre-check availability (fail fast):
 
 ### Step 3
 Resource group handling:
-- If target RG exists, script deletes it and waits for deletion.
+- If target RG exists:
+  - `--auto` mode deletes it automatically.
+  - `interactive` mode asks for explicit delete confirmation; if declined, flow continues with the existing RG.
 - Creates fresh RG.
 
 ### Step 4

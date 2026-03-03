@@ -55,6 +55,31 @@ function Invoke-Step {
     }
 }
 
+function Confirm-YesNo {
+    param(
+        [string]$PromptText,
+        [bool]$DefaultYes = $false
+    )
+
+    $hintText = if ($DefaultYes) { " [Y/n]" } else { " [y/N]" }
+    while ($true) {
+        $raw = Read-Host ($PromptText + $hintText)
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return $DefaultYes
+        }
+
+        $value = $raw.Trim().ToLowerInvariant()
+        if ($value -eq "y" -or $value -eq "yes") {
+            return $true
+        }
+        if ($value -eq "n" -or $value -eq "no") {
+            return $false
+        }
+
+        Write-Host "Please answer yes or no." -ForegroundColor Yellow
+    }
+}
+
 function Assert-LastExitCode {
     param(
         [string]$Context

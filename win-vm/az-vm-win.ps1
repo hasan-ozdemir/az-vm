@@ -153,16 +153,25 @@ Invoke-Step "Step 3/9 - resource group will be checked..." {
     $resourceExists = az group exists -n $resourceGroup
     Assert-LastExitCode "az group exists"
     if ($resourceExists -eq 'true') {
+        Write-Host "Resource group '$resourceGroup' will be deleted."
+        $shouldDelete = $true
         if ($script:AutoMode) {
-            Write-Host "Resource group '$resourceGroup' will be deleted (mode: auto)."
+            Write-Host "Auto mode: deletion was confirmed automatically."
         }
         else {
-            Write-Host "Resource group '$resourceGroup' will be deleted. Are you sure?"
+            $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
         }
-        az group delete -n $resourceGroup --yes --no-wait
-        Assert-LastExitCode "az group delete"
-        az group wait -n $resourceGroup --deleted
-        Assert-LastExitCode "az group wait deleted"
+
+        if ($shouldDelete) {
+            az group delete -n $resourceGroup --yes --no-wait
+            Assert-LastExitCode "az group delete"
+            az group wait -n $resourceGroup --deleted
+            Assert-LastExitCode "az group wait deleted"
+            Write-Host "Resource group '$resourceGroup' was deleted."
+        }
+        else {
+            Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with existing resource group." -ForegroundColor Yellow
+        }
     }
     Write-Host "Creating resource group '$resourceGroup'..."
     az group create -n $resourceGroup -l $azLocation
