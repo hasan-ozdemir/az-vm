@@ -154,6 +154,11 @@ function Invoke-CoVmPrecheckStep {
         [hashtable]$Context
     )
 
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 2/9 - resource availability precheck" `
+        -Context $Context `
+        -Keys @("AzLocation", "VmImage", "VmSize", "VmDiskSize")
+
     Assert-LocationExists -Location $Context.AzLocation
     Assert-VmImageAvailable -Location $Context.AzLocation -ImageUrn $Context.VmImage
     Assert-VmSkuAvailableViaRest -Location $Context.AzLocation -VmSize $Context.VmSize
@@ -167,6 +172,10 @@ function Invoke-CoVmResourceGroupStep {
     )
 
     $resourceGroup = [string]$Context.ResourceGroup
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 3/9 - resource group check" `
+        -Context $Context `
+        -Keys @("ResourceGroup")
     Write-Host "'$resourceGroup'"
     $resourceExists = az group exists -n $resourceGroup
     Assert-LastExitCode "az group exists"
@@ -207,6 +216,11 @@ function Invoke-CoVmNetworkStep {
     param(
         [hashtable]$Context
     )
+
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 4/9 - network provisioning" `
+        -Context $Context `
+        -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "NIC", "TcpPorts")
 
     Invoke-TrackedAction -Label "az network vnet create -g $($Context.ResourceGroup) -n $($Context.VNET)" -Action {
         az network vnet create -g $Context.ResourceGroup -n $Context.VNET --address-prefix 10.20.0.0/16 `
@@ -266,6 +280,10 @@ function Invoke-CoVmVmCreateStep {
 
     $resourceGroup = [string]$Context.ResourceGroup
     $vmName = [string]$Context.VmName
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 7/9 - VM create" `
+        -Context $Context `
+        -Keys @("ResourceGroup", "VmName", "VmImage", "VmSize", "VmStorageSku", "VmDiskName", "VmDiskSize", "VmUser", "VmPass", "VmAssistantUser", "VmAssistantPass", "NIC")
 
     $existingVM = az vm list `
         --resource-group $resourceGroup `
@@ -331,6 +349,11 @@ function Get-CoVmVmDetails {
     param(
         [hashtable]$Context
     )
+
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 9/9 - VM details" `
+        -Context $Context `
+        -Keys @("ResourceGroup", "VmName", "AzLocation", "SshPort")
 
     $vmDetailsJson = Invoke-TrackedAction -Label "az vm show -g $($Context.ResourceGroup) -n $($Context.VmName) -d" -Action {
         $result = az vm show -g $Context.ResourceGroup -n $Context.VmName -d -o json
@@ -446,6 +469,93 @@ function ConvertTo-CoVmDisplayValue {
     }
 
     return [string]$Value
+}
+
+function Get-CoVmFirstUseTracker {
+    if (-not $script:CoVmFirstUseTracker) {
+        $script:CoVmFirstUseTracker = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    }
+
+    # Return as a single object even when empty; otherwise PowerShell may enumerate
+    # an empty HashSet into $null and break method calls like .Contains().
+    return (, $script:CoVmFirstUseTracker)
+}
+
+function Show-CoVmStepFirstUseValues {
+    param(
+        [string]$StepLabel,
+        [hashtable]$Context,
+        [string[]]$Keys,
+        [hashtable]$ExtraValues
+    )
+
+    $tracker = Get-CoVmFirstUseTracker
+    $rows = @()
+
+    foreach ($key in @($Keys)) {
+        if ([string]::IsNullOrWhiteSpace([string]$key)) {
+            continue
+        }
+
+        $normalizedKey = [string]$key
+        if ($tracker.Contains($normalizedKey)) {
+            continue
+        }
+
+        $value = $null
+        $hasValue = $false
+        if ($Context -and $Context.ContainsKey($normalizedKey)) {
+            $value = $Context[$normalizedKey]
+            $hasValue = $true
+        }
+        elseif ($ExtraValues -and $ExtraValues.ContainsKey($normalizedKey)) {
+            $value = $ExtraValues[$normalizedKey]
+            $hasValue = $true
+        }
+
+        if (-not $hasValue) {
+            continue
+        }
+
+        [void]$tracker.Add($normalizedKey)
+        $rows += [pscustomobject]@{
+            Key = $normalizedKey
+            Value = $value
+        }
+    }
+
+    if ($ExtraValues) {
+        foreach ($extraKey in @($ExtraValues.Keys | Sort-Object)) {
+            $normalizedKey = [string]$extraKey
+            if ([string]::IsNullOrWhiteSpace($normalizedKey)) {
+                continue
+            }
+            if ($tracker.Contains($normalizedKey)) {
+                continue
+            }
+
+            [void]$tracker.Add($normalizedKey)
+            $rows += [pscustomobject]@{
+                Key = $normalizedKey
+                Value = $ExtraValues[$extraKey]
+            }
+        }
+    }
+
+    if ($rows.Count -eq 0) {
+        return
+    }
+
+    Write-Host ""
+    if ([string]::IsNullOrWhiteSpace($StepLabel)) {
+        Write-Host "Step value usage (first reference):" -ForegroundColor DarkCyan
+    }
+    else {
+        Write-Host ("Step value usage ({0}) - first reference:" -f $StepLabel) -ForegroundColor DarkCyan
+    }
+    foreach ($row in @($rows)) {
+        Write-Host ("- {0} = {1}" -f [string]$row.Key, (ConvertTo-CoVmDisplayValue -Value $row.Value))
+    }
 }
 
 function Get-CoVmAzAccountSnapshot {

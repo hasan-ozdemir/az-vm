@@ -391,6 +391,32 @@ function Test-RuntimeConfigurationSnapshotFormatting {
     }
 }
 
+function Test-StepFirstUseValueTracing {
+    $script:CoVmFirstUseTracker = $null
+    $context = @{
+        Alpha = "value-alpha"
+        Beta = @("one","two")
+    }
+
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "compat-smoke step trace" `
+        -Context $context `
+        -Keys @("Alpha", "Beta")
+
+    $tracker = Get-CoVmFirstUseTracker
+    Assert-True -Condition $tracker.Contains("Alpha") -Message "First-use tracker should contain Alpha after first trace call"
+    Assert-True -Condition $tracker.Contains("Beta") -Message "First-use tracker should contain Beta after first trace call"
+    $countBefore = $tracker.Count
+
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "compat-smoke step trace" `
+        -Context $context `
+        -Keys @("Alpha", "Beta")
+
+    $countAfter = (Get-CoVmFirstUseTracker).Count
+    Assert-Equal -Expected $countBefore -Actual $countAfter -Message "First-use tracker should not grow when same keys are traced again"
+}
+
 Write-Host "Running compatibility smoke tests in host: $($PSVersionTable.PSVersion.ToString())"
 Write-Host "Repo root: $RepoRoot"
 
@@ -428,6 +454,7 @@ Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-S
 Invoke-TestCase -Name "Guest task catalog and update-script build behavior" -Action { Test-GuestTaskAndScriptBuild }
 Invoke-TestCase -Name "Connection display model dual-user behavior" -Action { Test-ConnectionDisplayModelDualUsers }
 Invoke-TestCase -Name "Runtime configuration snapshot formatting behavior" -Action { Test-RuntimeConfigurationSnapshotFormatting }
+Invoke-TestCase -Name "Step first-use value tracing behavior" -Action { Test-StepFirstUseValueTracing }
 
 if (Get-Command Write-TextFileNormalized -ErrorAction SilentlyContinue) {
     $fingerprint = Get-CompatFingerprint

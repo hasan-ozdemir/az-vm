@@ -132,6 +132,14 @@ Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be
 
 # 5) VM init PowerShell script preparation:
 Invoke-Step "Step 5/9 - VM init PowerShell script will be prepared..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 5/9 - Windows init script preparation" `
+        -Context $step1Context `
+        -Keys @("VmInitScriptFile") `
+        -ExtraValues @{
+            Platform = "windows"
+        }
+
     $vmInitScript = Get-CoVmWindowsInitScriptContent
     $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "windows"
     Write-TextFileNormalized `
@@ -144,7 +152,18 @@ Invoke-Step "Step 5/9 - VM init PowerShell script will be prepared..." {
 
 # 6) VM update PowerShell script preparation:
 Invoke-Step "Step 6/9 - VM update PowerShell script will be prepared..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 6/9 - Windows update script preparation" `
+        -Context $step1Context `
+        -Keys @("VmUpdateScriptFile", "VmAssistantUser", "VmAssistantPass")
+
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $step1Context -VmInitScriptFile $vmInitScriptFile
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 6/9 - Windows update script preparation" `
+        -Context $step1Context `
+        -ExtraValues @{
+            WindowsTaskBlockCount = @($taskBlocks).Count
+        }
     $updateScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $taskBlocks
     $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "windows"
     Write-TextFileNormalized `
@@ -179,6 +198,14 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 8/9 - Windows run-command execution" `
+        -Context $step1Context `
+        -ExtraValues @{
+            WindowsRunCommandId = "RunPowerShellScript"
+            WindowsUpdateScriptFile = $vmUpdateScriptFile
+        }
+
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $step1Context -VmInitScriptFile $vmInitScriptFile
 
     Invoke-CoVmStep8RunCommand `
@@ -193,6 +220,14 @@ Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
 
 # 9) VM connection details:
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 9/9 - connection output" `
+        -Context $step1Context `
+        -ExtraValues @{
+            ManagerUser = $vmUser
+            AssistantUser = $vmAssistantUser
+        }
+
     $connectionModel = Get-CoVmConnectionDisplayModel `
         -Context $step1Context `
         -ManagerUser $vmUser `

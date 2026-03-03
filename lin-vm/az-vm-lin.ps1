@@ -132,6 +132,14 @@ Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be
 
 # 5) Cloud-init file preparation:
 Invoke-Step "Step 5/9 - cloud-init file will be prepared..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 5/9 - Linux cloud-init preparation" `
+        -Context $step1Context `
+        -Keys @("VmCloudInitScriptFile", "VmUser", "VmPass") `
+        -ExtraValues @{
+            Platform = "linux"
+        }
+
     $cloudInitContent = Get-CoVmLinuxCloudInitContent -VmUser $vmUser -VmPass $vmPass
     $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "linux"
     Write-TextFileNormalized `
@@ -144,7 +152,18 @@ Invoke-Step "Step 5/9 - cloud-init file will be prepared..." {
 
 # 6) VM update shell script preparation:
 Invoke-Step "Step 6/9 - VM update shell script will be prepared..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 6/9 - Linux update script preparation" `
+        -Context $step1Context `
+        -Keys @("VmUpdateScriptFile", "VmAssistantUser", "VmAssistantPass")
+
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "linux" -Context $step1Context
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 6/9 - Linux update script preparation" `
+        -Context $step1Context `
+        -ExtraValues @{
+            LinuxTaskBlockCount = @($taskBlocks).Count
+        }
     $updateScript = Get-CoVmUpdateScriptContentFromTasks -Platform "linux" -TaskBlocks $taskBlocks
     $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "linux"
     Write-TextFileNormalized `
@@ -180,6 +199,14 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 8/9 - Linux run-command execution" `
+        -Context $step1Context `
+        -ExtraValues @{
+            LinuxRunCommandId = "RunShellScript"
+            LinuxUpdateScriptFile = $vmUpdateScriptFile
+        }
+
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "linux" -Context $step1Context
 
     Invoke-CoVmStep8RunCommand `
@@ -194,6 +221,14 @@ Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
 
 # 9) VM connection details:
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 9/9 - connection output" `
+        -Context $step1Context `
+        -ExtraValues @{
+            ManagerUser = $vmUser
+            AssistantUser = $vmAssistantUser
+        }
+
     $connectionModel = Get-CoVmConnectionDisplayModel `
         -Context $step1Context `
         -ManagerUser $vmUser `
