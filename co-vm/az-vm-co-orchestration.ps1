@@ -567,12 +567,14 @@ function Get-CoVmAzAccountSnapshot {
         UserName = ""
     }
 
-    $accountJson = az account show -o json --only-show-errors 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$accountJson)) {
+    $accountResult = Invoke-CoVmAzCommandWithTimeout `
+        -AzArgs @("account", "show", "-o", "json", "--only-show-errors") `
+        -TimeoutSeconds 15
+    if ($accountResult.TimedOut -or $accountResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace([string]$accountResult.Output)) {
         return $snapshot
     }
 
-    $accountObj = ConvertFrom-JsonCompat -InputObject $accountJson
+    $accountObj = ConvertFrom-JsonCompat -InputObject $accountResult.Output
     if (-not $accountObj) {
         return $snapshot
     }
@@ -584,9 +586,11 @@ function Get-CoVmAzAccountSnapshot {
 
     $tenantName = ""
     if (-not [string]::IsNullOrWhiteSpace($snapshot.TenantId)) {
-        $tenantJson = az account tenant list -o json --only-show-errors 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$tenantJson)) {
-            $tenantList = ConvertFrom-JsonArrayCompat -InputObject $tenantJson
+        $tenantResult = Invoke-CoVmAzCommandWithTimeout `
+            -AzArgs @("account", "tenant", "list", "-o", "json", "--only-show-errors") `
+            -TimeoutSeconds 20
+        if (-not $tenantResult.TimedOut -and $tenantResult.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$tenantResult.Output)) {
+            $tenantList = ConvertFrom-JsonArrayCompat -InputObject $tenantResult.Output
             foreach ($tenant in @($tenantList)) {
                 if ([string]$tenant.tenantId -ne $snapshot.TenantId) {
                     continue
@@ -609,6 +613,68 @@ function Get-CoVmAzAccountSnapshot {
     }
     $snapshot.TenantName = $tenantName
     return $snapshot
+}
+
+function Invoke-CoVmAzCommandWithTimeout {
+    param(
+        [string[]]$AzArgs,
+        [int]$TimeoutSeconds = 15
+    )
+
+    if (-not $AzArgs -or $AzArgs.Count -eq 0) {
+        throw "AzArgs is required."
+    }
+
+    if ($TimeoutSeconds -lt 1) {
+        $TimeoutSeconds = 1
+    }
+
+    $job = Start-Job -ScriptBlock {
+        param(
+            [string[]]$InnerArgs
+        )
+
+        $outputLines = & az @InnerArgs 2>$null
+        $outputText = ""
+        if ($null -ne $outputLines) {
+            $outputText = (@($outputLines) -join [Environment]::NewLine)
+        }
+
+        [pscustomobject]@{
+            ExitCode = [int]$LASTEXITCODE
+            Output = [string]$outputText
+        }
+    } -ArgumentList (,$AzArgs)
+
+    try {
+        $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
+        if (-not $completed) {
+            Stop-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null
+            return [pscustomobject]@{
+                ExitCode = 124
+                Output = ""
+                TimedOut = $true
+            }
+        }
+
+        $jobResult = Receive-Job -Job $job -ErrorAction SilentlyContinue
+        if ($null -eq $jobResult) {
+            return [pscustomobject]@{
+                ExitCode = 1
+                Output = ""
+                TimedOut = $false
+            }
+        }
+
+        return [pscustomobject]@{
+            ExitCode = [int]$jobResult.ExitCode
+            Output = [string]$jobResult.Output
+            TimedOut = $false
+        }
+    }
+    finally {
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null
+    }
 }
 
 function Show-CoVmRuntimeConfigurationSnapshot {
