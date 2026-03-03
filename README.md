@@ -186,6 +186,9 @@ Guest script preparation:
 
 ### Step 7
 VM create (with existence/return checks).
+- If VM already exists:
+  - `--auto` mode confirms VM deletion automatically, deletes VM, then runs `az vm create`.
+  - `interactive` mode asks delete confirmation; if deletion is declined, flow still runs `az vm create` on existing VM.
 
 ### Step 8
 Guest configuration execution via Azure Run Command:

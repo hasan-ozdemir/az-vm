@@ -685,13 +685,28 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
         -o tsv
     Assert-LastExitCode "az vm list"
 
+    $shouldDeleteVm = $false
     if ($existingVM) {
-        Write-Output "VM '$vmName' exists in resource group '$resourceGroup' and will be deleted..."
-        Invoke-TrackedAction -Label "az vm delete --name $vmName --resource-group $resourceGroup --yes" -Action {
-            az vm delete --name $vmName --resource-group $resourceGroup --yes -o table
-            Assert-LastExitCode "az vm delete"
+        Write-Host "VM '$vmName' exists in resource group '$resourceGroup'."
+        if ($script:AutoMode) {
+            $shouldDeleteVm = $true
+            Write-Host "Auto mode: VM deletion was confirmed automatically."
         }
-        Write-Output "VM '$vmName' was deleted from resource group '$resourceGroup'."
+        else {
+            $shouldDeleteVm = Confirm-YesNo -PromptText "Are you sure you want to delete VM '$vmName'?" -DefaultYes $false
+        }
+
+        if ($shouldDeleteVm) {
+            Write-Output "VM '$vmName' will be deleted..."
+            Invoke-TrackedAction -Label "az vm delete --name $vmName --resource-group $resourceGroup --yes" -Action {
+                az vm delete --name $vmName --resource-group $resourceGroup --yes -o table
+                Assert-LastExitCode "az vm delete"
+            }
+            Write-Output "VM '$vmName' was deleted from resource group '$resourceGroup'."
+        }
+        else {
+            Write-Host "VM '$vmName' was not deleted by user choice; continuing with az vm create on existing VM." -ForegroundColor Yellow
+        }
     }
     else {
         Write-Output "VM '$vmName' is not present in resource group '$resourceGroup'. Creating..."
