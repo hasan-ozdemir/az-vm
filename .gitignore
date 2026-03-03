@@ -1,0 +1,16 @@
+# Ignore sensitive runtime environment files
+**/.env
+
+# Ignore logs and transcripts
+**/*-log.txt
+*.log
+*.tmp
+
+# Ignore temp runtime artifacts
+.tmp/
+tmp/
+tmp-logs/
+
+# OS/editor noise
+Thumbs.db
+.DS_Store
