@@ -22,6 +22,7 @@ $targets = @(
 )
 
 $failedTargets = @()
+$fingerprints = @{}
 foreach ($target in $targets) {
     $label = [string]$target.Label
     $exe = [string]$target.Exe
@@ -36,7 +37,16 @@ foreach ($target in $targets) {
         continue
     }
 
-    & $cmd.Source -NoProfile -ExecutionPolicy Bypass -File $testScript -RepoRoot $RepoRoot
+    $output = & $cmd.Source -NoProfile -ExecutionPolicy Bypass -File $testScript -RepoRoot $RepoRoot 2>&1
+    foreach ($line in @($output)) {
+        Write-Host ([string]$line)
+    }
+
+    $fingerprintLine = @($output) | ForEach-Object { [string]$_ } | Where-Object { $_ -like "COMPAT_FINGERPRINT:*" } | Select-Object -Last 1
+    if (-not [string]::IsNullOrWhiteSpace($fingerprintLine)) {
+        $fingerprints[$label] = ($fingerprintLine -replace "^COMPAT_FINGERPRINT:\s*", "").Trim()
+    }
+
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0) {
         Write-Host ("Target failed: {0} (exit={1})" -f $label, $exitCode) -ForegroundColor Red
@@ -44,6 +54,20 @@ foreach ($target in $targets) {
     }
     else {
         Write-Host ("Target passed: {0}" -f $label) -ForegroundColor Green
+    }
+}
+
+if ($failedTargets.Count -eq 0 -and $fingerprints.Count -eq $targets.Count) {
+    $firstLabel = [string]$targets[0].Label
+    $secondLabel = [string]$targets[1].Label
+    $firstFingerprint = [string]$fingerprints[$firstLabel]
+    $secondFingerprint = [string]$fingerprints[$secondLabel]
+    if (-not [string]::IsNullOrWhiteSpace($firstFingerprint) -and -not [string]::IsNullOrWhiteSpace($secondFingerprint) -and $firstFingerprint -ne $secondFingerprint) {
+        Write-Host ""
+        Write-Host ("Fingerprint mismatch between {0} and {1}." -f $firstLabel, $secondLabel) -ForegroundColor Red
+        Write-Host ("{0}: {1}" -f $firstLabel, $firstFingerprint) -ForegroundColor Red
+        Write-Host ("{0}: {1}" -f $secondLabel, $secondFingerprint) -ForegroundColor Red
+        $failedTargets += "fingerprint-mismatch"
     }
 }
 

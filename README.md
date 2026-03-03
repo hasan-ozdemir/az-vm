@@ -282,6 +282,12 @@ This validates:
 - JSON and collection compatibility helpers.
 - Run-command result parsing behavior.
 - Interactive VM SKU partial-filter behavior (mocked `az`; no live Azure call).
+- Deterministic file-write policy (UTF-8 no-BOM and line-ending checks).
+
+### Generated file encoding policy
+- UTF-8 outputs are written as **UTF-8 without BOM** on both PS5.1 and PS7+.
+- Linux-generated artifacts (`cloud-init`, `.sh`) are written with **LF** line endings.
+- Runtime `.env` updates are written with **CRLF** line endings (still UTF-8 no-BOM).
 
 ---
 

@@ -228,7 +228,12 @@ ssh_pwauth: true
 '@
 
 $cloudInitContent = $cloudInitTemplate.Replace("__VM_USER__", $vmUser).Replace("__VM_PASS__", $vmPass)
-$cloudInitContent | Set-Content -Encoding UTF8 $vmCloudInitScriptFile
+Write-TextFileNormalized `
+    -Path $vmCloudInitScriptFile `
+    -Content $cloudInitContent `
+    -Encoding "utf8NoBom" `
+    -LineEnding "lf" `
+    -EnsureTrailingNewline
 }
 
 # 6) VM update shell script preparation:
@@ -301,7 +306,12 @@ echo "Update phase completed."
 '@
 
 $updateScript = $updateTemplate.Replace("__VM_USER__", $vmUser).Replace("__VM_PASS__", $vmPass).Replace("__TCP_PORTS_BASH__", $tcpPortsBash).Replace("__TCP_PORTS_REGEX__", $tcpPortsRegex).Replace("__SSH_PORT__", $sshPort)
-$updateScript | Set-Content -Encoding UTF8 $vmUpdateScriptFile
+Write-TextFileNormalized `
+    -Path $vmUpdateScriptFile `
+    -Content $updateScript `
+    -Encoding "utf8NoBom" `
+    -LineEnding "lf" `
+    -EnsureTrailingNewline
 }
 
 # 7) Virtual machine creation:

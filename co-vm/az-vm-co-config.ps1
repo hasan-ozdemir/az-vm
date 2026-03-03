@@ -134,5 +134,10 @@ function Set-DotEnvValue {
         New-Item -ItemType Directory -Path $parent -Force | Out-Null
     }
 
-    Set-Content -Path $Path -Value $lines -Encoding UTF8
+    Write-TextFileNormalized `
+        -Path $Path `
+        -Content ($lines -join "`n") `
+        -Encoding "utf8NoBom" `
+        -LineEnding "crlf" `
+        -EnsureTrailingNewline
 }

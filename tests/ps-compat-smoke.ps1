@@ -48,6 +48,18 @@ function Assert-Equal {
     }
 }
 
+function Has-Utf8Bom {
+    param(
+        [byte[]]$Bytes
+    )
+
+    if (-not $Bytes -or $Bytes.Length -lt 3) {
+        return $false
+    }
+
+    return ($Bytes[0] -eq 239 -and $Bytes[1] -eq 187 -and $Bytes[2] -eq 191)
+}
+
 function Invoke-TestCase {
     param(
         [string]$Name,
@@ -109,6 +121,74 @@ function Test-ConfigFallbackBehavior {
     $script:ConfigOverrides["AZ_LOCATION"] = "westindia"
     $value3 = Get-ConfigValue -Config $config -Key "AZ_LOCATION" -DefaultValue "austriaeast"
     Assert-Equal -Expected "westindia" -Actual $value3 -Message "Get-ConfigValue should prioritize override"
+}
+
+function Test-NormalizedFileWritePolicy {
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-encoding-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+
+    try {
+        $linuxPath = Join-Path $tmpDir "linux-update.sh"
+        $linuxMixed = "line-a`r`nline-b`rline-c`n"
+        Write-TextFileNormalized `
+            -Path $linuxPath `
+            -Content $linuxMixed `
+            -Encoding "utf8NoBom" `
+            -LineEnding "lf" `
+            -EnsureTrailingNewline
+
+        $linuxBytes = [System.IO.File]::ReadAllBytes($linuxPath)
+        Assert-True -Condition (-not (Has-Utf8Bom -Bytes $linuxBytes)) -Message "Linux write should be UTF-8 without BOM"
+        $linuxText = [System.Text.Encoding]::UTF8.GetString($linuxBytes)
+        Assert-True -Condition (-not $linuxText.Contains("`r")) -Message "Linux write should use LF only"
+        Assert-True -Condition $linuxText.EndsWith("`n") -Message "Linux write should end with newline"
+
+        $envPath = Join-Path $tmpDir ".env"
+        Write-TextFileNormalized `
+            -Path $envPath `
+            -Content "A=1`nB=2" `
+            -Encoding "utf8NoBom" `
+            -LineEnding "crlf" `
+            -EnsureTrailingNewline
+
+        $envBytes = [System.IO.File]::ReadAllBytes($envPath)
+        Assert-True -Condition (-not (Has-Utf8Bom -Bytes $envBytes)) -Message ".env write should be UTF-8 without BOM"
+        $envText = [System.Text.Encoding]::UTF8.GetString($envBytes)
+        Assert-True -Condition $envText.Contains("`r`n") -Message ".env write should contain CRLF line endings"
+    }
+    finally {
+        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-CompatFingerprint {
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-fp-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+
+    try {
+        $samplePath = Join-Path $tmpDir "fingerprint.txt"
+        $sampleContent = "line-1`r`nline-2`nline-3`rline-4`nunicode-cf-test"
+        Write-TextFileNormalized `
+            -Path $samplePath `
+            -Content $sampleContent `
+            -Encoding "utf8NoBom" `
+            -LineEnding "lf" `
+            -EnsureTrailingNewline
+
+        $bytes = [System.IO.File]::ReadAllBytes($samplePath)
+        $sha = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hashBytes = $sha.ComputeHash($bytes)
+        }
+        finally {
+            if ($sha) { $sha.Dispose() }
+        }
+
+        return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
+    }
+    finally {
+        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Test-RunCommandJsonBehavior {
@@ -200,8 +280,14 @@ catch {
 
 Invoke-TestCase -Name "JSON compatibility helpers" -Action { Test-JsonCompatFunctions }
 Invoke-TestCase -Name "Config fallback behavior" -Action { Test-ConfigFallbackBehavior }
+Invoke-TestCase -Name "Deterministic UTF-8 no-BOM + line-ending policy" -Action { Test-NormalizedFileWritePolicy }
 Invoke-TestCase -Name "Run-command JSON parser behavior" -Action { Test-RunCommandJsonBehavior }
 Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-SkuFilterBehaviorWithMockAz }
+
+if (Get-Command Write-TextFileNormalized -ErrorAction SilentlyContinue) {
+    $fingerprint = Get-CompatFingerprint
+    Write-Host ("COMPAT_FINGERPRINT: {0}" -f $fingerprint)
+}
 
 Write-Host ""
 Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $global:TestPassCount, $global:TestFailCount)

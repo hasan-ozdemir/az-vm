@@ -207,14 +207,20 @@ Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be
 
 # 5) VM init PowerShell script preparation:
 Invoke-Step "Step 5/9 - VM init PowerShell script will be prepared..." {
-@'
+$vmInitScript = @'
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 Write-Output "Init phase started."
 Set-TimeZone -Id "UTC" -ErrorAction SilentlyContinue
 Write-Output "Init phase completed."
-'@ | Set-Content -Encoding UTF8 $vmInitScriptFile
+'@
+Write-TextFileNormalized `
+    -Path $vmInitScriptFile `
+    -Content $vmInitScript `
+    -Encoding "utf8NoBom" `
+    -LineEnding "crlf" `
+    -EnsureTrailingNewline
 }
 
 # 6) VM update PowerShell script preparation:
@@ -638,7 +644,12 @@ Get-Content $sshdConfig | Select-String -Pattern "^(Port|PasswordAuthentication|
 '@
 
 $updateScript = $updateTemplate.Replace("__VM_USER__", $vmUser).Replace("__VM_PASS__", $vmPass).Replace("__TCP_PORTS_PS_ARRAY__", $tcpPortsPsArray).Replace("__SSH_PORT__", $sshPort)
-$updateScript | Set-Content -Encoding UTF8 $vmUpdateScriptFile
+Write-TextFileNormalized `
+    -Path $vmUpdateScriptFile `
+    -Content $updateScript `
+    -Encoding "utf8NoBom" `
+    -LineEnding "crlf" `
+    -EnsureTrailingNewline
 }
 
 # 7) Virtual machine creation:
