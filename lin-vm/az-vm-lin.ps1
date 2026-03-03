@@ -95,6 +95,8 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
     $vmDiskSize = [string]$step1Context.VmDiskSize
     $vmUser = [string]$step1Context.VmUser
     $vmPass = [string]$step1Context.VmPass
+    $vmAssistantUser = [string]$step1Context.VmAssistantUser
+    $vmAssistantPass = [string]$step1Context.VmAssistantPass
     $sshPort = [string]$step1Context.SshPort
     $vmCloudInitScriptFile = [string]$step1Context.VmCloudInitScriptFile
     $vmUpdateScriptFile = [string]$step1Context.VmUpdateScriptFile
@@ -182,13 +184,23 @@ Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
     $connectionModel = Get-CoVmConnectionDisplayModel `
         -Context $step1Context `
-        -VmUser $vmUser `
-        -SshPort $sshPort
+        -ManagerUser $vmUser `
+        -AssistantUser $vmAssistantUser `
+        -SshPort $sshPort `
+        -IncludeRdp
 
     Write-Host "VM Public IP Address:"
     Write-Host ([string]$connectionModel.PublicIP)
-    Write-Host "SSH Connection Command:"
-    Write-Host ([string]$connectionModel.SshCommand)
+    Write-Host "SSH Connection Commands:"
+    foreach ($sshConnection in @($connectionModel.SshConnections)) {
+        Write-Host ("- {0}: {1}" -f ([string]$sshConnection.User), ([string]$sshConnection.Command))
+    }
+    Write-Host "RDP Connection Commands:"
+    foreach ($rdpConnection in @($connectionModel.RdpConnections)) {
+        Write-Host ("- {0}: {1}" -f ([string]$rdpConnection.User), ([string]$rdpConnection.Command))
+        Write-Host ("  username: {0}" -f ([string]$rdpConnection.Username))
+    }
+    Write-Host "RDP note: Linux update tasks do not install/configure an RDP service by default." -ForegroundColor Yellow
 }
 
 # End of setup:

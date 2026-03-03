@@ -275,6 +275,8 @@ function Test-GuestTaskAndScriptBuild {
     $context = [ordered]@{
         VmUser = "manager"
         VmPass = "demo-pass"
+        VmAssistantUser = "assistant"
+        VmAssistantPass = "<runtime-secret>"
         SshPort = "444"
         TcpPorts = @("444", "11434", "3389")
         ResourceGroup = "rg-demo"
@@ -288,6 +290,9 @@ function Test-GuestTaskAndScriptBuild {
     Assert-True -Condition ($linuxScript -like "*Update phase started.*") -Message "Linux update script should include update start marker"
     Assert-True -Condition ($linuxScript -like "*Port 444*") -Message "Linux update script should include resolved SSH port"
     Assert-True -Condition ($linuxScript -like "*11434*") -Message "Linux update script should include resolved TCP ports"
+    Assert-True -Condition ($linuxScript -like "*assistant*") -Message "Linux update script should include assistant user operations"
+    Assert-True -Condition ($linuxScript -like "*usermod -aG sudo*") -Message "Linux update script should include admin-group grant logic"
+    Assert-True -Condition ($linuxScript -like "*NOPASSWD:ALL*") -Message "Linux update script should include root-equivalent sudo rule"
 
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-guest-task-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
@@ -300,9 +305,46 @@ function Test-GuestTaskAndScriptBuild {
         Assert-True -Condition ($windowsScript -like "*Update phase started.*") -Message "Windows update script should include update start marker"
         Assert-True -Condition ($windowsScript -like "*Allow-SSH-444*") -Message "Windows update script should include resolved SSH firewall rule"
         Assert-True -Condition ($windowsScript -like "*11434*") -Message "Windows update script should include resolved TCP port values"
+        Assert-True -Condition ($windowsScript -like '*$assistantUser = "assistant"*') -Message "Windows update script should include assistant user variable replacement"
+        Assert-True -Condition ($windowsScript -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows update script should ensure assistant local power admin rights"
     }
     finally {
         Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-ConnectionDisplayModelDualUsers {
+    function global:Get-CoVmVmDetails {
+        param(
+            [hashtable]$Context
+        )
+
+        return [ordered]@{
+            PublicIP = "203.0.113.10"
+            VmFqdn = "demo.austriaeast.cloudapp.azure.com"
+        }
+    }
+
+    try {
+        $context = [ordered]@{
+            ResourceGroup = "rg-demo"
+            VmName = "vm-demo"
+            AzLocation = "austriaeast"
+        }
+
+        $linuxModel = Get-CoVmConnectionDisplayModel `
+            -Context $context `
+            -ManagerUser "manager" `
+            -AssistantUser "assistant" `
+            -SshPort "444" `
+            -IncludeRdp
+        Assert-Equal -Expected 2 -Actual (@($linuxModel.SshConnections).Count) -Message "Connection model should return two SSH entries"
+        Assert-Equal -Expected 2 -Actual (@($linuxModel.RdpConnections).Count) -Message "Connection model should return two RDP entries when requested"
+        Assert-True -Condition ((@($linuxModel.SshConnections | ForEach-Object { [string]$_.User }) -contains "manager")) -Message "Connection model should include manager SSH entry"
+        Assert-True -Condition ((@($linuxModel.SshConnections | ForEach-Object { [string]$_.User }) -contains "assistant")) -Message "Connection model should include assistant SSH entry"
+    }
+    finally {
+        Remove-Item -Path Function:\global:Get-CoVmVmDetails -ErrorAction SilentlyContinue
     }
 }
 
@@ -341,6 +383,7 @@ Invoke-TestCase -Name "Deterministic UTF-8 no-BOM + line-ending policy" -Action 
 Invoke-TestCase -Name "Run-command JSON parser behavior" -Action { Test-RunCommandJsonBehavior }
 Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-SkuFilterBehaviorWithMockAz }
 Invoke-TestCase -Name "Guest task catalog and update-script build behavior" -Action { Test-GuestTaskAndScriptBuild }
+Invoke-TestCase -Name "Connection display model dual-user behavior" -Action { Test-ConnectionDisplayModelDualUsers }
 
 if (Get-Command Write-TextFileNormalized -ErrorAction SilentlyContinue) {
     $fingerprint = Get-CompatFingerprint

@@ -53,15 +53,28 @@ function Get-CoVmGuestTaskTemplates {
 set -euo pipefail
 VM_USER="__VM_USER__"
 VM_PASS="__VM_PASS__"
+ASSISTANT_USER="__ASSISTANT_USER__"
+ASSISTANT_PASS="__ASSISTANT_PASS__"
 if ! id -u "${VM_USER}" >/dev/null 2>&1; then
   sudo useradd -m -s /bin/bash "${VM_USER}"
 fi
+if ! id -u "${ASSISTANT_USER}" >/dev/null 2>&1; then
+  sudo useradd -m -s /bin/bash "${ASSISTANT_USER}"
+fi
 echo "${VM_USER}:${VM_PASS}" | sudo chpasswd
+echo "${ASSISTANT_USER}:${ASSISTANT_PASS}" | sudo chpasswd
 echo "root:${VM_PASS}" | sudo chpasswd
 sudo passwd -u "${VM_USER}" || true
+sudo passwd -u "${ASSISTANT_USER}" || true
 sudo passwd -u root || true
 sudo chage -E -1 "${VM_USER}" || true
+sudo chage -E -1 "${ASSISTANT_USER}" || true
 sudo chage -E -1 root || true
+for ADMIN_USER in "${VM_USER}" "${ASSISTANT_USER}"; do
+  sudo usermod -aG sudo "${ADMIN_USER}" || true
+  echo "${ADMIN_USER} ALL=(ALL) NOPASSWD:ALL" | sudo tee "/etc/sudoers.d/90-${ADMIN_USER}-nopasswd" >/dev/null
+  sudo chmod 440 "/etc/sudoers.d/90-${ADMIN_USER}-nopasswd"
+done
 echo "linux-user-passwords-ready"
 '@
             },
@@ -161,6 +174,8 @@ grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Allo
 $ErrorActionPreference = "Stop"
 $vmUser = "__VM_USER__"
 $vmPass = "__VM_PASS__"
+$assistantUser = "__ASSISTANT_USER__"
+$assistantPass = "__ASSISTANT_PASS__"
 
 function Ensure-GroupMembership {
     param(
@@ -206,16 +221,26 @@ function Ensure-GroupMembership {
     }
 }
 
-if (-not (Get-LocalUser -Name $vmUser -ErrorAction SilentlyContinue)) {
-    $securePass = ConvertTo-SecureString $vmPass -AsPlainText -Force
-    New-LocalUser -Name $vmUser -Password $securePass -PasswordNeverExpires -AccountNeverExpires -FullName $vmUser -Description "Azure VM Power Admin user" | Out-Null
+function Ensure-LocalPowerAdmin {
+    param(
+        [string]$UserName,
+        [string]$Password
+    )
+
+    if (-not (Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue)) {
+        $securePass = ConvertTo-SecureString $Password -AsPlainText -Force
+        New-LocalUser -Name $UserName -Password $securePass -PasswordNeverExpires -AccountNeverExpires -FullName $UserName -Description "Azure VM Power Admin user" | Out-Null
+    }
+    else {
+        net user $UserName $Password | Out-Null
+    }
+    Ensure-GroupMembership -GroupName "Administrators" -MemberName $UserName
+    Ensure-GroupMembership -GroupName "Remote Desktop Users" -MemberName $UserName
 }
-else {
-    net user $vmUser $vmPass | Out-Null
-}
-Ensure-GroupMembership -GroupName "Administrators" -MemberName $vmUser
-Ensure-GroupMembership -GroupName "Remote Desktop Users" -MemberName $vmUser
-Write-Output "local-admin-user-ready"
+
+Ensure-LocalPowerAdmin -UserName $vmUser -Password $vmPass
+Ensure-LocalPowerAdmin -UserName $assistantUser -Password $assistantPass
+Write-Output "local-admin-users-ready"
 '@
         },
         [pscustomobject]@{
@@ -465,6 +490,8 @@ function Get-CoVmGuestTaskReplacementMap {
     $map = @{
         VM_USER = [string]$Context.VmUser
         VM_PASS = [string]$Context.VmPass
+        ASSISTANT_USER = [string]$Context.VmAssistantUser
+        ASSISTANT_PASS = [string]$Context.VmAssistantPass
         SSH_PORT = [string]$Context.SshPort
     }
 
@@ -559,7 +586,8 @@ function Get-CoVmWriteSettingsForPlatform {
 function Get-CoVmConnectionDisplayModel {
     param(
         [hashtable]$Context,
-        [string]$VmUser,
+        [string]$ManagerUser,
+        [string]$AssistantUser,
         [string]$SshPort,
         [switch]$IncludeRdp
     )
@@ -568,15 +596,37 @@ function Get-CoVmConnectionDisplayModel {
     $publicIP = [string]$vmConnectionInfo.PublicIP
     $vmFqdn = [string]$vmConnectionInfo.VmFqdn
 
+    $sshConnections = @(
+        [pscustomobject]@{
+            User = $ManagerUser
+            Command = ("ssh -p {0} {1}@{2}" -f $SshPort, $ManagerUser, $vmFqdn)
+        },
+        [pscustomobject]@{
+            User = $AssistantUser
+            Command = ("ssh -p {0} {1}@{2}" -f $SshPort, $AssistantUser, $vmFqdn)
+        }
+    )
+
     $model = [ordered]@{
         PublicIP = $publicIP
         VmFqdn = $vmFqdn
-        SshCommand = ("ssh -p {0} {1}@{2}" -f $SshPort, $VmUser, $vmFqdn)
+        SshConnections = $sshConnections
     }
 
     if ($IncludeRdp) {
-        $model["RdpCommand"] = ("mstsc /v:{0}:3389" -f $vmFqdn)
-        $model["RdpUsername"] = (".\{0}" -f $VmUser)
+        $rdpConnections = @(
+            [pscustomobject]@{
+                User = $ManagerUser
+                Username = (".\{0}" -f $ManagerUser)
+                Command = ("mstsc /v:{0}:3389" -f $vmFqdn)
+            },
+            [pscustomobject]@{
+                User = $AssistantUser
+                Username = (".\{0}" -f $AssistantUser)
+                Command = ("mstsc /v:{0}:3389" -f $vmFqdn)
+            }
+        )
+        $model["RdpConnections"] = $rdpConnections
     }
 
     return $model

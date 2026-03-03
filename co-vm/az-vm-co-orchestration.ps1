@@ -86,6 +86,8 @@ function Invoke-CoVmStep1Common {
     $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_SIZE_GB" -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
     $vmUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_USER" -DefaultValue "manager") -ServerName $serverName
     $vmPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
+    $vmAssistantUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -ServerName $serverName
+    $vmAssistantPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
     $sshPort = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444") -ServerName $serverName
 
     $vmCloudInitScriptFile = $null
@@ -137,6 +139,8 @@ function Invoke-CoVmStep1Common {
         VmDiskSize = $vmDiskSize
         VmUser = $vmUser
         VmPass = $vmPass
+        VmAssistantUser = $vmAssistantUser
+        VmAssistantPass = $vmAssistantPass
         SshPort = $sshPort
         TcpPorts = @($tcpPorts)
         VmCloudInitScriptFile = $vmCloudInitScriptFile

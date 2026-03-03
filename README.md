@@ -145,6 +145,7 @@ Runtime configuration order is:
 | `PRICE_HOURS` | Monthly pricing multiplier for SKU table (fallback default `730`). |
 | `VM_DISK_NAME`, `VM_DISK_SIZE_GB` | OS disk naming/size. |
 | `VM_USER`, `VM_PASS` | Login account credentials. |
+| `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS` | Secondary power-admin account credentials (`assistant`). |
 | `SSH_PORT` | SSH port (default `444`). |
 | `TCP_PORTS` | Comma-separated inbound TCP ports applied to NSG + guest firewall. |
 
@@ -201,8 +202,8 @@ Guest configuration execution via Azure Run Command:
 ### Step 9
 Print final connection details:
 - Public IP
-- SSH command
-- RDP command (Windows)
+- SSH commands for both `manager` and `assistant`
+- RDP commands for both `manager` and `assistant` (Windows, and informational output on Linux)
 
 ---
 
@@ -224,6 +225,7 @@ Defaults include common dev/service ports, plus:
 
 Windows Step 8 tasks include:
 - Local admin user assurance.
+- Secondary power-admin user (`assistant`) assurance.
 - OpenSSH install/config/service enablement.
 - RDP enablement and compatibility-friendly settings.
 - Chocolatey bootstrap (unattended).
@@ -240,6 +242,7 @@ Windows Step 8 tasks include:
 
 Linux Step 8 tasks include:
 - User/password setup for VM user and root.
+- Secondary power-admin user (`assistant`) setup with sudo/root-equivalent rights.
 - Apt package update/install baseline.
 - SSH daemon configuration updates.
 - UFW inbound policy and TCP port rules from `TCP_PORTS`.
