@@ -394,6 +394,7 @@ function Test-RuntimeConfigurationSnapshotFormatting {
 
 function Test-StepFirstUseValueTracing {
     $script:CoVmFirstUseTracker = $null
+    $script:CoVmValueStateTracker = $null
     $context = @{
         Alpha = "value-alpha"
         Beta = @("one","two")
@@ -416,6 +417,18 @@ function Test-StepFirstUseValueTracing {
 
     $countAfter = (Get-CoVmFirstUseTracker).Count
     Assert-Equal -Expected $countBefore -Actual $countAfter -Message "First-use tracker should not grow when same keys are traced again"
+
+    $valueStateBefore = Get-CoVmValueStateTracker
+    Assert-Equal -Expected "one, two" -Actual ([string]$valueStateBefore["Beta"]) -Message "Value-state tracker should store last observed display value"
+
+    $context["Beta"] = @("one","three")
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "compat-smoke step trace" `
+        -Context $context `
+        -Keys @("Alpha", "Beta")
+
+    $valueStateAfter = Get-CoVmValueStateTracker
+    Assert-Equal -Expected "one, three" -Actual ([string]$valueStateAfter["Beta"]) -Message "Value-state tracker should update when a key value changes"
 }
 
 Write-Host "Running compatibility smoke tests in host: $($PSVersionTable.PSVersion.ToString())"

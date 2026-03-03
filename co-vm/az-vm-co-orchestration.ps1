@@ -481,6 +481,55 @@ function Get-CoVmFirstUseTracker {
     return (, $script:CoVmFirstUseTracker)
 }
 
+function Get-CoVmValueStateTracker {
+    if (-not $script:CoVmValueStateTracker) {
+        $script:CoVmValueStateTracker = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    }
+
+    return (, $script:CoVmValueStateTracker)
+}
+
+function Register-CoVmValueObservation {
+    param(
+        [string]$Key,
+        [object]$Value
+    )
+
+    $normalizedKey = [string]$Key
+    if ([string]::IsNullOrWhiteSpace($normalizedKey)) {
+        return [pscustomobject]@{
+            Key = ""
+            DisplayValue = ""
+            ShouldPrint = $false
+            IsFirst = $false
+        }
+    }
+
+    $displayValue = ConvertTo-CoVmDisplayValue -Value $Value
+    $valueState = Get-CoVmValueStateTracker
+    $firstUseTracker = Get-CoVmFirstUseTracker
+
+    $hasPrevious = $valueState.ContainsKey($normalizedKey)
+    $previousValue = ""
+    if ($hasPrevious) {
+        $previousValue = [string]$valueState[$normalizedKey]
+    }
+
+    $shouldPrint = (-not $hasPrevious) -or (-not [string]::Equals($previousValue, [string]$displayValue, [System.StringComparison]::Ordinal))
+    if ($shouldPrint) {
+        $valueState[$normalizedKey] = [string]$displayValue
+    }
+
+    [void]$firstUseTracker.Add($normalizedKey)
+
+    return [pscustomobject]@{
+        Key = $normalizedKey
+        DisplayValue = [string]$displayValue
+        ShouldPrint = [bool]$shouldPrint
+        IsFirst = [bool](-not $hasPrevious)
+    }
+}
+
 function Show-CoVmStepFirstUseValues {
     param(
         [string]$StepLabel,
@@ -489,8 +538,8 @@ function Show-CoVmStepFirstUseValues {
         [hashtable]$ExtraValues
     )
 
-    $tracker = Get-CoVmFirstUseTracker
     $rows = @()
+    $processed = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 
     foreach ($key in @($Keys)) {
         if ([string]::IsNullOrWhiteSpace([string]$key)) {
@@ -498,7 +547,7 @@ function Show-CoVmStepFirstUseValues {
         }
 
         $normalizedKey = [string]$key
-        if ($tracker.Contains($normalizedKey)) {
+        if (-not $processed.Add($normalizedKey)) {
             continue
         }
 
@@ -517,10 +566,13 @@ function Show-CoVmStepFirstUseValues {
             continue
         }
 
-        [void]$tracker.Add($normalizedKey)
-        $rows += [pscustomobject]@{
-            Key = $normalizedKey
-            Value = $value
+        $observed = Register-CoVmValueObservation -Key $normalizedKey -Value $value
+        if ($observed.ShouldPrint) {
+            $rows += [pscustomobject]@{
+                Key = $observed.Key
+                Value = $observed.DisplayValue
+                IsFirst = $observed.IsFirst
+            }
         }
     }
 
@@ -530,14 +582,17 @@ function Show-CoVmStepFirstUseValues {
             if ([string]::IsNullOrWhiteSpace($normalizedKey)) {
                 continue
             }
-            if ($tracker.Contains($normalizedKey)) {
+            if (-not $processed.Add($normalizedKey)) {
                 continue
             }
 
-            [void]$tracker.Add($normalizedKey)
-            $rows += [pscustomobject]@{
-                Key = $normalizedKey
-                Value = $ExtraValues[$extraKey]
+            $observed = Register-CoVmValueObservation -Key $normalizedKey -Value $ExtraValues[$extraKey]
+            if ($observed.ShouldPrint) {
+                $rows += [pscustomobject]@{
+                    Key = $observed.Key
+                    Value = $observed.DisplayValue
+                    IsFirst = $observed.IsFirst
+                }
             }
         }
     }
@@ -548,13 +603,14 @@ function Show-CoVmStepFirstUseValues {
 
     Write-Host ""
     if ([string]::IsNullOrWhiteSpace($StepLabel)) {
-        Write-Host "Step value usage (first reference):" -ForegroundColor DarkCyan
+        Write-Host "Step value usage (new/updated values):" -ForegroundColor DarkCyan
     }
     else {
-        Write-Host ("Step value usage ({0}) - first reference:" -f $StepLabel) -ForegroundColor DarkCyan
+        Write-Host ("Step value usage ({0}) - new/updated values:" -f $StepLabel) -ForegroundColor DarkCyan
     }
     foreach ($row in @($rows)) {
-        Write-Host ("- {0} = {1}" -f [string]$row.Key, (ConvertTo-CoVmDisplayValue -Value $row.Value))
+        $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+        Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Key, [string]$row.Value, $statusTag)
     }
 }
 
@@ -693,52 +749,153 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     Write-Host "Configuration Snapshot ($ScriptName / platform=$Platform):" -ForegroundColor DarkCyan
 
     $azAccount = Get-CoVmAzAccountSnapshot
-    Write-Host "Azure account:"
-    Write-Host ("- Subscription Name: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.SubscriptionName))
-    Write-Host ("- Subscription ID: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.SubscriptionId))
-    Write-Host ("- Tenant Name: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.TenantName))
-    Write-Host ("- Tenant ID: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.TenantId))
-    Write-Host ("- Account User: {0}" -f (ConvertTo-CoVmDisplayValue -Value $azAccount.UserName))
+    $accountRows = @()
+    $accountFields = [ordered]@{
+        SubscriptionName = "Subscription Name"
+        SubscriptionId = "Subscription ID"
+        TenantName = "Tenant Name"
+        TenantId = "Tenant ID"
+        UserName = "Account User"
+    }
+    foreach ($fieldKey in @($accountFields.Keys)) {
+        $observed = Register-CoVmValueObservation -Key ([string]$fieldKey) -Value $azAccount[$fieldKey]
+        if ($observed.ShouldPrint) {
+            $accountRows += [pscustomobject]@{
+                Label = [string]$accountFields[$fieldKey]
+                Value = [string]$observed.DisplayValue
+                IsFirst = [bool]$observed.IsFirst
+            }
+        }
+    }
+    if ($accountRows.Count -gt 0) {
+        Write-Host "Azure account:"
+        foreach ($row in @($accountRows)) {
+            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+            Write-Host ("- {0}: {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+        }
+    }
 
     if ($Context) {
-        Write-Host "Selected deployment values:"
-        Write-Host ("- Azure Resource Group: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.ResourceGroup))
-        Write-Host ("- Azure Region: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.AzLocation))
-        Write-Host ("- Azure VM SKU: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.VmSize))
-        Write-Host ("- VM Disk Size GB: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.VmDiskSize))
-        Write-Host ("- VM OS Image: {0}" -f (ConvertTo-CoVmDisplayValue -Value $Context.VmImage))
+        $selectedRows = @()
+        $selectedFields = [ordered]@{
+            ResourceGroup = "Azure Resource Group"
+            AzLocation = "Azure Region"
+            VmSize = "Azure VM SKU"
+            VmDiskSize = "VM Disk Size GB"
+            VmImage = "VM OS Image"
+        }
+        foreach ($fieldKey in @($selectedFields.Keys)) {
+            $observed = Register-CoVmValueObservation -Key ([string]$fieldKey) -Value $Context[$fieldKey]
+            if ($observed.ShouldPrint) {
+                $selectedRows += [pscustomobject]@{
+                    Label = [string]$selectedFields[$fieldKey]
+                    Value = [string]$observed.DisplayValue
+                    IsFirst = [bool]$observed.IsFirst
+                }
+            }
+        }
+        if ($selectedRows.Count -gt 0) {
+            Write-Host "Selected deployment values:"
+            foreach ($row in @($selectedRows)) {
+                $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+                Write-Host ("- {0}: {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+            }
+        }
     }
 
-    Write-Host "Runtime flags and app parameters:"
-    Write-Host ("- Auto mode: {0}" -f (ConvertTo-CoVmDisplayValue -Value ([bool]$AutoMode)))
-    Write-Host ("- Substep mode: {0}" -f (ConvertTo-CoVmDisplayValue -Value ([bool]$SubstepMode)))
-    Write-Host ("- Script root: {0}" -f (ConvertTo-CoVmDisplayValue -Value $ScriptRoot))
-    Write-Host ("- Script name: {0}" -f (ConvertTo-CoVmDisplayValue -Value $ScriptName))
-
-    Write-Host ".env loaded values:"
-    if (-not $ConfigMap -or $ConfigMap.Count -eq 0) {
-        Write-Host "- (none)"
+    $runtimeRows = @()
+    $runtimeFields = [ordered]@{
+        AutoMode = [bool]$AutoMode
+        SubstepMode = [bool]$SubstepMode
+        ScriptRoot = [string]$ScriptRoot
+        ScriptName = [string]$ScriptName
     }
-    else {
+    $runtimeLabels = @{
+        AutoMode = "Auto mode"
+        SubstepMode = "Substep mode"
+        ScriptRoot = "Script root"
+        ScriptName = "Script name"
+    }
+    foreach ($fieldKey in @($runtimeFields.Keys)) {
+        $observed = Register-CoVmValueObservation -Key ([string]$fieldKey) -Value $runtimeFields[$fieldKey]
+        if ($observed.ShouldPrint) {
+            $runtimeRows += [pscustomobject]@{
+                Label = [string]$runtimeLabels[$fieldKey]
+                Value = [string]$observed.DisplayValue
+                IsFirst = [bool]$observed.IsFirst
+            }
+        }
+    }
+    if ($runtimeRows.Count -gt 0) {
+        Write-Host "Runtime flags and app parameters:"
+        foreach ($row in @($runtimeRows)) {
+            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+            Write-Host ("- {0}: {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+        }
+    }
+
+    $envRows = @()
+    if ($ConfigMap -and $ConfigMap.Count -gt 0) {
         foreach ($key in @($ConfigMap.Keys | Sort-Object)) {
-            Write-Host ("- {0} = {1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $ConfigMap[$key]))
+            $obsKey = "ENV::{0}" -f [string]$key
+            $observed = Register-CoVmValueObservation -Key $obsKey -Value $ConfigMap[$key]
+            if ($observed.ShouldPrint) {
+                $envRows += [pscustomobject]@{
+                    Label = [string]$key
+                    Value = [string]$observed.DisplayValue
+                    IsFirst = [bool]$observed.IsFirst
+                }
+            }
+        }
+    }
+    if ($envRows.Count -gt 0) {
+        Write-Host ".env loaded values:"
+        foreach ($row in @($envRows)) {
+            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+            Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
         }
     }
 
-    Write-Host "Runtime overrides:"
-    if (-not $ConfigOverrides -or $ConfigOverrides.Count -eq 0) {
-        Write-Host "- (none)"
-    }
-    else {
+    $overrideRows = @()
+    if ($ConfigOverrides -and $ConfigOverrides.Count -gt 0) {
         foreach ($key in @($ConfigOverrides.Keys | Sort-Object)) {
-            Write-Host ("- {0} = {1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $ConfigOverrides[$key]))
+            $obsKey = "OVERRIDE::{0}" -f [string]$key
+            $observed = Register-CoVmValueObservation -Key $obsKey -Value $ConfigOverrides[$key]
+            if ($observed.ShouldPrint) {
+                $overrideRows += [pscustomobject]@{
+                    Label = [string]$key
+                    Value = [string]$observed.DisplayValue
+                    IsFirst = [bool]$observed.IsFirst
+                }
+            }
+        }
+    }
+    if ($overrideRows.Count -gt 0) {
+        Write-Host "Runtime overrides:"
+        foreach ($row in @($overrideRows)) {
+            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+            Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
         }
     }
 
     if ($Context) {
-        Write-Host "Resolved effective values:"
+        $effectiveRows = @()
         foreach ($key in @($Context.Keys | Sort-Object)) {
-            Write-Host ("- {0} = {1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $Context[$key]))
+            $observed = Register-CoVmValueObservation -Key ([string]$key -replace '^\s+|\s+$', '') -Value $Context[$key]
+            if ($observed.ShouldPrint) {
+                $effectiveRows += [pscustomobject]@{
+                    Label = [string]$key
+                    Value = [string]$observed.DisplayValue
+                    IsFirst = [bool]$observed.IsFirst
+                }
+            }
+        }
+        if ($effectiveRows.Count -gt 0) {
+            Write-Host "Resolved effective values:"
+            foreach ($row in @($effectiveRows)) {
+                $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
+                Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+            }
         }
     }
 }
