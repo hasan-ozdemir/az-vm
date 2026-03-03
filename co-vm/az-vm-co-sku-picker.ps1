@@ -127,22 +127,88 @@ function Select-AzLocationInteractive {
     }
 }
 
+function Convert-ToSkuSearchPattern {
+    param(
+        [string]$FilterText
+    )
+
+    if ([string]::IsNullOrWhiteSpace($FilterText)) {
+        return ""
+    }
+
+    $trimmed = $FilterText.Trim()
+    return "*" + $trimmed + "*"
+}
+
+function Test-SkuWildcardMatchOrdinalIgnoreCase {
+    param(
+        [string]$Text,
+        [string]$Pattern
+    )
+
+    if ($null -eq $Text) {
+        $Text = ""
+    }
+    if ($null -eq $Pattern) {
+        $Pattern = ""
+    }
+
+    $textIndex = 0
+    $patternIndex = 0
+    $lastStarIndex = -1
+    $starMatchTextIndex = 0
+
+    while ($textIndex -lt $Text.Length) {
+        if ($patternIndex -lt $Pattern.Length) {
+            $patternChar = $Pattern[$patternIndex]
+            $textChar = $Text[$textIndex]
+
+            if ($patternChar -eq '?') {
+                $textIndex++
+                $patternIndex++
+                continue
+            }
+
+            if ([string]::Equals([string]$textChar, [string]$patternChar, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $textIndex++
+                $patternIndex++
+                continue
+            }
+
+            if ($patternChar -eq '*') {
+                $lastStarIndex = $patternIndex
+                $starMatchTextIndex = $textIndex
+                $patternIndex++
+                continue
+            }
+        }
+
+        if ($lastStarIndex -ne -1) {
+            $patternIndex = $lastStarIndex + 1
+            $starMatchTextIndex++
+            $textIndex = $starMatchTextIndex
+            continue
+        }
+
+        return $false
+    }
+
+    while ($patternIndex -lt $Pattern.Length -and $Pattern[$patternIndex] -eq '*') {
+        $patternIndex++
+    }
+
+    return ($patternIndex -eq $Pattern.Length)
+}
+
 function Get-LocationSkusForSelection {
     param(
         [string]$Location,
         [string]$SkuLike
     )
 
-    $needle = ""
+    $filterText = ""
     if (-not [string]::IsNullOrWhiteSpace($SkuLike)) {
-        $needle = $SkuLike.Trim().ToLowerInvariant()
-    }
-    $needleNormalized = $needle -replace '[^a-z0-9]', ''
-    $needleWithoutStandard = if ($needleNormalized.StartsWith("standard")) {
-        $needleNormalized.Substring("standard".Length)
-    }
-    else {
-        $needleNormalized
+        $filterText = $SkuLike.Trim()
     }
 
     $raw = az vm list-sizes -l $Location --only-show-errors -o json
@@ -155,31 +221,21 @@ function Get-LocationSkusForSelection {
     }
 
     $allSkus = ConvertFrom-JsonArrayCompat -InputObject $raw
-    $standardSkus = @(
+    $namedSkus = @(
         $allSkus | Where-Object {
-            $_.name -and ([string]$_.name).StartsWith("Standard_", [System.StringComparison]::OrdinalIgnoreCase)
+            $_.name
         }
     )
 
-    if ($needle -eq "") {
-        Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($standardSkus | Sort-Object name -Unique))
+    if ($filterText -eq "") {
+        Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($namedSkus | Sort-Object name -Unique))
         return
     }
 
-    $filtered = foreach ($sku in $standardSkus) {
+    $effectivePattern = Convert-ToSkuSearchPattern -FilterText $filterText
+    $filtered = foreach ($sku in $namedSkus) {
         $name = [string]$sku.name
-        $nameLower = $name.ToLowerInvariant()
-        $nameNormalized = $nameLower -replace '[^a-z0-9]', ''
-
-        $isMatch = $nameLower.Contains($needle)
-        if (-not $isMatch -and $needleNormalized -ne "") {
-            $isMatch = $nameNormalized.Contains($needleNormalized)
-        }
-        if (-not $isMatch -and $needleWithoutStandard -ne "") {
-            $isMatch = $nameNormalized.Contains($needleWithoutStandard)
-        }
-
-        if ($isMatch) {
+        if (Test-SkuWildcardMatchOrdinalIgnoreCase -Text $name -Pattern $effectivePattern) {
             $sku
         }
     }
@@ -420,7 +476,7 @@ function Select-VmSkuInteractive {
     )
 
     while ($true) {
-        $skuLikeRaw = Read-Host "Enter partial VM type (examples: b2a, d2). Leave empty to list all"
+        $skuLikeRaw = Read-Host "Enter partial VM type (supports * and ?, examples: b2a, standard_a*, standard_b?a*v2). Leave empty to list all"
         if ($null -eq $skuLikeRaw) {
             $skuLikeRaw = ""
         }

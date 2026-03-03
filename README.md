@@ -289,6 +289,14 @@ This validates:
 - Linux-generated artifacts (`cloud-init`, `.sh`) are written with **LF** line endings.
 - Runtime `.env` updates are written with **CRLF** line endings (still UTF-8 no-BOM).
 
+### VM SKU partial search behavior
+- Interactive SKU filtering is case-insensitive (`OrdinalIgnoreCase` semantics).
+- Search scope includes all SKU names returned by the selected region.
+- `*` and `?` are supported as wildcard tokens:
+  - `*` => zero or more chars
+  - `?` => exactly one char
+- Non-wildcard input is treated as partial contains search.
+
 ---
 
 ## Logs, Exit Behavior, and Error Handling

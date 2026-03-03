@@ -223,8 +223,12 @@ function Test-SkuFilterBehaviorWithMockAz {
             $global:LASTEXITCODE = 0
             return @'
 [
+  {"name":"Standard_A1_v2","numberOfCores":1,"memoryInMB":2048},
+  {"name":"Standard_A2av2","numberOfCores":2,"memoryInMB":4096},
   {"name":"Standard_B2as_v2","numberOfCores":2,"memoryInMB":8192},
   {"name":"Standard_B2s","numberOfCores":2,"memoryInMB":4096},
+  {"name":"Standard_B1axxxv2","numberOfCores":2,"memoryInMB":4096},
+  {"name":"Standard_B12axv2","numberOfCores":2,"memoryInMB":4096},
   {"name":"Standard_D2as_v5","numberOfCores":2,"memoryInMB":8192},
   {"name":"Basic_A1","numberOfCores":1,"memoryInMB":1792}
 ]
@@ -243,8 +247,24 @@ function Test-SkuFilterBehaviorWithMockAz {
         $standardB2 = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_b2"
         Assert-Equal -Expected 2 -Actual (@($standardB2).Count) -Message "SKU filter 'standard_b2' should match Standard_B2* SKUs"
 
+        $standardA = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_a"
+        $standardAStar = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_a*"
+        Assert-Equal -Expected 2 -Actual (@($standardA).Count) -Message "SKU filter 'standard_a' should return only names containing 'standard_a'"
+        Assert-Equal -Expected (@($standardA).Count) -Actual (@($standardAStar).Count) -Message "SKU filter 'standard_a' and 'standard_a*' should return the same count"
+        $aNames = @($standardA | ForEach-Object { [string]$_.name } | Sort-Object)
+        $aStarNames = @($standardAStar | ForEach-Object { [string]$_.name } | Sort-Object)
+        Assert-Equal -Expected ($aNames -join "|") -Actual ($aStarNames -join "|") -Message "SKU filter 'standard_a' and 'standard_a*' should return the same names"
+
+        $wildcard = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_b?a*v2"
+        Assert-Equal -Expected 2 -Actual (@($wildcard).Count) -Message "Wildcard filter should support ? and * semantics"
+        $wildcardNames = @($wildcard | ForEach-Object { [string]$_.name } | Sort-Object)
+        Assert-Equal -Expected "Standard_B1axxxv2|Standard_B2as_v2" -Actual ($wildcardNames -join "|") -Message "Wildcard filter should match expected SKU names only"
+
+        $caseInsensitive = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "StAnDaRd_A"
+        Assert-Equal -Expected (@($standardA).Count) -Actual (@($caseInsensitive).Count) -Message "Filtering should be case-insensitive"
+
         $all = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike ""
-        Assert-Equal -Expected 3 -Actual (@($all).Count) -Message "Empty SKU filter should return only Standard_* SKUs"
+        Assert-Equal -Expected 8 -Actual (@($all).Count) -Message "Empty SKU filter should return all region SKUs with names"
     }
     finally {
         Remove-Item -Path Function:\global:az -ErrorAction SilentlyContinue
