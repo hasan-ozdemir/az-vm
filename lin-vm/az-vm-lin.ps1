@@ -7,11 +7,11 @@ param(
     [Alias('a','NonInteractive')]
     [switch]$Auto,
     [Alias('s')]
-    [switch]$Step
+    [switch]$Substep
 )
 
 $script:AutoMode = [bool]$Auto
-$script:StepMode = [bool]$Step
+$script:SubstepMode = [bool]$Substep
 $script:TranscriptStarted = $false
 $script:HadError = $false
 $script:ExitCode = 0
@@ -47,8 +47,8 @@ Write-Host "script description:
 - SSH (444) access is prepared.
 - All command output is written to both console and 'az-vm-lin-log.txt'.
 - Run mode: interactive (default), auto (--auto / -a).
-- Diagnostic mode: step (--step / -s), Step 8 runs tasks one-by-one.
-- Without --step, Step 8 runs the VM update script file in a single run-command call."
+- Diagnostic mode: substep (--substep / -s), Step 8 runs tasks one-by-one.
+- Without --substep, Step 8 runs the VM update script file in a single run-command call."
 if (-not $script:AutoMode) {
     Read-Host -Prompt "Press Enter to start..."
 }
@@ -163,10 +163,14 @@ Invoke-Step "Step 3/9 - resource group will be checked..." {
         }
 
         if ($shouldDelete) {
-            az group delete -n $resourceGroup --yes --no-wait
-            Assert-LastExitCode "az group delete"
-            az group wait -n $resourceGroup --deleted
-            Assert-LastExitCode "az group wait deleted"
+            Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
+                az group delete -n $resourceGroup --yes --no-wait
+                Assert-LastExitCode "az group delete"
+            }
+            Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
+                az group wait -n $resourceGroup --deleted
+                Assert-LastExitCode "az group wait deleted"
+            }
             Write-Host "Resource group '$resourceGroup' was deleted."
         }
         else {
@@ -174,44 +178,56 @@ Invoke-Step "Step 3/9 - resource group will be checked..." {
         }
     }
     Write-Host "Creating resource group '$resourceGroup'..."
-    az group create -n $resourceGroup -l $azLocation
-    Assert-LastExitCode "az group create"
+    Invoke-TrackedAction -Label "az group create -n $resourceGroup -l $azLocation" -Action {
+        az group create -n $resourceGroup -l $azLocation
+        Assert-LastExitCode "az group create"
+    }
 }
 
 # 4) Network components provisioning:
 Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created..." {
-    az network vnet create -g $resourceGroup -n $VNET --address-prefix 10.20.0.0/16 `
-        --subnet-name $SUBNET --subnet-prefix 10.20.0.0/24 -o table
-    Assert-LastExitCode "az network vnet create"
-    az network nsg create -g $resourceGroup -n $NSG -o table
-    Assert-LastExitCode "az network nsg create"
+    Invoke-TrackedAction -Label "az network vnet create -g $resourceGroup -n $VNET" -Action {
+        az network vnet create -g $resourceGroup -n $VNET --address-prefix 10.20.0.0/16 `
+            --subnet-name $SUBNET --subnet-prefix 10.20.0.0/24 -o table
+        Assert-LastExitCode "az network vnet create"
+    }
+    Invoke-TrackedAction -Label "az network nsg create -g $resourceGroup -n $NSG" -Action {
+        az network nsg create -g $resourceGroup -n $NSG -o table
+        Assert-LastExitCode "az network nsg create"
+    }
 
     $ports = $tcpPorts
     $priority = 101
-    az network nsg rule create `
-        -g $resourceGroup `
-        --nsg-name $NSG `
-        --name "$nsgRule" `
-        --priority $priority `
-        --direction Inbound `
-        --protocol Tcp `
-        --access Allow `
-        --destination-port-ranges $ports `
-        --source-address-prefixes "*" `
-        --source-port-ranges "*" `
-        -o table
-    Assert-LastExitCode "az network nsg rule create"
+    Invoke-TrackedAction -Label "az network nsg rule create -g $resourceGroup --nsg-name $NSG --name $nsgRule" -Action {
+        az network nsg rule create `
+            -g $resourceGroup `
+            --nsg-name $NSG `
+            --name "$nsgRule" `
+            --priority $priority `
+            --direction Inbound `
+            --protocol Tcp `
+            --access Allow `
+            --destination-port-ranges $ports `
+            --source-address-prefixes "*" `
+            --source-port-ranges "*" `
+            -o table
+        Assert-LastExitCode "az network nsg rule create"
+    }
 
     Write-Host "Creating public IP '$IP'..."
-    az network public-ip create -g $resourceGroup -n $IP --allocation-method Static --sku Standard --dns-name $vmName -o table
-    Assert-LastExitCode "az network public-ip create"
+    Invoke-TrackedAction -Label "az network public-ip create -g $resourceGroup -n $IP" -Action {
+        az network public-ip create -g $resourceGroup -n $IP --allocation-method Static --sku Standard --dns-name $vmName -o table
+        Assert-LastExitCode "az network public-ip create"
+    }
 
     Write-Host "Creating network NIC '$NIC'..."
-    az network nic create -g $resourceGroup -n $NIC --vnet-name $VNET --subnet $SUBNET `
-        --network-security-group $NSG `
-        --public-ip-address $IP `
-        -o table
-    Assert-LastExitCode "az network nic create"
+    Invoke-TrackedAction -Label "az network nic create -g $resourceGroup -n $NIC" -Action {
+        az network nic create -g $resourceGroup -n $NIC --vnet-name $VNET --subnet $SUBNET `
+            --network-security-group $NSG `
+            --public-ip-address $IP `
+            -o table
+        Assert-LastExitCode "az network nic create"
+    }
 }
 
 # 5) Cloud-init file preparation:
@@ -333,40 +349,46 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
     if ($existingVM) {
         Write-Output "VM '$vmName' exists in resource group '$resourceGroup' and will be deleted..."
-        az vm delete --name $vmName --resource-group $resourceGroup --yes -o table
-        Assert-LastExitCode "az vm delete"
+        Invoke-TrackedAction -Label "az vm delete --name $vmName --resource-group $resourceGroup --yes" -Action {
+            az vm delete --name $vmName --resource-group $resourceGroup --yes -o table
+            Assert-LastExitCode "az vm delete"
+        }
         Write-Output "VM '$vmName' was deleted from resource group '$resourceGroup'."
     }
     else {
         Write-Output "VM '$vmName' is not present in resource group '$resourceGroup'. Creating..."
     }
 
-    $vmCreateJson = az vm create `
-        --resource-group $resourceGroup `
-        --name $vmName `
-        --image $vmImage `
-        --size $vmSize `
-        --storage-sku $vmStorageSku `
-        --os-disk-name $vmDiskName `
-        --os-disk-size-gb $vmDiskSize `
-        --admin-username $vmUser `
-        --admin-password $vmPass `
-        --authentication-type password `
-        --custom-data "$vmCloudInitScriptFile" `
-        --nics $NIC `
-        -o json
+    $vmCreateJson = Invoke-TrackedAction -Label "az vm create --resource-group $resourceGroup --name $vmName" -Action {
+        $result = az vm create `
+            --resource-group $resourceGroup `
+            --name $vmName `
+            --image $vmImage `
+            --size $vmSize `
+            --storage-sku $vmStorageSku `
+            --os-disk-name $vmDiskName `
+            --os-disk-size-gb $vmDiskSize `
+            --admin-username $vmUser `
+            --admin-password $vmPass `
+            --authentication-type password `
+            --custom-data "$vmCloudInitScriptFile" `
+            --nics $NIC `
+            -o json
 
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning "az vm create returned a non-zero code; checking VM existence."
-        $vmExistsAfterCreate = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($vmExistsAfterCreate)) {
-            Write-Host "VM exists; details will be retrieved via az vm show -d."
-            $vmCreateJson = az vm show -g $resourceGroup -n $vmName -d -o json
-            Assert-LastExitCode "az vm show -d after vm create non-zero"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "az vm create returned a non-zero code; checking VM existence."
+            $vmExistsAfterCreate = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv 2>$null
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($vmExistsAfterCreate)) {
+                Write-Host "VM exists; details will be retrieved via az vm show -d."
+                $result = az vm show -g $resourceGroup -n $vmName -d -o json
+                Assert-LastExitCode "az vm show -d after vm create non-zero"
+            }
+            else {
+                throw "az vm create failed with exit code $LASTEXITCODE."
+            }
         }
-        else {
-            throw "az vm create failed with exit code $LASTEXITCODE."
-        }
+
+        $result
     }
 
     $vmCreateObj = ConvertFrom-JsonCompat -InputObject $vmCreateJson
@@ -380,8 +402,8 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
-    if (-not $script:StepMode) {
-        Write-Host "Auto mode enabled: Step 8 tasks will run from the VM update script file."
+    if (-not $script:SubstepMode) {
+        Write-Host "Substep mode is not enabled: Step 8 tasks will run from the VM update script file."
         Invoke-VmRunCommandScriptFile `
             -ResourceGroup $resourceGroup `
             -VmName $vmName `
@@ -391,7 +413,7 @@ Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
         return
     }
 
-    Write-Host "Step mode enabled: Step 8 will execute tasks one-by-one."
+    Write-Host "Substep mode is enabled: Step 8 will execute tasks one-by-one."
     $tcpPortsBash = ($tcpPorts -join " ")
     $tcpPortsRegex = ($tcpPorts | ForEach-Object { [regex]::Escape($_) }) -join "|"
     $taskBlocks = @(
@@ -498,14 +520,17 @@ grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Allo
         -VmName $vmName `
         -CommandId "RunShellScript" `
         -TaskBlocks $taskBlocks `
-        -StepMode:$true `
+        -SubstepMode:$true `
         -CombinedShell "bash"
 }
 
 # 9) VM connection details:
 Invoke-Step "Step 9/9 - VM connection details will be printed..." {
-    $vmDetailsJson = az vm show -g $resourceGroup -n $vmName -d -o json
-    Assert-LastExitCode "az vm show -d"
+    $vmDetailsJson = Invoke-TrackedAction -Label "az vm show -g $resourceGroup -n $vmName -d" -Action {
+        $result = az vm show -g $resourceGroup -n $vmName -d -o json
+        Assert-LastExitCode "az vm show -d"
+        $result
+    }
     $vmDetails = ConvertFrom-JsonCompat -InputObject $vmDetailsJson
     if (-not $vmDetails) {
         throw "VM detail output could not be parsed."
@@ -562,7 +587,7 @@ catch {
         $code = 50
     }
     elseif ($errorMessage -match "^VM task '(.+)' failed:") {
-        $summary = "A task failed in step mode."
+        $summary = "A task failed in substep mode."
         $hint = "Review the task name in the error detail and fix the related command."
         $code = 51
     }
@@ -586,7 +611,7 @@ finally {
         $script:TranscriptStarted = $false
     }
     if (-not $script:AutoMode) {
-        pause
+        Read-Host -Prompt "Press Enter to exit." | Out-Null
     }
 }
 

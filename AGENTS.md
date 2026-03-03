@@ -21,14 +21,14 @@ This repository manages Linux and Windows Azure VM provisioning scripts with hig
 ## Runtime Modes
 - Default mode is `interactive`.
 - Auto mode is `--auto` or `-a`.
-- Task diagnostic mode is `--step` or `-s`.
+- Task diagnostic mode is `--substep` or `-s`.
 
 ### Mode Semantics
 - Main flow uses `Step 1..9` for top-level orchestration.
 - `Step 8` contains guest-side `Task` executions.
-- If `--step` is provided:
+- If `--substep` is provided:
   - Step 8 guest tasks run task-by-task via run-command.
-- If `--step` is not provided:
+- If `--substep` is not provided:
   - Step 8 executes the full guest update script in a single run-command call.
 
 ## Configuration Strategy
@@ -72,3 +72,4 @@ This repository manages Linux and Windows Azure VM provisioning scripts with hig
 
 ## Required Assistant Workflow Rule
 After each user prompt is implemented, the assistant must create a meaningful, contextual, developer-friendly English git commit immediately before presenting the final summary.
+

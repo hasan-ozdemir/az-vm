@@ -80,6 +80,32 @@ function Confirm-YesNo {
     }
 }
 
+function Invoke-TrackedAction {
+    param(
+        [string]$Label,
+        [scriptblock]$Action
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Label)) {
+        $Label = "action"
+    }
+
+    Write-Host ("running: {0}" -f $Label) -ForegroundColor DarkCyan
+    $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $result = . $Action
+        if ($null -ne $result) {
+            Write-Output -NoEnumerate $result
+        }
+    }
+    finally {
+        if ($watch.IsRunning) {
+            $watch.Stop()
+        }
+        Write-Host ("finished: {0} ({1:N1}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
+    }
+}
+
 function Assert-LastExitCode {
     param(
         [string]$Context

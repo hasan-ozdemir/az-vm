@@ -42,18 +42,18 @@ Format:
 - [2026-03-01 11:24] Required both linux and windows defaults to use austriaeast region.
 - [2026-03-01 11:28] Requested parallel end-to-end rebuilds after deleting existing resource groups.
 - [2026-03-01 11:32] Reported potential deadlock/console-lock in windows Step 8 execution path.
-- [2026-03-01 11:36] Required --step/-s option to execute Step 8 tasks incrementally for troubleshooting.
-- [2026-03-01 11:40] Requested full rerun from resource-group deletion with --step logging for rapid diagnosis.
+- [2026-03-01 11:36] Required --substep/-s option to execute Step 8 tasks incrementally for troubleshooting.
+- [2026-03-01 11:40] Requested full rerun from resource-group deletion with --substep logging for rapid diagnosis.
 - [2026-03-01 11:44] User introduced additional linux ports and requested NSG plus OS-level opening sync.
 - [2026-03-01 11:48] Required same expanded network model on windows at both Azure and guest firewall levels.
 - [2026-03-01 11:52] Requested refactor/update/analysis pass only, with test execution deferred by user.
 - [2026-03-01 11:56] Required naming semantics: top-level steps 1..9, Step 8 internals called tasks.
 - [2026-03-01 12:00] Required same task-array definitions for both step and combined execution in windows flow.
 - [2026-03-01 12:04] Required linux flow to mirror windows task-array architecture for reuse and maintainability.
-- [2026-03-01 12:08] Required auto and step semantics to match cross-platform without drift.
-- [2026-03-01 12:12] Requested repeated linux --auto --step rebuild until all issues are resolved.
-- [2026-03-01 12:16] Requested repeated windows --auto --step rebuild and patch cycle until stable.
-- [2026-03-01 12:20] Requested explicit confirmation that windows --auto --step completes end-to-end.
+- [2026-03-01 12:08] Required auto and substep semantics to match cross-platform without drift.
+- [2026-03-01 12:12] Requested repeated linux --auto --substep rebuild until all issues are resolved.
+- [2026-03-01 12:16] Requested repeated windows --auto --substep rebuild and patch cycle until stable.
+- [2026-03-01 12:20] Requested explicit confirmation that windows --auto --substep completes end-to-end.
 - [2026-03-01 12:24] Required task pipeline to continue only when previous run-command step reports success.
 - [2026-03-01 12:28] Requested windows disk size set to 80 GB during intermediate iteration.
 - [2026-03-01 12:32] Required all tunable settings to live in platform-specific .env files.
@@ -65,7 +65,7 @@ Format:
 - [2026-03-01 12:56] Required check-before-add behavior to avoid duplicate membership/system error 1378.
 - [2026-03-01 13:00] Requested reduced latency by avoiding excessive per-task invoke overhead where possible.
 - [2026-03-01 13:04] Requested performance observation of --auto execution after reliability improvements.
-- [2026-03-01 13:08] Clarified behavior: with --step tasks are granular; without --step Step 8 must run as one batch.
+- [2026-03-01 13:08] Clarified behavior: with --substep tasks are granular; without --substep Step 8 must run as one batch.
 - [2026-03-01 13:12] User explicitly requested no testing for that specific semantic fix step.
 - [2026-03-01 13:16] Required step/task terminology update across code comments and user-facing logs.
 - [2026-03-01 13:20] Requested same step/task semantic cleanup to be applied on linux side as well.
@@ -74,10 +74,10 @@ Format:
 - [2026-03-01 13:32] Requested explicit confirmation whether previously assigned changes were fully completed.
 - [2026-03-01 13:36] Asked if any logical mismatch remained between win and lin outside platform necessities.
 - [2026-03-01 13:40] Required splitting linux monolithic guest update into sensible tasks like windows model.
-- [2026-03-01 13:44] Required step mode task-splitting and combined-mode single-call behavior for both shells.
+- [2026-03-01 13:44] Required substep mode task-splitting and combined-mode single-call behavior for both shells.
 - [2026-03-01 13:48] User confirmed implementation of the planned parity refactor changes.
 - [2026-03-01 13:52] Requested windows script run in --auto mode only for immediate verification.
-- [2026-03-01 13:56] Required non-step mode to write and execute az-vm-win-update.ps1 from disk.
+- [2026-03-01 13:56] Required non-substep mode to write and execute az-vm-win-update.ps1 from disk.
 - [2026-03-01 14:00] Required carrying latest combine-mode architecture from windows into linux without regressions.
 - [2026-03-01 14:04] Requested creation of co-vm shared scripts and platform wrappers for common logic reuse.
 - [2026-03-01 14:08] User requested direct implementation of shared architecture plan without further delay.
@@ -85,7 +85,7 @@ Format:
 - [2026-03-01 14:16] Requested scan for unreferenced files and deletion only after explicit user approval.
 - [2026-03-01 14:20] Requested complete realistic .env.example templates covering all active config keys.
 - [2026-03-01 14:24] Requested validation that every configured TCP port is opened at NSG and Windows firewall layers.
-- [2026-03-01 14:28] Required port 11434 in NSG and guest firewall/update scripts for all auto and step modes.
+- [2026-03-01 14:28] Required port 11434 in NSG and guest firewall/update scripts for all auto and substep modes.
 - [2026-03-01 14:32] Requested seamless SSH port migration to 444 for both linux and windows flows.
 - [2026-03-01 14:36] Required replacing interactive confirmation wording with explicit auto-mode notice during RG deletion.
 - [2026-03-01 14:40] Requested parallel execution tests using --auto only on both linux and windows scripts.

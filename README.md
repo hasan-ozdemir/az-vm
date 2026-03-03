@@ -30,8 +30,8 @@ Copy-Item win-vm/.env.example win-vm/.env
 ### 4) Optional: run Step 8 tasks one-by-one for diagnostics
 
 ```powershell
-.\az-vm-lin.cmd --auto --step
-.\az-vm-win.cmd --auto --step
+.\az-vm-lin.cmd --auto --substep
+.\az-vm-win.cmd --auto --substep
 ```
 
 ### 5) Read outputs
@@ -102,7 +102,7 @@ Both Linux and Windows scripts support the same CLI flags:
   - Step 1 includes interactive region and VM SKU pickers.
 - `--auto` / `-a`
   - Non-interactive execution path.
-- `--step` / `-s`
+- `--substep` / `-s`
   - Diagnostic mode for Step 8 guest tasks.
 
 ### Step vs Task semantics
@@ -110,8 +110,8 @@ Both Linux and Windows scripts support the same CLI flags:
 - Step 8 contains guest-side `Task` blocks.
 
 Execution behavior in Step 8:
-- With `--step`: tasks run one-by-one via run-command.
-- Without `--step`: whole update script runs in a single run-command call.
+- With `--substep`: tasks run one-by-one via run-command.
+- Without `--substep`: whole update script runs in a single run-command call.
 
 ---
 
@@ -249,7 +249,7 @@ Linux Step 8 tasks include:
 
 ### Linux, unattended task-by-task diagnostics
 ```powershell
-.\az-vm-lin.cmd --auto --step
+.\az-vm-lin.cmd --auto --substep
 ```
 
 ### Windows, unattended combined mode
@@ -259,7 +259,7 @@ Linux Step 8 tasks include:
 
 ### Windows, unattended task-by-task diagnostics
 ```powershell
-.\az-vm-win.cmd --auto --step
+.\az-vm-win.cmd --auto --substep
 ```
 
 ### Direct PowerShell script invocation
@@ -344,10 +344,11 @@ Representative failure classes:
 Interactive is the default mode and asks per-step confirmation. Use `--auto` for non-interactive runs.
 
 ### Why does Step 8 sometimes run slower?
-`--step` runs each task individually for diagnostics. Combined mode runs a single run-command call and is generally faster.
+`--substep` runs each task individually for diagnostics. Combined mode runs a single run-command call and is generally faster.
 
 ### Can I change SSH port and open-port list?
 Yes. Set `SSH_PORT` and `TCP_PORTS` in platform `.env` files. The scripts sync these across NSG and guest firewall configuration.
 
 ### Can I use a different image or region?
 Yes. Update `VM_IMAGE` and `AZ_LOCATION` in `.env`. Pre-checks fail fast if the combination is unsupported.
+

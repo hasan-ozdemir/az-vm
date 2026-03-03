@@ -7,7 +7,7 @@ if %errorlevel% neq 0 (
     start powershell -Command "Start-Process -FilePath '%~f0' -ArgumentList '%*' -Verb RunAs"
     if %errorlevel% neq 0 (
         echo !!! Error: Failed to obtain administrator permission. Please run cmd with 'Run as administrator'.!!!
-        pause
+        set /p __exit_prompt=Press Enter to exit.
     )
     exit /b
 )

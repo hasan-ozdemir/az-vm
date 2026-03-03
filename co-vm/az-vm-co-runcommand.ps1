@@ -107,25 +107,26 @@ function Invoke-VmRunCommandScriptFile {
         throw "VM run-command script file was not found: $ScriptFilePath"
     }
 
-    $watch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
-        $json = az vm run-command invoke `
-            --resource-group $ResourceGroup `
-            --name $VmName `
-            --command-id $CommandId `
-            --scripts "@$ScriptFilePath" `
-            -o json
-        Assert-LastExitCode "az vm run-command invoke (script-file)"
+        $invokeLabel = "az vm run-command invoke (script-file)"
+        $json = Invoke-TrackedAction -Label $invokeLabel -Action {
+            $result = az vm run-command invoke `
+                --resource-group $ResourceGroup `
+                --name $VmName `
+                --command-id $CommandId `
+                --scripts "@$ScriptFilePath" `
+                -o json
+            Assert-LastExitCode "az vm run-command invoke (script-file)"
+            $result
+        }
 
         $message = Get-CoRunCommandResultMessage -TaskName "script-file" -RawJson $json -ModeLabel $ModeLabel
-        $watch.Stop()
-        Write-Host ("TASK batch run-command completed ({0:N1}s)" -f $watch.Elapsed.TotalSeconds)
+        Write-Host "TASK batch run-command completed."
         if (-not [string]::IsNullOrWhiteSpace($message)) {
             Write-Host $message
         }
     }
     catch {
-        if ($watch.IsRunning) { $watch.Stop() }
         throw "VM task batch execution failed in $ModeLabel flow: $($_.Exception.Message)"
     }
 }
@@ -136,7 +137,7 @@ function Invoke-VmRunCommandBlocks {
         [string]$VmName,
         [string]$CommandId,
         [object[]]$TaskBlocks,
-        [switch]$StepMode,
+        [switch]$SubstepMode,
         [ValidateSet("bash","powershell")]
         [string]$CombinedShell = "powershell"
     )
@@ -145,8 +146,8 @@ function Invoke-VmRunCommandBlocks {
         throw "VM run-command task list is empty."
     }
 
-    if ($StepMode) {
-        Write-Host "Step mode enabled: Step 8 tasks are executed one-by-one."
+    if ($SubstepMode) {
+        Write-Host "Substep mode is enabled: Step 8 tasks are executed one-by-one."
         foreach ($taskBlock in $TaskBlocks) {
             $taskName = [string]$taskBlock.Name
             $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
@@ -163,9 +164,13 @@ function Invoke-VmRunCommandBlocks {
                 )
                 $taskAzArgs += $taskArgs
                 $taskAzArgs += @("-o", "json")
-                $taskJson = az @taskAzArgs
-                Assert-LastExitCode "az vm run-command invoke ($taskName)"
-                $taskMessage = Get-CoRunCommandResultMessage -TaskName $taskName -RawJson $taskJson -ModeLabel "step-mode"
+                $taskInvokeLabel = "az vm run-command invoke (task: $taskName)"
+                $taskJson = Invoke-TrackedAction -Label $taskInvokeLabel -Action {
+                    $invokeResult = az @taskAzArgs
+                    Assert-LastExitCode "az vm run-command invoke ($taskName)"
+                    $invokeResult
+                }
+                $taskMessage = Get-CoRunCommandResultMessage -TaskName $taskName -RawJson $taskJson -ModeLabel "substep-mode"
                 $taskWatch.Stop()
                 Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
                 Write-Host "TASK result: success"
@@ -182,7 +187,7 @@ function Invoke-VmRunCommandBlocks {
         return
     }
 
-    Write-Host "Auto mode enabled: Step 8 tasks will run in a single run-command call."
+    Write-Host "Substep mode is not enabled: Step 8 tasks will run in a single run-command call."
 
     $combinedBuilder = New-Object System.Text.StringBuilder
     if ($CombinedShell -eq "bash") {
@@ -250,7 +255,6 @@ function Invoke-VmRunCommandBlocks {
     }
 
     $combinedScript = $combinedBuilder.ToString()
-    $combinedWatch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $combinedArgs = Get-CoRunCommandScriptArgs -ScriptText $combinedScript -CommandId $CommandId
         $combinedAzArgs = @(
@@ -262,17 +266,19 @@ function Invoke-VmRunCommandBlocks {
         )
         $combinedAzArgs += $combinedArgs
         $combinedAzArgs += @("-o", "json")
-        $combinedJson = az @combinedAzArgs
-        Assert-LastExitCode "az vm run-command invoke (task-batch-combined)"
+        $combinedInvokeLabel = "az vm run-command invoke (task-batch-combined)"
+        $combinedJson = Invoke-TrackedAction -Label $combinedInvokeLabel -Action {
+            $invokeResult = az @combinedAzArgs
+            Assert-LastExitCode "az vm run-command invoke (task-batch-combined)"
+            $invokeResult
+        }
         $combinedMessage = Get-CoRunCommandResultMessage -TaskName "combined-task-batch" -RawJson $combinedJson -ModeLabel "auto-mode"
-        $combinedWatch.Stop()
-        Write-Host ("TASK batch run-command completed ({0:N1}s)" -f $combinedWatch.Elapsed.TotalSeconds)
+        Write-Host "TASK batch run-command completed."
         if (-not [string]::IsNullOrWhiteSpace($combinedMessage)) {
             Write-Host $combinedMessage
         }
     }
     catch {
-        if ($combinedWatch.IsRunning) { $combinedWatch.Stop() }
-        throw "VM task batch execution failed in combined mode: $($_.Exception.Message)"
+        throw "VM task batch execution failed in combined flow: $($_.Exception.Message)"
     }
 }
