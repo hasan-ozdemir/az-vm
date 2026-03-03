@@ -491,6 +491,10 @@ function Read-StrictYesNo {
     }
 }
 
+function Get-CoVmSkuPickerRegionBackToken {
+    return "__CO_VM_PICK_REGION_AGAIN__"
+}
+
 function Select-VmSkuInteractive {
     param(
         [string]$Location,
@@ -552,7 +556,7 @@ function Select-VmSkuInteractive {
         }
 
         while ($true) {
-            $selection = Read-Host "Enter VM SKU number (default=$defaultIndex, f=change filter)"
+            $selection = Read-Host "Enter VM SKU number (default=$defaultIndex, f=change filter, r=change region)"
             if ([string]::IsNullOrWhiteSpace($selection)) {
                 $selectedSku = [string]$rows[$defaultIndex - 1].Sku
                 $confirmSelected = Read-StrictYesNo -PromptText ("Selected VM SKU: '{0}'. Continue?" -f $selectedSku)
@@ -565,6 +569,10 @@ function Select-VmSkuInteractive {
             }
             if ($selection -match '^[fF]$') {
                 break
+            }
+            if ($selection -match '^[rR]$') {
+                Write-Host "Returning to region selection..." -ForegroundColor DarkGray
+                return (Get-CoVmSkuPickerRegionBackToken)
             }
 
             if ($selection -match '^\d+$') {
@@ -581,7 +589,7 @@ function Select-VmSkuInteractive {
                 }
             }
 
-            Write-Host "Invalid VM SKU selection. Please enter a valid number." -ForegroundColor Yellow
+            Write-Host "Invalid VM SKU selection. Please enter a valid number, or use 'f'/'r'." -ForegroundColor Yellow
         }
     }
 }

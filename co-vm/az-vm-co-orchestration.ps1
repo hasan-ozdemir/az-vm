@@ -70,8 +70,17 @@ function Invoke-CoVmStep1Common {
     $vmSize = $defaultVmSize
     if (-not $AutoMode) {
         $priceHours = Get-PriceHoursFromConfig -Config $ConfigMap -DefaultHours 730
-        $azLocation = Select-AzLocationInteractive -DefaultLocation $defaultAzLocation
-        $vmSize = Select-VmSkuInteractive -Location $azLocation -DefaultVmSize $defaultVmSize -PriceHours $priceHours
+        $regionBackToken = Get-CoVmSkuPickerRegionBackToken
+        while ($true) {
+            $azLocation = Select-AzLocationInteractive -DefaultLocation $azLocation
+            $vmSizeSelection = Select-VmSkuInteractive -Location $azLocation -DefaultVmSize $defaultVmSize -PriceHours $priceHours
+            if ([string]::Equals([string]$vmSizeSelection, [string]$regionBackToken, [System.StringComparison]::Ordinal)) {
+                continue
+            }
+
+            $vmSize = [string]$vmSizeSelection
+            break
+        }
         if ($ConfigOverrides) {
             $ConfigOverrides["AZ_LOCATION"] = $azLocation
             $ConfigOverrides["VM_SIZE"] = $vmSize
