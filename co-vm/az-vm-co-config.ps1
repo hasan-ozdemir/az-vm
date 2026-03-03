@@ -50,7 +50,7 @@ function Get-ConfigValue {
         }
     }
 
-    if ($Config.ContainsKey($Key)) {
+    if ($Config -and $Config.ContainsKey($Key)) {
         $configValue = [string]$Config[$Key]
         if (-not [string]::IsNullOrWhiteSpace($configValue)) {
             return $configValue

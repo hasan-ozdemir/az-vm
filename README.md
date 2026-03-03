@@ -75,6 +75,7 @@ az-vm/
     az-vm-co-config.ps1
     az-vm-co-azure.ps1
     az-vm-co-runcommand.ps1
+    az-vm-co-sku-picker.ps1
   lin-vm/
     az-vm-lin.ps1              # Linux orchestration script
     az-vm-lin-cloud-init.yaml  # Generated/managed cloud-init content
@@ -85,6 +86,9 @@ az-vm/
     az-vm-win-init.ps1         # Windows init script artifact
     az-vm-win-update.ps1       # Windows guest update script (combined mode)
     .env.example
+  tests/
+    ps-compat-smoke.ps1        # Non-live compatibility smoke checks
+    run-ps-compat-matrix.ps1   # Runs smoke checks on PS5.1 + PS7
 ```
 
 ---
@@ -261,6 +265,23 @@ Linux Step 8 tasks include:
 powershell -ExecutionPolicy Bypass -File .\lin-vm\az-vm-lin.ps1 --auto
 powershell -ExecutionPolicy Bypass -File .\win-vm\az-vm-win.ps1 --auto
 ```
+
+---
+
+## PowerShell Compatibility Checks
+
+Run full non-live compatibility smoke matrix (recommended after refactors):
+
+```powershell
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\run-ps-compat-matrix.ps1
+```
+
+This validates:
+- Parse/syntax integrity of all `.ps1` files.
+- Shared `co-vm` module loadability.
+- JSON and collection compatibility helpers.
+- Run-command result parsing behavior.
+- Interactive VM SKU partial-filter behavior (mocked `az`; no live Azure call).
 
 ---
 

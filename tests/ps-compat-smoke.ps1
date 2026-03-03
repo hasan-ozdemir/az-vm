@@ -1,0 +1,210 @@
+param(
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+)
+
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+
+$global:TestPassCount = 0
+$global:TestFailCount = 0
+
+function Write-TestResult {
+    param(
+        [bool]$Success,
+        [string]$Name,
+        [string]$Detail
+    )
+
+    if ($Success) {
+        $global:TestPassCount++
+        Write-Host ("[PASS] {0}" -f $Name) -ForegroundColor Green
+        return
+    }
+
+    $global:TestFailCount++
+    Write-Host ("[FAIL] {0}: {1}" -f $Name, $Detail) -ForegroundColor Red
+}
+
+function Assert-True {
+    param(
+        [bool]$Condition,
+        [string]$Message
+    )
+
+    if (-not $Condition) {
+        throw $Message
+    }
+}
+
+function Assert-Equal {
+    param(
+        [object]$Expected,
+        [object]$Actual,
+        [string]$Message
+    )
+
+    if ($Expected -ne $Actual) {
+        throw ("{0}. Expected='{1}', Actual='{2}'" -f $Message, $Expected, $Actual)
+    }
+}
+
+function Invoke-TestCase {
+    param(
+        [string]$Name,
+        [scriptblock]$Action
+    )
+
+    try {
+        . $Action
+        Write-TestResult -Success $true -Name $Name -Detail ""
+    }
+    catch {
+        Write-TestResult -Success $false -Name $Name -Detail $_.Exception.Message
+    }
+}
+
+function Test-PsSyntaxAllFiles {
+    $ps1Files = Get-ChildItem -Path $RepoRoot -Recurse -Filter *.ps1 | Sort-Object FullName
+    Assert-True -Condition ($ps1Files.Count -gt 0) -Message "No .ps1 files were found."
+
+    foreach ($file in $ps1Files) {
+        $tokens = $null
+        $errors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
+        if ($errors -and $errors.Count -gt 0) {
+            $firstError = $errors[0]
+            throw ("Parse error in '{0}' at line {1}: {2}" -f $file.FullName, $firstError.Extent.StartLineNumber, $firstError.Message)
+        }
+    }
+}
+
+function Test-JsonCompatFunctions {
+    $objFromText = ConvertFrom-JsonCompat -InputObject '{"id":"123","name":"demo"}'
+    Assert-Equal -Expected "123" -Actual ([string]$objFromText.id) -Message "ConvertFrom-JsonCompat should parse json object text"
+
+    $objFromLines = ConvertFrom-JsonCompat -InputObject @('{', '  "x": 2', '}')
+    Assert-Equal -Expected "2" -Actual ([string]$objFromLines.x) -Message "ConvertFrom-JsonCompat should parse line-array json text"
+
+    $arrayFromScalar = ConvertFrom-JsonArrayCompat -InputObject '{"name":"single"}'
+    Assert-Equal -Expected 1 -Actual (@($arrayFromScalar).Count) -Message "ConvertFrom-JsonArrayCompat should wrap scalar values"
+    Assert-Equal -Expected "single" -Actual ([string]$arrayFromScalar[0].name) -Message "ConvertFrom-JsonArrayCompat wrapped value should be accessible"
+
+    $arrayFromNull = ConvertTo-ObjectArrayCompat -InputObject $null
+    Assert-Equal -Expected 0 -Actual $arrayFromNull.Count -Message "ConvertTo-ObjectArrayCompat should return empty array for null"
+
+    $arrayFromString = ConvertTo-ObjectArrayCompat -InputObject "abc"
+    Assert-Equal -Expected 1 -Actual $arrayFromString.Count -Message "ConvertTo-ObjectArrayCompat should keep string as scalar item"
+    Assert-Equal -Expected "abc" -Actual ([string]$arrayFromString[0]) -Message "ConvertTo-ObjectArrayCompat should preserve scalar value"
+}
+
+function Test-ConfigFallbackBehavior {
+    $script:ConfigOverrides = @{}
+    $value1 = Get-ConfigValue -Config $null -Key "AZ_LOCATION" -DefaultValue "austriaeast"
+    Assert-Equal -Expected "austriaeast" -Actual $value1 -Message "Get-ConfigValue should return default when config is null"
+
+    $config = @{ AZ_LOCATION = "eastus" }
+    $value2 = Get-ConfigValue -Config $config -Key "AZ_LOCATION" -DefaultValue "austriaeast"
+    Assert-Equal -Expected "eastus" -Actual $value2 -Message "Get-ConfigValue should read hashtable value"
+
+    $script:ConfigOverrides["AZ_LOCATION"] = "westindia"
+    $value3 = Get-ConfigValue -Config $config -Key "AZ_LOCATION" -DefaultValue "austriaeast"
+    Assert-Equal -Expected "westindia" -Actual $value3 -Message "Get-ConfigValue should prioritize override"
+}
+
+function Test-RunCommandJsonBehavior {
+    $okSingle = '{"value":{"code":"ComponentStatus/StdOut/succeeded","message":"single-ok"}}'
+    $messageSingle = Get-CoRunCommandResultMessage -TaskName "single" -RawJson $okSingle -ModeLabel "compat-smoke"
+    Assert-True -Condition ($messageSingle -like "*single-ok*") -Message "Run-command parser should process single message objects"
+
+    $okArray = '{"value":[{"code":"ComponentStatus/StdOut/succeeded","message":"line-1"},{"code":"ComponentStatus/StdOut/succeeded","message":"line-2"}]}'
+    $messageArray = Get-CoRunCommandResultMessage -TaskName "array" -RawJson $okArray -ModeLabel "compat-smoke"
+    Assert-True -Condition ($messageArray -like "*line-1*") -Message "Run-command parser should include first message"
+    Assert-True -Condition ($messageArray -like "*line-2*") -Message "Run-command parser should include second message"
+
+    $failed = '{"value":{"code":"ComponentStatus/StdErr/failed","message":"boom"}}'
+    $threw = $false
+    try {
+        [void](Get-CoRunCommandResultMessage -TaskName "failed" -RawJson $failed -ModeLabel "compat-smoke")
+    }
+    catch {
+        $threw = $true
+        Assert-True -Condition ($_.Exception.Message -like "*reported error*") -Message "Run-command parser should surface failure message"
+    }
+    Assert-True -Condition $threw -Message "Run-command parser should throw on failed status code"
+}
+
+function Test-SkuFilterBehaviorWithMockAz {
+    $script:DefaultErrorSummary = "compat-smoke"
+    $script:DefaultErrorHint = "compat-smoke"
+
+    function global:az {
+        $argLine = ($args -join " ")
+        if ($argLine -like "vm list-sizes*") {
+            $global:LASTEXITCODE = 0
+            return @'
+[
+  {"name":"Standard_B2as_v2","numberOfCores":2,"memoryInMB":8192},
+  {"name":"Standard_B2s","numberOfCores":2,"memoryInMB":4096},
+  {"name":"Standard_D2as_v5","numberOfCores":2,"memoryInMB":8192},
+  {"name":"Basic_A1","numberOfCores":1,"memoryInMB":1792}
+]
+'@
+        }
+
+        $global:LASTEXITCODE = 1
+        throw ("Mock az received an unexpected command: {0}" -f $argLine)
+    }
+
+    try {
+        $b2a = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "b2a"
+        Assert-Equal -Expected 1 -Actual (@($b2a).Count) -Message "SKU filter 'b2a' should return only matching SKU(s)"
+        Assert-Equal -Expected "Standard_B2as_v2" -Actual ([string]$b2a[0].name) -Message "SKU filter 'b2a' should match Standard_B2as_v2"
+
+        $standardB2 = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_b2"
+        Assert-Equal -Expected 2 -Actual (@($standardB2).Count) -Message "SKU filter 'standard_b2' should match Standard_B2* SKUs"
+
+        $all = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike ""
+        Assert-Equal -Expected 3 -Actual (@($all).Count) -Message "Empty SKU filter should return only Standard_* SKUs"
+    }
+    finally {
+        Remove-Item -Path Function:\global:az -ErrorAction SilentlyContinue
+    }
+}
+
+Write-Host "Running compatibility smoke tests in host: $($PSVersionTable.PSVersion.ToString())"
+Write-Host "Repo root: $RepoRoot"
+
+Invoke-TestCase -Name "Syntax parse for all .ps1 files" -Action { Test-PsSyntaxAllFiles }
+
+try {
+    $coVmRoot = Join-Path $RepoRoot "co-vm"
+    $imports = @(
+        "az-vm-co-core.ps1",
+        "az-vm-co-config.ps1",
+        "az-vm-co-azure.ps1",
+        "az-vm-co-runcommand.ps1",
+        "az-vm-co-sku-picker.ps1"
+    )
+    foreach ($fileName in $imports) {
+        $filePath = Join-Path $coVmRoot $fileName
+        if (-not (Test-Path -LiteralPath $filePath)) {
+            throw ("Shared module was not found: {0}" -f $filePath)
+        }
+        . $filePath
+    }
+    Write-TestResult -Success $true -Name "Import shared co-vm modules" -Detail ""
+}
+catch {
+    Write-TestResult -Success $false -Name "Import shared co-vm modules" -Detail $_.Exception.Message
+}
+
+Invoke-TestCase -Name "JSON compatibility helpers" -Action { Test-JsonCompatFunctions }
+Invoke-TestCase -Name "Config fallback behavior" -Action { Test-ConfigFallbackBehavior }
+Invoke-TestCase -Name "Run-command JSON parser behavior" -Action { Test-RunCommandJsonBehavior }
+Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-SkuFilterBehaviorWithMockAz }
+
+Write-Host ""
+Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $global:TestPassCount, $global:TestFailCount)
+if ($global:TestFailCount -gt 0) {
+    exit 1
+}

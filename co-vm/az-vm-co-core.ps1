@@ -3,16 +3,43 @@ function Invoke-Step {
         [string] $prompt,
         [scriptblock] $Action
     )
-    $before = Get-Variable
+
+    function Publish-NewStepVariables {
+        param(
+            [object[]]$BeforeVariables,
+            [object[]]$AfterVariables
+        )
+
+        $beforeNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($beforeVar in $BeforeVariables) {
+            [void]$beforeNames.Add([string]$beforeVar.Name)
+        }
+
+        foreach ($var in $AfterVariables) {
+            $varName = [string]$var.Name
+            if ($beforeNames.Contains($varName)) {
+                continue
+            }
+
+            if (($var.Options -band [System.Management.Automation.ScopedItemOptions]::Constant) -ne 0) {
+                continue
+            }
+
+            try {
+                Set-Variable -Name $varName -Value $var.Value -Scope Script -Force -ErrorAction Stop
+            }
+            catch {
+                # Skip transient or restricted variables safely.
+            }
+        }
+    }
+
+    $before = @(Get-Variable)
     if ($script:AutoMode) {
         Write-Host "$prompt (mode: auto)" -ForegroundColor Cyan
         . $Action
-        $after = Get-Variable
-        foreach ($var in $after) {
-            if (-not ($before.Name -contains $var.Name)) {
-                Set-Variable -Name $var.Name -Value $var.Value -Scope Script
-            }
-        }
+        $after = @(Get-Variable)
+        Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
         return
     }
     do {
@@ -20,12 +47,8 @@ function Invoke-Step {
     } until ($response -match '^[yYnN]$')
     if ($response -match '^[yY]$') {
         . $Action
-        $after = Get-Variable
-        foreach ($var in $after) {
-            if (-not ($before.Name -contains $var.Name)) {
-                Set-Variable -Name $var.Name -Value $var.Value -Scope Script
-            }
-        }
+        $after = @(Get-Variable)
+        Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
     }
     else {
         Write-Host "Skipping this step." -ForegroundColor Cyan
@@ -107,12 +130,43 @@ function ConvertFrom-JsonArrayCompat {
     )
 
     $parsed = ConvertFrom-JsonCompat -InputObject $InputObject
+    $result = @()
     if ($null -eq $parsed) {
-        return @()
+        $result = @()
     }
-    if ($parsed -is [System.Array]) {
-        return $parsed
+    elseif ($parsed -is [System.Array]) {
+        $result = @($parsed)
+    }
+    else {
+        $result = @($parsed)
     }
 
-    return @($parsed)
+    Write-Output -NoEnumerate $result
+}
+
+function ConvertTo-ObjectArrayCompat {
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$InputObject
+    )
+
+    $result = @()
+
+    if ($null -eq $InputObject) {
+        $result = @()
+    }
+    elseif ($InputObject -is [System.Array]) {
+        $result = @($InputObject)
+    }
+    elseif ($InputObject -is [string] -or $InputObject -is [char]) {
+        $result = @([string]$InputObject)
+    }
+    elseif ($InputObject -is [System.Collections.IEnumerable] -and -not ($InputObject -is [string])) {
+        $result = @($InputObject)
+    }
+    else {
+        $result = @($InputObject)
+    }
+
+    Write-Output -NoEnumerate $result
 }

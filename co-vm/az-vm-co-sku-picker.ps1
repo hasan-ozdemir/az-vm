@@ -47,7 +47,8 @@ function Get-AzLocationCatalog {
             -Hint "Check Azure account/subscription context and location metadata availability."
     }
 
-    return @($locations | Sort-Object DisplayName, Name)
+    Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($locations | Sort-Object DisplayName, Name))
+    return
 }
 
 function Write-RegionSelectionGrid {
@@ -161,7 +162,8 @@ function Get-LocationSkusForSelection {
     )
 
     if ($needle -eq "") {
-        return @($standardSkus | Sort-Object name -Unique)
+        Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($standardSkus | Sort-Object name -Unique))
+        return
     }
 
     $filtered = foreach ($sku in $standardSkus) {
@@ -182,7 +184,8 @@ function Get-LocationSkusForSelection {
         }
     }
 
-    return @($filtered | Sort-Object name -Unique)
+    Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($filtered | Sort-Object name -Unique))
+    return
 }
 
 function Get-SkuAvailabilityMap {
@@ -244,7 +247,10 @@ function Get-SkuAvailabilityMap {
             -Hint "Check Azure REST access and subscription permissions."
     }
 
-    $items = @($response.value | Where-Object { $_.resourceType -eq "virtualMachines" })
+    $items = @(
+        (ConvertTo-ObjectArrayCompat -InputObject $response.value) |
+            Where-Object { $_.resourceType -eq "virtualMachines" }
+    )
     foreach ($item in $items) {
         if (-not $item.name) { continue }
         $itemName = [string]$item.name
@@ -252,7 +258,7 @@ function Get-SkuAvailabilityMap {
         if (-not $targetSkuSet.ContainsKey($skuKey)) { continue }
 
         $isUnavailable = $false
-        foreach ($restriction in @($item.restrictions)) {
+        foreach ($restriction in (ConvertTo-ObjectArrayCompat -InputObject $item.restrictions)) {
             if ($restriction.reasonCode -eq "NotAvailableForSubscription") {
                 $isUnavailable = $true
                 break
@@ -263,7 +269,10 @@ function Get-SkuAvailabilityMap {
             }
         }
 
-        $locationInfo = @($item.locationInfo | Where-Object { $_.location -ieq $Location })
+        $locationInfo = @(
+            (ConvertTo-ObjectArrayCompat -InputObject $item.locationInfo) |
+                Where-Object { $_.location -ieq $Location }
+        )
         if ($isUnavailable -or -not $locationInfo) {
             $result[$itemName] = "no"
         }
@@ -306,7 +315,7 @@ function Get-SkuPriceMap {
 
         while ($nextUri) {
             $response = Invoke-RestMethod -Uri $nextUri -Method Get -ErrorAction Stop
-            foreach ($item in @($response.Items)) {
+            foreach ($item in (ConvertTo-ObjectArrayCompat -InputObject $response.Items)) {
                 if (-not $item.armSkuName -or $item.unitPrice -eq $null) { continue }
                 $itemSkuName = [string]$item.armSkuName
                 $itemKey = $itemSkuName.ToLowerInvariant()
@@ -399,7 +408,8 @@ function Build-VmSkuSelectionRows {
         $rows += [PSCustomObject]$row
     }
 
-    return $rows
+    Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject $rows)
+    return
 }
 
 function Select-VmSkuInteractive {

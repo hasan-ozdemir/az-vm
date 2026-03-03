@@ -61,13 +61,14 @@ function Get-CoRunCommandResultMessage {
         throw "VM $ModeLabel task '$TaskName' run-command output could not be parsed as JSON."
     }
 
-    if (-not $result.value -or $result.value.Count -eq 0) {
+    $resultEntries = ConvertTo-ObjectArrayCompat -InputObject $result.value
+    if (-not $resultEntries -or $resultEntries.Count -eq 0) {
         throw "VM $ModeLabel task '$TaskName' run-command output is empty."
     }
 
     $messages = @()
     $hasError = $false
-    foreach ($entry in $result.value) {
+    foreach ($entry in $resultEntries) {
         $code = [string]$entry.code
         $message = [string]$entry.message
         if (-not [string]::IsNullOrWhiteSpace($message)) {
