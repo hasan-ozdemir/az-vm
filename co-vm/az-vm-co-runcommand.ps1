@@ -282,3 +282,68 @@ function Invoke-VmRunCommandBlocks {
         throw "VM task batch execution failed in combined flow: $($_.Exception.Message)"
     }
 }
+
+function Apply-CoVmTaskBlockReplacements {
+    param(
+        [object[]]$TaskBlocks,
+        [hashtable]$Replacements
+    )
+
+    if (-not $TaskBlocks) {
+        return @()
+    }
+
+    $resolvedBlocks = @()
+    foreach ($taskBlock in $TaskBlocks) {
+        $taskName = [string]$taskBlock.Name
+        $taskScript = [string]$taskBlock.Script
+
+        if ($Replacements) {
+            foreach ($key in $Replacements.Keys) {
+                $token = "__{0}__" -f [string]$key
+                $value = [string]$Replacements[$key]
+                $taskScript = $taskScript.Replace($token, $value)
+            }
+        }
+
+        $resolvedBlocks += [pscustomobject]@{
+            Name = $taskName
+            Script = $taskScript
+        }
+    }
+
+    Write-Output -NoEnumerate $resolvedBlocks
+}
+
+function Invoke-CoVmStep8RunCommand {
+    param(
+        [switch]$SubstepMode,
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$CommandId,
+        [string]$ScriptFilePath,
+        [object[]]$TaskBlocks,
+        [ValidateSet("bash","powershell")]
+        [string]$CombinedShell
+    )
+
+    if (-not $SubstepMode) {
+        Write-Host "Substep mode is not enabled: Step 8 tasks will run from the VM update script file."
+        Invoke-VmRunCommandScriptFile `
+            -ResourceGroup $ResourceGroup `
+            -VmName $VmName `
+            -CommandId $CommandId `
+            -ScriptFilePath $ScriptFilePath `
+            -ModeLabel "auto-mode update-script-file"
+        return
+    }
+
+    Write-Host "Substep mode is enabled: Step 8 will execute tasks one-by-one."
+    Invoke-VmRunCommandBlocks `
+        -ResourceGroup $ResourceGroup `
+        -VmName $VmName `
+        -CommandId $CommandId `
+        -TaskBlocks $TaskBlocks `
+        -SubstepMode:$true `
+        -CombinedShell $CombinedShell
+}

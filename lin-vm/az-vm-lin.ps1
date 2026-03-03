@@ -249,18 +249,6 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
-    if (-not $script:SubstepMode) {
-        Write-Host "Substep mode is not enabled: Step 8 tasks will run from the VM update script file."
-        Invoke-VmRunCommandScriptFile `
-            -ResourceGroup $resourceGroup `
-            -VmName $vmName `
-            -CommandId "RunShellScript" `
-            -ScriptFilePath $vmUpdateScriptFile `
-            -ModeLabel "auto-mode update-script-file"
-        return
-    }
-
-    Write-Host "Substep mode is enabled: Step 8 will execute tasks one-by-one."
     $tcpPortsBash = ($tcpPorts -join " ")
     $tcpPortsRegex = ($tcpPorts | ForEach-Object { [regex]::Escape($_) }) -join "|"
     $taskBlocks = @(
@@ -358,16 +346,23 @@ grep -E "^(Port|PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Allo
         }
     )
 
-    foreach ($taskBlock in $taskBlocks) {
-        $taskBlock.Script = ([string]$taskBlock.Script).Replace("__VM_USER__", $vmUser).Replace("__VM_PASS__", $vmPass).Replace("__TCP_PORTS_BASH__", $tcpPortsBash).Replace("__TCP_PORTS_REGEX__", $tcpPortsRegex).Replace("__SSH_PORT__", $sshPort)
-    }
+    $taskBlocks = Apply-CoVmTaskBlockReplacements `
+        -TaskBlocks $taskBlocks `
+        -Replacements @{
+            VM_USER = $vmUser
+            VM_PASS = $vmPass
+            TCP_PORTS_BASH = $tcpPortsBash
+            TCP_PORTS_REGEX = $tcpPortsRegex
+            SSH_PORT = $sshPort
+        }
 
-    Invoke-VmRunCommandBlocks `
+    Invoke-CoVmStep8RunCommand `
+        -SubstepMode:$script:SubstepMode `
         -ResourceGroup $resourceGroup `
         -VmName $vmName `
         -CommandId "RunShellScript" `
+        -ScriptFilePath $vmUpdateScriptFile `
         -TaskBlocks $taskBlocks `
-        -SubstepMode:$true `
         -CombinedShell "bash"
 }
 
