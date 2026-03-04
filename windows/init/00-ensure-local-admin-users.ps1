@@ -63,28 +63,36 @@ function Ensure-GroupMembership {
         return
     }
 
-    $lastAddExitCode = 1
-    $addCandidates = @($MemberName, $shortMember, ".\\$shortMember")
+    $addCandidates = @(
+        $MemberName,
+        "$env:COMPUTERNAME\\$shortMember",
+        ".\\$shortMember",
+        $shortMember
+    )
     $addTried = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $lastError = ""
+
     foreach ($addCandidate in @($addCandidates)) {
         if ([string]::IsNullOrWhiteSpace([string]$addCandidate)) { continue }
         if (-not $addTried.Add([string]$addCandidate)) { continue }
 
-        net localgroup "$GroupName" $addCandidate /add
-        $lastAddExitCode = [int]$LASTEXITCODE
-
-        if ($lastAddExitCode -eq 0) {
+        try {
+            Add-LocalGroupMember -Group $GroupName -Member $addCandidate -ErrorAction Stop
             Write-Host "User '$addCandidate' was added to local group '$GroupName'."
             return
         }
-
-        if ($lastAddExitCode -eq 1378) {
-            Write-Host "User '$addCandidate' is already in local group '$GroupName' (system error 1378)."
-            return
+        catch {
+            $msg = [string]$_.Exception.Message
+            $lastError = $msg
+            if ($msg -match '(?i)(already a member|1378|already belongs)') {
+                Write-Host "User '$addCandidate' is already in local group '$GroupName'."
+                return
+            }
+            Write-Warning "Add-LocalGroupMember failed for '$addCandidate' in '$GroupName': $msg"
         }
     }
 
-    throw "Adding '$MemberName' to '$GroupName' failed with exit code $lastAddExitCode."
+    throw "Adding '$MemberName' to '$GroupName' failed. Last error: $lastError"
 }
 
 function Ensure-LocalUserUnlocked {

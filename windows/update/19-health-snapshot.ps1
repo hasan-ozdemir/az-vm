@@ -10,7 +10,7 @@ function Invoke-CommandWithTimeout {
     $job = Start-Job -ScriptBlock $Action
     $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
     if (-not $completed) {
-        Stop-Job -Job $job -Force
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
         Remove-Job -Job $job -Force
         return [pscustomobject]@{ Success = $false; TimedOut = $true }
     }

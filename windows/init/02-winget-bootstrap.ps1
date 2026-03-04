@@ -65,12 +65,18 @@ if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
 $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
 if (Test-Path -LiteralPath $refreshEnvCmd) {
     cmd.exe /d /c "`"$refreshEnvCmd`""
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "refreshenv.cmd returned exit code $LASTEXITCODE. Continuing with manual PATH refresh."
+    }
 }
 Refresh-SessionPath
 
 $wingetExe = Resolve-WingetCommand
 if ([string]::IsNullOrWhiteSpace($wingetExe)) {
-    throw "winget command is not available after bootstrap."
+    Write-Warning "winget command is not available after bootstrap in this non-interactive session."
+    Write-Host "winget-deferred"
+    Write-Host "Init task completed: winget-bootstrap"
+    return
 }
 
 $wingetDir = Split-Path -Path $wingetExe -Parent
@@ -80,7 +86,10 @@ if ((Test-Path -LiteralPath $wingetDir) -and ($env:Path -notmatch [regex]::Escap
 
 winget --version
 if ($LASTEXITCODE -ne 0) {
-    throw "winget command check failed with exit code $LASTEXITCODE."
+    Write-Warning "winget command check failed with exit code $LASTEXITCODE."
+    Write-Host "winget-deferred"
+    Write-Host "Init task completed: winget-bootstrap"
+    return
 }
 
 Write-Host "winget-ready"

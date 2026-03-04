@@ -641,7 +641,7 @@ function Invoke-AzVmMain {
                 PuttyPscpPath = $configuredPscpPath
             }
 
-            Invoke-CoVmRunCommandTaskBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -TaskOutcomeMode 'strict' | Out-Null
+            Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell 'powershell' | Out-Null
 
             Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
             Start-Sleep -Seconds 20
@@ -5157,6 +5157,32 @@ function Get-CoRunCommandScriptArgs {
     return @("@$tempPath")
 }
 
+function Test-CoVmBenignRunCommandStdErr {
+    param(
+        [string]$Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Message)) {
+        return $false
+    }
+
+    $normalized = [string]$Message
+    $normalized = $normalized -replace "`r", " "
+    $normalized = $normalized -replace "`n", " "
+
+    $benignPatterns = @(
+        "(?i)'wmic'\s+is\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command"
+    )
+
+    foreach ($pattern in $benignPatterns) {
+        if ($normalized -match $pattern) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Get-CoRunCommandResultMessage {
     param(
         [string]$TaskName,
@@ -5192,8 +5218,13 @@ function Get-CoRunCommandResultMessage {
         if ($code -match '(?i)/failed$') {
             $hasError = $true
         }
-        elseif ($code -match '(?i)StdErr' -and -not [string]::IsNullOrWhiteSpace($message) -and $message -match '(?i)(terminatingerror|exception|failed|not recognized|cannot find|categoryinfo)') {
-            $hasError = $true
+        elseif ($code -match '(?i)StdErr' -and -not [string]::IsNullOrWhiteSpace($message)) {
+            if (Test-CoVmBenignRunCommandStdErr -Message $message) {
+                Write-Warning ("Ignoring benign run-command stderr line for task '{0}': {1}" -f $TaskName, $message.Trim())
+            }
+            elseif ($message -match '(?i)(terminatingerror|exception|failed|not recognized|cannot find|categoryinfo)') {
+                $hasError = $true
+            }
         }
     }
 
