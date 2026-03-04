@@ -432,6 +432,11 @@ if (-not (Test-Path $chocoExe)) { throw "choco setup could not be completed." }
 & $chocoExe feature enable -n useEnhancedExitCodes | Out-Null
 & $chocoExe config set --name commandExecutionTimeoutSeconds --value 14400 | Out-Null
 & $chocoExe config set --name cacheLocation --value "$env:ProgramData\chocolatey\cache" | Out-Null
+& $chocoExe install winget -y --no-progress | Out-Null
+$wingetInstallExit = [int]$LASTEXITCODE
+if ($wingetInstallExit -ne 0 -and $wingetInstallExit -ne 2) {
+    Write-Warning ("Chocolatey winget install returned exit code {0}. Winget-dependent tasks may be limited." -f $wingetInstallExit)
+}
 $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
 if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
 $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")

@@ -261,6 +261,251 @@ function Test-CoVmWindowsRebootPendingOverSsh {
     return ([string]$probe.Output -match '^CO_VM_REBOOT_REQUIRED:')
 }
 
+function Convert-CoVmProcessArgument {
+    param(
+        [string]$Value
+    )
+
+    if ($null -eq $Value) {
+        return '""'
+    }
+
+    $escaped = [string]$Value
+    $escaped = $escaped -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return ('"{0}"' -f $escaped)
+}
+
+function Start-CoVmPersistentSshSession {
+    param(
+        [string]$PySshClientPath,
+        [string]$HostName,
+        [string]$UserName,
+        [string]$Password,
+        [string]$Port,
+        [ValidateSet("powershell", "bash")]
+        [string]$Shell = "powershell",
+        [int]$ConnectTimeoutSeconds = 30,
+        [int]$DefaultTaskTimeoutSeconds = 1800
+    )
+
+    if ([string]::IsNullOrWhiteSpace($PySshClientPath) -or -not (Test-Path -LiteralPath $PySshClientPath)) {
+        throw "Persistent SSH session could not start because pyssh client path is invalid."
+    }
+    if ($ConnectTimeoutSeconds -lt 5) { $ConnectTimeoutSeconds = 5 }
+    if ($DefaultTaskTimeoutSeconds -lt 5) { $DefaultTaskTimeoutSeconds = 5 }
+
+    $argList = @(
+        [string]$PySshClientPath,
+        "session",
+        "--host", [string]$HostName,
+        "--port", [string]$Port,
+        "--user", [string]$UserName,
+        "--password", [string]$Password,
+        "--timeout", [string]$ConnectTimeoutSeconds,
+        "--task-timeout", [string]$DefaultTaskTimeoutSeconds,
+        "--shell", [string]$Shell
+    )
+    $argText = ($argList | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "python"
+    $psi.Arguments = $argText
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+
+    $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
+    $signal = New-Object System.Threading.AutoResetEvent($false)
+
+    $outputHandler = [System.Diagnostics.DataReceivedEventHandler]{
+        param($sender, $eventArgs)
+        if ($null -ne $eventArgs.Data) {
+            [void]$queue.Enqueue([pscustomobject]@{
+                Stream = "stdout"
+                Line = [string]$eventArgs.Data
+            })
+            [void]$signal.Set()
+        }
+    }
+    $errorHandler = [System.Diagnostics.DataReceivedEventHandler]{
+        param($sender, $eventArgs)
+        if ($null -ne $eventArgs.Data) {
+            [void]$queue.Enqueue([pscustomobject]@{
+                Stream = "stderr"
+                Line = [string]$eventArgs.Data
+            })
+            [void]$signal.Set()
+        }
+    }
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    $proc.add_OutputDataReceived($outputHandler)
+    $proc.add_ErrorDataReceived($errorHandler)
+
+    if (-not $proc.Start()) {
+        throw "Persistent SSH python process could not be started."
+    }
+
+    $proc.BeginOutputReadLine()
+    $proc.BeginErrorReadLine()
+
+    return [pscustomobject]@{
+        Process = $proc
+        Queue = $queue
+        Signal = $signal
+        OutputHandler = $outputHandler
+        ErrorHandler = $errorHandler
+        HostName = [string]$HostName
+        UserName = [string]$UserName
+        Port = [string]$Port
+        Shell = [string]$Shell
+        DefaultTaskTimeoutSeconds = [int]$DefaultTaskTimeoutSeconds
+    }
+}
+
+function Invoke-CoVmPersistentSshTask {
+    param(
+        [psobject]$Session,
+        [string]$TaskName,
+        [string]$TaskScript,
+        [int]$TimeoutSeconds = 1800
+    )
+
+    if ($null -eq $Session -or $null -eq $Session.Process) {
+        throw "Persistent SSH session is not initialized."
+    }
+    if ($Session.Process.HasExited) {
+        throw ("Persistent SSH session process has already exited (code={0})." -f $Session.Process.ExitCode)
+    }
+    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }
+
+    $payload = [ordered]@{
+        action = "run"
+        task = [string]$TaskName
+        timeout = [int]$TimeoutSeconds
+        script = [string]$TaskScript
+    } | ConvertTo-Json -Compress -Depth 20
+
+    $Session.Process.StandardInput.WriteLine([string]$payload)
+    $Session.Process.StandardInput.Flush()
+
+    $outputLines = New-Object 'System.Collections.Generic.List[string]'
+    $endMarkerRegex = '^CO_VM_TASK_END:(?<task>.+?):(?<code>-?\d+)$'
+    $beginMarkerRegex = '^CO_VM_TASK_BEGIN:(?<task>.+)$'
+    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $exitCode = $null
+
+    while ($null -eq $exitCode) {
+        $entry = $null
+        $drained = $false
+        while ($Session.Queue.TryDequeue([ref]$entry)) {
+            $drained = $true
+            if ($null -eq $entry) {
+                continue
+            }
+
+            $stream = [string]$entry.Stream
+            $line = [string]$entry.Line
+            if ($null -eq $line) {
+                continue
+            }
+            [void]$outputLines.Add($line)
+
+            if ($stream -eq "stderr") {
+                Write-Warning $line
+            }
+            else {
+                Write-Host $line
+            }
+
+            if ($stream -eq "stdout" -and $line -match $beginMarkerRegex) {
+                continue
+            }
+            if ($stream -eq "stdout" -and $line -match $endMarkerRegex) {
+                $markerTask = [string]$Matches.task
+                if ([string]::Equals($markerTask, [string]$TaskName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $exitCode = [int]$Matches.code
+                    break
+                }
+            }
+        }
+
+        if ($null -ne $exitCode) {
+            break
+        }
+        if ($Session.Process.HasExited) {
+            throw ("Persistent SSH session process exited before task completion (code={0})." -f $Session.Process.ExitCode)
+        }
+        if ($taskWatch.Elapsed.TotalSeconds -gt ($TimeoutSeconds + 60)) {
+            throw ("Persistent SSH task timeout guard reached for '{0}'." -f $TaskName)
+        }
+
+        if (-not $drained) {
+            [void]$Session.Signal.WaitOne(250)
+        }
+    }
+
+    if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+    return [pscustomobject]@{
+        ExitCode = [int]$exitCode
+        Output = ($outputLines -join "`n")
+    }
+}
+
+function Stop-CoVmPersistentSshSession {
+    param(
+        [psobject]$Session
+    )
+
+    if ($null -eq $Session) {
+        return
+    }
+
+    $proc = $Session.Process
+    if ($null -ne $proc) {
+        try {
+            if (-not $proc.HasExited) {
+                try {
+                    $closePayload = @{ action = "close" } | ConvertTo-Json -Compress
+                    $proc.StandardInput.WriteLine([string]$closePayload)
+                    $proc.StandardInput.Flush()
+                    $proc.StandardInput.Close()
+                }
+                catch { }
+
+                if (-not $proc.WaitForExit(5000)) {
+                    try { $proc.Kill() } catch { }
+                    [void]$proc.WaitForExit(2000)
+                }
+            }
+        }
+        finally {
+            try { $proc.CancelOutputRead() } catch { }
+            try { $proc.CancelErrorRead() } catch { }
+            try {
+                if ($Session.OutputHandler) { $proc.remove_OutputDataReceived($Session.OutputHandler) }
+            }
+            catch { }
+            try {
+                if ($Session.ErrorHandler) { $proc.remove_ErrorDataReceived($Session.ErrorHandler) }
+            }
+            catch { }
+            try { $proc.Dispose() } catch { }
+        }
+    }
+
+    try {
+        if ($Session.Signal) { $Session.Signal.Dispose() }
+    }
+    catch { }
+}
+
 function Invoke-CoVmStep8OverSsh {
     param(
         [ValidateSet("windows","linux")]
@@ -343,6 +588,7 @@ function Invoke-CoVmStep8OverSsh {
     $rebootCount = 0
     $hadMidStepReboot = $false
     $tempRoot = $null
+    $persistentSession = $null
 
     try {
         Write-Host "SSH mode is enabled for Step 8 execution." -ForegroundColor Yellow
@@ -350,111 +596,231 @@ function Invoke-CoVmStep8OverSsh {
 
         if ($SubstepMode) {
             Write-Host "Substep mode is enabled: Step 8 tasks are executed one-by-one over SSH."
-            $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-step8-ssh-" + [guid]::NewGuid().ToString("N"))
-            New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
-
-            for ($taskIndex = 0; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
-                $taskBlock = $TaskBlocks[$taskIndex]
-                $taskName = [string]$taskBlock.Name
-                $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
-                $localTaskName = if ($Platform -eq "windows") { ("task-{0:D2}.ps1" -f ($taskIndex + 1)) } else { ("task-{0:D2}.sh" -f ($taskIndex + 1)) }
-                $localTaskPath = Join-Path $tempRoot $localTaskName
-                $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform $Platform
-                Write-TextFileNormalized `
-                    -Path $localTaskPath `
-                    -Content $taskScript `
-                    -Encoding $writeSettings.Encoding `
-                    -LineEnding $writeSettings.LineEnding `
-                    -EnsureTrailingNewline
-
-                $remoteTaskPath = ("./{0}" -f $localTaskName)
-                Copy-CoVmFileToVmOverSsh `
-                    -PscpPath ([string]$putty.PscpPath) `
-                -HostName $SshHost `
-                -UserName $SshUser `
-                -Password $SshPassword `
-                -Port $SshPort `
-                -HostKey $resolvedHostKey `
-                -LocalPath $localTaskPath `
-                -RemotePath $remoteTaskPath `
-                -MaxAttempts $SshMaxRetries | Out-Null
-
-                $remoteCommand = if ($Platform -eq "windows") {
-                    ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $remoteTaskPath)
-                }
-                else {
-                    ('bash "{0}"' -f $remoteTaskPath)
-                }
-
-                Write-Host ("TASK started: {0}" -f $taskName)
-                $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
-                $taskResult = Invoke-CoVmSshRemoteCommand `
-                    -PlinkPath ([string]$putty.PlinkPath) `
+            if ($Platform -eq "windows") {
+                Write-Host "Persistent SSH task session is enabled: one SSH connection will be reused for Step 8 substeps." -ForegroundColor DarkCyan
+                $persistentSession = Start-CoVmPersistentSshSession `
+                    -PySshClientPath ([string]$putty.PlinkPath) `
                     -HostName $SshHost `
                     -UserName $SshUser `
                     -Password $SshPassword `
                     -Port $SshPort `
-                    -HostKey $resolvedHostKey `
-                    -Command $remoteCommand `
-                    -Label ("ssh task: {0}" -f $taskName) `
-                    -MaxAttempts $SshMaxRetries `
-                    -AllowFailure
-                if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+                    -Shell "powershell" `
+                    -ConnectTimeoutSeconds 30 `
+                    -DefaultTaskTimeoutSeconds 1800
 
-                if (-not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
-                    Write-Host ([string]$taskResult.Output)
-                }
+                for ($taskIndex = 0; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
+                    $taskBlock = $TaskBlocks[$taskIndex]
+                    $taskName = [string]$taskBlock.Name
+                    $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
 
-                if ([int]$taskResult.ExitCode -eq 0) {
-                    $totalSuccess++
-                    Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                    Write-Host "TASK result: success"
-                    Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
-                }
-                else {
-                    if ($TaskFailurePolicy -eq "soft-warning") {
-                        $totalWarnings++
-                        Write-Warning ("TASK warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
-                        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                        Write-Host "TASK result: warning"
-                        Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                    Write-Host ("TASK started: {0}" -f $taskName)
+                    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
+                    $taskResult = $null
+                    $taskInvocationError = $null
+
+                    for ($taskAttempt = 1; $taskAttempt -le $SshMaxRetries; $taskAttempt++) {
+                        try {
+                            $taskResult = Invoke-CoVmPersistentSshTask `
+                                -Session $persistentSession `
+                                -TaskName $taskName `
+                                -TaskScript $taskScript `
+                                -TimeoutSeconds 1800
+                            $taskInvocationError = $null
+                            break
+                        }
+                        catch {
+                            $taskInvocationError = $_
+                            if ($taskAttempt -lt $SshMaxRetries) {
+                                Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $taskAttempt, $SshMaxRetries, $_.Exception.Message)
+                                Stop-CoVmPersistentSshSession -Session $persistentSession
+                                $persistentSession = Start-CoVmPersistentSshSession `
+                                    -PySshClientPath ([string]$putty.PlinkPath) `
+                                    -HostName $SshHost `
+                                    -UserName $SshUser `
+                                    -Password $SshPassword `
+                                    -Port $SshPort `
+                                    -Shell "powershell" `
+                                    -ConnectTimeoutSeconds 30 `
+                                    -DefaultTaskTimeoutSeconds 1800
+                            }
+                        }
                     }
-                    else {
+
+                    if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+
+                    if ($null -ne $taskInvocationError) {
+                        if ($TaskFailurePolicy -eq "soft-warning") {
+                            $totalWarnings++
+                            Write-Warning ("TASK warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
+                            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                            Write-Host "TASK result: warning"
+                            Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                            continue
+                        }
+
                         $totalErrors++
                         Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
                         Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
-                        throw ("Step 8 SSH task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
+                        throw ("Step 8 SSH task failed in persistent session: {0} => {1}" -f $taskName, $taskInvocationError.Exception.Message)
+                    }
+
+                    if ([int]$taskResult.ExitCode -eq 0) {
+                        $totalSuccess++
+                        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                        Write-Host "TASK result: success"
+                        Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
+                    }
+                    else {
+                        if ($TaskFailurePolicy -eq "soft-warning") {
+                            $totalWarnings++
+                            Write-Warning ("TASK warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
+                            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                            Write-Host "TASK result: warning"
+                            Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                        }
+                        else {
+                            $totalErrors++
+                            Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
+                            Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
+                            throw ("Step 8 SSH task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
+                        }
+                    }
+
+                    $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
+                    if (-not $rebootRequired) {
+                        $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
+                            -PlinkPath ([string]$putty.PlinkPath) `
+                            -HostName $SshHost `
+                            -UserName $SshUser `
+                            -Password $SshPassword `
+                            -Port $SshPort `
+                            -HostKey $resolvedHostKey `
+                            -MaxAttempts $SshMaxRetries
+                    }
+
+                    if ($rebootRequired) {
+                        if ($rebootCount -ge $MaxReboots) {
+                            throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                        }
+
+                        $rebootCount++
+                        $hadMidStepReboot = $true
+                        Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
+                        Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
+
+                        Stop-CoVmPersistentSshSession -Session $persistentSession
+                        $persistentSession = $null
+
+                        Invoke-CoVmPostStep8RebootAndProbe `
+                            -ResourceGroup $ResourceGroup `
+                            -VmName $VmName `
+                            -PostRebootProbeScript $PostRebootProbeScript `
+                            -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                            -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                            -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+
+                        $persistentSession = Start-CoVmPersistentSshSession `
+                            -PySshClientPath ([string]$putty.PlinkPath) `
+                            -HostName $SshHost `
+                            -UserName $SshUser `
+                            -Password $SshPassword `
+                            -Port $SshPort `
+                            -Shell "powershell" `
+                            -ConnectTimeoutSeconds 30 `
+                            -DefaultTaskTimeoutSeconds 1800
                     }
                 }
+            }
+            else {
+                $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-step8-ssh-" + [guid]::NewGuid().ToString("N"))
+                New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
 
-                $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
-                if (-not $rebootRequired -and $Platform -eq "windows") {
-                    $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
+                for ($taskIndex = 0; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
+                    $taskBlock = $TaskBlocks[$taskIndex]
+                    $taskName = [string]$taskBlock.Name
+                    $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
+                    $localTaskName = ("task-{0:D2}.sh" -f ($taskIndex + 1))
+                    $localTaskPath = Join-Path $tempRoot $localTaskName
+                    $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform $Platform
+                    Write-TextFileNormalized `
+                        -Path $localTaskPath `
+                        -Content $taskScript `
+                        -Encoding $writeSettings.Encoding `
+                        -LineEnding $writeSettings.LineEnding `
+                        -EnsureTrailingNewline
+
+                    $remoteTaskPath = ("./{0}" -f $localTaskName)
+                    Copy-CoVmFileToVmOverSsh `
+                        -PscpPath ([string]$putty.PscpPath) `
+                        -HostName $SshHost `
+                        -UserName $SshUser `
+                        -Password $SshPassword `
+                        -Port $SshPort `
+                        -HostKey $resolvedHostKey `
+                        -LocalPath $localTaskPath `
+                        -RemotePath $remoteTaskPath `
+                        -MaxAttempts $SshMaxRetries | Out-Null
+
+                    $remoteCommand = ('bash "{0}"' -f $remoteTaskPath)
+                    Write-Host ("TASK started: {0}" -f $taskName)
+                    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
+                    $taskResult = Invoke-CoVmSshRemoteCommand `
                         -PlinkPath ([string]$putty.PlinkPath) `
                         -HostName $SshHost `
                         -UserName $SshUser `
                         -Password $SshPassword `
                         -Port $SshPort `
                         -HostKey $resolvedHostKey `
-                        -MaxAttempts $SshMaxRetries
-                }
+                        -Command $remoteCommand `
+                        -Label ("ssh task: {0}" -f $taskName) `
+                        -MaxAttempts $SshMaxRetries `
+                        -AllowFailure
+                    if ($taskWatch.IsRunning) { $taskWatch.Stop() }
 
-                if ($rebootRequired) {
-                    if ($rebootCount -ge $MaxReboots) {
-                        throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                    if (-not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
+                        Write-Host ([string]$taskResult.Output)
                     }
 
-                    $rebootCount++
-                    $hadMidStepReboot = $true
-                    Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
-                    Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-                    Invoke-CoVmPostStep8RebootAndProbe `
-                        -ResourceGroup $ResourceGroup `
-                        -VmName $VmName `
-                        -PostRebootProbeScript $PostRebootProbeScript `
-                        -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                        -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                        -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+                    if ([int]$taskResult.ExitCode -eq 0) {
+                        $totalSuccess++
+                        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                        Write-Host "TASK result: success"
+                        Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
+                    }
+                    else {
+                        if ($TaskFailurePolicy -eq "soft-warning") {
+                            $totalWarnings++
+                            Write-Warning ("TASK warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
+                            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                            Write-Host "TASK result: warning"
+                            Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                        }
+                        else {
+                            $totalErrors++
+                            Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
+                            Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
+                            throw ("Step 8 SSH task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
+                        }
+                    }
+
+                    $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
+                    if ($rebootRequired) {
+                        if ($rebootCount -ge $MaxReboots) {
+                            throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                        }
+
+                        $rebootCount++
+                        $hadMidStepReboot = $true
+                        Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
+                        Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
+                        Invoke-CoVmPostStep8RebootAndProbe `
+                            -ResourceGroup $ResourceGroup `
+                            -VmName $VmName `
+                            -PostRebootProbeScript $PostRebootProbeScript `
+                            -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                            -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                            -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+                    }
                 }
             }
         }
@@ -594,6 +960,9 @@ function Invoke-CoVmStep8OverSsh {
         }
     }
     finally {
+        if ($null -ne $persistentSession) {
+            Stop-CoVmPersistentSshSession -Session $persistentSession
+        }
         if (-not [string]::IsNullOrWhiteSpace([string]$tempRoot) -and (Test-Path -LiteralPath $tempRoot)) {
             Remove-Item -Path $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
