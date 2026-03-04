@@ -314,9 +314,27 @@ function Test-GuestTaskAndScriptBuild {
     New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
     try {
         $initPath = Join-Path $tmpDir "init.ps1"
-        Write-TextFileNormalized -Path $initPath -Content (Get-CoVmWindowsInitScriptContent) -Encoding "utf8NoBom" -LineEnding "crlf" -EnsureTrailingNewline
+        Write-TextFileNormalized `
+            -Path $initPath `
+            -Content (Get-CoVmWindowsInitScriptContent `
+                -VmUser ([string]$context.VmUser) `
+                -VmPass ([string]$context.VmPass) `
+                -AssistantUser ([string]$context.VmAssistantUser) `
+                -AssistantPass ([string]$context.VmAssistantPass) `
+                -SshPort ([string]$context.SshPort) `
+                -TcpPorts @($context.TcpPorts)) `
+            -Encoding "utf8NoBom" `
+            -LineEnding "crlf" `
+            -EnsureTrailingNewline
+        $windowsInitScript = Get-Content -Path $initPath -Raw
+        Assert-True -Condition ($windowsInitScript -like "*Allow-SSH-444*") -Message "Windows init script should include resolved SSH firewall rule"
+        Assert-True -Condition ($windowsInitScript -like "*11434*") -Message "Windows init script should include resolved TCP port values"
+        Assert-True -Condition ($windowsInitScript -like '*$assistantUser = "assistant"*') -Message "Windows init script should include assistant user variable replacement"
+        Assert-True -Condition ($windowsInitScript -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows init script should ensure assistant local power admin rights"
+        Assert-True -Condition ($windowsInitScript -like "*system error 1378*") -Message "Windows init script should treat local-group already-member exit code 1378 as a non-failing condition"
+
         $windowsTasks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $context -VmInitScriptFile $initPath
-        Assert-True -Condition (@($windowsTasks).Count -ge 17) -Message "Windows task list should contain expected tasks"
+        Assert-True -Condition (@($windowsTasks).Count -ge 10) -Message "Windows update task list should contain expected non-init tasks"
         $windowsScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $windowsTasks
         $windowsTaskScriptJoined = (@($windowsTasks | ForEach-Object { [string]$_.Script }) -join "`n`n")
         $tokens = $null
@@ -327,11 +345,8 @@ function Test-GuestTaskAndScriptBuild {
         Assert-True -Condition ($windowsScript -like "*step8-state.json*") -Message "Windows update script should include Step 8 state file path for reboot-resume"
         Assert-True -Condition ($windowsScript -like "*CO_VM_REBOOT_REQUIRED*") -Message "Windows update script should emit reboot-required marker"
         Assert-True -Condition ($windowsScript -like "*STEP8_SUMMARY:*") -Message "Windows update script should emit Step 8 summary marker"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*Allow-SSH-444*") -Message "Windows task catalog should include resolved SSH firewall rule"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*11434*") -Message "Windows task catalog should include resolved TCP port values"
-        Assert-True -Condition ($windowsTaskScriptJoined -like '*$assistantUser = "assistant"*') -Message "Windows task catalog should include assistant user variable replacement"
-        Assert-True -Condition ($windowsTaskScriptJoined -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows task catalog should ensure assistant local power admin rights"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*system error 1378*") -Message "Windows task catalog should treat local-group already-member exit code 1378 as a non-failing condition"
+        Assert-True -Condition ($windowsTaskScriptJoined -notlike "*Allow-SSH-444*") -Message "Windows update task catalog should not duplicate init-only SSH firewall setup"
+        Assert-True -Condition ($windowsTaskScriptJoined -notlike '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows update task catalog should not duplicate init-only local user bootstrap"
         Assert-True -Condition ($windowsTaskScriptJoined -like "*windows-ux-performance-tuning*") -Message "Windows task catalog should include UX/performance tuning task"
         Assert-True -Condition ($windowsTaskScriptJoined -like "*LaunchTo*") -Message "Windows task catalog should include Explorer launch-to-This-PC setting"
         Assert-True -Condition ($windowsTaskScriptJoined -like "*ShowSuperHidden*") -Message "Windows task catalog should include protected OS files visibility setting"

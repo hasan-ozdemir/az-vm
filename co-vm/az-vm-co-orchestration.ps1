@@ -178,46 +178,101 @@ function Invoke-CoVmResourceGroupStep {
     param(
         [hashtable]$Context,
         [switch]$AutoMode,
-        [switch]$UpdateMode
+        [switch]$UpdateMode,
+        [ValidateSet("legacy","default","update","destructive rebuild")]
+        [string]$ExecutionMode = "legacy"
     )
 
     $resourceGroup = [string]$Context.ResourceGroup
+    $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     Show-CoVmStepFirstUseValues `
         -StepLabel "Step 3/9 - resource group check" `
         -Context $Context `
-        -Keys @("ResourceGroup")
+        -Keys @("ResourceGroup") `
+        -ExtraValues @{
+            ResourceExecutionMode = $effectiveMode
+        }
     Write-Host "'$resourceGroup'"
     $resourceExists = az group exists -n $resourceGroup
     Assert-LastExitCode "az group exists"
-    if ($resourceExists -eq 'true') {
-        if ($UpdateMode) {
-            Write-Host "Update mode: existing resource group '$resourceGroup' will be kept." -ForegroundColor Yellow
-        }
-        else {
-            Write-Host "Resource group '$resourceGroup' will be deleted."
-            $shouldDelete = $true
-            if ($AutoMode) {
-                Write-Host "Auto mode: deletion was confirmed automatically."
-            }
-            else {
-                $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
-            }
+    $resourceExistsBool = [string]::Equals([string]$resourceExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
+    $shouldCreateResourceGroup = $true
 
-            if ($shouldDelete) {
-                Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
-                    az group delete -n $resourceGroup --yes --no-wait
-                    Assert-LastExitCode "az group delete"
-                } | Out-Null
-                Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
-                    az group wait -n $resourceGroup --deleted
-                    Assert-LastExitCode "az group wait deleted"
-                } | Out-Null
-                Write-Host "Resource group '$resourceGroup' was deleted."
-            }
-            else {
-                Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with existing resource group." -ForegroundColor Yellow
+    switch ($effectiveMode) {
+        "default" {
+            if ($resourceExistsBool) {
+                Write-Host "Default mode: existing resource group '$resourceGroup' will be kept; create step is skipped." -ForegroundColor Yellow
+                $shouldCreateResourceGroup = $false
             }
         }
+        "update" {
+            if ($resourceExistsBool) {
+                Write-Host "Update mode: existing resource group '$resourceGroup' will be kept; create-or-update command will run." -ForegroundColor Yellow
+            }
+        }
+        "destructive rebuild" {
+            if ($resourceExistsBool) {
+                Write-Host "destructive rebuild mode: resource group '$resourceGroup' exists and can be deleted before recreate."
+                $shouldDelete = $true
+                if ($AutoMode) {
+                    Write-Host "Auto mode: deletion was confirmed automatically."
+                }
+                else {
+                    $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
+                }
+
+                if ($shouldDelete) {
+                    Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
+                        az group delete -n $resourceGroup --yes --no-wait
+                        Assert-LastExitCode "az group delete"
+                    } | Out-Null
+                    Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
+                        az group wait -n $resourceGroup --deleted
+                        Assert-LastExitCode "az group wait deleted"
+                    } | Out-Null
+                    Write-Host "Resource group '$resourceGroup' was deleted."
+                }
+                else {
+                    Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with recreate command." -ForegroundColor Yellow
+                }
+            }
+        }
+        default {
+            if ($resourceExistsBool) {
+                if ($UpdateMode) {
+                    Write-Host "Update mode: existing resource group '$resourceGroup' will be kept." -ForegroundColor Yellow
+                }
+                else {
+                    Write-Host "Resource group '$resourceGroup' will be deleted."
+                    $shouldDelete = $true
+                    if ($AutoMode) {
+                        Write-Host "Auto mode: deletion was confirmed automatically."
+                    }
+                    else {
+                        $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
+                    }
+
+                    if ($shouldDelete) {
+                        Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
+                            az group delete -n $resourceGroup --yes --no-wait
+                            Assert-LastExitCode "az group delete"
+                        } | Out-Null
+                        Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
+                            az group wait -n $resourceGroup --deleted
+                            Assert-LastExitCode "az group wait deleted"
+                        } | Out-Null
+                        Write-Host "Resource group '$resourceGroup' was deleted."
+                    }
+                    else {
+                        Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with existing resource group." -ForegroundColor Yellow
+                    }
+                }
+            }
+        }
+    }
+
+    if (-not $shouldCreateResourceGroup) {
+        return
     }
 
     Write-Host "Creating resource group '$resourceGroup'..."
@@ -255,59 +310,120 @@ function Invoke-CoVmResourceGroupStep {
     }
 }
 
-function Invoke-CoVmNetworkStep {
+function Test-CoVmAzResourceExists {
     param(
-        [hashtable]$Context
+        [string[]]$AzArgs
     )
 
+    $null = az @AzArgs --only-show-errors -o none 2>$null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Invoke-CoVmNetworkStep {
+    param(
+        [hashtable]$Context,
+        [ValidateSet("legacy","default","update","destructive rebuild")]
+        [string]$ExecutionMode = "legacy"
+    )
+
+    $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
+    $alwaysCreate = ($effectiveMode -in @("legacy","update","destructive rebuild"))
     Show-CoVmStepFirstUseValues `
         -StepLabel "Step 4/9 - network provisioning" `
         -Context $Context `
-        -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "NIC", "TcpPorts")
+        -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "NIC", "TcpPorts") `
+        -ExtraValues @{
+            NetworkExecutionMode = $effectiveMode
+        }
 
-    Invoke-TrackedAction -Label "az network vnet create -g $($Context.ResourceGroup) -n $($Context.VNET)" -Action {
-        az network vnet create -g $Context.ResourceGroup -n $Context.VNET --address-prefix 10.20.0.0/16 `
-            --subnet-name $Context.SUBNET --subnet-prefix 10.20.0.0/24 -o table
-        Assert-LastExitCode "az network vnet create"
-    } | Out-Null
+    $createVnet = $alwaysCreate
+    if (-not $alwaysCreate) {
+        $createVnet = -not (Test-CoVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.VNET))
+        if (-not $createVnet) {
+            Write-Host ("Default mode: VNet '{0}' exists; create command is skipped." -f [string]$Context.VNET) -ForegroundColor Yellow
+        }
+    }
+    if ($createVnet) {
+        Invoke-TrackedAction -Label "az network vnet create -g $($Context.ResourceGroup) -n $($Context.VNET)" -Action {
+            az network vnet create -g $Context.ResourceGroup -n $Context.VNET --address-prefix 10.20.0.0/16 `
+                --subnet-name $Context.SUBNET --subnet-prefix 10.20.0.0/24 -o table
+            Assert-LastExitCode "az network vnet create"
+        } | Out-Null
+    }
 
-    Invoke-TrackedAction -Label "az network nsg create -g $($Context.ResourceGroup) -n $($Context.NSG)" -Action {
-        az network nsg create -g $Context.ResourceGroup -n $Context.NSG -o table
-        Assert-LastExitCode "az network nsg create"
-    } | Out-Null
+    $createNsg = $alwaysCreate
+    if (-not $alwaysCreate) {
+        $createNsg = -not (Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.NSG))
+        if (-not $createNsg) {
+            Write-Host ("Default mode: NSG '{0}' exists; create command is skipped." -f [string]$Context.NSG) -ForegroundColor Yellow
+        }
+    }
+    if ($createNsg) {
+        Invoke-TrackedAction -Label "az network nsg create -g $($Context.ResourceGroup) -n $($Context.NSG)" -Action {
+            az network nsg create -g $Context.ResourceGroup -n $Context.NSG -o table
+            Assert-LastExitCode "az network nsg create"
+        } | Out-Null
+    }
 
     $priority = 101
     $ports = @($Context.TcpPorts)
-    Invoke-TrackedAction -Label "az network nsg rule create -g $($Context.ResourceGroup) --nsg-name $($Context.NSG) --name $($Context.NsgRule)" -Action {
-        az network nsg rule create `
-            -g $Context.ResourceGroup `
-            --nsg-name $Context.NSG `
-            --name "$($Context.NsgRule)" `
-            --priority $priority `
-            --direction Inbound `
-            --protocol Tcp `
-            --access Allow `
-            --destination-port-ranges $ports `
-            --source-address-prefixes "*" `
-            --source-port-ranges "*" `
-            -o table
-        Assert-LastExitCode "az network nsg rule create"
-    } | Out-Null
+    $createNsgRule = $alwaysCreate
+    if (-not $alwaysCreate) {
+        $createNsgRule = -not (Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "rule", "show", "-g", [string]$Context.ResourceGroup, "--nsg-name", [string]$Context.NSG, "--name", [string]$Context.NsgRule))
+        if (-not $createNsgRule) {
+            Write-Host ("Default mode: NSG rule '{0}' exists; create command is skipped." -f [string]$Context.NsgRule) -ForegroundColor Yellow
+        }
+    }
+    if ($createNsgRule) {
+        Invoke-TrackedAction -Label "az network nsg rule create -g $($Context.ResourceGroup) --nsg-name $($Context.NSG) --name $($Context.NsgRule)" -Action {
+            az network nsg rule create `
+                -g $Context.ResourceGroup `
+                --nsg-name $Context.NSG `
+                --name "$($Context.NsgRule)" `
+                --priority $priority `
+                --direction Inbound `
+                --protocol Tcp `
+                --access Allow `
+                --destination-port-ranges $ports `
+                --source-address-prefixes "*" `
+                --source-port-ranges "*" `
+                -o table
+            Assert-LastExitCode "az network nsg rule create"
+        } | Out-Null
+    }
 
-    Write-Host "Creating public IP '$($Context.IP)'..."
-    Invoke-TrackedAction -Label "az network public-ip create -g $($Context.ResourceGroup) -n $($Context.IP)" -Action {
-        az network public-ip create -g $Context.ResourceGroup -n $Context.IP --allocation-method Static --sku Standard --dns-name $Context.VmName -o table
-        Assert-LastExitCode "az network public-ip create"
-    } | Out-Null
+    $createPublicIp = $alwaysCreate
+    if (-not $alwaysCreate) {
+        $createPublicIp = -not (Test-CoVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.IP))
+        if (-not $createPublicIp) {
+            Write-Host ("Default mode: public IP '{0}' exists; create command is skipped." -f [string]$Context.IP) -ForegroundColor Yellow
+        }
+    }
+    if ($createPublicIp) {
+        Write-Host "Creating public IP '$($Context.IP)'..."
+        Invoke-TrackedAction -Label "az network public-ip create -g $($Context.ResourceGroup) -n $($Context.IP)" -Action {
+            az network public-ip create -g $Context.ResourceGroup -n $Context.IP --allocation-method Static --sku Standard --dns-name $Context.VmName -o table
+            Assert-LastExitCode "az network public-ip create"
+        } | Out-Null
+    }
 
-    Write-Host "Creating network NIC '$($Context.NIC)'..."
-    Invoke-TrackedAction -Label "az network nic create -g $($Context.ResourceGroup) -n $($Context.NIC)" -Action {
-        az network nic create -g $Context.ResourceGroup -n $Context.NIC --vnet-name $Context.VNET --subnet $Context.SUBNET `
-            --network-security-group $Context.NSG `
-            --public-ip-address $Context.IP `
-            -o table
-        Assert-LastExitCode "az network nic create"
-    } | Out-Null
+    $createNic = $alwaysCreate
+    if (-not $alwaysCreate) {
+        $createNic = -not (Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.NIC))
+        if (-not $createNic) {
+            Write-Host ("Default mode: NIC '{0}' exists; create command is skipped." -f [string]$Context.NIC) -ForegroundColor Yellow
+        }
+    }
+    if ($createNic) {
+        Write-Host "Creating network NIC '$($Context.NIC)'..."
+        Invoke-TrackedAction -Label "az network nic create -g $($Context.ResourceGroup) -n $($Context.NIC)" -Action {
+            az network nic create -g $Context.ResourceGroup -n $Context.NIC --vnet-name $Context.VNET --subnet $Context.SUBNET `
+                --network-security-group $Context.NSG `
+                --public-ip-address $Context.IP `
+                -o table
+            Assert-LastExitCode "az network nic create"
+        } | Out-Null
+    }
 }
 
 function Invoke-CoVmVmCreateStep {
@@ -315,6 +431,8 @@ function Invoke-CoVmVmCreateStep {
         [hashtable]$Context,
         [switch]$AutoMode,
         [switch]$UpdateMode,
+        [ValidateSet("legacy","default","update","destructive rebuild")]
+        [string]$ExecutionMode = "legacy",
         [scriptblock]$CreateVmAction
     )
 
@@ -323,11 +441,15 @@ function Invoke-CoVmVmCreateStep {
     }
 
     $resourceGroup = [string]$Context.ResourceGroup
+    $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     $vmName = [string]$Context.VmName
     Show-CoVmStepFirstUseValues `
         -StepLabel "Step 7/9 - VM create" `
         -Context $Context `
-        -Keys @("ResourceGroup", "VmName", "VmImage", "VmSize", "VmStorageSku", "VmDiskName", "VmDiskSize", "VmUser", "VmPass", "VmAssistantUser", "VmAssistantPass", "NIC")
+        -Keys @("ResourceGroup", "VmName", "VmImage", "VmSize", "VmStorageSku", "VmDiskName", "VmDiskSize", "VmUser", "VmPass", "VmAssistantUser", "VmAssistantPass", "NIC") `
+        -ExtraValues @{
+            VmExecutionMode = $effectiveMode
+        }
 
     $existingVM = az vm list `
         --resource-group $resourceGroup `
@@ -335,19 +457,42 @@ function Invoke-CoVmVmCreateStep {
         -o tsv
     Assert-LastExitCode "az vm list"
 
+    $hasExistingVm = -not [string]::IsNullOrWhiteSpace([string]$existingVM)
     $shouldDeleteVm = $false
-    if ($existingVM) {
+    $shouldCreateVm = $true
+    if ($hasExistingVm) {
         Write-Host "VM '$vmName' exists in resource group '$resourceGroup'."
-        if ($UpdateMode) {
-            $shouldDeleteVm = $false
-            Write-Host "Update mode: existing VM will be kept; az vm create will run in create-or-update mode." -ForegroundColor Yellow
-        }
-        elseif ($AutoMode) {
-            $shouldDeleteVm = $true
-            Write-Host "Auto mode: VM deletion was confirmed automatically."
-        }
-        else {
-            $shouldDeleteVm = Confirm-YesNo -PromptText "Are you sure you want to delete VM '$vmName'?" -DefaultYes $false
+
+        switch ($effectiveMode) {
+            "default" {
+                $shouldCreateVm = $false
+                Write-Host "Default mode: existing VM '$vmName' will be kept; create step is skipped." -ForegroundColor Yellow
+            }
+            "update" {
+                Write-Host "Update mode: existing VM will be kept; az vm create will run in create-or-update mode." -ForegroundColor Yellow
+            }
+            "destructive rebuild" {
+                if ($AutoMode) {
+                    $shouldDeleteVm = $true
+                    Write-Host "Auto mode: VM deletion was confirmed automatically."
+                }
+                else {
+                    $shouldDeleteVm = Confirm-YesNo -PromptText "Are you sure you want to delete VM '$vmName'?" -DefaultYes $false
+                }
+            }
+            default {
+                if ($UpdateMode) {
+                    $shouldDeleteVm = $false
+                    Write-Host "Update mode: existing VM will be kept; az vm create will run in create-or-update mode." -ForegroundColor Yellow
+                }
+                elseif ($AutoMode) {
+                    $shouldDeleteVm = $true
+                    Write-Host "Auto mode: VM deletion was confirmed automatically."
+                }
+                else {
+                    $shouldDeleteVm = Confirm-YesNo -PromptText "Are you sure you want to delete VM '$vmName'?" -DefaultYes $false
+                }
+            }
         }
 
         if ($shouldDeleteVm) {
@@ -358,12 +503,19 @@ function Invoke-CoVmVmCreateStep {
             } | Out-Null
             Write-Output "VM '$vmName' was deleted from resource group '$resourceGroup'."
         }
-        else {
+        elseif ($effectiveMode -eq "destructive rebuild") {
+            Write-Host "destructive rebuild mode: VM '$vmName' was not deleted by user choice; az vm create will run on existing VM." -ForegroundColor Yellow
+        }
+        elseif ($effectiveMode -ne "default") {
             Write-Host "VM '$vmName' was not deleted by user choice; continuing with az vm create on existing VM." -ForegroundColor Yellow
         }
     }
     else {
         Write-Output "VM '$vmName' is not present in resource group '$resourceGroup'. Creating..."
+    }
+
+    if (-not $shouldCreateVm) {
+        return
     }
 
     $vmCreateJson = Invoke-TrackedAction -Label "az vm create --resource-group $resourceGroup --name $vmName" -Action {
@@ -373,7 +525,8 @@ function Invoke-CoVmVmCreateStep {
             Write-Warning "az vm create returned a non-zero code; checking VM existence."
 
             $vmExistsAfterCreate = ""
-            $presenceProbeAttempts = if ($UpdateMode -and $existingVM) { 12 } else { 3 }
+            $shouldUseLongPresenceProbe = (($effectiveMode -in @("update","destructive rebuild")) -and $hasExistingVm) -or (($effectiveMode -eq "legacy") -and $UpdateMode -and $hasExistingVm)
+            $presenceProbeAttempts = if ($shouldUseLongPresenceProbe) { 12 } else { 3 }
             for ($presenceAttempt = 1; $presenceAttempt -le $presenceProbeAttempts; $presenceAttempt++) {
                 $vmExistsAfterCreate = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv 2>$null
                 if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$vmExistsAfterCreate)) {
@@ -803,8 +956,10 @@ function Show-CoVmRuntimeConfigurationSnapshot {
         [string]$ScriptRoot,
         [switch]$AutoMode,
         [switch]$UpdateMode,
+        [switch]$RenewMode,
         [switch]$SubstepMode,
         [switch]$SshMode,
+        [bool]$IncludeStep8LegacyFlags = $true,
         [hashtable]$ConfigMap,
         [hashtable]$ConfigOverrides,
         [hashtable]$Context
@@ -872,14 +1027,18 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     $runtimeFields = [ordered]@{
         AutoMode = [bool]$AutoMode
         UpdateMode = [bool]$UpdateMode
-        SubstepMode = [bool]$SubstepMode
-        SshMode = [bool]$SshMode
+        RenewMode = [bool]$RenewMode
         ScriptRoot = [string]$ScriptRoot
         ScriptName = [string]$ScriptName
+    }
+    if ($IncludeStep8LegacyFlags) {
+        $runtimeFields["SubstepMode"] = [bool]$SubstepMode
+        $runtimeFields["SshMode"] = [bool]$SshMode
     }
     $runtimeLabels = @{
         AutoMode = "Auto mode"
         UpdateMode = "Update mode"
+        RenewMode = "destructive rebuild mode"
         SubstepMode = "Substep mode"
         SshMode = "SSH mode"
         ScriptRoot = "Script root"

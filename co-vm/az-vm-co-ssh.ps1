@@ -548,7 +548,8 @@ function Invoke-CoVmStep8OverSsh {
         [string]$TaskFailurePolicy = "soft-warning",
         [int]$SshMaxRetries = 3,
         [string]$ConfiguredPlinkPath = "",
-        [string]$ConfiguredPscpPath = ""
+        [string]$ConfiguredPscpPath = "",
+        [switch]$DisableRebootHandling
     )
 
     if ([string]::IsNullOrWhiteSpace($SshHost)) {
@@ -613,7 +614,7 @@ function Invoke-CoVmStep8OverSsh {
         Write-Host ("Step 8 failure policy: {0}" -f $TaskFailurePolicy)
 
         if ($SubstepMode) {
-            Write-Host "Substep mode is enabled: Step 8 tasks are executed one-by-one over SSH."
+            Write-Host "Task-by-task mode is enabled: Step 8 tasks are executed one-by-one over SSH."
             if ($Platform -eq "windows") {
                 Write-Host "Persistent SSH task session is enabled: one SSH connection will be reused for Step 8 substeps." -ForegroundColor DarkCyan
                 $persistentSession = Start-CoVmPersistentSshSession `
@@ -717,48 +718,50 @@ function Invoke-CoVmStep8OverSsh {
                         }
                     }
 
-                    $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
-                    if (-not $rebootRequired) {
-                        $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
-                            -PlinkPath ([string]$putty.PlinkPath) `
-                            -HostName $SshHost `
-                            -UserName $SshUser `
-                            -Password $SshPassword `
-                            -Port $SshPort `
-                            -HostKey $resolvedHostKey `
-                            -MaxAttempts $SshMaxRetries
-                    }
-
-                    if ($rebootRequired) {
-                        if ($rebootCount -ge $MaxReboots) {
-                            throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                    if (-not $DisableRebootHandling) {
+                        $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
+                        if (-not $rebootRequired) {
+                            $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
+                                -PlinkPath ([string]$putty.PlinkPath) `
+                                -HostName $SshHost `
+                                -UserName $SshUser `
+                                -Password $SshPassword `
+                                -Port $SshPort `
+                                -HostKey $resolvedHostKey `
+                                -MaxAttempts $SshMaxRetries
                         }
 
-                        $rebootCount++
-                        $hadMidStepReboot = $true
-                        Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
-                        Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
+                        if ($rebootRequired) {
+                            if ($rebootCount -ge $MaxReboots) {
+                                throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                            }
 
-                        Stop-CoVmPersistentSshSession -Session $persistentSession
-                        $persistentSession = $null
+                            $rebootCount++
+                            $hadMidStepReboot = $true
+                            Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
+                            Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
 
-                        Invoke-CoVmPostStep8RebootAndProbe `
-                            -ResourceGroup $ResourceGroup `
-                            -VmName $VmName `
-                            -PostRebootProbeScript $PostRebootProbeScript `
-                            -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                            -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                            -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+                            Stop-CoVmPersistentSshSession -Session $persistentSession
+                            $persistentSession = $null
 
-                        $persistentSession = Start-CoVmPersistentSshSession `
-                            -PySshClientPath ([string]$putty.PlinkPath) `
-                            -HostName $SshHost `
-                            -UserName $SshUser `
-                            -Password $SshPassword `
-                            -Port $SshPort `
-                            -Shell "powershell" `
-                            -ConnectTimeoutSeconds 30 `
-                            -DefaultTaskTimeoutSeconds 1800
+                            Invoke-CoVmPostStep8RebootAndProbe `
+                                -ResourceGroup $ResourceGroup `
+                                -VmName $VmName `
+                                -PostRebootProbeScript $PostRebootProbeScript `
+                                -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+
+                            $persistentSession = Start-CoVmPersistentSshSession `
+                                -PySshClientPath ([string]$putty.PlinkPath) `
+                                -HostName $SshHost `
+                                -UserName $SshUser `
+                                -Password $SshPassword `
+                                -Port $SshPort `
+                                -Shell "powershell" `
+                                -ConnectTimeoutSeconds 30 `
+                                -DefaultTaskTimeoutSeconds 1800
+                        }
                     }
                 }
             }
@@ -834,29 +837,31 @@ function Invoke-CoVmStep8OverSsh {
                         }
                     }
 
-                    $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
-                    if ($rebootRequired) {
-                        if ($rebootCount -ge $MaxReboots) {
-                            throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
-                        }
+                    if (-not $DisableRebootHandling) {
+                        $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
+                        if ($rebootRequired) {
+                            if ($rebootCount -ge $MaxReboots) {
+                                throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                            }
 
-                        $rebootCount++
-                        $hadMidStepReboot = $true
-                        Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
-                        Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-                        Invoke-CoVmPostStep8RebootAndProbe `
-                            -ResourceGroup $ResourceGroup `
-                            -VmName $VmName `
-                            -PostRebootProbeScript $PostRebootProbeScript `
-                            -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                            -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                            -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+                            $rebootCount++
+                            $hadMidStepReboot = $true
+                            Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
+                            Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
+                            Invoke-CoVmPostStep8RebootAndProbe `
+                                -ResourceGroup $ResourceGroup `
+                                -VmName $VmName `
+                                -PostRebootProbeScript $PostRebootProbeScript `
+                                -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+                        }
                     }
                 }
             }
         }
         else {
-            Write-Host ("Substep mode is not enabled: Step 8 tasks will run from the VM update script file over SSH. Failure policy: {0}" -f $TaskFailurePolicy)
+            Write-Host ("Task-by-task mode is not enabled: Step 8 tasks will run from the VM update script file over SSH. Failure policy: {0}" -f $TaskFailurePolicy)
             $scriptLeaf = [System.IO.Path]::GetFileName([string]$ScriptFilePath)
             if ([string]::IsNullOrWhiteSpace($scriptLeaf)) {
                 $scriptLeaf = if ($Platform -eq "windows") { "az-vm-step8-update.ps1" } else { "az-vm-step8-update.sh" }
@@ -937,36 +942,41 @@ function Invoke-CoVmStep8OverSsh {
                     }
                 }
 
-                $rebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$combinedResult.Output)))
-                if (-not $rebootRequired -and $Platform -eq "windows") {
-                    $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
-                        -PlinkPath ([string]$putty.PlinkPath) `
-                        -HostName $SshHost `
-                        -UserName $SshUser `
-                        -Password $SshPassword `
-                        -Port $SshPort `
-                        -HostKey $resolvedHostKey `
-                        -MaxAttempts $SshMaxRetries
-                }
-
-                if (-not $rebootRequired) {
+                if ($DisableRebootHandling) {
                     break
                 }
+                else {
+                    $rebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$combinedResult.Output)))
+                    if (-not $rebootRequired -and $Platform -eq "windows") {
+                        $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
+                            -PlinkPath ([string]$putty.PlinkPath) `
+                            -HostName $SshHost `
+                            -UserName $SshUser `
+                            -Password $SshPassword `
+                            -Port $SshPort `
+                            -HostKey $resolvedHostKey `
+                            -MaxAttempts $SshMaxRetries
+                    }
 
-                if ($rebootCount -ge $MaxReboots) {
-                    throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                    if (-not $rebootRequired) {
+                        break
+                    }
+
+                    if ($rebootCount -ge $MaxReboots) {
+                        throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+                    }
+
+                    $rebootCount++
+                    $hadMidStepReboot = $true
+                    Write-Host ("Step 8 SSH combined flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
+                    Invoke-CoVmPostStep8RebootAndProbe `
+                        -ResourceGroup $ResourceGroup `
+                        -VmName $VmName `
+                        -PostRebootProbeScript $PostRebootProbeScript `
+                        -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                        -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                        -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
                 }
-
-                $rebootCount++
-                $hadMidStepReboot = $true
-                Write-Host ("Step 8 SSH combined flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-                Invoke-CoVmPostStep8RebootAndProbe `
-                    -ResourceGroup $ResourceGroup `
-                    -VmName $VmName `
-                    -PostRebootProbeScript $PostRebootProbeScript `
-                    -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                    -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                    -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
             }
         }
 
@@ -975,7 +985,7 @@ function Invoke-CoVmStep8OverSsh {
             throw ("Step 8 strict failure policy blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
         }
 
-        if ($RebootAfterExecution) {
+        if ($RebootAfterExecution -and -not $DisableRebootHandling) {
             if ($hadMidStepReboot) {
                 Write-Host "Step 8 already rebooted during SSH task execution; final reboot is skipped." -ForegroundColor DarkGray
             }

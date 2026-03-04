@@ -8,19 +8,18 @@ param(
     [switch]$Auto,
     [Alias('u')]
     [switch]$Update,
-    [switch]$Ssh,
-    [Alias('s')]
-    [switch]$Substep
+    [Alias('r')]
+    [switch]$destructive rebuild
 )
 
 $script:AutoMode = [bool]$Auto
 $script:UpdateMode = [bool]$Update
-$script:SshMode = [bool]$Ssh
-$script:SubstepMode = [bool]$Substep
+$script:RenewMode = [bool]$destructive rebuild
 $script:TranscriptStarted = $false
 $script:HadError = $false
 $script:ExitCode = 0
 $script:ConfigOverrides = @{}
+$script:WinExecutionMode = if ($script:RenewMode) { "destructive rebuild" } elseif ($script:UpdateMode) { "update" } else { "default" }
 
 $script:DefaultErrorSummary = "An unexpected error occurred."
 $script:DefaultErrorHint = "Review the error line and check script parameters and Azure connectivity."
@@ -56,10 +55,13 @@ Write-Host "script description:
 - SSH (444) and RDP (3389) access are prepared.
 - All command output is written to both console and 'az-vm-win-log.txt'.
 - Run mode: interactive (default), auto (--auto / -a).
-- Fast update mode: --update / -u (resource group and existing VM are kept).
-- Optional Step 8 SSH executor mode: --ssh (uses PuTTY/plink instead of az vm run-command).
-- Diagnostic mode: substep (--substep / -s), Step 8 runs tasks one-by-one.
-- Without --substep, Step 8 runs the VM update script file in a single call via the selected executor."
+- Default mode behavior: existing resources are kept and skipped; missing resources are created.
+- Update mode: --update / -u (creation commands always run; no delete flow).
+- destructive rebuild mode: explicit destructive rebuild flow / -r (interactive delete confirmation, auto delete in --auto mode, then creation commands always run).
+- Step 8 flow: vm init runs once via az vm run-command script-file, then vm update tasks run task-by-task over persistent pyssh."
+if ($script:RenewMode -and $script:UpdateMode) {
+    Write-Host "Both explicit destructive rebuild flow and --update were provided. destructive rebuild mode takes precedence." -ForegroundColor Yellow
+}
 if (-not $script:AutoMode) {
     Read-Host -Prompt "Press Enter to start..."
 }
@@ -119,46 +121,10 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
         Write-Warning ("Invalid WIN_TASK_FAILURE_POLICY '{0}'. Falling back to 'soft-warning'." -f $winTaskFailurePolicyRaw)
         $winTaskFailurePolicy = "soft-warning"
     }
-    $winStep8MaxRebootsText = Get-ConfigValue -Config $configMap -Key "WIN_STEP8_MAX_REBOOTS" -DefaultValue "3"
-    $winStep8MaxReboots = 3
-    if ($winStep8MaxRebootsText -match '^\d+$') {
-        $winStep8MaxReboots = [int]$winStep8MaxRebootsText
-    }
-    if ($winStep8MaxReboots -lt 0) {
-        $winStep8MaxReboots = 0
-    }
-    if ($winStep8MaxReboots -gt 3) {
-        Write-Warning ("WIN_STEP8_MAX_REBOOTS '{0}' is above supported max. Using 3." -f $winStep8MaxReboots)
-        $winStep8MaxReboots = 3
-    }
-    $step8ExecutorRaw = [string](Get-ConfigValue -Config $configMap -Key "STEP8_EXECUTOR" -DefaultValue "run-command")
-    if ([string]::IsNullOrWhiteSpace($step8ExecutorRaw)) {
-        $step8ExecutorRaw = "run-command"
-    }
-    $step8Executor = "run-command"
-    switch ($step8ExecutorRaw.Trim().ToLowerInvariant()) {
-        "ssh" { $step8Executor = "ssh" }
-        "runcommand" { $step8Executor = "run-command" }
-        "run-command" { $step8Executor = "run-command" }
-        default {
-            Write-Warning ("Invalid STEP8_EXECUTOR '{0}'. Falling back to 'run-command'." -f $step8ExecutorRaw)
-            $step8Executor = "run-command"
-        }
-    }
-    if ($script:SshMode) {
-        $step8Executor = "ssh"
-        $script:ConfigOverrides["STEP8_EXECUTOR"] = "ssh"
-    }
-    $step8UseSshExecutor = [bool]($step8Executor -eq "ssh")
     $sshMaxRetriesText = [string](Get-ConfigValue -Config $configMap -Key "SSH_MAX_RETRIES" -DefaultValue "3")
     $sshMaxRetries = Resolve-CoVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
     $configuredPlinkPath = [string](Get-ConfigValue -Config $configMap -Key "PUTTY_PLINK_PATH" -DefaultValue "")
     $configuredPscpPath = [string](Get-ConfigValue -Config $configMap -Key "PUTTY_PSCP_PATH" -DefaultValue "")
-
-    $windowsPostRebootProbeScript = Get-CoVmWindowsPostRebootProbeScript `
-        -ServerName $serverName `
-        -VmUser $vmUser `
-        -AssistantUser $vmAssistantUser
 
     if ($script:AutoMode) {
         Show-CoVmRuntimeConfigurationSnapshot `
@@ -167,8 +133,8 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
             -ScriptRoot $PSScriptRoot `
             -AutoMode:$script:AutoMode `
             -UpdateMode:$script:UpdateMode `
-            -SubstepMode:$script:SubstepMode `
-            -SshMode:$step8UseSshExecutor `
+            -RenewMode:$script:RenewMode `
+            -IncludeStep8LegacyFlags $false `
             -ConfigMap $configMap `
             -ConfigOverrides $script:ConfigOverrides `
             -Context $step1Context
@@ -182,12 +148,12 @@ Invoke-Step "Step 2/9 - region, image, and VM size availability will be checked.
 
 # 3) Resource group check:
 Invoke-Step "Step 3/9 - resource group will be checked..." {
-    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode
+    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:WinExecutionMode
 }
 
 # 4) Network components provisioning:
 Invoke-Step "Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created..." {
-    Invoke-CoVmNetworkStep -Context $step1Context
+    Invoke-CoVmNetworkStep -Context $step1Context -ExecutionMode $script:WinExecutionMode
 }
 
 # 5) VM init PowerShell script preparation:
@@ -200,7 +166,13 @@ Invoke-Step "Step 5/9 - VM init PowerShell script will be prepared..." {
             Platform = "windows"
         }
 
-    $vmInitScript = Get-CoVmWindowsInitScriptContent
+    $vmInitScript = Get-CoVmWindowsInitScriptContent `
+        -VmUser $vmUser `
+        -VmPass $vmPass `
+        -AssistantUser $vmAssistantUser `
+        -AssistantPass $vmAssistantPass `
+        -SshPort $sshPort `
+        -TcpPorts $tcpPorts
     $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform "windows"
     Write-TextFileNormalized `
         -Path $vmInitScriptFile `
@@ -240,6 +212,7 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
         -Context $step1Context `
         -AutoMode:$script:AutoMode `
         -UpdateMode:$script:UpdateMode `
+        -ExecutionMode $script:WinExecutionMode `
         -CreateVmAction {
             az vm create `
                 --resource-group $resourceGroup `
@@ -259,125 +232,75 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
-    $step8ExecutorLabel = if ($step8UseSshExecutor) { "ssh" } else { "run-command" }
     Show-CoVmStepFirstUseValues `
         -StepLabel "Step 8/9 - Windows guest execution" `
         -Context $step1Context `
         -ExtraValues @{
-            Step8Executor = $step8ExecutorLabel
-            WindowsRunCommandId = "RunPowerShellScript"
+            Step8InitExecutor = "az-vm-run-command"
+            Step8InitCommandId = "RunPowerShellScript"
+            Step8InitScriptFile = $vmInitScriptFile
+            Step8UpdateExecutor = "pyssh-persistent-task-by-task"
             WindowsUpdateScriptFile = $vmUpdateScriptFile
             WinTaskFailurePolicy = $winTaskFailurePolicy
-            WinStep8MaxReboots = $winStep8MaxReboots
             SshMaxRetries = $sshMaxRetries
             PuttyPlinkPath = $configuredPlinkPath
             PuttyPscpPath = $configuredPscpPath
         }
 
+    $initResult = Invoke-VmRunCommandScriptFile `
+        -ResourceGroup $resourceGroup `
+        -VmName $vmName `
+        -CommandId "RunPowerShellScript" `
+        -ScriptFilePath $vmInitScriptFile `
+        -ModeLabel "vm-init"
+    if (-not [string]::IsNullOrWhiteSpace([string]$initResult.Message)) {
+        Write-Host ([string]$initResult.Message)
+    }
+
+    Write-Host "Waiting 20 seconds for SSH service to settle after init..."
+    Start-Sleep -Seconds 20
+
+    $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
+    $sshHost = [string]$vmRuntimeDetails.VmFqdn
+    if ([string]::IsNullOrWhiteSpace($sshHost)) {
+        $sshHost = [string]$vmRuntimeDetails.PublicIP
+    }
+    if ([string]::IsNullOrWhiteSpace($sshHost)) {
+        throw "Step 8 could not resolve VM SSH host (FQDN/Public IP)."
+    }
+
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $step1Context -VmInitScriptFile $vmInitScriptFile
-
-    if ($step8UseSshExecutor) {
-        Write-Host "Preparing SSH bootstrap over run-command before Step 8 SSH task flow..."
-        $sshBootstrapTaskNameSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-        foreach ($bootstrapTaskName in @("00-init-script", "01-ensure-local-admin-user", "02-openssh-install-service", "03-sshd-config-port", "04-rdp-firewall")) {
-            [void]$sshBootstrapTaskNameSet.Add([string]$bootstrapTaskName)
-        }
-
-        $sshBootstrapTaskBlocks = @(
-            $taskBlocks | Where-Object {
-                $sshBootstrapTaskNameSet.Contains([string]$_.Name)
-            }
-        )
-        if (-not $sshBootstrapTaskBlocks -or $sshBootstrapTaskBlocks.Count -eq 0) {
-            throw "Step 8 SSH bootstrap could not build bootstrap task list."
-        }
-
-        $bootstrapSb = New-Object System.Text.StringBuilder
-        foreach ($bootstrapTask in $sshBootstrapTaskBlocks) {
-            [void]$bootstrapSb.AppendLine(("# SSH bootstrap task: {0}" -f [string]$bootstrapTask.Name))
-            [void]$bootstrapSb.AppendLine(([string]$bootstrapTask.Script).Trim())
-            [void]$bootstrapSb.AppendLine("")
-        }
-        $bootstrapScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-win-ssh-bootstrap-{0}.ps1" -f $vmName)
-        $bootstrapWriteSettings = Get-CoVmWriteSettingsForPlatform -Platform "windows"
-        Write-TextFileNormalized `
-            -Path $bootstrapScriptPath `
-            -Content $bootstrapSb.ToString() `
-            -Encoding $bootstrapWriteSettings.Encoding `
-            -LineEnding $bootstrapWriteSettings.LineEnding `
-            -EnsureTrailingNewline
-
-        try {
-            $bootstrapInitResult = Invoke-VmRunCommandScriptFile `
-                -ResourceGroup $resourceGroup `
-                -VmName $vmName `
-                -CommandId "RunPowerShellScript" `
-                -ScriptFilePath $bootstrapScriptPath `
-                -ModeLabel "ssh-bootstrap-init"
-            if (-not [string]::IsNullOrWhiteSpace([string]$bootstrapInitResult.Message)) {
-                Write-Host $bootstrapInitResult.Message
-            }
-        }
-        finally {
-            Remove-Item -Path $bootstrapScriptPath -Force -ErrorAction SilentlyContinue
-        }
-        Write-Host "Waiting 20 seconds for SSH service to settle after bootstrap..."
-        Start-Sleep -Seconds 20
-
-        $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
-        $sshHost = [string]$vmRuntimeDetails.VmFqdn
-        if ([string]::IsNullOrWhiteSpace($sshHost)) {
-            $sshHost = [string]$vmRuntimeDetails.PublicIP
-        }
-        if ([string]::IsNullOrWhiteSpace($sshHost)) {
-            throw "Step 8 SSH mode could not resolve VM SSH host (FQDN/Public IP)."
-        }
-
-        Show-CoVmStepFirstUseValues `
-            -StepLabel "Step 8/9 - Windows guest execution" `
-            -Context $step1Context `
-            -ExtraValues @{
-                Step8SshHost = $sshHost
-                Step8SshUser = $vmUser
-                Step8SshPort = $sshPort
-            }
-
-        Invoke-CoVmStep8OverSsh `
-            -Platform "windows" `
-            -SubstepMode:$script:SubstepMode `
-            -RepoRoot $repoRoot `
-            -ResourceGroup $resourceGroup `
-            -VmName $vmName `
-            -SshHost $sshHost `
-            -SshUser $vmUser `
-            -SshPassword $vmPass `
-            -SshPort $sshPort `
-            -ScriptFilePath $vmUpdateScriptFile `
-            -TaskBlocks $taskBlocks `
-            -RebootAfterExecution `
-            -PostRebootProbeScript $windowsPostRebootProbeScript `
-            -PostRebootProbeCommandId "RunPowerShellScript" `
-            -MaxReboots $winStep8MaxReboots `
-            -TaskFailurePolicy $winTaskFailurePolicy `
-            -SshMaxRetries $sshMaxRetries `
-            -ConfiguredPlinkPath $configuredPlinkPath `
-            -ConfiguredPscpPath $configuredPscpPath
+    if (-not $taskBlocks -or @($taskBlocks).Count -eq 0) {
+        throw "Step 8 update flow could not resolve any Windows task blocks."
     }
-    else {
-        Invoke-CoVmStep8RunCommand `
-            -SubstepMode:$script:SubstepMode `
-            -ResourceGroup $resourceGroup `
-            -VmName $vmName `
-            -CommandId "RunPowerShellScript" `
-            -ScriptFilePath $vmUpdateScriptFile `
-            -TaskBlocks $taskBlocks `
-            -CombinedShell "powershell" `
-            -RebootAfterExecution `
-            -PostRebootProbeScript $windowsPostRebootProbeScript `
-            -PostRebootProbeCommandId "RunPowerShellScript" `
-            -MaxReboots $winStep8MaxReboots `
-            -TaskFailurePolicy $winTaskFailurePolicy
-    }
+
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 8/9 - Windows guest execution" `
+        -Context $step1Context `
+        -ExtraValues @{
+            Step8SshHost = $sshHost
+            Step8SshUser = $vmUser
+            Step8SshPort = $sshPort
+            Step8TaskCount = @($taskBlocks).Count
+        }
+
+    Invoke-CoVmStep8OverSsh `
+        -Platform "windows" `
+        -SubstepMode `
+        -RepoRoot $repoRoot `
+        -ResourceGroup $resourceGroup `
+        -VmName $vmName `
+        -SshHost $sshHost `
+        -SshUser $vmUser `
+        -SshPassword $vmPass `
+        -SshPort $sshPort `
+        -ScriptFilePath $vmUpdateScriptFile `
+        -TaskBlocks $taskBlocks `
+        -TaskFailurePolicy $winTaskFailurePolicy `
+        -SshMaxRetries $sshMaxRetries `
+        -ConfiguredPlinkPath $configuredPlinkPath `
+        -ConfiguredPscpPath $configuredPscpPath `
+        -DisableRebootHandling
 }
 
 # 9) VM connection details:

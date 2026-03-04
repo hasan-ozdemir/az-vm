@@ -27,12 +27,15 @@ Copy-Item win-vm/.env.example win-vm/.env
 .\az-vm-win.cmd --auto
 ```
 
-### 4) Optional: run Step 8 tasks one-by-one for diagnostics
+### 4) Optional diagnostics
+
+Linux (task-by-task Step 8):
 
 ```powershell
 .\az-vm-lin.cmd --auto --substep
-.\az-vm-win.cmd --auto --substep
 ```
+
+Windows uses task-by-task Step 8 over persistent pyssh by default; no extra diagnostics flag is required.
 
 ### 5) Read outputs
 - Linux log: `lin-vm/az-vm-lin-log.txt`
@@ -97,26 +100,35 @@ az-vm/
 
 ## Runtime Modes
 
-Both Linux and Windows scripts support the same CLI flags:
+Linux (`az-vm-lin.cmd` / `lin-vm/az-vm-lin.ps1`) flags:
 
 - `interactive` (default)
   - Step-by-step confirmation model via `Invoke-Step`.
   - Step 1 includes interactive region and VM SKU pickers with two-stage `y/n` VM SKU confirmation.
 - `--auto` / `-a`
   - Non-interactive execution path.
-- `--ssh`
-  - Uses SSH/PuTTY executor for Step 8 instead of `az vm run-command`.
 - `--substep` / `-s`
   - Diagnostic mode for Step 8 guest tasks.
+
+Windows (`az-vm-win.cmd` / `win-vm/az-vm-win.ps1`) flags:
+- `interactive` (default)
+- `--auto` / `-a`
+- `--update` / `-u`
+  - Keeps existing resources and re-runs create-or-update commands.
+- `explicit destructive rebuild flow` / `-r`
+  - Interactive mode asks delete confirmation; auto mode deletes without prompt, then re-runs create commands.
 
 ### Step vs Task semantics
 - `Step 1..9` = top-level orchestration stages.
 - Step 8 contains guest-side `Task` blocks.
 
 Execution behavior in Step 8:
-- With `--substep`: tasks run one-by-one via the selected executor.
-- Without `--substep`: whole update script runs in a single call via the selected executor.
-- Default executor is `run-command`; `--ssh` (or `STEP8_EXECUTOR=ssh`) switches to SSH executor.
+- Linux:
+  - With `--substep`: tasks run one-by-one.
+  - Without `--substep`: full update script runs in one run-command call.
+- Windows:
+  - VM init runs once via `az vm run-command` using the init script file.
+  - Update tasks run task-by-task over one persistent pyssh SSH session.
 
 ---
 
@@ -151,13 +163,12 @@ Runtime configuration order is:
 | `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS` | Secondary power-admin account credentials (`assistant`). |
 | `SSH_PORT` | SSH port (default `444`). |
 | `TCP_PORTS` | Comma-separated inbound TCP ports applied to NSG + guest firewall. |
-| `STEP8_EXECUTOR` | Step 8 executor (`run-command` or `ssh`). |
 | `SSH_MAX_RETRIES` | SSH executor retry cap (max effective value is 3). |
-| `PUTTY_PLINK_PATH`, `PUTTY_PSCP_PATH` | Optional custom PuTTY binary paths for SSH executor mode. |
+| `PUTTY_PLINK_PATH`, `PUTTY_PSCP_PATH` | Optional custom pyssh client path overrides. |
 
 Platform-specific:
 - Linux: `VM_CLOUD_INIT_FILE`, `VM_UPDATE_SCRIPT_FILE`
-- Windows: `VM_INIT_SCRIPT_FILE`, `VM_UPDATE_SCRIPT_FILE`, `WIN_TASK_FAILURE_POLICY`, `WIN_STEP8_MAX_REBOOTS`
+- Windows: `VM_INIT_SCRIPT_FILE`, `VM_UPDATE_SCRIPT_FILE`, `WIN_TASK_FAILURE_POLICY`
 
 ---
 
@@ -177,10 +188,9 @@ Pre-check availability (fail fast):
 
 ### Step 3
 Resource group handling:
-- If target RG exists:
-  - `--auto` mode deletes it automatically.
-  - `interactive` mode asks for explicit delete confirmation; if declined, flow continues with the existing RG.
-- Creates fresh RG.
+- Windows default mode: existing RG is kept; missing RG is created.
+- Windows `--update`: existing RG is kept, create command is re-run.
+- Windows `explicit destructive rebuild flow`: existing RG can be deleted (interactive confirmation / auto-confirm in `--auto`), then create command runs.
 
 ### Step 4
 Network provisioning:
@@ -196,14 +206,16 @@ Guest script preparation:
 
 ### Step 7
 VM create (with existence/return checks).
-- If VM already exists:
-  - `--auto` mode confirms VM deletion automatically, deletes VM, then runs `az vm create`.
-  - `interactive` mode asks delete confirmation; if deletion is declined, flow still runs `az vm create` on existing VM.
+- Windows default mode: existing VM is kept; VM create step is skipped.
+- Windows `--update`: existing VM is kept; `az vm create` is re-run.
+- Windows `explicit destructive rebuild flow`: VM delete confirmation (interactive) or auto-delete (`--auto`) then create.
 
 ### Step 8
-Guest configuration execution via Azure Run Command:
-- Linux command id: `RunShellScript`
-- Windows command id: `RunPowerShellScript`
+Guest configuration execution:
+- Linux: Azure Run Command (`RunShellScript`).
+- Windows:
+  - Init: Azure Run Command (`RunPowerShellScript`) with `VM_INIT_SCRIPT_FILE`.
+  - Update: persistent pyssh SSH session, task-by-task execution from task catalog.
 
 ### Step 9
 Print final connection details:
@@ -276,7 +288,12 @@ Linux Step 8 tasks include:
 
 ### Windows, unattended task-by-task diagnostics
 ```powershell
-.\az-vm-win.cmd --auto --substep
+.\az-vm-win.cmd --auto
+```
+
+### Windows, destructive rebuild flow (delete + recreate)
+```powershell
+.\az-vm-win.cmd --auto explicit destructive rebuild flow
 ```
 
 ### Direct PowerShell script invocation
@@ -363,7 +380,8 @@ Representative failure classes:
 Interactive is the default mode and asks per-step confirmation. Use `--auto` for non-interactive runs.
 
 ### Why does Step 8 sometimes run slower?
-`--substep` runs each task individually for diagnostics. Combined mode runs a single run-command call and is generally faster.
+Linux `--substep` runs each task individually for diagnostics.  
+Windows always runs update tasks task-by-task over persistent SSH for better observability and recovery.
 
 ### Can I change SSH port and open-port list?
 Yes. Set `SSH_PORT` and `TCP_PORTS` in platform `.env` files. The scripts sync these across NSG and guest firewall configuration.
