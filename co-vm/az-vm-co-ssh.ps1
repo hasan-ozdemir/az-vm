@@ -36,7 +36,7 @@ function Resolve-CoVmPuttyToolPath {
         }
     }
 
-    $defaultPath = Join-Path (Join-Path $RepoRoot "tools\\putty") $ToolName
+    $defaultPath = Join-Path (Join-Path $RepoRoot "tools\\pyssh") $ToolName
     if (Test-Path -LiteralPath $defaultPath) {
         return (Resolve-Path -LiteralPath $defaultPath).Path
     }
@@ -51,32 +51,32 @@ function Ensure-CoVmPuttyTools {
         [string]$ConfiguredPscpPath = ""
     )
 
-    $plinkPath = Resolve-CoVmPuttyToolPath -ConfiguredPath $ConfiguredPlinkPath -RepoRoot $RepoRoot -ToolName "plink.exe"
-    $pscpPath = Resolve-CoVmPuttyToolPath -ConfiguredPath $ConfiguredPscpPath -RepoRoot $RepoRoot -ToolName "pscp.exe"
-    if ((Test-Path -LiteralPath $plinkPath) -and (Test-Path -LiteralPath $pscpPath)) {
+    $configuredClientPath = if (-not [string]::IsNullOrWhiteSpace($ConfiguredPlinkPath)) { $ConfiguredPlinkPath } else { $ConfiguredPscpPath }
+    $pySshClientPath = Resolve-CoVmPuttyToolPath -ConfiguredPath $configuredClientPath -RepoRoot $RepoRoot -ToolName "ssh_client.py"
+    if (Test-Path -LiteralPath $pySshClientPath) {
         return [ordered]@{
-            PlinkPath = $plinkPath
-            PscpPath = $pscpPath
+            PlinkPath = $pySshClientPath
+            PscpPath = $pySshClientPath
         }
     }
 
-    $installerPath = Join-Path $RepoRoot "tools\\install-putty-tools.ps1"
+    $installerPath = Join-Path $RepoRoot "tools\\install-pyssh-tools.ps1"
     if (-not (Test-Path -LiteralPath $installerPath)) {
-        throw "PuTTY tool installer script was not found: $installerPath"
+        throw "Python SSH tool installer script was not found: $installerPath"
     }
 
     Invoke-TrackedAction -Label ("powershell -File {0}" -f $installerPath) -Action {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $installerPath
-        Assert-LastExitCode "install-putty-tools.ps1"
+        Assert-LastExitCode "install-pyssh-tools.ps1"
     } | Out-Null
 
-    if (-not (Test-Path -LiteralPath $plinkPath) -or -not (Test-Path -LiteralPath $pscpPath)) {
-        throw "PuTTY tools could not be initialized. Missing plink.exe or pscp.exe."
+    if (-not (Test-Path -LiteralPath $pySshClientPath)) {
+        throw "Python SSH tools could not be initialized. Missing ssh_client.py."
     }
 
     return [ordered]@{
-        PlinkPath = $plinkPath
-        PscpPath = $pscpPath
+        PlinkPath = $pySshClientPath
+        PscpPath = $pySshClientPath
     }
 }
 
@@ -131,16 +131,30 @@ function Initialize-CoVmSshHostKey {
         [string]$Port
     )
 
-    $acceptCmd = ('echo y | "{0}" -ssh -P {1} -l "{2}" -pw "{3}" "{4}" exit' -f $PlinkPath, $Port, $UserName, $Password, $HostName)
     $result = Invoke-CoVmProcessWithRetry `
-        -FilePath "cmd.exe" `
-        -Arguments @("/d", "/c", $acceptCmd) `
-        -Label "plink host-key bootstrap" `
+        -FilePath "python" `
+        -Arguments @(
+            $PlinkPath,
+            "exec",
+            "--host", [string]$HostName,
+            "--port", [string]$Port,
+            "--user", [string]$UserName,
+            "--password", [string]$Password,
+            "--timeout", "30",
+            "--command", "whoami"
+        ) `
+        -Label "pyssh connection bootstrap" `
         -MaxAttempts 1 `
         -AllowFailure
 
     if ($result.ExitCode -ne 0) {
-        Write-Warning "Host-key bootstrap returned non-zero exit code. Continuing with batch SSH."
+        Write-Warning "Python SSH bootstrap returned non-zero exit code. Continuing and allowing retry flow."
+    }
+
+    return [pscustomobject]@{
+        ExitCode = [int]$result.ExitCode
+        Output = [string]$result.Output
+        HostKey = "auto-add"
     }
 }
 
@@ -151,24 +165,31 @@ function Invoke-CoVmSshRemoteCommand {
         [string]$UserName,
         [string]$Password,
         [string]$Port,
+        [string]$HostKey = "",
         [string]$Command,
         [string]$Label,
         [int]$MaxAttempts = 3,
+        [int]$TimeoutSeconds = 1800,
         [switch]$AllowFailure
     )
 
+    if ($TimeoutSeconds -lt 5) {
+        $TimeoutSeconds = 5
+    }
+
     $args = @(
-        "-batch",
-        "-ssh",
-        "-P", [string]$Port,
-        "-l", $UserName,
-        "-pw", $Password,
-        $HostName,
-        $Command
+        $PlinkPath,
+        "exec",
+        "--host", [string]$HostName,
+        "--port", [string]$Port,
+        "--user", [string]$UserName,
+        "--password", [string]$Password,
+        "--timeout", [string]$TimeoutSeconds,
+        "--command", [string]$Command
     )
 
     return (Invoke-CoVmProcessWithRetry `
-            -FilePath $PlinkPath `
+            -FilePath "python" `
             -Arguments $args `
             -Label $Label `
             -MaxAttempts $MaxAttempts `
@@ -182,24 +203,33 @@ function Copy-CoVmFileToVmOverSsh {
         [string]$UserName,
         [string]$Password,
         [string]$Port,
+        [string]$HostKey = "",
         [string]$LocalPath,
         [string]$RemotePath,
+        [int]$TimeoutSeconds = 180,
         [int]$MaxAttempts = 3
     )
 
-    $remoteTarget = ('{0}@{1}:"{2}"' -f $UserName, $HostName, $RemotePath)
+    if ($TimeoutSeconds -lt 5) {
+        $TimeoutSeconds = 5
+    }
+
     $args = @(
-        "-batch",
-        "-P", [string]$Port,
-        "-pw", $Password,
-        $LocalPath,
-        $remoteTarget
+        $PscpPath,
+        "copy",
+        "--host", [string]$HostName,
+        "--port", [string]$Port,
+        "--user", [string]$UserName,
+        "--password", [string]$Password,
+        "--timeout", [string]$TimeoutSeconds,
+        "--local", [string]$LocalPath,
+        "--remote", [string]$RemotePath
     )
 
     return (Invoke-CoVmProcessWithRetry `
-            -FilePath $PscpPath `
+            -FilePath "python" `
             -Arguments $args `
-            -Label ("pscp copy -> {0}" -f $RemotePath) `
+            -Label ("pyssh copy -> {0}" -f $RemotePath) `
             -MaxAttempts $MaxAttempts)
 }
 
@@ -210,6 +240,7 @@ function Test-CoVmWindowsRebootPendingOverSsh {
         [string]$UserName,
         [string]$Password,
         [string]$Port,
+        [string]$HostKey = "",
         [int]$MaxAttempts = 3
     )
 
@@ -220,8 +251,10 @@ function Test-CoVmWindowsRebootPendingOverSsh {
         -UserName $UserName `
         -Password $Password `
         -Port $Port `
+        -HostKey $HostKey `
         -Command $checkCmd `
         -Label "ssh reboot-pending check" `
+        -TimeoutSeconds 30 `
         -MaxAttempts $MaxAttempts `
         -AllowFailure
 
@@ -290,12 +323,19 @@ function Invoke-CoVmStep8OverSsh {
         -ConfiguredPlinkPath $ConfiguredPlinkPath `
         -ConfiguredPscpPath $ConfiguredPscpPath
 
-    Initialize-CoVmSshHostKey `
+    $hostKeyBootstrapResult = Initialize-CoVmSshHostKey `
         -PlinkPath ([string]$putty.PlinkPath) `
         -HostName $SshHost `
         -UserName $SshUser `
         -Password $SshPassword `
         -Port $SshPort
+    $resolvedHostKey = ""
+    if ($hostKeyBootstrapResult) {
+        $resolvedHostKey = [string]$hostKeyBootstrapResult.HostKey
+    }
+    if (-not [string]::IsNullOrWhiteSpace($resolvedHostKey)) {
+        Write-Host ("Resolved SSH host key for batch transport: {0}" -f $resolvedHostKey) -ForegroundColor DarkGray
+    }
 
     $totalSuccess = 0
     $totalWarnings = 0
@@ -330,13 +370,14 @@ function Invoke-CoVmStep8OverSsh {
                 $remoteTaskPath = ("./{0}" -f $localTaskName)
                 Copy-CoVmFileToVmOverSsh `
                     -PscpPath ([string]$putty.PscpPath) `
-                    -HostName $SshHost `
-                    -UserName $SshUser `
-                    -Password $SshPassword `
-                    -Port $SshPort `
-                    -LocalPath $localTaskPath `
-                    -RemotePath $remoteTaskPath `
-                    -MaxAttempts $SshMaxRetries | Out-Null
+                -HostName $SshHost `
+                -UserName $SshUser `
+                -Password $SshPassword `
+                -Port $SshPort `
+                -HostKey $resolvedHostKey `
+                -LocalPath $localTaskPath `
+                -RemotePath $remoteTaskPath `
+                -MaxAttempts $SshMaxRetries | Out-Null
 
                 $remoteCommand = if ($Platform -eq "windows") {
                     ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $remoteTaskPath)
@@ -353,6 +394,7 @@ function Invoke-CoVmStep8OverSsh {
                     -UserName $SshUser `
                     -Password $SshPassword `
                     -Port $SshPort `
+                    -HostKey $resolvedHostKey `
                     -Command $remoteCommand `
                     -Label ("ssh task: {0}" -f $taskName) `
                     -MaxAttempts $SshMaxRetries `
@@ -393,6 +435,7 @@ function Invoke-CoVmStep8OverSsh {
                         -UserName $SshUser `
                         -Password $SshPassword `
                         -Port $SshPort `
+                        -HostKey $resolvedHostKey `
                         -MaxAttempts $SshMaxRetries
                 }
 
@@ -430,6 +473,7 @@ function Invoke-CoVmStep8OverSsh {
                     -UserName $SshUser `
                     -Password $SshPassword `
                     -Port $SshPort `
+                    -HostKey $resolvedHostKey `
                     -LocalPath $ScriptFilePath `
                     -RemotePath $remoteScriptPath `
                     -MaxAttempts $SshMaxRetries | Out-Null
@@ -441,6 +485,7 @@ function Invoke-CoVmStep8OverSsh {
                         -UserName $SshUser `
                         -Password $SshPassword `
                         -Port $SshPort `
+                        -HostKey $resolvedHostKey `
                         -Command ('chmod +x "{0}"' -f $remoteScriptPath) `
                         -Label "ssh chmod update script" `
                         -MaxAttempts $SshMaxRetries | Out-Null
@@ -459,6 +504,7 @@ function Invoke-CoVmStep8OverSsh {
                     -UserName $SshUser `
                     -Password $SshPassword `
                     -Port $SshPort `
+                    -HostKey $resolvedHostKey `
                     -Command $combinedRemoteCommand `
                     -Label "ssh step8 update-script-file" `
                     -MaxAttempts $SshMaxRetries `
@@ -502,6 +548,7 @@ function Invoke-CoVmStep8OverSsh {
                         -UserName $SshUser `
                         -Password $SshPassword `
                         -Port $SshPort `
+                        -HostKey $resolvedHostKey `
                         -MaxAttempts $SshMaxRetries
                 }
 

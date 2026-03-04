@@ -221,10 +221,38 @@ function Invoke-CoVmResourceGroupStep {
     }
 
     Write-Host "Creating resource group '$resourceGroup'..."
-    Invoke-TrackedAction -Label "az group create -n $resourceGroup -l $($Context.AzLocation)" -Action {
-        az group create -n $resourceGroup -l $Context.AzLocation
-        Assert-LastExitCode "az group create"
-    } | Out-Null
+    $groupCreateSucceeded = $false
+    $groupCreateAttempts = 12
+    $groupCreateDelaySeconds = 10
+    for ($groupCreateAttempt = 1; $groupCreateAttempt -le $groupCreateAttempts; $groupCreateAttempt++) {
+        $attemptLabel = "az group create -n $resourceGroup -l $($Context.AzLocation)"
+        if ($groupCreateAttempts -gt 1) {
+            $attemptLabel = "$attemptLabel (attempt $groupCreateAttempt/$groupCreateAttempts)"
+        }
+
+        $groupCreateOutput = Invoke-TrackedAction -Label $attemptLabel -Action {
+            az group create -n $resourceGroup -l $Context.AzLocation -o json 2>&1
+        }
+        $groupCreateExitCode = [int]$LASTEXITCODE
+        if ($groupCreateExitCode -eq 0) {
+            $groupCreateSucceeded = $true
+            break
+        }
+
+        $groupCreateText = (@($groupCreateOutput) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+        $isGroupBeingDeleted = ($groupCreateText -match '(?i)(ResourceGroupBeingDeleted|deprovisioning state)')
+        if ($isGroupBeingDeleted -and $groupCreateAttempt -lt $groupCreateAttempts) {
+            Write-Host ("Resource group '{0}' is still deprovisioning. Retrying in {1}s..." -f $resourceGroup, $groupCreateDelaySeconds) -ForegroundColor Yellow
+            Start-Sleep -Seconds $groupCreateDelaySeconds
+            continue
+        }
+
+        throw "az group create failed with exit code $groupCreateExitCode."
+    }
+
+    if (-not $groupCreateSucceeded) {
+        throw "az group create failed because resource group '$resourceGroup' did not become ready in time."
+    }
 }
 
 function Invoke-CoVmNetworkStep {
@@ -341,15 +369,30 @@ function Invoke-CoVmVmCreateStep {
     $vmCreateJson = Invoke-TrackedAction -Label "az vm create --resource-group $resourceGroup --name $vmName" -Action {
         $result = & $CreateVmAction
         if ($LASTEXITCODE -ne 0) {
+            $createExitCode = [int]$LASTEXITCODE
             Write-Warning "az vm create returned a non-zero code; checking VM existence."
-            $vmExistsAfterCreate = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv 2>$null
-            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($vmExistsAfterCreate)) {
+
+            $vmExistsAfterCreate = ""
+            $presenceProbeAttempts = if ($UpdateMode -and $existingVM) { 12 } else { 3 }
+            for ($presenceAttempt = 1; $presenceAttempt -le $presenceProbeAttempts; $presenceAttempt++) {
+                $vmExistsAfterCreate = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv 2>$null
+                if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$vmExistsAfterCreate)) {
+                    break
+                }
+
+                if ($presenceAttempt -lt $presenceProbeAttempts) {
+                    Write-Host ("VM existence probe attempt {0}/{1} did not resolve yet. Retrying in 10s..." -f $presenceAttempt, $presenceProbeAttempts) -ForegroundColor Yellow
+                    Start-Sleep -Seconds 10
+                }
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace([string]$vmExistsAfterCreate)) {
                 Write-Host "VM exists; details will be retrieved via az vm show -d."
                 $result = az vm show -g $resourceGroup -n $vmName -d -o json
                 Assert-LastExitCode "az vm show -d after vm create non-zero"
             }
             else {
-                throw "az vm create failed with exit code $LASTEXITCODE."
+                throw "az vm create failed with exit code $createExitCode."
             }
         }
 

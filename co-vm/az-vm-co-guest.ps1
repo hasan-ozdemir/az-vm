@@ -343,6 +343,18 @@ $ErrorActionPreference = "Stop"
 $sshdConfig = "C:\ProgramData\ssh\sshd_config"
 if (-not (Test-Path $sshdConfig)) { New-Item -Path $sshdConfig -ItemType File -Force | Out-Null }
 $content = @(Get-Content -Path $sshdConfig -ErrorAction SilentlyContinue)
+if ($content.Count -eq 0) {
+    $content = @(
+        "# Generated baseline sshd_config",
+        "Port 22",
+        "PasswordAuthentication no",
+        "PubkeyAuthentication yes",
+        "PermitEmptyPasswords no",
+        "AllowTcpForwarding yes",
+        "GatewayPorts no",
+        "Subsystem sftp sftp-server.exe"
+    )
+}
 function Set-OrAdd([string]$Key,[string]$Value) {
     $regex = "^\s*#?\s*" + [regex]::Escape($Key) + "\s+.*$"
     $replacement = "$Key $Value"
@@ -353,7 +365,7 @@ function Set-OrAdd([string]$Key,[string]$Value) {
             $updated = $true
         }
     }
-    if (-not $updated) { $script:content += $replacement }
+    if (-not $updated) { $content += $replacement }
 }
 Set-OrAdd -Key "Port" -Value "__SSH_PORT__"
 Set-OrAdd -Key "PasswordAuthentication" -Value "yes"
@@ -361,6 +373,7 @@ Set-OrAdd -Key "PubkeyAuthentication" -Value "no"
 Set-OrAdd -Key "PermitEmptyPasswords" -Value "no"
 Set-OrAdd -Key "AllowTcpForwarding" -Value "yes"
 Set-OrAdd -Key "GatewayPorts" -Value "yes"
+Set-OrAdd -Key "Subsystem sftp" -Value "sftp-server.exe"
 Set-Content -Path $sshdConfig -Value $content -Encoding ascii
 New-Item -Path "HKLM:\SOFTWARE\OpenSSH" -Force | Out-Null
 Set-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name "DefaultShell" -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
@@ -489,9 +502,15 @@ python --version
 $ErrorActionPreference = "Stop"
 
 function Resolve-WingetCommand {
+    $candidates = @()
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return [string]$cmd.Source
+    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+        $candidates += [string]$cmd.Source
+    }
+
+    $localAlias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"
+    if (Test-Path -LiteralPath $localAlias) {
+        $candidates += $localAlias
     }
 
     try {
@@ -500,18 +519,19 @@ function Resolve-WingetCommand {
     catch { }
 
     $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return [string]$cmd.Source
+    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+        $candidates += [string]$cmd.Source
     }
 
-    $windowsAppsRoot = "C:\Program Files\WindowsApps"
-    if (Test-Path -LiteralPath $windowsAppsRoot) {
-        $appInstallerDirs = @(Get-ChildItem -Path $windowsAppsRoot -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-        foreach ($dir in $appInstallerDirs) {
-            $candidate = Join-Path $dir.FullName "winget.exe"
-            if (Test-Path -LiteralPath $candidate) {
-                return $candidate
+    foreach ($candidate in @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
+        try {
+            & $candidate --version | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                return [string]$candidate
             }
+        }
+        catch {
+            Write-Warning ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message)
         }
     }
 
@@ -529,7 +549,13 @@ function Invoke-WingetInstall {
         return $false
     }
 
-    & $wingetExe install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    try {
+        & $wingetExe install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    }
+    catch {
+        Write-Warning ("winget install failed for '{0}': {1}" -f $Id, $_.Exception.Message)
+        return $false
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Warning ("winget install failed for '{0}' with exit code {1}." -f $Id, $LASTEXITCODE)
         return $false
@@ -685,9 +711,15 @@ $chromeArgs = "--new-window --start-maximized --disable-extensions --disable-def
 
 function Install-ChromeWithWinget {
     function Resolve-WingetCommand {
+        $candidates = @()
         $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            return [string]$cmd.Source
+        if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+            $candidates += [string]$cmd.Source
+        }
+
+        $localAlias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"
+        if (Test-Path -LiteralPath $localAlias) {
+            $candidates += $localAlias
         }
 
         try {
@@ -696,35 +728,82 @@ function Install-ChromeWithWinget {
         catch { }
 
         $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            return [string]$cmd.Source
+        if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+            $candidates += [string]$cmd.Source
         }
 
-        $windowsAppsRoot = "C:\Program Files\WindowsApps"
-        if (Test-Path -LiteralPath $windowsAppsRoot) {
-            $appInstallerDirs = @(Get-ChildItem -Path $windowsAppsRoot -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-            foreach ($dir in $appInstallerDirs) {
-                $candidate = Join-Path $dir.FullName "winget.exe"
-                if (Test-Path -LiteralPath $candidate) {
-                    return $candidate
+        foreach ($candidate in @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
+            try {
+                & $candidate --version | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    return [string]$candidate
                 }
+            }
+            catch {
+                Write-Warning ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message)
             }
         }
 
         return ""
     }
 
+    function Refresh-SessionPath {
+        $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
+        if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ([string]::IsNullOrWhiteSpace($userPath)) {
+            $env:Path = $machinePath
+        }
+        else {
+            $env:Path = "$machinePath;$userPath"
+        }
+    }
+
     $wingetExe = Resolve-WingetCommand
-    if ([string]::IsNullOrWhiteSpace($wingetExe)) {
-        Write-Warning "winget command is not available. Google Chrome install step is skipped."
+    if (-not [string]::IsNullOrWhiteSpace($wingetExe)) {
+        try {
+            & $wingetExe install -e --id Google.Chrome --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                return $true
+            }
+            Write-Warning ("winget install failed for Google.Chrome with exit code {0}." -f $LASTEXITCODE)
+        }
+        catch {
+            Write-Warning ("winget install failed for Google.Chrome: {0}" -f $_.Exception.Message)
+        }
+    }
+    else {
+        Write-Warning "winget command is not available. Falling back to Chocolatey for Google Chrome."
+    }
+
+    $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
+    if (-not (Test-Path -LiteralPath $chocoExe)) {
+        Write-Warning "choco command is not available. Google Chrome install step is skipped."
         return $false
     }
 
-    & $wingetExe install -e --id Google.Chrome --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warning ("winget install failed for Google.Chrome with exit code {0}." -f $LASTEXITCODE)
-        return $false
+    & $chocoExe upgrade googlechrome -y --no-progress | Out-Null
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+        Write-Warning ("choco install failed for googlechrome with exit code {0}. Trying direct installer fallback." -f $LASTEXITCODE)
+        $chromeInstaller = Join-Path $env:TEMP "chrome_installer.exe"
+        try {
+            Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile $chromeInstaller -UseBasicParsing
+            $installProc = Start-Process -FilePath $chromeInstaller -ArgumentList "/silent", "/install" -Wait -PassThru
+            if ($installProc.ExitCode -ne 0) {
+                Write-Warning ("Direct Chrome installer exited with code {0}." -f $installProc.ExitCode)
+                return $false
+            }
+        }
+        catch {
+            Write-Warning ("Direct Chrome installer fallback failed: {0}" -f $_.Exception.Message)
+            return $false
+        }
+        finally {
+            Remove-Item -Path $chromeInstaller -Force -ErrorAction SilentlyContinue
+        }
     }
+    Refresh-SessionPath
 
     return $true
 }
@@ -867,9 +946,15 @@ function Invoke-DockerWarn {
 
 Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
     function Resolve-WingetCommand {
+        $candidates = @()
         $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            return [string]$cmd.Source
+        if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+            $candidates += [string]$cmd.Source
+        }
+
+        $localAlias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"
+        if (Test-Path -LiteralPath $localAlias) {
+            $candidates += $localAlias
         }
 
         try {
@@ -878,27 +963,67 @@ Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
         catch { }
 
         $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-        if ($cmd) {
-            return [string]$cmd.Source
+        if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
+            $candidates += [string]$cmd.Source
         }
 
-        $windowsAppsRoot = "C:\Program Files\WindowsApps"
-        if (Test-Path -LiteralPath $windowsAppsRoot) {
-            $appInstallerDirs = @(Get-ChildItem -Path $windowsAppsRoot -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-            foreach ($dir in $appInstallerDirs) {
-                $candidate = Join-Path $dir.FullName "winget.exe"
-                if (Test-Path -LiteralPath $candidate) {
-                    return $candidate
+        foreach ($candidate in @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
+            try {
+                & $candidate --version | Out-Null
+                if ($LASTEXITCODE -eq 0) {
+                    return [string]$candidate
                 }
+            }
+            catch {
+                Write-Warning ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message)
             }
         }
 
         return ""
     }
 
+    function Refresh-SessionPath {
+        $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
+        if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ([string]::IsNullOrWhiteSpace($userPath)) {
+            $env:Path = $machinePath
+        }
+        else {
+            $env:Path = "$machinePath;$userPath"
+        }
+    }
+
+    $installed = $false
     $wingetExe = Resolve-WingetCommand
-    if ([string]::IsNullOrWhiteSpace($wingetExe)) { throw "winget command is not available." }
-    & $wingetExe install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    if (-not [string]::IsNullOrWhiteSpace($wingetExe)) {
+        try {
+            & $wingetExe install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $installed = $true
+            }
+            else {
+                Write-Warning ("winget install failed for Docker.DockerDesktop with exit code {0}." -f $LASTEXITCODE)
+            }
+        }
+        catch {
+            Write-Warning ("winget install failed for Docker.DockerDesktop: {0}" -f $_.Exception.Message)
+        }
+    }
+
+    if (-not $installed) {
+        $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
+        if (-not (Test-Path -LiteralPath $chocoExe)) {
+            throw "Neither winget nor choco is available for Docker Desktop installation."
+        }
+
+        & $chocoExe upgrade docker-desktop -y --no-progress | Out-Null
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+            throw ("choco install failed for docker-desktop with exit code {0}." -f $LASTEXITCODE)
+        }
+        Refresh-SessionPath
+    }
 }
 
 Invoke-DockerWarn -Label "set-com-docker-service-automatic" -Action {
@@ -1049,12 +1174,15 @@ function Invoke-RegAdd {
     else {
         $args += @("/v", $Name)
     }
-    if (-not [string]::IsNullOrWhiteSpace($Type)) {
+    $hasExplicitData = -not ([string]::IsNullOrWhiteSpace($Name) -and [string]::IsNullOrWhiteSpace($Value))
+    if ($hasExplicitData -and -not [string]::IsNullOrWhiteSpace($Type)) {
         $args += @("/t", $Type)
     }
-    $args += @("/d", $Value)
+    if ($hasExplicitData) {
+        $args += @("/d", $Value)
+    }
 
-    & reg.exe @args | Out-Null
+    & reg.exe @args 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw ("reg add failed for path '{0}' name '{1}'." -f $Path, $Name)
     }
@@ -1065,7 +1193,7 @@ function Invoke-RegDelete {
         [string]$Path
     )
 
-    & reg.exe delete $Path /f | Out-Null
+    & reg.exe delete $Path /f 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1 -and $LASTEXITCODE -ne 2) {
         throw ("reg delete failed for path '{0}'." -f $Path)
     }
@@ -1085,7 +1213,8 @@ function Load-HiveIfPossible {
     }
 
     $hiveKey = "HKU\$Alias"
-    & reg.exe load $hiveKey $NtUserPath | Out-Null
+    $safeLoad = ('reg load "{0}" "{1}" >nul 2>&1' -f $hiveKey, $NtUserPath)
+    & cmd.exe /d /c $safeLoad | Out-Null
     if ($LASTEXITCODE -eq 0) {
         [void]$script:loadedHives.Add($hiveKey)
         return $true
@@ -1095,13 +1224,13 @@ function Load-HiveIfPossible {
 }
 
 function Resolve-TargetHives {
-    $targets = New-Object 'System.Collections.Generic.List[object]'
+    $targets = @()
 
     if (Load-HiveIfPossible -Alias "CoVmDefaultUser" -NtUserPath "C:\Users\Default\NTUSER.DAT") {
-        [void]$targets.Add([pscustomobject]@{
+        $targets += [pscustomobject]@{
             Label = "DefaultUser"
             HiveNative = "HKU\CoVmDefaultUser"
-        })
+        }
     }
     else {
         Write-Warning "Default user hive could not be loaded from C:\Users\Default\NTUSER.DAT."
@@ -1112,10 +1241,10 @@ function Resolve-TargetHives {
             $localUser = Get-LocalUser -Name $userName -ErrorAction Stop
             $sid = [string]$localUser.SID.Value
             if (-not [string]::IsNullOrWhiteSpace($sid) -and (Test-Path -LiteralPath ("Registry::HKEY_USERS\" + $sid))) {
-                [void]$targets.Add([pscustomobject]@{
+                $targets += [pscustomobject]@{
                     Label = $userName
                     HiveNative = "HKU\$sid"
-                })
+                }
                 continue
             }
 
@@ -1133,10 +1262,10 @@ function Resolve-TargetHives {
             $ntUserPath = Join-Path $profilePath "NTUSER.DAT"
             $alias = "CoVmUser_" + $userName
             if (Load-HiveIfPossible -Alias $alias -NtUserPath $ntUserPath) {
-                [void]$targets.Add([pscustomobject]@{
+                $targets += [pscustomobject]@{
                     Label = $userName
                     HiveNative = "HKU\$alias"
-                })
+                }
             }
             else {
                 Write-Warning ("User hive could not be loaded for '{0}'. Profile may not be materialized yet." -f $userName)
@@ -1262,7 +1391,10 @@ Invoke-Tweak -Name "machine-welcome-suppression" -Action {
 
 Invoke-Tweak -Name "machine-context-menu-classic" -Action {
     $ctxPath = "HKLM\SOFTWARE\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
-    Invoke-RegAdd -Path $ctxPath -Name "" -Type "REG_SZ" -Value ""
+    & reg.exe add $ctxPath /ve /f 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Output "machine-context-menu-classic skipped (key may be protected by ACL)."
+    }
 }
 
 Invoke-Tweak -Name "machine-visual-effects-performance" -Action {
@@ -1382,7 +1514,8 @@ try {
 }
 finally {
     foreach ($loadedHive in @($loadedHives)) {
-        & reg.exe unload $loadedHive | Out-Null
+        $safeUnload = ('reg unload "{0}" >nul 2>&1' -f $loadedHive)
+        & cmd.exe /d /c $safeUnload | Out-Null
     }
 }
 
@@ -1438,7 +1571,7 @@ function Set-ClassicProfileVisualSettings {
         [string]$HiveRoot
     )
 
-    & reg.exe add "$HiveRoot\Control Panel\Desktop" /v Wallpaper /t REG_SZ /d "" /f | Out-Null
+    & reg.exe delete "$HiveRoot\Control Panel\Desktop" /v Wallpaper /f 2>$null | Out-Null
     & reg.exe add "$HiveRoot\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f | Out-Null
     & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f | Out-Null
     & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewAlphaSelect /t REG_DWORD /d 0 /f | Out-Null
@@ -1446,34 +1579,11 @@ function Set-ClassicProfileVisualSettings {
 }
 
 function Resolve-AdvancedTargetHives {
-    $targets = New-Object 'System.Collections.Generic.List[string]'
-    [void]$targets.Add("HKCU")
-
-    $loadMap = @(
-        @{ Alias = "CoVmAdvDefault"; NtUser = "C:\Users\Default\NTUSER.DAT" },
-        @{ Alias = "CoVmAdvManager"; NtUser = "C:\Users\__VM_USER__\NTUSER.DAT" },
-        @{ Alias = "CoVmAdvAssistant"; NtUser = "C:\Users\__ASSISTANT_USER__\NTUSER.DAT" }
-    )
-
-    $loaded = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($item in @($loadMap)) {
-        $alias = [string]$item.Alias
-        $ntUser = [string]$item.NtUser
-        if (-not (Test-Path -LiteralPath $ntUser)) {
-            continue
-        }
-
-        $native = "HKU\$alias"
-        & reg.exe load $native $ntUser | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            [void]$loaded.Add($native)
-            [void]$targets.Add($native)
-        }
-    }
-
+    # In non-interactive SSH sessions, loading other users' NTUSER.DAT can block on file locks.
+    # Keep this task deterministic by applying only to the current user hive.
     return [pscustomobject]@{
-        Targets = @($targets)
-        Loaded = @($loaded)
+        Targets = @("HKCU")
+        Loaded = @()
     }
 }
 
@@ -1531,7 +1641,20 @@ Invoke-AdvancedWarn -Label "dep-always-off" -Action {
 }
 
 Invoke-AdvancedWarn -Label "refresh-user-visual-parameters" -Action {
-    & rundll32.exe user32.dll,UpdatePerUserSystemParameters | Out-Null
+    $rundllPath = Join-Path $env:WINDIR "System32\rundll32.exe"
+    if (-not (Test-Path -LiteralPath $rundllPath)) {
+        throw ("rundll32.exe was not found at '{0}'." -f $rundllPath)
+    }
+
+    $proc = Start-Process `
+        -FilePath $rundllPath `
+        -ArgumentList "user32.dll,UpdatePerUserSystemParameters" `
+        -WindowStyle Hidden `
+        -PassThru
+    if (-not $proc.WaitForExit(15000)) {
+        try { $proc.Kill() } catch { }
+        Write-Warning "UpdatePerUserSystemParameters timed out and was terminated."
+    }
 }
 
 Write-Output "windows-advanced-system-settings-completed"
@@ -1597,7 +1720,17 @@ Write-Output "local-service-disable-conservative-completed"
 $ErrorActionPreference = "Stop"
 $sshdConfig = "C:\ProgramData\ssh\sshd_config"
 Write-Output "Version Info:"
-Get-ComputerInfo | Select-Object WindowsProductName,WindowsVersion,OsBuildNumber | Format-List
+try {
+    $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+    [pscustomobject]@{
+        WindowsProductName = [string]$os.Caption
+        WindowsVersion = [string]$os.Version
+        OsBuildNumber = [string]$os.BuildNumber
+    } | Format-List
+}
+catch {
+    Write-Warning ("Version info collection failed: {0}" -f $_.Exception.Message)
+}
 Write-Output "APP PATH CHECKS:"
 foreach ($commandName in @("choco", "git", "node", "python", "py", "pwsh", "gh", "ffmpeg", "7z", "az", "docker", "wsl", "ollama")) {
     $cmd = Get-Command $commandName -ErrorAction SilentlyContinue

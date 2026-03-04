@@ -277,6 +277,53 @@ Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $step1Context -VmInitScriptFile $vmInitScriptFile
 
     if ($step8UseSshExecutor) {
+        Write-Host "Preparing SSH bootstrap over run-command before Step 8 SSH task flow..."
+        $sshBootstrapTaskNameSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($bootstrapTaskName in @("00-init-script", "01-ensure-local-admin-user", "02-openssh-install-service", "03-sshd-config-port", "04-rdp-firewall")) {
+            [void]$sshBootstrapTaskNameSet.Add([string]$bootstrapTaskName)
+        }
+
+        $sshBootstrapTaskBlocks = @(
+            $taskBlocks | Where-Object {
+                $sshBootstrapTaskNameSet.Contains([string]$_.Name)
+            }
+        )
+        if (-not $sshBootstrapTaskBlocks -or $sshBootstrapTaskBlocks.Count -eq 0) {
+            throw "Step 8 SSH bootstrap could not build bootstrap task list."
+        }
+
+        $bootstrapSb = New-Object System.Text.StringBuilder
+        foreach ($bootstrapTask in $sshBootstrapTaskBlocks) {
+            [void]$bootstrapSb.AppendLine(("# SSH bootstrap task: {0}" -f [string]$bootstrapTask.Name))
+            [void]$bootstrapSb.AppendLine(([string]$bootstrapTask.Script).Trim())
+            [void]$bootstrapSb.AppendLine("")
+        }
+        $bootstrapScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-win-ssh-bootstrap-{0}.ps1" -f $vmName)
+        $bootstrapWriteSettings = Get-CoVmWriteSettingsForPlatform -Platform "windows"
+        Write-TextFileNormalized `
+            -Path $bootstrapScriptPath `
+            -Content $bootstrapSb.ToString() `
+            -Encoding $bootstrapWriteSettings.Encoding `
+            -LineEnding $bootstrapWriteSettings.LineEnding `
+            -EnsureTrailingNewline
+
+        try {
+            $bootstrapInitResult = Invoke-VmRunCommandScriptFile `
+                -ResourceGroup $resourceGroup `
+                -VmName $vmName `
+                -CommandId "RunPowerShellScript" `
+                -ScriptFilePath $bootstrapScriptPath `
+                -ModeLabel "ssh-bootstrap-init"
+            if (-not [string]::IsNullOrWhiteSpace([string]$bootstrapInitResult.Message)) {
+                Write-Host $bootstrapInitResult.Message
+            }
+        }
+        finally {
+            Remove-Item -Path $bootstrapScriptPath -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "Waiting 20 seconds for SSH service to settle after bootstrap..."
+        Start-Sleep -Seconds 20
+
         $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
         $sshHost = [string]$vmRuntimeDetails.VmFqdn
         if ([string]::IsNullOrWhiteSpace($sshHost)) {
