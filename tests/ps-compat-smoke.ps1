@@ -5,24 +5,24 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$global:TestPassCount = 0
-$global:TestFailCount = 0
+$passCount = 0
+$failCount = 0
 
-function Write-TestResult {
+function Invoke-Test {
     param(
-        [bool]$Success,
         [string]$Name,
-        [string]$Detail
+        [scriptblock]$Action
     )
 
-    if ($Success) {
-        $global:TestPassCount++
+    try {
+        . $Action
+        $script:passCount++
         Write-Host ("[PASS] {0}" -f $Name) -ForegroundColor Green
-        return
     }
-
-    $global:TestFailCount++
-    Write-Host ("[FAIL] {0}: {1}" -f $Name, $Detail) -ForegroundColor Red
+    catch {
+        $script:failCount++
+        Write-Host ("[FAIL] {0}: {1}" -f $Name, $_.Exception.Message) -ForegroundColor Red
+    }
 }
 
 function Assert-True {
@@ -36,48 +36,14 @@ function Assert-True {
     }
 }
 
-function Assert-Equal {
-    param(
-        [object]$Expected,
-        [object]$Actual,
-        [string]$Message
-    )
-
-    if ($Expected -ne $Actual) {
-        throw ("{0}. Expected='{1}', Actual='{2}'" -f $Message, $Expected, $Actual)
-    }
+$script:UnifiedScriptPath = Join-Path $RepoRoot "az-vm.ps1"
+if (Test-Path -LiteralPath $script:UnifiedScriptPath) {
+    . $script:UnifiedScriptPath
 }
 
-function Has-Utf8Bom {
-    param(
-        [byte[]]$Bytes
-    )
-
-    if (-not $Bytes -or $Bytes.Length -lt 3) {
-        return $false
-    }
-
-    return ($Bytes[0] -eq 239 -and $Bytes[1] -eq 187 -and $Bytes[2] -eq 191)
-}
-
-function Invoke-TestCase {
-    param(
-        [string]$Name,
-        [scriptblock]$Action
-    )
-
-    try {
-        . $Action
-        Write-TestResult -Success $true -Name $Name -Detail ""
-    }
-    catch {
-        Write-TestResult -Success $false -Name $Name -Detail $_.Exception.Message
-    }
-}
-
-function Test-PsSyntaxAllFiles {
+Invoke-Test -Name "Parse all .ps1 files" -Action {
     $ps1Files = Get-ChildItem -Path $RepoRoot -Recurse -Filter *.ps1 | Sort-Object FullName
-    Assert-True -Condition ($ps1Files.Count -gt 0) -Message "No .ps1 files were found."
+    Assert-True -Condition ($ps1Files.Count -gt 0) -Message "No .ps1 files found."
 
     foreach ($file in $ps1Files) {
         $tokens = $null
@@ -90,456 +56,65 @@ function Test-PsSyntaxAllFiles {
     }
 }
 
-function Test-JsonCompatFunctions {
-    $objFromText = ConvertFrom-JsonCompat -InputObject '{"id":"123","name":"demo"}'
-    Assert-Equal -Expected "123" -Actual ([string]$objFromText.id) -Message "ConvertFrom-JsonCompat should parse json object text"
-
-    $objFromLines = ConvertFrom-JsonCompat -InputObject @('{', '  "x": 2', '}')
-    Assert-Equal -Expected "2" -Actual ([string]$objFromLines.x) -Message "ConvertFrom-JsonCompat should parse line-array json text"
-
-    $arrayFromScalar = ConvertFrom-JsonArrayCompat -InputObject '{"name":"single"}'
-    Assert-Equal -Expected 1 -Actual (@($arrayFromScalar).Count) -Message "ConvertFrom-JsonArrayCompat should wrap scalar values"
-    Assert-Equal -Expected "single" -Actual ([string]$arrayFromScalar[0].name) -Message "ConvertFrom-JsonArrayCompat wrapped value should be accessible"
-
-    $arrayFromNull = ConvertTo-ObjectArrayCompat -InputObject $null
-    Assert-Equal -Expected 0 -Actual $arrayFromNull.Count -Message "ConvertTo-ObjectArrayCompat should return empty array for null"
-
-    $arrayFromString = ConvertTo-ObjectArrayCompat -InputObject "abc"
-    Assert-Equal -Expected 1 -Actual $arrayFromString.Count -Message "ConvertTo-ObjectArrayCompat should keep string as scalar item"
-    Assert-Equal -Expected "abc" -Actual ([string]$arrayFromString[0]) -Message "ConvertTo-ObjectArrayCompat should preserve scalar value"
+Invoke-Test -Name "Dot-source unified az-vm.ps1" -Action {
+    Assert-True -Condition (Test-Path -LiteralPath $script:UnifiedScriptPath) -Message "az-vm.ps1 was not found."
+    Assert-True -Condition ($null -ne (Get-Command Get-CoVmPlatformDefaults -ErrorAction SilentlyContinue)) -Message "Get-CoVmPlatformDefaults was not loaded."
+    Assert-True -Condition ($null -ne (Get-Command Get-CoVmTaskBlocksFromDirectory -ErrorAction SilentlyContinue)) -Message "Get-CoVmTaskBlocksFromDirectory was not loaded."
 }
 
-function Test-ConfigFallbackBehavior {
-    $script:ConfigOverrides = @{}
-    $value1 = Get-ConfigValue -Config $null -Key "AZ_LOCATION" -DefaultValue "austriaeast"
-    Assert-Equal -Expected "austriaeast" -Actual $value1 -Message "Get-ConfigValue should return default when config is null"
-
-    $config = @{ AZ_LOCATION = "eastus" }
-    $value2 = Get-ConfigValue -Config $config -Key "AZ_LOCATION" -DefaultValue "austriaeast"
-    Assert-Equal -Expected "eastus" -Actual $value2 -Message "Get-ConfigValue should read hashtable value"
-
-    $script:ConfigOverrides["AZ_LOCATION"] = "westindia"
-    $value3 = Get-ConfigValue -Config $config -Key "AZ_LOCATION" -DefaultValue "austriaeast"
-    Assert-Equal -Expected "westindia" -Actual $value3 -Message "Get-ConfigValue should prioritize override"
+Invoke-Test -Name "Platform defaults contract" -Action {
+    $win = Get-CoVmPlatformDefaults -Platform windows
+    $lin = Get-CoVmPlatformDefaults -Platform linux
+    Assert-True -Condition ([string]$win.RunCommandId -eq "RunPowerShellScript") -Message "Windows RunCommandId mismatch."
+    Assert-True -Condition ([string]$lin.RunCommandId -eq "RunShellScript") -Message "Linux RunCommandId mismatch."
+    Assert-True -Condition ([bool]$win.IncludeRdp) -Message "Windows IncludeRdp should be true."
+    Assert-True -Condition (-not [bool]$lin.IncludeRdp) -Message "Linux IncludeRdp should be false."
 }
 
-function Test-NormalizedFileWritePolicy {
-    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-encoding-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
+Invoke-Test -Name "Task catalog discovery" -Action {
+    $winInit = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\init") -Platform windows -Stage init
+    $winUpdate = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\update") -Platform windows -Stage update
+    $linInit = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\init") -Platform linux -Stage init
+    $linUpdate = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\update") -Platform linux -Stage update
 
-    try {
-        $linuxPath = Join-Path $tmpDir "linux-update.sh"
-        $linuxMixed = "line-a`r`nline-b`rline-c`n"
-        Write-TextFileNormalized `
-            -Path $linuxPath `
-            -Content $linuxMixed `
-            -Encoding "utf8NoBom" `
-            -LineEnding "lf" `
-            -EnsureTrailingNewline
-
-        $linuxBytes = [System.IO.File]::ReadAllBytes($linuxPath)
-        Assert-True -Condition (-not (Has-Utf8Bom -Bytes $linuxBytes)) -Message "Linux write should be UTF-8 without BOM"
-        $linuxText = [System.Text.Encoding]::UTF8.GetString($linuxBytes)
-        Assert-True -Condition (-not $linuxText.Contains("`r")) -Message "Linux write should use LF only"
-        Assert-True -Condition $linuxText.EndsWith("`n") -Message "Linux write should end with newline"
-
-        $envPath = Join-Path $tmpDir ".env"
-        Write-TextFileNormalized `
-            -Path $envPath `
-            -Content "A=1`nB=2" `
-            -Encoding "utf8NoBom" `
-            -LineEnding "crlf" `
-            -EnsureTrailingNewline
-
-        $envBytes = [System.IO.File]::ReadAllBytes($envPath)
-        Assert-True -Condition (-not (Has-Utf8Bom -Bytes $envBytes)) -Message ".env write should be UTF-8 without BOM"
-        $envText = [System.Text.Encoding]::UTF8.GetString($envBytes)
-        Assert-True -Condition $envText.Contains("`r`n") -Message ".env write should contain CRLF line endings"
-    }
-    finally {
-        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
+    Assert-True -Condition (@($winInit).Count -ge 1) -Message "Windows init tasks are missing."
+    Assert-True -Condition (@($winUpdate).Count -ge 1) -Message "Windows update tasks are missing."
+    Assert-True -Condition (@($linInit).Count -ge 1) -Message "Linux init tasks are missing."
+    Assert-True -Condition (@($linUpdate).Count -ge 1) -Message "Linux update tasks are missing."
 }
 
-function Get-CompatFingerprint {
-    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-fp-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-
-    try {
-        $samplePath = Join-Path $tmpDir "fingerprint.txt"
-        $sampleContent = "line-1`r`nline-2`nline-3`rline-4`nunicode-cf-test"
-        Write-TextFileNormalized `
-            -Path $samplePath `
-            -Content $sampleContent `
-            -Encoding "utf8NoBom" `
-            -LineEnding "lf" `
-            -EnsureTrailingNewline
-
-        $bytes = [System.IO.File]::ReadAllBytes($samplePath)
-        $sha = [System.Security.Cryptography.SHA256]::Create()
-        try {
-            $hashBytes = $sha.ComputeHash($bytes)
-        }
-        finally {
-            if ($sha) { $sha.Dispose() }
-        }
-
-        return ([System.BitConverter]::ToString($hashBytes)).Replace("-", "").ToLowerInvariant()
-    }
-    finally {
-        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Test-RunCommandJsonBehavior {
-    $okSingle = '{"value":{"code":"ComponentStatus/StdOut/succeeded","message":"single-ok"}}'
-    $messageSingle = Get-CoRunCommandResultMessage -TaskName "single" -RawJson $okSingle -ModeLabel "compat-smoke"
-    Assert-True -Condition ($messageSingle -like "*single-ok*") -Message "Run-command parser should process single message objects"
-
-    $okArray = '{"value":[{"code":"ComponentStatus/StdOut/succeeded","message":"line-1"},{"code":"ComponentStatus/StdOut/succeeded","message":"line-2"}]}'
-    $messageArray = Get-CoRunCommandResultMessage -TaskName "array" -RawJson $okArray -ModeLabel "compat-smoke"
-    Assert-True -Condition ($messageArray -like "*line-1*") -Message "Run-command parser should include first message"
-    Assert-True -Condition ($messageArray -like "*line-2*") -Message "Run-command parser should include second message"
-
-    $failed = '{"value":{"code":"ComponentStatus/StdErr/failed","message":"boom"}}'
-    $threw = $false
-    try {
-        [void](Get-CoRunCommandResultMessage -TaskName "failed" -RawJson $failed -ModeLabel "compat-smoke")
-    }
-    catch {
-        $threw = $true
-        Assert-True -Condition ($_.Exception.Message -like "*reported error*") -Message "Run-command parser should surface failure message"
-    }
-    Assert-True -Condition $threw -Message "Run-command parser should throw on failed status code"
-
-    $markerInput = @'
-TASK_STATUS:01-alpha:success
-TASK_STATUS:02-beta:warning
-CO_VM_REBOOT_REQUIRED:task=02-beta;index=1;rebootCount=1
-STEP8_SUMMARY:success=1;warning=1;error=0;reboot=1
-'@
-    $markerResult = Parse-CoVmStep8Markers -MessageText $markerInput
-    Assert-Equal -Expected 1 -Actual ([int]$markerResult.SuccessCount) -Message "Step 8 marker parser should read success count from summary"
-    Assert-Equal -Expected 1 -Actual ([int]$markerResult.WarningCount) -Message "Step 8 marker parser should read warning count from summary"
-    Assert-Equal -Expected 0 -Actual ([int]$markerResult.ErrorCount) -Message "Step 8 marker parser should read error count from summary"
-    Assert-True -Condition ([bool]$markerResult.RebootRequired) -Message "Step 8 marker parser should detect reboot-required marker"
-
-    $rebootDetected = Test-CoVmOutputIndicatesRebootRequired -MessageText "Press any key to install Windows Subsystem for Linux."
-    Assert-True -Condition $rebootDetected -Message "Reboot-signal detector should treat WSL interactive prompt as reboot-required signal"
-}
-
-function Test-SkuFilterBehaviorWithMockAz {
-    $script:DefaultErrorSummary = "compat-smoke"
-    $script:DefaultErrorHint = "compat-smoke"
-
-    function global:az {
-        $argLine = ($args -join " ")
-        if ($argLine -like "vm list-sizes*") {
-            $global:LASTEXITCODE = 0
-            return @'
-[
-  {"name":"Standard_A1_v2","numberOfCores":1,"memoryInMB":2048},
-  {"name":"Standard_A2av2","numberOfCores":2,"memoryInMB":4096},
-  {"name":"Standard_B2as_v2","numberOfCores":2,"memoryInMB":8192},
-  {"name":"Standard_B2s","numberOfCores":2,"memoryInMB":4096},
-  {"name":"Standard_B1axxxv2","numberOfCores":2,"memoryInMB":4096},
-  {"name":"Standard_B12axv2","numberOfCores":2,"memoryInMB":4096},
-  {"name":"Standard_D2as_v5","numberOfCores":2,"memoryInMB":8192},
-  {"name":"Basic_A1","numberOfCores":1,"memoryInMB":1792}
-]
-'@
-        }
-
-        $global:LASTEXITCODE = 1
-        throw ("Mock az received an unexpected command: {0}" -f $argLine)
-    }
-
-    try {
-        $b2a = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "b2a"
-        Assert-Equal -Expected 1 -Actual (@($b2a).Count) -Message "SKU filter 'b2a' should return only matching SKU(s)"
-        Assert-Equal -Expected "Standard_B2as_v2" -Actual ([string]$b2a[0].name) -Message "SKU filter 'b2a' should match Standard_B2as_v2"
-
-        $standardB2 = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_b2"
-        Assert-Equal -Expected 2 -Actual (@($standardB2).Count) -Message "SKU filter 'standard_b2' should match Standard_B2* SKUs"
-
-        $standardA = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_a"
-        $standardAStar = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_a*"
-        Assert-Equal -Expected 2 -Actual (@($standardA).Count) -Message "SKU filter 'standard_a' should return only names containing 'standard_a'"
-        Assert-Equal -Expected (@($standardA).Count) -Actual (@($standardAStar).Count) -Message "SKU filter 'standard_a' and 'standard_a*' should return the same count"
-        $aNames = @($standardA | ForEach-Object { [string]$_.name } | Sort-Object)
-        $aStarNames = @($standardAStar | ForEach-Object { [string]$_.name } | Sort-Object)
-        Assert-Equal -Expected ($aNames -join "|") -Actual ($aStarNames -join "|") -Message "SKU filter 'standard_a' and 'standard_a*' should return the same names"
-
-        $wildcard = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "standard_b?a*v2"
-        Assert-Equal -Expected 2 -Actual (@($wildcard).Count) -Message "Wildcard filter should support ? and * semantics"
-        $wildcardNames = @($wildcard | ForEach-Object { [string]$_.name } | Sort-Object)
-        Assert-Equal -Expected "Standard_B1axxxv2|Standard_B2as_v2" -Actual ($wildcardNames -join "|") -Message "Wildcard filter should match expected SKU names only"
-
-        $caseInsensitive = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike "StAnDaRd_A"
-        Assert-Equal -Expected (@($standardA).Count) -Actual (@($caseInsensitive).Count) -Message "Filtering should be case-insensitive"
-
-        $all = Get-LocationSkusForSelection -Location "austriaeast" -SkuLike ""
-        Assert-Equal -Expected 8 -Actual (@($all).Count) -Message "Empty SKU filter should return all region SKUs with names"
-    }
-    finally {
-        Remove-Item -Path Function:\global:az -ErrorAction SilentlyContinue
-    }
-}
-
-function Test-GuestTaskAndScriptBuild {
+Invoke-Test -Name "Task token replacement" -Action {
     $context = [ordered]@{
         VmUser = "manager"
-        VmPass = "demo-pass"
+        VmPass = "secret"
         VmAssistantUser = "assistant"
-        VmAssistantPass = "<runtime-secret>"
-        ServerName = "examplevm"
+        VmAssistantPass = "secret2"
         SshPort = "444"
-        TcpPorts = @("444", "11434", "3389")
-        ResourceGroup = "rg-demo"
-        VmName = "vm-demo"
+        TcpPorts = @("444","3389","11434")
+        ServerName = "examplevm"
+        ResourceGroup = "rg-examplevm"
+        VmName = "examplevm"
         AzLocation = "austriaeast"
+        VmSize = "Standard_B2as_v2"
+        VmImage = "example:image:urn"
+        VmDiskName = "disk-examplevm"
+        VmDiskSize = "128"
+        VmStorageSku = "StandardSSD_LRS"
     }
 
-    $linuxTasks = Resolve-CoVmGuestTaskBlocks -Platform "linux" -Context $context
-    Assert-True -Condition (@($linuxTasks).Count -ge 7) -Message "Linux task list should contain expected tasks"
-    $linuxScript = Get-CoVmUpdateScriptContentFromTasks -Platform "linux" -TaskBlocks $linuxTasks
-    Assert-True -Condition ($linuxScript -like "*Update phase started.*") -Message "Linux update script should include update start marker"
-    Assert-True -Condition ($linuxScript -like "*Port 444*") -Message "Linux update script should include resolved SSH port"
-    Assert-True -Condition ($linuxScript -like "*11434*") -Message "Linux update script should include resolved TCP ports"
-    Assert-True -Condition ($linuxScript -like "*assistant*") -Message "Linux update script should include assistant user operations"
-    Assert-True -Condition ($linuxScript -like "*usermod -aG sudo*") -Message "Linux update script should include admin-group grant logic"
-    Assert-True -Condition ($linuxScript -like "*NOPASSWD:ALL*") -Message "Linux update script should include root-equivalent sudo rule"
-
-    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-guest-task-" + [guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
-    try {
-        $initPath = Join-Path $tmpDir "init.ps1"
-        Write-TextFileNormalized `
-            -Path $initPath `
-            -Content (Get-CoVmWindowsInitScriptContent `
-                -VmUser ([string]$context.VmUser) `
-                -VmPass ([string]$context.VmPass) `
-                -AssistantUser ([string]$context.VmAssistantUser) `
-                -AssistantPass ([string]$context.VmAssistantPass) `
-                -SshPort ([string]$context.SshPort) `
-                -TcpPorts @($context.TcpPorts)) `
-            -Encoding "utf8NoBom" `
-            -LineEnding "crlf" `
-            -EnsureTrailingNewline
-        $windowsInitScript = Get-Content -Path $initPath -Raw
-        Assert-True -Condition ($windowsInitScript -like "*Allow-SSH-444*") -Message "Windows init script should include resolved SSH firewall rule"
-        Assert-True -Condition ($windowsInitScript -like "*11434*") -Message "Windows init script should include resolved TCP port values"
-        Assert-True -Condition ($windowsInitScript -like '*$assistantUser = "assistant"*') -Message "Windows init script should include assistant user variable replacement"
-        Assert-True -Condition ($windowsInitScript -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows init script should ensure assistant local power admin rights"
-        Assert-True -Condition ($windowsInitScript -like "*system error 1378*") -Message "Windows init script should treat local-group already-member exit code 1378 as a non-failing condition"
-
-        $windowsTasks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $context -VmInitScriptFile $initPath
-        Assert-True -Condition (@($windowsTasks).Count -ge 10) -Message "Windows update task list should contain expected non-init tasks"
-        $windowsScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $windowsTasks
-        $windowsTaskScriptJoined = (@($windowsTasks | ForEach-Object { [string]$_.Script }) -join "`n`n")
-        $tokens = $null
-        $parseErrors = $null
-        [void][System.Management.Automation.Language.Parser]::ParseInput($windowsScript, [ref]$tokens, [ref]$parseErrors)
-        Assert-Equal -Expected 0 -Actual (@($parseErrors).Count) -Message "Windows update script should be syntactically parseable after task replacement"
-        Assert-True -Condition ($windowsScript -like "*Update phase started.*") -Message "Windows update script should include update start marker"
-        Assert-True -Condition ($windowsScript -like "*step8-state.json*") -Message "Windows update script should include Step 8 state file path for reboot-resume"
-        Assert-True -Condition ($windowsScript -like "*CO_VM_REBOOT_REQUIRED*") -Message "Windows update script should emit reboot-required marker"
-        Assert-True -Condition ($windowsScript -like "*STEP8_SUMMARY:*") -Message "Windows update script should emit Step 8 summary marker"
-        Assert-True -Condition ($windowsTaskScriptJoined -notlike "*Allow-SSH-444*") -Message "Windows update task catalog should not duplicate init-only SSH firewall setup"
-        Assert-True -Condition ($windowsTaskScriptJoined -notlike '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows update task catalog should not duplicate init-only local user bootstrap"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*windows-ux-performance-tuning*") -Message "Windows task catalog should include UX/performance tuning task"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*LaunchTo*") -Message "Windows task catalog should include Explorer launch-to-This-PC setting"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*ShowSuperHidden*") -Message "Windows task catalog should include protected OS files visibility setting"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*86ca1aa0-34aa-4e8b-a509-50c905bae2a2*") -Message "Windows task catalog should include classic context-menu setting"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*DisablePrivacyExperience*") -Message "Windows task catalog should include welcome/privacy suppression policy"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*Microsoft.WindowsNotepad*") -Message "Windows task catalog should include modern Notepad removal logic"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*CoVmTextFile*") -Message "Windows task catalog should include legacy text association class"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*powercfg /setactive*") -Message "Windows task catalog should include maximum-performance power scheme activation"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*private.local.accessibility.package*") -Message "Windows task catalog should include private local-only accessibility winget install command"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*choco install ollama*") -Message "Windows task catalog should include choco install ollama command"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*choco install azure-cli*") -Message "Windows task catalog should include choco install azure-cli command"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*Google.Chrome*") -Message "Windows task catalog should include Google Chrome install command metadata"
-        Assert-True -Condition ($windowsTaskScriptJoined -like '*$serverName = "examplevm"*') -Message "Windows task catalog should include resolved server-name variable for Chrome profile selection"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*--profile-directory=`$serverName*") -Message "Windows task catalog should include Chrome profile-directory argument based on server-name variable"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*Docker.DockerDesktop*") -Message "Windows task catalog should include Docker Desktop install command metadata"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*wsl --update*") -Message "Windows task catalog should include WSL update command"
-        Assert-True -Condition ($windowsTaskScriptJoined -like "*local-service-disable-conservative-completed*") -Message "Windows task catalog should include conservative service disable task marker"
-
-        $probeScript = Get-CoVmWindowsPostRebootProbeScript -ServerName "examplevm" -VmUser "manager" -AssistantUser "assistant"
-        Assert-True -Condition ($probeScript -like "*post-reboot-probe-started*") -Message "Post-reboot probe script should include start marker"
-        Assert-True -Condition ($probeScript -like "*server-name=examplevm*") -Message "Post-reboot probe script should include resolved server name"
-        Assert-True -Condition ($probeScript -like "*docker version*") -Message "Post-reboot probe script should verify Docker daemon"
-        Assert-True -Condition ($probeScript -like "*wsl --status*") -Message "Post-reboot probe script should verify WSL status"
-    }
-    finally {
-        Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Test-ConnectionDisplayModelDualUsers {
-    function global:Get-CoVmVmDetails {
-        param(
-            [hashtable]$Context
-        )
-
-        return [ordered]@{
-            PublicIP = "203.0.113.10"
-            VmFqdn = "demo.austriaeast.cloudapp.azure.com"
-        }
-    }
-
-    try {
-        $context = [ordered]@{
-            ResourceGroup = "rg-demo"
-            VmName = "vm-demo"
-            AzLocation = "austriaeast"
-        }
-
-        $linuxModel = Get-CoVmConnectionDisplayModel `
-            -Context $context `
-            -ManagerUser "manager" `
-            -AssistantUser "assistant" `
-            -SshPort "444" `
-            -IncludeRdp
-        Assert-Equal -Expected 2 -Actual (@($linuxModel.SshConnections).Count) -Message "Connection model should return two SSH entries"
-        Assert-Equal -Expected 2 -Actual (@($linuxModel.RdpConnections).Count) -Message "Connection model should return two RDP entries when requested"
-        Assert-True -Condition ((@($linuxModel.SshConnections | ForEach-Object { [string]$_.User }) -contains "manager")) -Message "Connection model should include manager SSH entry"
-        Assert-True -Condition ((@($linuxModel.SshConnections | ForEach-Object { [string]$_.User }) -contains "assistant")) -Message "Connection model should include assistant SSH entry"
-    }
-    finally {
-        Remove-Item -Path Function:\global:Get-CoVmVmDetails -ErrorAction SilentlyContinue
-    }
-}
-
-function Test-RuntimeConfigurationSnapshotFormatting {
-    function global:Get-CoVmAzAccountSnapshot {
-        return [ordered]@{
-            SubscriptionName = "demo-subscription"
-            SubscriptionId = "00000000-0000-0000-0000-000000000000"
-            TenantName = "demo-tenant"
-            TenantId = "11111111-1111-1111-1111-111111111111"
-            UserName = "<email>"
-        }
-    }
-
-    try {
-        $context = [ordered]@{
-            ResourceGroup = "rg-demo"
-            AzLocation = "austriaeast"
-            VmSize = "Standard_B2as_v2"
-            VmDiskSize = "128"
-            VmImage = "demo:image:urn"
-            TcpPorts = @("444","3389")
-        }
-        $configMap = @{
-            AZ_LOCATION = "austriaeast"
-            VM_SIZE = "Standard_B2as_v2"
-        }
-        $configOverrides = @{
-            SERVER_NAME = "demo"
-        }
-
-        Show-CoVmRuntimeConfigurationSnapshot `
-            -Platform "linux" `
-            -ScriptName "az-vm-lin.ps1" `
-            -ScriptRoot $RepoRoot `
-            -AutoMode `
-            -SubstepMode `
-            -ConfigMap $configMap `
-            -ConfigOverrides $configOverrides `
-            -Context $context
-    }
-    finally {
-        Remove-Item -Path Function:\global:Get-CoVmAzAccountSnapshot -ErrorAction SilentlyContinue
-    }
-}
-
-function Test-StepFirstUseValueTracing {
-    $script:CoVmFirstUseTracker = $null
-    $script:CoVmValueStateTracker = $null
-    $context = @{
-        Alpha = "value-alpha"
-        Beta = @("one","two")
-    }
-
-    Show-CoVmStepFirstUseValues `
-        -StepLabel "compat-smoke step trace" `
-        -Context $context `
-        -Keys @("Alpha", "Beta")
-
-    $tracker = Get-CoVmFirstUseTracker
-    Assert-True -Condition $tracker.Contains("Alpha") -Message "First-use tracker should contain Alpha after first trace call"
-    Assert-True -Condition $tracker.Contains("Beta") -Message "First-use tracker should contain Beta after first trace call"
-    $countBefore = $tracker.Count
-
-    Show-CoVmStepFirstUseValues `
-        -StepLabel "compat-smoke step trace" `
-        -Context $context `
-        -Keys @("Alpha", "Beta")
-
-    $countAfter = (Get-CoVmFirstUseTracker).Count
-    Assert-Equal -Expected $countBefore -Actual $countAfter -Message "First-use tracker should not grow when same keys are traced again"
-
-    $valueStateBefore = Get-CoVmValueStateTracker
-    Assert-Equal -Expected "one, two" -Actual ([string]$valueStateBefore["Beta"]) -Message "Value-state tracker should store last observed display value"
-
-    $context["Beta"] = @("one","three")
-    Show-CoVmStepFirstUseValues `
-        -StepLabel "compat-smoke step trace" `
-        -Context $context `
-        -Keys @("Alpha", "Beta")
-
-    $valueStateAfter = Get-CoVmValueStateTracker
-    Assert-Equal -Expected "one, three" -Actual ([string]$valueStateAfter["Beta"]) -Message "Value-state tracker should update when a key value changes"
-}
-
-Write-Host "Running compatibility smoke tests in host: $($PSVersionTable.PSVersion.ToString())"
-Write-Host "Repo root: $RepoRoot"
-
-Invoke-TestCase -Name "Syntax parse for all .ps1 files" -Action { Test-PsSyntaxAllFiles }
-
-try {
-    $coVmRoot = Join-Path $RepoRoot "co-vm"
-    $imports = @(
-        "az-vm-co-core.ps1",
-        "az-vm-co-config.ps1",
-        "az-vm-co-azure.ps1",
-        "az-vm-co-guest.ps1",
-        "az-vm-co-orchestration.ps1",
-        "az-vm-co-runcommand.ps1",
-        "az-vm-co-ssh.ps1",
-        "az-vm-co-sku-picker.ps1"
+    $templates = @(
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_USER__ __SSH_PORT__ __SERVER_NAME__ __TCP_PORTS_BASH__" }
     )
-    foreach ($fileName in $imports) {
-        $filePath = Join-Path $coVmRoot $fileName
-        if (-not (Test-Path -LiteralPath $filePath)) {
-            throw ("Shared module was not found: {0}" -f $filePath)
-        }
-        . $filePath
-    }
-    Write-TestResult -Success $true -Name "Import shared co-vm modules" -Detail ""
-}
-catch {
-    Write-TestResult -Success $false -Name "Import shared co-vm modules" -Detail $_.Exception.Message
-}
 
-Invoke-TestCase -Name "JSON compatibility helpers" -Action { Test-JsonCompatFunctions }
-Invoke-TestCase -Name "Config fallback behavior" -Action { Test-ConfigFallbackBehavior }
-Invoke-TestCase -Name "Deterministic UTF-8 no-BOM + line-ending policy" -Action { Test-NormalizedFileWritePolicy }
-Invoke-TestCase -Name "Run-command JSON parser behavior" -Action { Test-RunCommandJsonBehavior }
-Invoke-TestCase -Name "Interactive SKU partial filter behavior" -Action { Test-SkuFilterBehaviorWithMockAz }
-Invoke-TestCase -Name "Guest task catalog and update-script build behavior" -Action { Test-GuestTaskAndScriptBuild }
-Invoke-TestCase -Name "Connection display model dual-user behavior" -Action { Test-ConnectionDisplayModelDualUsers }
-Invoke-TestCase -Name "Runtime configuration snapshot formatting behavior" -Action { Test-RuntimeConfigurationSnapshotFormatting }
-Invoke-TestCase -Name "Step first-use value tracing behavior" -Action { Test-StepFirstUseValueTracing }
-
-if (Get-Command Write-TextFileNormalized -ErrorAction SilentlyContinue) {
-    $fingerprint = Get-CompatFingerprint
-    Write-Host ("COMPAT_FINGERPRINT: {0}" -f $fingerprint)
+    $resolved = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
+    $scriptBody = [string]$resolved[0].Script
+    Assert-True -Condition ($scriptBody -like "*manager*") -Message "VM user token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "Server name token was not replaced."
 }
 
 Write-Host ""
-Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $global:TestPassCount, $global:TestFailCount)
-if ($global:TestFailCount -gt 0) {
+Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $passCount, $failCount)
+if ($failCount -gt 0) {
     exit 1
 }

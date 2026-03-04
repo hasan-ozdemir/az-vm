@@ -6,7 +6,7 @@ param(
     [string]$UserName = "manager",
     [string]$Password = "",
     [string]$ToolsRoot = (Join-Path $PSScriptRoot "putty"),
-    [string]$LocalUpdateScriptPath = (Join-Path (Split-Path -Path $PSScriptRoot -Parent) "win-vm\\az-vm-win-update.ps1"),
+    [string]$LocalUpdateScriptPath = (Join-Path (Split-Path -Path $PSScriptRoot -Parent) "windows\\update"),
     [string]$RemoteUpdateScriptPath = "",
     [switch]$RunUpdateScript
 )
@@ -84,12 +84,12 @@ if ([string]::IsNullOrWhiteSpace($HostName)) {
     throw "HostName is required (or provide ResourceGroup + VmName for auto-resolution)."
 }
 
-$envPath = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "win-vm\\.env"
+$envPath = Join-Path (Split-Path -Path $PSScriptRoot -Parent) ".env"
 if ([string]::IsNullOrWhiteSpace($Password)) {
     $Password = Get-EnvValueFromFile -Path $envPath -Key "VM_PASS"
 }
 if ([string]::IsNullOrWhiteSpace($Password)) {
-    throw "Password is empty. Pass -Password or set VM_PASS in win-vm/.env."
+    throw "Password is empty. Pass -Password or set VM_PASS in .env."
 }
 
 if ([string]::IsNullOrWhiteSpace($RemoteUpdateScriptPath)) {
@@ -124,23 +124,46 @@ foreach ($command in $quickCommands) {
 
 if ($RunUpdateScript) {
     if (-not (Test-Path -LiteralPath $LocalUpdateScriptPath)) {
-        throw "Local update script was not found: $LocalUpdateScriptPath"
+        throw "Local update script path was not found: $LocalUpdateScriptPath"
     }
 
-    Write-Host ""
-    Write-Host "Copying update script to VM..." -ForegroundColor Cyan
-    $remoteCopyTarget = ('{0}@{1}:"{2}"' -f $UserName, $HostName, $RemoteUpdateScriptPath)
-    $copyArgs = @(
-        "-batch",
-        "-P", [string]$Port,
-        "-pw", $Password,
-        $LocalUpdateScriptPath,
-        $remoteCopyTarget
-    )
-    Invoke-LocalProcess -FilePath $pscpPath -Arguments $copyArgs
+    $scriptFiles = @()
+    $item = Get-Item -LiteralPath $LocalUpdateScriptPath
+    if ($item.PSIsContainer) {
+        $scriptFiles = @(Get-ChildItem -LiteralPath $LocalUpdateScriptPath -Filter "*.ps1" -File | Sort-Object Name)
+    }
+    else {
+        $scriptFiles = @($item)
+    }
 
-    Write-Host ""
-    Write-Host "Running update script on VM over SSH..." -ForegroundColor Cyan
-    $remoteRun = ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $RemoteUpdateScriptPath)
-    Invoke-LocalProcess -FilePath $plinkPath -Arguments ($basePlinkArgs + @($remoteRun))
+    if ($scriptFiles.Count -eq 0) {
+        throw "No update script files were found at: $LocalUpdateScriptPath"
+    }
+
+    $remoteBase = [System.IO.Path]::GetDirectoryName($RemoteUpdateScriptPath)
+    if ([string]::IsNullOrWhiteSpace($remoteBase)) {
+        $remoteBase = ("C:\\Users\\{0}" -f $UserName)
+    }
+
+    foreach ($scriptFile in $scriptFiles) {
+        $leaf = [string]$scriptFile.Name
+        $remoteScript = Join-Path $remoteBase $leaf
+        $remoteScript = $remoteScript.Replace("/", "\")
+
+        Write-Host ""
+        Write-Host ("Copying update script to VM: {0}" -f $leaf) -ForegroundColor Cyan
+        $remoteCopyTarget = ('{0}@{1}:"{2}"' -f $UserName, $HostName, $remoteScript)
+        $copyArgs = @(
+            "-batch",
+            "-P", [string]$Port,
+            "-pw", $Password,
+            [string]$scriptFile.FullName,
+            $remoteCopyTarget
+        )
+        Invoke-LocalProcess -FilePath $pscpPath -Arguments $copyArgs
+
+        Write-Host ("Running update script on VM over SSH: {0}" -f $leaf) -ForegroundColor Cyan
+        $remoteRun = ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $remoteScript)
+        Invoke-LocalProcess -FilePath $plinkPath -Arguments ($basePlinkArgs + @($remoteRun))
+    }
 }

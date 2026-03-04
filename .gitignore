@@ -1,25 +1,30 @@
 # Ignore sensitive runtime environment files
+.env
 **/.env
 
 # Ignore logs and transcripts
-**/*-log.txt
 *.log
 *.tmp
+az-vm-log-*.txt
+az-vm-win-e2e-*.log
+_tmp_test.txt
 
 # Ignore temp runtime artifacts
 .tmp/
 tmp/
 tmp-logs/
 
-# Ignore auto-generated VM bootstrap/update artifacts
-lin-vm/az-vm-lin-cloud-init.yaml
-lin-vm/az-vm-lin-update.sh
-win-vm/az-vm-win-init.ps1
-win-vm/az-vm-win-update.ps1
+# Ignore downloaded SSH helper binaries/vendors
 tools/putty/*.exe
 tools/winscp/*.exe
 tools/pyssh/vendor/
 tools/pyssh/__pycache__/
+tools/pyssh/*.pyc
+
+# Legacy folders removed from active architecture
+co-vm/
+lin-vm/
+win-vm/
 
 # OS/editor noise
 Thumbs.db

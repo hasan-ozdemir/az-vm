@@ -1,391 +1,115 @@
 # az-vm
 
-Azure VM provisioning automation for Linux and Windows, with shared orchestration modules, deterministic run modes, and strong operational logging.
+Unified Azure VM provisioning toolkit for Windows and Linux with one launcher:
+- `az-vm.cmd`
+- `az-vm.ps1`
+
+It creates/updates Azure resource group + network + VM, runs guest init tasks with Azure Run Command, then runs guest update tasks task-by-task over persistent pyssh.
 
 ## Quick Start
 
 ### 1) Prerequisites
-- Windows host with PowerShell 5.1+ (or PowerShell 7+).
-- Azure CLI installed (`az`) and authenticated (`az login`).
-- Sufficient Azure permissions to create/delete resource groups, network resources, and VMs.
-- Run from an elevated terminal (admin) when using `.cmd` launchers.
+- Windows host, PowerShell 5.1+ or PowerShell 7+
+- Azure CLI (`az`) and authenticated session (`az login`)
+- Admin terminal (for `.cmd` launcher)
 
-### 2) Prepare config
-- Linux template: `lin-vm/.env.example`
-- Windows template: `win-vm/.env.example`
-- Create local runtime files:
+### 2) Create local config
 
 ```powershell
-Copy-Item lin-vm/.env.example lin-vm/.env
-Copy-Item win-vm/.env.example win-vm/.env
+Copy-Item .env.example .env
 ```
 
-### 3) Run in auto mode (recommended for unattended)
+Set at least:
+- `VM_OS_TYPE=windows` or `VM_OS_TYPE=linux` (required in `--auto` mode)
+- `VM_PASS` (strong password)
+
+### 3) Run
 
 ```powershell
-.\az-vm-lin.cmd --auto
-.\az-vm-win.cmd --auto
+# interactive
+.\az-vm.cmd --windows
+
+# unattended
+.\az-vm.cmd --auto --windows
+.\az-vm.cmd --auto --linux
 ```
 
-### 4) Optional diagnostics
-
-Linux (task-by-task Step 8):
-
-```powershell
-.\az-vm-lin.cmd --auto --substep
-```
-
-Windows uses task-by-task Step 8 over persistent pyssh by default; no extra diagnostics flag is required.
-
-### 5) Read outputs
-- Linux log: `lin-vm/az-vm-lin-log.txt`
-- Windows log: `win-vm/az-vm-win-log.txt`
-- Final outputs include public IP/FQDN and ready-to-run connection commands.
-- In interactive mode, Step 1 also provides numbered Azure region/SKU selection with price and availability listing.
-
----
-
-## What This Project Is
-
-`az-vm` is a script-driven provisioning toolkit that creates and configures Azure VMs end-to-end:
-- Creates or recreates resource group and network resources.
-- Creates VM with controlled image/size/disk options.
-- Applies guest-side configuration through Azure Run Command.
-- Exposes configured TCP ports both at NSG and OS firewall levels.
-- Emits connection commands and logs for operators.
-
-## Who It Is For
-- Platform/devops engineers who need reproducible VM setup.
-- Developers who need quick Linux/Windows lab VMs with consistent network rules.
-- Teams wanting script parity across Linux and Windows VM deployment flows.
-
-## When It Is Useful
-- Repeatable environment bootstrap in test/lab subscriptions.
-- Regression checks for VM provisioning and guest hardening tasks.
-- Fast provisioning where infra-as-code overhead is unnecessary.
-
----
-
-## Repository Structure
-
-```text
-az-vm/
-  az-vm-lin.cmd                # Elevated launcher -> lin-vm/az-vm-lin.ps1
-  az-vm-win.cmd                # Elevated launcher -> win-vm/az-vm-win.ps1
-  AGENTS.md                    # Development conventions
-  co-vm/                       # Shared cross-platform orchestration modules
-    az-vm-co-core.ps1
-    az-vm-co-config.ps1
-    az-vm-co-azure.ps1
-    az-vm-co-guest.ps1
-    az-vm-co-orchestration.ps1
-    az-vm-co-runcommand.ps1
-    az-vm-co-sku-picker.ps1
-  lin-vm/
-    az-vm-lin.ps1              # Linux orchestration script
-    az-vm-lin-cloud-init.yaml  # Generated/managed cloud-init content
-    az-vm-lin-update.sh        # Linux guest update script (combined mode)
-    .env.example
-  win-vm/
-    az-vm-win.ps1              # Windows orchestration script
-    az-vm-win-init.ps1         # Windows init script artifact
-    az-vm-win-update.ps1       # Windows guest update script (combined mode)
-    .env.example
-  tests/
-    ps-compat-smoke.ps1        # Non-live compatibility smoke checks
-    run-ps-compat-matrix.ps1   # Runs smoke checks on PS5.1 + PS7
-```
-
----
-
-## Runtime Modes
-
-Linux (`az-vm-lin.cmd` / `lin-vm/az-vm-lin.ps1`) flags:
-
-- `interactive` (default)
-  - Step-by-step confirmation model via `Invoke-Step`.
-  - Step 1 includes interactive region and VM SKU pickers with two-stage `y/n` VM SKU confirmation.
-- `--auto` / `-a`
-  - Non-interactive execution path.
-- `--substep` / `-s`
-  - Diagnostic mode for Step 8 guest tasks.
-
-Windows (`az-vm-win.cmd` / `win-vm/az-vm-win.ps1`) flags:
+## Run Modes
 - `interactive` (default)
 - `--auto` / `-a`
 - `--update` / `-u`
-  - Keeps existing resources and re-runs create-or-update commands.
+  - keep existing resources, re-run create-or-update commands
 - `explicit destructive rebuild flow` / `-r`
-  - Interactive mode asks delete confirmation; auto mode deletes without prompt, then re-runs create commands.
+  - interactive: ask delete confirmation
+  - auto: delete without prompt, then recreate
 
-### Step vs Task semantics
-- `Step 1..9` = top-level orchestration stages.
-- Step 8 contains guest-side `Task` blocks.
+## OS Selection
+- CLI: `--windows` or `--linux`
+- `.env`: `VM_OS_TYPE=windows|linux`
+- interactive fallback when unresolved (default choice: windows)
 
-Execution behavior in Step 8:
-- Linux:
-  - With `--substep`: tasks run one-by-one.
-  - Without `--substep`: full update script runs in one run-command call.
-- Windows:
-  - VM init runs once via `az vm run-command` using the init script file.
-  - Update tasks run task-by-task over one persistent pyssh SSH session.
+Selection precedence:
+1. CLI flag
+2. `.env` value
+3. interactive prompt
 
----
+## Step Flow
+1. Resolve config + VM OS type
+2. Check region/image/VM size/disk compatibility
+3. Resource group handling
+4. Network provisioning (VNet/Subnet/NSG/PublicIP/NIC)
+5. Load and prepare init task files
+6. Load and prepare update task files
+7. VM create/update
+8. Guest execution
+   - init tasks: `az vm run-command` task-by-task
+   - update tasks: pyssh persistent session task-by-task
+9. Print SSH/RDP details
+
+## Task Catalog Layout
+
+```text
+linux/
+  init/*.sh
+  update/*.sh
+windows/
+  init/*.ps1
+  update/*.ps1
+```
+
+Filename pattern is enforced:
+- `NN-verb-topic.ext`
+- 2-digit order + 2-5 English words (kebab-case)
 
 ## Configuration
+Use root `.env`.
 
-### Precedence
-Runtime configuration order is:
-1. CLI/user override (for values prompted/overridden in runtime)
-2. `.env` value
-3. hard-coded script default
+Generic keys (shared):
+- `SERVER_NAME`, `RESOURCE_GROUP`, `AZ_LOCATION`
+- `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
+- `VM_NAME`, `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
+- `VM_USER`, `VM_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
+- `SSH_PORT`, `TCP_PORTS`
+- `VM_INIT_TASK_DIR`, `VM_UPDATE_TASK_DIR`
+- `TASK_OUTCOME_MODE=continue|strict`
+- `SSH_MAX_RETRIES`, `PUTTY_PLINK_PATH`, `PUTTY_PSCP_PATH`
 
-### Environment files
-- Local `.env` files are runtime inputs and should stay untracked.
-- `.env.example` files are the templates to share.
-- In interactive mode, selected `SERVER_NAME`, `AZ_LOCATION`, and `VM_SIZE` are written back to local `.env`.
+Optional platform fallback keys (used only when generic key is empty):
+- `WIN_*`, `LIN_*`
+  - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
 
-### Key variables (Linux and Windows)
+## Logs
+One transcript file per run:
+- `az-vm-log-ddMMMyy-HHmmss.txt`
 
-| Variable | Purpose |
-|---|---|
-| `SERVER_NAME` | Base server identity (`otherexamplevm` for Linux, `examplevm` for Windows by default). |
-| `RESOURCE_GROUP` | Resource group name template (supports `{SERVER_NAME}`). |
-| `AZ_LOCATION` | Azure region (default currently `austriaeast`). |
-| `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME` | Network resource names. |
-| `VM_NAME` | VM name template. |
-| `VM_IMAGE` | Image URN. |
-| `VM_STORAGE_SKU` | Disk SKU (`StandardSSD_LRS`). |
-| `VM_SIZE` | VM size (default `Standard_B2as_v2`). |
-| `PRICE_HOURS` | Monthly pricing multiplier for SKU table (fallback default `730`). |
-| `VM_DISK_NAME`, `VM_DISK_SIZE_GB` | OS disk naming/size. |
-| `VM_USER`, `VM_PASS` | Login account credentials. |
-| `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS` | Secondary power-admin account credentials (`assistant`). |
-| `SSH_PORT` | SSH port (default `444`). |
-| `TCP_PORTS` | Comma-separated inbound TCP ports applied to NSG + guest firewall. |
-| `SSH_MAX_RETRIES` | SSH executor retry cap (max effective value is 3). |
-| `PUTTY_PLINK_PATH`, `PUTTY_PSCP_PATH` | Optional custom pyssh client path overrides. |
+## Connection Output
+At Step 9:
+- SSH commands for `manager` and `assistant`
+- Windows flow also prints RDP commands for both users
 
-Platform-specific:
-- Linux: `VM_CLOUD_INIT_FILE`, `VM_UPDATE_SCRIPT_FILE`
-- Windows: `VM_INIT_SCRIPT_FILE`, `VM_UPDATE_SCRIPT_FILE`, `WIN_TASK_FAILURE_POLICY`
-
----
-
-## End-to-End Provisioning Flow
-
-### Step 1
-Resolve parameters from `.env` + defaults, validate key inputs, and (interactive mode) select region + VM SKU from numbered lists.  
-After region selection, current VM SKU is shown first (`y` to keep, `n` to change).  
-If changed, partial filter + SKU table selection runs, then selected SKU is confirmed again with `y/n`.
-
-### Step 2
-Pre-check availability (fail fast):
-- Region exists.
-- Image available in region.
-- VM size available in region (REST-based check).
-- Configured disk size is compatible with image minimum OS disk size.
-
-### Step 3
-Resource group handling:
-- Windows default mode: existing RG is kept; missing RG is created.
-- Windows `--update`: existing RG is kept, create command is re-run.
-- Windows `explicit destructive rebuild flow`: existing RG can be deleted (interactive confirmation / auto-confirm in `--auto`), then create command runs.
-
-### Step 4
-Network provisioning:
-- VNet + Subnet
-- NSG + inbound rule for configured `TCP_PORTS`
-- Static Public IP + NIC attachment
-
-### Step 5/6
-Guest script preparation:
-- Linux: cloud-init + bash update script.
-- Windows: init PowerShell + update PowerShell script.
-- Step 6 update scripts are generated from the same Task catalog used in Step 8.
-
-### Step 7
-VM create (with existence/return checks).
-- Windows default mode: existing VM is kept; VM create step is skipped.
-- Windows `--update`: existing VM is kept; `az vm create` is re-run.
-- Windows `explicit destructive rebuild flow`: VM delete confirmation (interactive) or auto-delete (`--auto`) then create.
-
-### Step 8
-Guest configuration execution:
-- Linux: Azure Run Command (`RunShellScript`).
-- Windows:
-  - Init: Azure Run Command (`RunPowerShellScript`) with `VM_INIT_SCRIPT_FILE`.
-  - Update: persistent pyssh SSH session, task-by-task execution from task catalog.
-
-### Step 9
-Print final connection details:
-- Public IP
-- SSH commands for both `manager` and `assistant`
-- RDP commands for both `manager` and `assistant` (Windows, and informational output on Linux)
-
----
-
-## Network and Access Model
-
-- `TCP_PORTS` is the single source list for inbound ports.
-- Same port set is applied in two layers:
-  - Azure NSG inbound allow rule
-  - Guest OS firewall rules
-
-Defaults include common dev/service ports, plus:
-- `3389` for RDP (Windows)
-- `444` for SSH
-- `11434` included in both platform defaults
-
----
-
-## Windows Guest Configuration Details
-
-Windows Step 8 tasks include:
-- Local admin user assurance.
-- Secondary power-admin user (`assistant`) assurance.
-- OpenSSH install/config/service enablement.
-- RDP enablement and compatibility-friendly settings.
-- Chocolatey bootstrap (unattended).
-- Package installs via Chocolatey:
-  - `git`
-  - `python312`
-  - `nodejs-lts`
-- `refreshenv.cmd` invocation after choco bootstrap and after each package install/check step.
-- Health snapshot of ports/services/firewall/sshd config.
-
----
-
-## Linux Guest Configuration Details
-
-Linux Step 8 tasks include:
-- User/password setup for VM user and root.
-- Secondary power-admin user (`assistant`) setup with sudo/root-equivalent rights.
-- Apt package update/install baseline.
-- SSH daemon configuration updates.
-- UFW inbound policy and TCP port rules from `TCP_PORTS`.
-- Capability and service handling for SSH/Node scenarios.
-- Health snapshot (open ports, firewall status, sshd config).
-
----
-
-## Usage Examples
-
-### Linux, unattended combined mode
-```powershell
-.\az-vm-lin.cmd --auto
-```
-
-### Linux, unattended task-by-task diagnostics
-```powershell
-.\az-vm-lin.cmd --auto --substep
-```
-
-### Windows, unattended combined mode
-```powershell
-.\az-vm-win.cmd --auto
-```
-
-### Windows, unattended task-by-task diagnostics
-```powershell
-.\az-vm-win.cmd --auto
-```
-
-### Windows, destructive rebuild flow (delete + recreate)
-```powershell
-.\az-vm-win.cmd --auto explicit destructive rebuild flow
-```
-
-### Direct PowerShell script invocation
-```powershell
-powershell -ExecutionPolicy Bypass -File .\lin-vm\az-vm-lin.ps1 --auto
-powershell -ExecutionPolicy Bypass -File .\win-vm\az-vm-win.ps1 --auto
-```
-
----
-
-## PowerShell Compatibility Checks
-
-Run full non-live compatibility smoke matrix (recommended after refactors):
-
-```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tests\run-ps-compat-matrix.ps1
-```
-
-This validates:
-- Parse/syntax integrity of all `.ps1` files.
-- Shared `co-vm` module loadability.
-- JSON and collection compatibility helpers.
-- Run-command result parsing behavior.
-- Interactive VM SKU partial-filter behavior (mocked `az`; no live Azure call).
-- Deterministic file-write policy (UTF-8 no-BOM and line-ending checks).
-
-### Generated file encoding policy
-- UTF-8 outputs are written as **UTF-8 without BOM** on both PS5.1 and PS7+.
-- Linux-generated artifacts (`cloud-init`, `.sh`) are written with **LF** line endings.
-- Runtime `.env` updates are written with **CRLF** line endings (still UTF-8 no-BOM).
-
-### VM SKU partial search behavior
-- Interactive SKU filtering is case-insensitive (`OrdinalIgnoreCase` semantics).
-- Search scope includes all SKU names returned by the selected region.
-- `*` and `?` are supported as wildcard tokens:
-  - `*` => zero or more chars
-  - `?` => exactly one char
-- Non-wildcard input is treated as partial contains search.
-
----
-
-## Logs, Exit Behavior, and Error Handling
-
-- Console output is transcribed to per-platform log files.
-- Failures are mapped to user-friendly summary/hint text and non-zero exit codes.
-- Script exits gracefully and prints:
-  - reason summary
-  - detailed failing message
-  - suggested corrective action
-
-Representative failure classes:
-- invalid/unavailable region
-- image unavailability in selected region
-- unsupported VM size in selected region
-- incompatible OS disk size
-- VM create failures
-- run-command task or batch failures
-
----
-
-## Safety and Cost Notes
-
-- The scripts may delete an existing target resource group before recreation.
-- VM, disk, public IP, and network resources create Azure costs.
-- Use non-production subscriptions unless you intentionally target production.
-- Replace default/sample credentials in `.env` before real use.
-
----
-
-## Developer Notes
-
-- Shared logic belongs in `co-vm/`.
-- Step 1/2/3/4/7/9 orchestration flow is centralized in `co-vm/az-vm-co-orchestration.ps1`.
-- Step 5/6/8 guest task catalog and script generation flow is centralized in `co-vm/az-vm-co-guest.ps1`.
-- Keep Linux/Windows top-level flow aligned; diverge only for OS-specific needs.
-- Prefer updating `.env.example` when introducing/changing config keys.
-- Follow `AGENTS.md` for project conventions and commit discipline.
-
----
-
-## FAQ
-
-### Why do I get prompted in interactive mode?
-Interactive is the default mode and asks per-step confirmation. Use `--auto` for non-interactive runs.
-
-### Why does Step 8 sometimes run slower?
-Linux `--substep` runs each task individually for diagnostics.  
-Windows always runs update tasks task-by-task over persistent SSH for better observability and recovery.
-
-### Can I change SSH port and open-port list?
-Yes. Set `SSH_PORT` and `TCP_PORTS` in platform `.env` files. The scripts sync these across NSG and guest firewall configuration.
-
-### Can I use a different image or region?
-Yes. Update `VM_IMAGE` and `AZ_LOCATION` in `.env`. Pre-checks fail fast if the combination is unsupported.
-
+## Development Notes
+- Main orchestrator: `az-vm.ps1`
+- Launcher: `az-vm.cmd`
+- Compatibility tests:
+  - `tests/ps-compat-smoke.ps1`
+  - `tests/run-ps-compat-matrix.ps1`

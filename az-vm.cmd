@@ -11,5 +11,5 @@ if %errorlevel% neq 0 (
     )
     exit /b
 )
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0win-vm\az-vm-win.ps1" %*
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0az-vm.ps1" %*
 endlocal
