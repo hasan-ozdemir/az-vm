@@ -104,6 +104,8 @@ Both Linux and Windows scripts support the same CLI flags:
   - Step 1 includes interactive region and VM SKU pickers with two-stage `y/n` VM SKU confirmation.
 - `--auto` / `-a`
   - Non-interactive execution path.
+- `--ssh`
+  - Uses SSH/PuTTY executor for Step 8 instead of `az vm run-command`.
 - `--substep` / `-s`
   - Diagnostic mode for Step 8 guest tasks.
 
@@ -112,8 +114,9 @@ Both Linux and Windows scripts support the same CLI flags:
 - Step 8 contains guest-side `Task` blocks.
 
 Execution behavior in Step 8:
-- With `--substep`: tasks run one-by-one via run-command.
-- Without `--substep`: whole update script runs in a single run-command call.
+- With `--substep`: tasks run one-by-one via the selected executor.
+- Without `--substep`: whole update script runs in a single call via the selected executor.
+- Default executor is `run-command`; `--ssh` (or `STEP8_EXECUTOR=ssh`) switches to SSH executor.
 
 ---
 
@@ -148,10 +151,13 @@ Runtime configuration order is:
 | `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS` | Secondary power-admin account credentials (`assistant`). |
 | `SSH_PORT` | SSH port (default `444`). |
 | `TCP_PORTS` | Comma-separated inbound TCP ports applied to NSG + guest firewall. |
+| `STEP8_EXECUTOR` | Step 8 executor (`run-command` or `ssh`). |
+| `SSH_MAX_RETRIES` | SSH executor retry cap (max effective value is 3). |
+| `PUTTY_PLINK_PATH`, `PUTTY_PSCP_PATH` | Optional custom PuTTY binary paths for SSH executor mode. |
 
 Platform-specific:
 - Linux: `VM_CLOUD_INIT_FILE`, `VM_UPDATE_SCRIPT_FILE`
-- Windows: `VM_INIT_SCRIPT_FILE`, `VM_UPDATE_SCRIPT_FILE`
+- Windows: `VM_INIT_SCRIPT_FILE`, `VM_UPDATE_SCRIPT_FILE`, `WIN_TASK_FAILURE_POLICY`, `WIN_STEP8_MAX_REBOOTS`
 
 ---
 

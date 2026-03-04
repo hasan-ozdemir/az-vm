@@ -6,11 +6,16 @@ Script Description    :
 param(
     [Alias('a','NonInteractive')]
     [switch]$Auto,
+    [Alias('u')]
+    [switch]$Update,
+    [switch]$Ssh,
     [Alias('s')]
     [switch]$Substep
 )
 
 $script:AutoMode = [bool]$Auto
+$script:UpdateMode = [bool]$Update
+$script:SshMode = [bool]$Ssh
 $script:SubstepMode = [bool]$Substep
 $script:TranscriptStarted = $false
 $script:HadError = $false
@@ -20,7 +25,8 @@ $script:ConfigOverrides = @{}
 $script:DefaultErrorSummary = "An unexpected error occurred."
 $script:DefaultErrorHint = "Review the error line and check script parameters and Azure connectivity."
 
-$coVmRoot = Join-Path (Split-Path -Path $PSScriptRoot -Parent) "co-vm"
+$repoRoot = Split-Path -Path $PSScriptRoot -Parent
+$coVmRoot = Join-Path $repoRoot "co-vm"
 $coVmScripts = @(
     "az-vm-co-core.ps1",
     "az-vm-co-config.ps1",
@@ -28,6 +34,7 @@ $coVmScripts = @(
     "az-vm-co-guest.ps1",
     "az-vm-co-orchestration.ps1",
     "az-vm-co-runcommand.ps1",
+    "az-vm-co-ssh.ps1",
     "az-vm-co-sku-picker.ps1"
 )
 foreach ($coVmScript in $coVmScripts) {
@@ -49,8 +56,10 @@ Write-Host "script description:
 - SSH (444) and RDP (3389) access are prepared.
 - All command output is written to both console and 'az-vm-win-log.txt'.
 - Run mode: interactive (default), auto (--auto / -a).
+- Fast update mode: --update / -u (resource group and existing VM are kept).
+- Optional Step 8 SSH executor mode: --ssh (uses PuTTY/plink instead of az vm run-command).
 - Diagnostic mode: substep (--substep / -s), Step 8 runs tasks one-by-one.
-- Without --substep, Step 8 runs the VM update script file in a single run-command call."
+- Without --substep, Step 8 runs the VM update script file in a single call via the selected executor."
 if (-not $script:AutoMode) {
     Read-Host -Prompt "Press Enter to start..."
 }
@@ -101,6 +110,51 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
     $vmInitScriptFile = [string]$step1Context.VmInitScriptFile
     $vmUpdateScriptFile = [string]$step1Context.VmUpdateScriptFile
     $tcpPorts = @($step1Context.TcpPorts)
+    $winTaskFailurePolicyRaw = (Get-ConfigValue -Config $configMap -Key "WIN_TASK_FAILURE_POLICY" -DefaultValue "soft-warning")
+    if ([string]::IsNullOrWhiteSpace($winTaskFailurePolicyRaw)) {
+        $winTaskFailurePolicyRaw = "soft-warning"
+    }
+    $winTaskFailurePolicy = $winTaskFailurePolicyRaw.Trim().ToLowerInvariant()
+    if ($winTaskFailurePolicy -ne "soft-warning" -and $winTaskFailurePolicy -ne "strict") {
+        Write-Warning ("Invalid WIN_TASK_FAILURE_POLICY '{0}'. Falling back to 'soft-warning'." -f $winTaskFailurePolicyRaw)
+        $winTaskFailurePolicy = "soft-warning"
+    }
+    $winStep8MaxRebootsText = Get-ConfigValue -Config $configMap -Key "WIN_STEP8_MAX_REBOOTS" -DefaultValue "3"
+    $winStep8MaxReboots = 3
+    if ($winStep8MaxRebootsText -match '^\d+$') {
+        $winStep8MaxReboots = [int]$winStep8MaxRebootsText
+    }
+    if ($winStep8MaxReboots -lt 0) {
+        $winStep8MaxReboots = 0
+    }
+    if ($winStep8MaxReboots -gt 3) {
+        Write-Warning ("WIN_STEP8_MAX_REBOOTS '{0}' is above supported max. Using 3." -f $winStep8MaxReboots)
+        $winStep8MaxReboots = 3
+    }
+    $step8ExecutorRaw = [string](Get-ConfigValue -Config $configMap -Key "STEP8_EXECUTOR" -DefaultValue "run-command")
+    if ([string]::IsNullOrWhiteSpace($step8ExecutorRaw)) {
+        $step8ExecutorRaw = "run-command"
+    }
+    $step8Executor = "run-command"
+    switch ($step8ExecutorRaw.Trim().ToLowerInvariant()) {
+        "ssh" { $step8Executor = "ssh" }
+        "runcommand" { $step8Executor = "run-command" }
+        "run-command" { $step8Executor = "run-command" }
+        default {
+            Write-Warning ("Invalid STEP8_EXECUTOR '{0}'. Falling back to 'run-command'." -f $step8ExecutorRaw)
+            $step8Executor = "run-command"
+        }
+    }
+    if ($script:SshMode) {
+        $step8Executor = "ssh"
+        $script:ConfigOverrides["STEP8_EXECUTOR"] = "ssh"
+    }
+    $step8UseSshExecutor = [bool]($step8Executor -eq "ssh")
+    $sshMaxRetriesText = [string](Get-ConfigValue -Config $configMap -Key "SSH_MAX_RETRIES" -DefaultValue "3")
+    $sshMaxRetries = Resolve-CoVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
+    $configuredPlinkPath = [string](Get-ConfigValue -Config $configMap -Key "PUTTY_PLINK_PATH" -DefaultValue "")
+    $configuredPscpPath = [string](Get-ConfigValue -Config $configMap -Key "PUTTY_PSCP_PATH" -DefaultValue "")
+
     $windowsPostRebootProbeScript = Get-CoVmWindowsPostRebootProbeScript `
         -ServerName $serverName `
         -VmUser $vmUser `
@@ -112,7 +166,9 @@ Invoke-Step "Step 1/9 - initial parameters will be configured..." {
             -ScriptName "az-vm-win.ps1" `
             -ScriptRoot $PSScriptRoot `
             -AutoMode:$script:AutoMode `
+            -UpdateMode:$script:UpdateMode `
             -SubstepMode:$script:SubstepMode `
+            -SshMode:$step8UseSshExecutor `
             -ConfigMap $configMap `
             -ConfigOverrides $script:ConfigOverrides `
             -Context $step1Context
@@ -126,7 +182,7 @@ Invoke-Step "Step 2/9 - region, image, and VM size availability will be checked.
 
 # 3) Resource group check:
 Invoke-Step "Step 3/9 - resource group will be checked..." {
-    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode
+    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode
 }
 
 # 4) Network components provisioning:
@@ -183,6 +239,7 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
     Invoke-CoVmVmCreateStep `
         -Context $step1Context `
         -AutoMode:$script:AutoMode `
+        -UpdateMode:$script:UpdateMode `
         -CreateVmAction {
             az vm create `
                 --resource-group $resourceGroup `
@@ -202,27 +259,78 @@ Invoke-Step "Step 7/9 - virtual machine will be created..." {
 
 # 8) VM init/update script execution:
 Invoke-Step "Step 8/9 - VM init and update scripts will be executed..." {
+    $step8ExecutorLabel = if ($step8UseSshExecutor) { "ssh" } else { "run-command" }
     Show-CoVmStepFirstUseValues `
-        -StepLabel "Step 8/9 - Windows run-command execution" `
+        -StepLabel "Step 8/9 - Windows guest execution" `
         -Context $step1Context `
         -ExtraValues @{
+            Step8Executor = $step8ExecutorLabel
             WindowsRunCommandId = "RunPowerShellScript"
             WindowsUpdateScriptFile = $vmUpdateScriptFile
+            WinTaskFailurePolicy = $winTaskFailurePolicy
+            WinStep8MaxReboots = $winStep8MaxReboots
+            SshMaxRetries = $sshMaxRetries
+            PuttyPlinkPath = $configuredPlinkPath
+            PuttyPscpPath = $configuredPscpPath
         }
 
     $taskBlocks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $step1Context -VmInitScriptFile $vmInitScriptFile
 
-    Invoke-CoVmStep8RunCommand `
-        -SubstepMode:$script:SubstepMode `
-        -ResourceGroup $resourceGroup `
-        -VmName $vmName `
-        -CommandId "RunPowerShellScript" `
-        -ScriptFilePath $vmUpdateScriptFile `
-        -TaskBlocks $taskBlocks `
-        -CombinedShell "powershell" `
-        -RebootAfterExecution `
-        -PostRebootProbeScript $windowsPostRebootProbeScript `
-        -PostRebootProbeCommandId "RunPowerShellScript"
+    if ($step8UseSshExecutor) {
+        $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
+        $sshHost = [string]$vmRuntimeDetails.VmFqdn
+        if ([string]::IsNullOrWhiteSpace($sshHost)) {
+            $sshHost = [string]$vmRuntimeDetails.PublicIP
+        }
+        if ([string]::IsNullOrWhiteSpace($sshHost)) {
+            throw "Step 8 SSH mode could not resolve VM SSH host (FQDN/Public IP)."
+        }
+
+        Show-CoVmStepFirstUseValues `
+            -StepLabel "Step 8/9 - Windows guest execution" `
+            -Context $step1Context `
+            -ExtraValues @{
+                Step8SshHost = $sshHost
+                Step8SshUser = $vmUser
+                Step8SshPort = $sshPort
+            }
+
+        Invoke-CoVmStep8OverSsh `
+            -Platform "windows" `
+            -SubstepMode:$script:SubstepMode `
+            -RepoRoot $repoRoot `
+            -ResourceGroup $resourceGroup `
+            -VmName $vmName `
+            -SshHost $sshHost `
+            -SshUser $vmUser `
+            -SshPassword $vmPass `
+            -SshPort $sshPort `
+            -ScriptFilePath $vmUpdateScriptFile `
+            -TaskBlocks $taskBlocks `
+            -RebootAfterExecution `
+            -PostRebootProbeScript $windowsPostRebootProbeScript `
+            -PostRebootProbeCommandId "RunPowerShellScript" `
+            -MaxReboots $winStep8MaxReboots `
+            -TaskFailurePolicy $winTaskFailurePolicy `
+            -SshMaxRetries $sshMaxRetries `
+            -ConfiguredPlinkPath $configuredPlinkPath `
+            -ConfiguredPscpPath $configuredPscpPath
+    }
+    else {
+        Invoke-CoVmStep8RunCommand `
+            -SubstepMode:$script:SubstepMode `
+            -ResourceGroup $resourceGroup `
+            -VmName $vmName `
+            -CommandId "RunPowerShellScript" `
+            -ScriptFilePath $vmUpdateScriptFile `
+            -TaskBlocks $taskBlocks `
+            -CombinedShell "powershell" `
+            -RebootAfterExecution `
+            -PostRebootProbeScript $windowsPostRebootProbeScript `
+            -PostRebootProbeCommandId "RunPowerShellScript" `
+            -MaxReboots $winStep8MaxReboots `
+            -TaskFailurePolicy $winTaskFailurePolicy
+    }
 }
 
 # 9) VM connection details:

@@ -91,6 +91,73 @@ function Get-CoRunCommandResultMessage {
     return ($messages -join "`n")
 }
 
+function Parse-CoVmStep8Markers {
+    param(
+        [string]$MessageText
+    )
+
+    $result = [ordered]@{
+        SuccessCount = 0
+        WarningCount = 0
+        ErrorCount = 0
+        RebootCount = 0
+        RebootRequired = $false
+        HasSummaryLine = $false
+        SummaryLine = ""
+    }
+
+    if ([string]::IsNullOrWhiteSpace($MessageText)) {
+        return [pscustomobject]$result
+    }
+
+    $lines = @($MessageText -split "`r?`n")
+    foreach ($line in $lines) {
+        $trimmed = [string]$line
+        if ($trimmed -match '^TASK_STATUS:(.+?):(success|warning|error)$') {
+            $status = [string]$Matches[2]
+            switch ($status) {
+                "success" { $result.SuccessCount++ }
+                "warning" { $result.WarningCount++ }
+                "error" { $result.ErrorCount++ }
+            }
+            continue
+        }
+
+        if ($trimmed -match '^STEP8_SUMMARY:success=(\d+);warning=(\d+);error=(\d+);reboot=(\d+)$') {
+            $result.SuccessCount = [int]$Matches[1]
+            $result.WarningCount = [int]$Matches[2]
+            $result.ErrorCount = [int]$Matches[3]
+            $result.RebootCount = [int]$Matches[4]
+            $result.HasSummaryLine = $true
+            $result.SummaryLine = $trimmed
+            continue
+        }
+
+        if ($trimmed -match '^CO_VM_REBOOT_REQUIRED:') {
+            $result.RebootRequired = $true
+            continue
+        }
+    }
+
+    return [pscustomobject]$result
+}
+
+function Test-CoVmOutputIndicatesRebootRequired {
+    param(
+        [string]$MessageText
+    )
+
+    if ([string]::IsNullOrWhiteSpace($MessageText)) {
+        return $false
+    }
+
+    if ($MessageText -match '^CO_VM_REBOOT_REQUIRED:' -or $MessageText -match '(?im)^TASK_REBOOT_REQUIRED:') {
+        return $true
+    }
+
+    return ($MessageText -match '(?i)(reboot required|restart required|pending reboot|press any key to install windows subsystem for linux)')
+}
+
 function Invoke-VmRunCommandScriptFile {
     param(
         [string]$ResourceGroup,
@@ -125,6 +192,20 @@ function Invoke-VmRunCommandScriptFile {
         if (-not [string]::IsNullOrWhiteSpace($message)) {
             Write-Host $message
         }
+
+        $marker = Parse-CoVmStep8Markers -MessageText $message
+        if ($marker.HasSummaryLine) {
+            Write-Host $marker.SummaryLine -ForegroundColor DarkGray
+        }
+
+        return [pscustomobject]@{
+            Message = $message
+            RebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText $message))
+            SuccessCount = [int]$marker.SuccessCount
+            WarningCount = [int]$marker.WarningCount
+            ErrorCount = [int]$marker.ErrorCount
+            RebootCount = [int]$marker.RebootCount
+        }
     }
     catch {
         throw "VM task batch execution failed in $ModeLabel flow: $($_.Exception.Message)"
@@ -138,6 +219,8 @@ function Invoke-VmRunCommandBlocks {
         [string]$CommandId,
         [object[]]$TaskBlocks,
         [switch]$SubstepMode,
+        [int]$StartTaskIndex = 0,
+        [switch]$SoftFail,
         [ValidateSet("bash","powershell")]
         [string]$CombinedShell = "powershell"
     )
@@ -145,10 +228,27 @@ function Invoke-VmRunCommandBlocks {
     if (-not $TaskBlocks -or $TaskBlocks.Count -eq 0) {
         throw "VM run-command task list is empty."
     }
+    if ($StartTaskIndex -lt 0) {
+        $StartTaskIndex = 0
+    }
+    if ($StartTaskIndex -ge $TaskBlocks.Count) {
+        return [pscustomobject]@{
+            SuccessCount = 0
+            WarningCount = 0
+            ErrorCount = 0
+            RebootRequired = $false
+            NextTaskIndex = [int]$TaskBlocks.Count
+        }
+    }
 
     if ($SubstepMode) {
         Write-Host "Substep mode is enabled: Step 8 tasks are executed one-by-one."
-        foreach ($taskBlock in $TaskBlocks) {
+        $successCount = 0
+        $warningCount = 0
+        $errorCount = 0
+        $nextTaskIndex = [int]$StartTaskIndex
+        for ($taskIndex = $StartTaskIndex; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
+            $taskBlock = $TaskBlocks[$taskIndex]
             $taskName = [string]$taskBlock.Name
             $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
             $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
@@ -177,14 +277,39 @@ function Invoke-VmRunCommandBlocks {
                 if (-not [string]::IsNullOrWhiteSpace($taskMessage)) {
                     Write-Host $taskMessage
                 }
+                $successCount++
+                $nextTaskIndex = $taskIndex + 1
+                if (Test-CoVmOutputIndicatesRebootRequired -MessageText $taskMessage) {
+                    return [pscustomobject]@{
+                        SuccessCount = $successCount
+                        WarningCount = $warningCount
+                        ErrorCount = $errorCount
+                        RebootRequired = $true
+                        NextTaskIndex = $nextTaskIndex
+                    }
+                }
             }
             catch {
                 if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+                if ($SoftFail) {
+                    $warningCount++
+                    $nextTaskIndex = $taskIndex + 1
+                    Write-Warning ("TASK warning: {0} => {1}" -f $taskName, $_.Exception.Message)
+                    continue
+                }
+
                 Write-Host "TASK result: failure ($taskName)" -ForegroundColor Red
                 throw "VM task '$taskName' failed: $($_.Exception.Message)"
             }
         }
-        return
+
+        return [pscustomobject]@{
+            SuccessCount = $successCount
+            WarningCount = $warningCount
+            ErrorCount = $errorCount
+            RebootRequired = $false
+            NextTaskIndex = $nextTaskIndex
+        }
     }
 
     Write-Host "Substep mode is not enabled: Step 8 tasks will run in a single run-command call."
@@ -277,6 +402,15 @@ function Invoke-VmRunCommandBlocks {
         if (-not [string]::IsNullOrWhiteSpace($combinedMessage)) {
             Write-Host $combinedMessage
         }
+
+        $marker = Parse-CoVmStep8Markers -MessageText $combinedMessage
+        return [pscustomobject]@{
+            SuccessCount = [int]$marker.SuccessCount
+            WarningCount = [int]$marker.WarningCount
+            ErrorCount = [int]$marker.ErrorCount
+            RebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText $combinedMessage))
+            NextTaskIndex = [int]$TaskBlocks.Count
+        }
     }
     catch {
         throw "VM task batch execution failed in combined flow: $($_.Exception.Message)"
@@ -356,7 +490,7 @@ function Invoke-CoVmPostStep8RebootAndProbe {
         [string]$VmName,
         [string]$PostRebootProbeScript = "",
         [string]$PostRebootProbeCommandId = "RunPowerShellScript",
-        [int]$PostRebootProbeMaxAttempts = 8,
+        [int]$PostRebootProbeMaxAttempts = 3,
         [int]$PostRebootProbeRetryDelaySeconds = 20
     )
 
@@ -382,6 +516,7 @@ function Invoke-CoVmPostStep8RebootAndProbe {
     }
 
     if ($PostRebootProbeMaxAttempts -lt 1) { $PostRebootProbeMaxAttempts = 1 }
+    if ($PostRebootProbeMaxAttempts -gt 3) { $PostRebootProbeMaxAttempts = 3 }
     if ($PostRebootProbeRetryDelaySeconds -lt 1) { $PostRebootProbeRetryDelaySeconds = 1 }
 
     for ($attempt = 1; $attempt -le $PostRebootProbeMaxAttempts; $attempt++) {
@@ -436,37 +571,118 @@ function Invoke-CoVmStep8RunCommand {
         [switch]$RebootAfterExecution,
         [string]$PostRebootProbeScript = "",
         [string]$PostRebootProbeCommandId = "RunPowerShellScript",
-        [int]$PostRebootProbeMaxAttempts = 8,
-        [int]$PostRebootProbeRetryDelaySeconds = 20
+        [int]$PostRebootProbeMaxAttempts = 3,
+        [int]$PostRebootProbeRetryDelaySeconds = 20,
+        [int]$MaxReboots = 3,
+        [ValidateSet("soft-warning","strict")]
+        [string]$TaskFailurePolicy = "soft-warning"
     )
 
+    if ($MaxReboots -lt 0) {
+        $MaxReboots = 0
+    }
+    if ($MaxReboots -gt 3) {
+        $MaxReboots = 3
+    }
+
+    $totalSuccess = 0
+    $totalWarnings = 0
+    $totalErrors = 0
+    $rebootCount = 0
+    $hadMidStepReboot = $false
+
     if (-not $SubstepMode) {
-        Write-Host "Substep mode is not enabled: Step 8 tasks will run from the VM update script file."
-        Invoke-VmRunCommandScriptFile `
-            -ResourceGroup $ResourceGroup `
-            -VmName $VmName `
-            -CommandId $CommandId `
-            -ScriptFilePath $ScriptFilePath `
-            -ModeLabel "auto-mode update-script-file"
+        Write-Host ("Substep mode is not enabled: Step 8 tasks will run from the VM update script file. Failure policy: {0}" -f $TaskFailurePolicy)
+        while ($true) {
+            $scriptFileResult = Invoke-VmRunCommandScriptFile `
+                -ResourceGroup $ResourceGroup `
+                -VmName $VmName `
+                -CommandId $CommandId `
+                -ScriptFilePath $ScriptFilePath `
+                -ModeLabel "auto-mode update-script-file"
+
+            $totalSuccess = [int]$scriptFileResult.SuccessCount
+            $totalWarnings = [int]$scriptFileResult.WarningCount
+            $totalErrors = [int]$scriptFileResult.ErrorCount
+
+            if (-not $scriptFileResult.RebootRequired) {
+                break
+            }
+
+            if ($rebootCount -ge $MaxReboots) {
+                throw ("Step 8 reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+            }
+
+            $rebootCount++
+            $hadMidStepReboot = $true
+            Write-Host ("Step 8 requested a VM reboot ({0}/{1}). Resuming after reboot..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
+            Invoke-CoVmPostStep8RebootAndProbe `
+                -ResourceGroup $ResourceGroup `
+                -VmName $VmName `
+                -PostRebootProbeScript $PostRebootProbeScript `
+                -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+        }
     }
     else {
-        Write-Host "Substep mode is enabled: Step 8 will execute tasks one-by-one."
-        Invoke-VmRunCommandBlocks `
-            -ResourceGroup $ResourceGroup `
-            -VmName $VmName `
-            -CommandId $CommandId `
-            -TaskBlocks $TaskBlocks `
-            -SubstepMode:$true `
-            -CombinedShell $CombinedShell
+        Write-Host ("Substep mode is enabled: Step 8 will execute tasks one-by-one. Failure policy: {0}" -f $TaskFailurePolicy)
+        $nextTaskIndex = 0
+        while ($nextTaskIndex -lt $TaskBlocks.Count) {
+            $blockResult = Invoke-VmRunCommandBlocks `
+                -ResourceGroup $ResourceGroup `
+                -VmName $VmName `
+                -CommandId $CommandId `
+                -TaskBlocks $TaskBlocks `
+                -SubstepMode:$true `
+                -StartTaskIndex $nextTaskIndex `
+                -SoftFail:($TaskFailurePolicy -eq "soft-warning") `
+                -CombinedShell $CombinedShell
+
+            $totalSuccess += [int]$blockResult.SuccessCount
+            $totalWarnings += [int]$blockResult.WarningCount
+            $totalErrors += [int]$blockResult.ErrorCount
+            $nextTaskIndex = [int]$blockResult.NextTaskIndex
+
+            if (-not $blockResult.RebootRequired) {
+                break
+            }
+
+            if ($rebootCount -ge $MaxReboots) {
+                throw ("Step 8 reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
+            }
+
+            $rebootCount++
+            $hadMidStepReboot = $true
+            Write-Host ("Step 8 task flow requested a VM reboot ({0}/{1}). Resuming from task index {2}..." -f $rebootCount, $MaxReboots, $nextTaskIndex) -ForegroundColor Yellow
+            Invoke-CoVmPostStep8RebootAndProbe `
+                -ResourceGroup $ResourceGroup `
+                -VmName $VmName `
+                -PostRebootProbeScript $PostRebootProbeScript `
+                -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+        }
+    }
+
+    Write-Host ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
+
+    if ($TaskFailurePolicy -eq "strict" -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
+        throw ("Step 8 strict failure policy blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
     }
 
     if ($RebootAfterExecution) {
-        Invoke-CoVmPostStep8RebootAndProbe `
-            -ResourceGroup $ResourceGroup `
-            -VmName $VmName `
-            -PostRebootProbeScript $PostRebootProbeScript `
-            -PostRebootProbeCommandId $PostRebootProbeCommandId `
-            -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-            -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+        if ($hadMidStepReboot) {
+            Write-Host "Step 8 already rebooted during task execution; final reboot is skipped." -ForegroundColor DarkGray
+        }
+        else {
+            Invoke-CoVmPostStep8RebootAndProbe `
+                -ResourceGroup $ResourceGroup `
+                -VmName $VmName `
+                -PostRebootProbeScript $PostRebootProbeScript `
+                -PostRebootProbeCommandId $PostRebootProbeCommandId `
+                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
+                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
+        }
     }
 }

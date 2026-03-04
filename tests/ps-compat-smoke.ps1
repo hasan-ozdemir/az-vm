@@ -211,6 +211,21 @@ function Test-RunCommandJsonBehavior {
         Assert-True -Condition ($_.Exception.Message -like "*reported error*") -Message "Run-command parser should surface failure message"
     }
     Assert-True -Condition $threw -Message "Run-command parser should throw on failed status code"
+
+    $markerInput = @'
+TASK_STATUS:01-alpha:success
+TASK_STATUS:02-beta:warning
+CO_VM_REBOOT_REQUIRED:task=02-beta;index=1;rebootCount=1
+STEP8_SUMMARY:success=1;warning=1;error=0;reboot=1
+'@
+    $markerResult = Parse-CoVmStep8Markers -MessageText $markerInput
+    Assert-Equal -Expected 1 -Actual ([int]$markerResult.SuccessCount) -Message "Step 8 marker parser should read success count from summary"
+    Assert-Equal -Expected 1 -Actual ([int]$markerResult.WarningCount) -Message "Step 8 marker parser should read warning count from summary"
+    Assert-Equal -Expected 0 -Actual ([int]$markerResult.ErrorCount) -Message "Step 8 marker parser should read error count from summary"
+    Assert-True -Condition ([bool]$markerResult.RebootRequired) -Message "Step 8 marker parser should detect reboot-required marker"
+
+    $rebootDetected = Test-CoVmOutputIndicatesRebootRequired -MessageText "Press any key to install Windows Subsystem for Linux."
+    Assert-True -Condition $rebootDetected -Message "Reboot-signal detector should treat WSL interactive prompt as reboot-required signal"
 }
 
 function Test-SkuFilterBehaviorWithMockAz {
@@ -303,39 +318,43 @@ function Test-GuestTaskAndScriptBuild {
         $windowsTasks = Resolve-CoVmGuestTaskBlocks -Platform "windows" -Context $context -VmInitScriptFile $initPath
         Assert-True -Condition (@($windowsTasks).Count -ge 17) -Message "Windows task list should contain expected tasks"
         $windowsScript = Get-CoVmUpdateScriptContentFromTasks -Platform "windows" -TaskBlocks $windowsTasks
+        $windowsTaskScriptJoined = (@($windowsTasks | ForEach-Object { [string]$_.Script }) -join "`n`n")
         $tokens = $null
         $parseErrors = $null
         [void][System.Management.Automation.Language.Parser]::ParseInput($windowsScript, [ref]$tokens, [ref]$parseErrors)
         Assert-Equal -Expected 0 -Actual (@($parseErrors).Count) -Message "Windows update script should be syntactically parseable after task replacement"
         Assert-True -Condition ($windowsScript -like "*Update phase started.*") -Message "Windows update script should include update start marker"
-        Assert-True -Condition ($windowsScript -like "*Allow-SSH-444*") -Message "Windows update script should include resolved SSH firewall rule"
-        Assert-True -Condition ($windowsScript -like "*11434*") -Message "Windows update script should include resolved TCP port values"
-        Assert-True -Condition ($windowsScript -like '*$assistantUser = "assistant"*') -Message "Windows update script should include assistant user variable replacement"
-        Assert-True -Condition ($windowsScript -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows update script should ensure assistant local power admin rights"
-        Assert-True -Condition ($windowsScript -like "*system error 1378*") -Message "Windows update script should treat local-group already-member exit code 1378 as a non-failing condition"
-        Assert-True -Condition ($windowsScript -like "*windows-ux-performance-tuning*") -Message "Windows update script should include UX/performance tuning task"
-        Assert-True -Condition ($windowsScript -like "*LaunchTo*") -Message "Windows update script should include Explorer launch-to-This-PC setting"
-        Assert-True -Condition ($windowsScript -like "*ShowSuperHidden*") -Message "Windows update script should include protected OS files visibility setting"
-        Assert-True -Condition ($windowsScript -like "*86ca1aa0-34aa-4e8b-a509-50c905bae2a2*") -Message "Windows update script should include classic context-menu setting"
-        Assert-True -Condition ($windowsScript -like "*DisablePrivacyExperience*") -Message "Windows update script should include welcome/privacy suppression policy"
-        Assert-True -Condition ($windowsScript -like "*Microsoft.WindowsNotepad*") -Message "Windows update script should include modern Notepad removal logic"
-        Assert-True -Condition ($windowsScript -like "*CoVmTextFile*") -Message "Windows update script should include legacy text association class"
-        Assert-True -Condition ($windowsScript -like "*powercfg /setactive*") -Message "Windows update script should include maximum-performance power scheme activation"
-        Assert-True -Condition ($windowsScript -like "*private.local.accessibility.package*") -Message "Windows update script should include private local-only accessibility winget install command"
-        Assert-True -Condition ($windowsScript -like "*choco install ollama*") -Message "Windows update script should include choco install ollama command"
-        Assert-True -Condition ($windowsScript -like "*choco install azure-cli*") -Message "Windows update script should include choco install azure-cli command"
-        Assert-True -Condition ($windowsScript -like "*winget install -e --id Google.Chrome*") -Message "Windows update script should include Google Chrome winget install command"
-        Assert-True -Condition ($windowsScript -like '*$serverName = "examplevm"*') -Message "Windows update script should include resolved server-name variable for Chrome profile selection"
-        Assert-True -Condition ($windowsScript -like "*--profile-directory=`$serverName*") -Message "Windows update script should include Chrome profile-directory argument based on server-name variable"
-        Assert-True -Condition ($windowsScript -like "*winget install -e --id Docker.DockerDesktop*") -Message "Windows update script should include Docker Desktop winget install command"
-        Assert-True -Condition ($windowsScript -like "*wsl --update*") -Message "Windows update script should include WSL update command"
-        Assert-True -Condition ($windowsScript -like "*local-service-disable-conservative-completed*") -Message "Windows update script should include conservative service disable task marker"
+        Assert-True -Condition ($windowsScript -like "*step8-state.json*") -Message "Windows update script should include Step 8 state file path for reboot-resume"
+        Assert-True -Condition ($windowsScript -like "*CO_VM_REBOOT_REQUIRED*") -Message "Windows update script should emit reboot-required marker"
+        Assert-True -Condition ($windowsScript -like "*STEP8_SUMMARY:*") -Message "Windows update script should emit Step 8 summary marker"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*Allow-SSH-444*") -Message "Windows task catalog should include resolved SSH firewall rule"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*11434*") -Message "Windows task catalog should include resolved TCP port values"
+        Assert-True -Condition ($windowsTaskScriptJoined -like '*$assistantUser = "assistant"*') -Message "Windows task catalog should include assistant user variable replacement"
+        Assert-True -Condition ($windowsTaskScriptJoined -like '*Ensure-LocalPowerAdmin -UserName $assistantUser*') -Message "Windows task catalog should ensure assistant local power admin rights"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*system error 1378*") -Message "Windows task catalog should treat local-group already-member exit code 1378 as a non-failing condition"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*windows-ux-performance-tuning*") -Message "Windows task catalog should include UX/performance tuning task"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*LaunchTo*") -Message "Windows task catalog should include Explorer launch-to-This-PC setting"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*ShowSuperHidden*") -Message "Windows task catalog should include protected OS files visibility setting"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*86ca1aa0-34aa-4e8b-a509-50c905bae2a2*") -Message "Windows task catalog should include classic context-menu setting"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*DisablePrivacyExperience*") -Message "Windows task catalog should include welcome/privacy suppression policy"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*Microsoft.WindowsNotepad*") -Message "Windows task catalog should include modern Notepad removal logic"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*CoVmTextFile*") -Message "Windows task catalog should include legacy text association class"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*powercfg /setactive*") -Message "Windows task catalog should include maximum-performance power scheme activation"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*private.local.accessibility.package*") -Message "Windows task catalog should include private local-only accessibility winget install command"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*choco install ollama*") -Message "Windows task catalog should include choco install ollama command"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*choco install azure-cli*") -Message "Windows task catalog should include choco install azure-cli command"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*Google.Chrome*") -Message "Windows task catalog should include Google Chrome install command metadata"
+        Assert-True -Condition ($windowsTaskScriptJoined -like '*$serverName = "examplevm"*') -Message "Windows task catalog should include resolved server-name variable for Chrome profile selection"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*--profile-directory=`$serverName*") -Message "Windows task catalog should include Chrome profile-directory argument based on server-name variable"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*Docker.DockerDesktop*") -Message "Windows task catalog should include Docker Desktop install command metadata"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*wsl --update*") -Message "Windows task catalog should include WSL update command"
+        Assert-True -Condition ($windowsTaskScriptJoined -like "*local-service-disable-conservative-completed*") -Message "Windows task catalog should include conservative service disable task marker"
 
         $probeScript = Get-CoVmWindowsPostRebootProbeScript -ServerName "examplevm" -VmUser "manager" -AssistantUser "assistant"
         Assert-True -Condition ($probeScript -like "*post-reboot-probe-started*") -Message "Post-reboot probe script should include start marker"
         Assert-True -Condition ($probeScript -like "*server-name=examplevm*") -Message "Post-reboot probe script should include resolved server name"
         Assert-True -Condition ($probeScript -like "*docker version*") -Message "Post-reboot probe script should verify Docker daemon"
-        Assert-True -Condition ($probeScript -like "*wsl --version*") -Message "Post-reboot probe script should verify WSL version"
+        Assert-True -Condition ($probeScript -like "*wsl --status*") -Message "Post-reboot probe script should verify WSL status"
     }
     finally {
         Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -473,6 +492,7 @@ try {
         "az-vm-co-guest.ps1",
         "az-vm-co-orchestration.ps1",
         "az-vm-co-runcommand.ps1",
+        "az-vm-co-ssh.ps1",
         "az-vm-co-sku-picker.ps1"
     )
     foreach ($fileName in $imports) {

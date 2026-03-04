@@ -488,17 +488,48 @@ python --version
             Script = @'
 $ErrorActionPreference = "Stop"
 
+function Resolve-WingetCommand {
+    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return [string]$cmd.Source
+    }
+
+    try {
+        Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
+    }
+    catch { }
+
+    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return [string]$cmd.Source
+    }
+
+    $windowsAppsRoot = "C:\Program Files\WindowsApps"
+    if (Test-Path -LiteralPath $windowsAppsRoot) {
+        $appInstallerDirs = @(Get-ChildItem -Path $windowsAppsRoot -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+        foreach ($dir in $appInstallerDirs) {
+            $candidate = Join-Path $dir.FullName "winget.exe"
+            if (Test-Path -LiteralPath $candidate) {
+                return $candidate
+            }
+        }
+    }
+
+    return ""
+}
+
 function Invoke-WingetInstall {
     param(
         [string]$Id
     )
 
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    $wingetExe = Resolve-WingetCommand
+    if ([string]::IsNullOrWhiteSpace($wingetExe)) {
         Write-Warning ("winget command is not available. Skipping package '{0}'." -f $Id)
         return $false
     }
 
-    & winget install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    & $wingetExe install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Warning ("winget install failed for '{0}' with exit code {1}." -f $Id, $LASTEXITCODE)
         return $false
@@ -635,7 +666,7 @@ function Install-ChocoPackageWarn {
 Install-ChocoPackageWarn -PackageId "ollama" -InstallCommand "choco install ollama -y --no-progress" -CommandName "ollama"
 Install-ChocoPackageWarn -PackageId "sysinternals" -InstallCommand "choco install sysinternals -y --no-progress" -PathHint "C:\ProgramData\chocolatey\lib\sysinternals\tools"
 Install-ChocoPackageWarn -PackageId "powershell-core" -InstallCommand "choco install powershell-core -y --no-progress" -CommandName "pwsh"
-Install-ChocoPackageWarn -PackageId "io-unlocker" -InstallCommand "choco install io-unlocker -y --no-progress" -CommandName "io-unlocker"
+Install-ChocoPackageWarn -PackageId "io-unlocker" -InstallCommand "choco install io-unlocker -y --no-progress" -PathHint "C:\ProgramData\chocolatey\lib\io-unlocker"
 Install-ChocoPackageWarn -PackageId "gh" -InstallCommand "choco install gh -y --no-progress" -CommandName "gh"
 Install-ChocoPackageWarn -PackageId "ffmpeg" -InstallCommand "choco install ffmpeg -y --no-progress" -CommandName "ffmpeg"
 Install-ChocoPackageWarn -PackageId "7zip" -InstallCommand "choco install 7zip -y --no-progress" -CommandName "7z"
@@ -653,12 +684,43 @@ $serverName = "__SERVER_NAME__"
 $chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$serverName https://www.google.com"
 
 function Install-ChromeWithWinget {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    function Resolve-WingetCommand {
+        $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return [string]$cmd.Source
+        }
+
+        try {
+            Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
+        }
+        catch { }
+
+        $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return [string]$cmd.Source
+        }
+
+        $windowsAppsRoot = "C:\Program Files\WindowsApps"
+        if (Test-Path -LiteralPath $windowsAppsRoot) {
+            $appInstallerDirs = @(Get-ChildItem -Path $windowsAppsRoot -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+            foreach ($dir in $appInstallerDirs) {
+                $candidate = Join-Path $dir.FullName "winget.exe"
+                if (Test-Path -LiteralPath $candidate) {
+                    return $candidate
+                }
+            }
+        }
+
+        return ""
+    }
+
+    $wingetExe = Resolve-WingetCommand
+    if ([string]::IsNullOrWhiteSpace($wingetExe)) {
         Write-Warning "winget command is not available. Google Chrome install step is skipped."
         return $false
     }
 
-    & winget install -e --id Google.Chrome --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    & $wingetExe install -e --id Google.Chrome --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Warning ("winget install failed for Google.Chrome with exit code {0}." -f $LASTEXITCODE)
         return $false
@@ -763,17 +825,21 @@ Invoke-CommandWarn -Label "enable-feature-wsl" -Action {
 Invoke-CommandWarn -Label "enable-feature-vmp" -Action {
     & dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
 }
-Invoke-CommandWarn -Label "wsl-install-no-distro" -Action {
-    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { throw "wsl command is not available." }
-    & wsl --install --no-distribution | Out-Null
-}
 Invoke-CommandWarn -Label "wsl-update" -Action {
-    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { throw "wsl command is not available." }
-    & wsl --update | Out-Null
+    if (Get-Command wsl -ErrorAction SilentlyContinue) {
+        & wsl --update | Out-Null
+    }
+    else {
+        Write-Warning "wsl command is not available yet. WSL update is deferred."
+    }
 }
 Invoke-CommandWarn -Label "wsl-version" -Action {
-    if (-not (Get-Command wsl -ErrorAction SilentlyContinue)) { throw "wsl command is not available." }
-    & wsl --version
+    if (Get-Command wsl -ErrorAction SilentlyContinue) {
+        & wsl --status
+    }
+    else {
+        Write-Warning "wsl command is not available yet. WSL version check is deferred."
+    }
 }
 
 Write-Output "wsl2-install-update-completed"
@@ -800,8 +866,39 @@ function Invoke-DockerWarn {
 }
 
 Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
-    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) { throw "winget command is not available." }
-    & winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+    function Resolve-WingetCommand {
+        $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return [string]$cmd.Source
+        }
+
+        try {
+            Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
+        }
+        catch { }
+
+        $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
+        if ($cmd) {
+            return [string]$cmd.Source
+        }
+
+        $windowsAppsRoot = "C:\Program Files\WindowsApps"
+        if (Test-Path -LiteralPath $windowsAppsRoot) {
+            $appInstallerDirs = @(Get-ChildItem -Path $windowsAppsRoot -Filter "Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe" -Directory -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+            foreach ($dir in $appInstallerDirs) {
+                $candidate = Join-Path $dir.FullName "winget.exe"
+                if (Test-Path -LiteralPath $candidate) {
+                    return $candidate
+                }
+            }
+        }
+
+        return ""
+    }
+
+    $wingetExe = Resolve-WingetCommand
+    if ([string]::IsNullOrWhiteSpace($wingetExe)) { throw "winget command is not available." }
+    & $wingetExe install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
 }
 
 Invoke-DockerWarn -Label "set-com-docker-service-automatic" -Action {
@@ -869,6 +966,24 @@ Invoke-DockerWarn -Label "configure-docker-settings-json" -Action {
         $settings["wslEngineEnabled"] = $true
 
         ($settings | ConvertTo-Json -Depth 20) | Set-Content -Path $settingsPath -Encoding UTF8
+    }
+}
+
+Invoke-DockerWarn -Label "docker-users-group-membership" -Action {
+    if (-not (Get-LocalGroup -Name "docker-users" -ErrorAction SilentlyContinue)) {
+        New-LocalGroup -Name "docker-users" -Description "Docker Desktop Users" -ErrorAction SilentlyContinue | Out-Null
+    }
+
+    foreach ($localUser in @("__VM_USER__", "__ASSISTANT_USER__")) {
+        if ([string]::IsNullOrWhiteSpace([string]$localUser)) { continue }
+        try {
+            Add-LocalGroupMember -Group "docker-users" -Member $localUser -ErrorAction Stop
+        }
+        catch {
+            if ($_.Exception.Message -notmatch '(?i)already a member') {
+                Write-Warning ("docker-users membership failed for '{0}': {1}" -f $localUser, $_.Exception.Message)
+            }
+        }
     }
 }
 
@@ -1596,6 +1711,306 @@ function Resolve-CoVmGuestTaskBlocks {
     return (Apply-CoVmTaskBlockReplacements -TaskBlocks $templates -Replacements $replacements)
 }
 
+function Get-CoVmWindowsUpdateScriptFromTasks {
+    param(
+        [object[]]$TaskBlocks
+    )
+
+    if (-not $TaskBlocks -or $TaskBlocks.Count -eq 0) {
+        throw "Windows VM update script build failed: no task blocks were provided."
+    }
+
+    $taskRows = New-Object System.Text.StringBuilder
+    $hashInput = New-Object System.Text.StringBuilder
+    foreach ($taskBlock in $TaskBlocks) {
+        $taskName = [string]$taskBlock.Name
+        $taskScript = [string]$taskBlock.Script
+        $taskNameSafe = $taskName.Replace("'", "''")
+        $taskBase64 = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($taskScript))
+        [void]$taskRows.AppendLine(('$taskCatalog += [pscustomobject]@{{ Name = ''{0}''; ScriptBase64 = ''{1}'' }}' -f $taskNameSafe, $taskBase64))
+        [void]$hashInput.AppendLine(($taskName + "|" + $taskScript))
+    }
+
+    $hashBytes = [System.Text.Encoding]::UTF8.GetBytes($hashInput.ToString())
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $hash = $sha.ComputeHash($hashBytes)
+    }
+    finally {
+        $sha.Dispose()
+    }
+    $catalogHash = [BitConverter]::ToString($hash).Replace("-", "").ToLowerInvariant()
+
+    $template = @'
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+Write-Output "Update phase started."
+
+$stateDir = "C:\ProgramData\az-vm"
+$statePath = Join-Path $stateDir "step8-state.json"
+$catalogHash = "__TASK_CATALOG_HASH__"
+$taskCatalog = @()
+__TASK_ROWS__
+
+function Convert-ToTaskSafeDetail {
+    param(
+        [string]$Detail
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Detail)) {
+        return ""
+    }
+
+    $text = $Detail -replace "[\r\n]+", " "
+    $text = $text -replace ";", ","
+    return $text.Trim()
+}
+
+function New-Step8State {
+    param(
+        [string]$CatalogHash,
+        [int]$TaskCount
+    )
+
+    return @{
+        CatalogHash = $CatalogHash
+        TotalTaskCount = $TaskCount
+        LastCompletedTaskIndex = -1
+        LastTaskName = ""
+        RebootCount = 0
+        Completed = $false
+        RebootRequired = $false
+        SuccessCount = 0
+        WarningCount = 0
+        ErrorCount = 0
+        TaskStatus = @{}
+    }
+}
+
+function Load-Step8State {
+    param(
+        [string]$StatePath,
+        [string]$CatalogHash,
+        [int]$TaskCount
+    )
+
+    $state = New-Step8State -CatalogHash $CatalogHash -TaskCount $TaskCount
+    if (-not (Test-Path -LiteralPath $StatePath)) {
+        return $state
+    }
+
+    try {
+        $raw = Get-Content -Path $StatePath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return $state
+        }
+        $parsed = $raw | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $state
+    }
+
+    if ($parsed.PSObject.Properties["CatalogHash"]) { $state.CatalogHash = [string]$parsed.CatalogHash }
+    if ($parsed.PSObject.Properties["TotalTaskCount"]) { $state.TotalTaskCount = [int]$parsed.TotalTaskCount }
+    if ($parsed.PSObject.Properties["LastCompletedTaskIndex"]) { $state.LastCompletedTaskIndex = [int]$parsed.LastCompletedTaskIndex }
+    if ($parsed.PSObject.Properties["LastTaskName"]) { $state.LastTaskName = [string]$parsed.LastTaskName }
+    if ($parsed.PSObject.Properties["RebootCount"]) { $state.RebootCount = [int]$parsed.RebootCount }
+    if ($parsed.PSObject.Properties["Completed"]) { $state.Completed = [bool]$parsed.Completed }
+    if ($parsed.PSObject.Properties["RebootRequired"]) { $state.RebootRequired = [bool]$parsed.RebootRequired }
+    if ($parsed.PSObject.Properties["SuccessCount"]) { $state.SuccessCount = [int]$parsed.SuccessCount }
+    if ($parsed.PSObject.Properties["WarningCount"]) { $state.WarningCount = [int]$parsed.WarningCount }
+    if ($parsed.PSObject.Properties["ErrorCount"]) { $state.ErrorCount = [int]$parsed.ErrorCount }
+
+    if ($parsed.PSObject.Properties["TaskStatus"] -and $parsed.TaskStatus) {
+        foreach ($entry in $parsed.TaskStatus.PSObject.Properties) {
+            $statusValue = ""
+            $detailValue = ""
+            if ($entry.Value -and $entry.Value.PSObject.Properties["Status"]) { $statusValue = [string]$entry.Value.Status }
+            if ($entry.Value -and $entry.Value.PSObject.Properties["Detail"]) { $detailValue = [string]$entry.Value.Detail }
+            $state.TaskStatus[[string]$entry.Name] = @{
+                Status = $statusValue
+                Detail = $detailValue
+            }
+        }
+    }
+
+    return $state
+}
+
+function Save-Step8State {
+    param(
+        [string]$StatePath,
+        [hashtable]$State
+    )
+
+    $statusOut = [ordered]@{}
+    foreach ($taskName in @($State.TaskStatus.Keys)) {
+        $entry = $State.TaskStatus[$taskName]
+        $statusOut[$taskName] = [ordered]@{
+            Status = [string]$entry.Status
+            Detail = [string]$entry.Detail
+        }
+    }
+
+    $payload = [ordered]@{
+        CatalogHash = [string]$State.CatalogHash
+        TotalTaskCount = [int]$State.TotalTaskCount
+        LastCompletedTaskIndex = [int]$State.LastCompletedTaskIndex
+        LastTaskName = [string]$State.LastTaskName
+        RebootCount = [int]$State.RebootCount
+        Completed = [bool]$State.Completed
+        RebootRequired = [bool]$State.RebootRequired
+        SuccessCount = [int]$State.SuccessCount
+        WarningCount = [int]$State.WarningCount
+        ErrorCount = [int]$State.ErrorCount
+        TaskStatus = $statusOut
+    }
+
+    ($payload | ConvertTo-Json -Depth 20) | Set-Content -Path $StatePath -Encoding UTF8
+}
+
+function Set-Step8TaskStatus {
+    param(
+        [hashtable]$State,
+        [string]$TaskName,
+        [string]$NewStatus,
+        [string]$Detail = ""
+    )
+
+    if (-not $State.TaskStatus.ContainsKey($TaskName)) {
+        $State.TaskStatus[$TaskName] = @{ Status = ""; Detail = "" }
+    }
+
+    $oldStatus = [string]$State.TaskStatus[$TaskName].Status
+    switch ($oldStatus) {
+        "success" { $State.SuccessCount = [Math]::Max(0, [int]$State.SuccessCount - 1) }
+        "warning" { $State.WarningCount = [Math]::Max(0, [int]$State.WarningCount - 1) }
+        "error" { $State.ErrorCount = [Math]::Max(0, [int]$State.ErrorCount - 1) }
+    }
+
+    switch ($NewStatus) {
+        "success" { $State.SuccessCount = [int]$State.SuccessCount + 1 }
+        "warning" { $State.WarningCount = [int]$State.WarningCount + 1 }
+        "error" { $State.ErrorCount = [int]$State.ErrorCount + 1 }
+        default { }
+    }
+
+    $safeDetail = Convert-ToTaskSafeDetail -Detail $Detail
+    $State.TaskStatus[$TaskName] = @{
+        Status = [string]$NewStatus
+        Detail = [string]$safeDetail
+    }
+
+    Write-Output ("TASK_STATUS:{0}:{1}" -f $TaskName, $NewStatus)
+    if (-not [string]::IsNullOrWhiteSpace($safeDetail)) {
+        Write-Output ("TASK_DETAIL:{0}:{1}" -f $TaskName, $safeDetail)
+    }
+}
+
+function Test-Step8RebootPending {
+    $paths = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending",
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"
+    )
+    foreach ($path in $paths) {
+        if (Test-Path -LiteralPath $path) {
+            return $true
+        }
+    }
+
+    try {
+        $pending = Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name "PendingFileRenameOperations" -ErrorAction SilentlyContinue
+        if ($pending -and $pending.PendingFileRenameOperations) {
+            return $true
+        }
+    }
+    catch { }
+
+    return $false
+}
+
+if (-not (Test-Path -LiteralPath $stateDir)) {
+    New-Item -Path $stateDir -ItemType Directory -Force | Out-Null
+}
+
+$state = Load-Step8State -StatePath $statePath -CatalogHash $catalogHash -TaskCount $taskCatalog.Count
+if ($state.CatalogHash -ne $catalogHash -or [int]$state.TotalTaskCount -ne $taskCatalog.Count) {
+    $state = New-Step8State -CatalogHash $catalogHash -TaskCount $taskCatalog.Count
+}
+if ($state.Completed -and -not $state.RebootRequired) {
+    $state = New-Step8State -CatalogHash $catalogHash -TaskCount $taskCatalog.Count
+}
+
+$state.CatalogHash = $catalogHash
+$state.TotalTaskCount = $taskCatalog.Count
+if ($state.LastCompletedTaskIndex -gt ($taskCatalog.Count - 1)) {
+    $state.LastCompletedTaskIndex = $taskCatalog.Count - 1
+}
+if ($state.LastCompletedTaskIndex -lt -1) {
+    $state.LastCompletedTaskIndex = -1
+}
+
+if ($taskCatalog.Count -eq 0) {
+    Write-Output "STEP8_SUMMARY:success=0;warning=0;error=0;reboot=0"
+    Write-Output "Update phase completed."
+    return
+}
+
+$startIndex = [int]$state.LastCompletedTaskIndex + 1
+
+for ($taskIndex = $startIndex; $taskIndex -lt $taskCatalog.Count; $taskIndex++) {
+    $task = $taskCatalog[$taskIndex]
+    $taskName = [string]$task.Name
+    Write-Output ("TASK started: {0}" -f $taskName)
+    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
+
+    try {
+        $decodedScript = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String([string]$task.ScriptBase64))
+        Invoke-Expression $decodedScript
+        if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+        Set-Step8TaskStatus -State $state -TaskName $taskName -NewStatus "success"
+        Write-Output ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+        Write-Output "TASK result: success"
+    }
+    catch {
+        if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+        $detail = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }
+        Set-Step8TaskStatus -State $state -TaskName $taskName -NewStatus "warning" -Detail $detail
+        Write-Warning ("TASK warning: {0} => {1}" -f $taskName, $detail)
+        Write-Output ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+        Write-Output "TASK result: warning"
+    }
+
+    $state.LastCompletedTaskIndex = $taskIndex
+    $state.LastTaskName = $taskName
+    $state.Completed = $false
+    $state.RebootRequired = $false
+    Save-Step8State -StatePath $statePath -State $state
+
+    if (Test-Step8RebootPending) {
+        $state.RebootRequired = $true
+        $state.RebootCount = [int]$state.RebootCount + 1
+        Save-Step8State -StatePath $statePath -State $state
+        Write-Output ("TASK_REBOOT_REQUIRED:{0}:true" -f $taskName)
+        Write-Output ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $state.RebootCount)
+        Write-Output ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $state.SuccessCount, $state.WarningCount, $state.ErrorCount, $state.RebootCount)
+        return
+    }
+}
+
+$state.Completed = $true
+$state.RebootRequired = $false
+Save-Step8State -StatePath $statePath -State $state
+
+Write-Output ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $state.SuccessCount, $state.WarningCount, $state.ErrorCount, $state.RebootCount)
+Write-Output "Update phase completed."
+'@
+
+    return $template.Replace("__TASK_CATALOG_HASH__", $catalogHash).Replace("__TASK_ROWS__", $taskRows.ToString().TrimEnd())
+}
+
 function Get-CoVmUpdateScriptContentFromTasks {
     param(
         [ValidateSet("linux", "windows")]
@@ -1607,21 +2022,16 @@ function Get-CoVmUpdateScriptContentFromTasks {
         throw "VM update script build failed: no task blocks were provided."
     }
 
+    if ($Platform -eq "windows") {
+        return (Get-CoVmWindowsUpdateScriptFromTasks -TaskBlocks $TaskBlocks)
+    }
+
     $sb = New-Object System.Text.StringBuilder
-    if ($Platform -eq "linux") {
-        [void]$sb.AppendLine("#!/usr/bin/env bash")
-        [void]$sb.AppendLine("set -euo pipefail")
-        [void]$sb.AppendLine("exec 2>&1")
-        [void]$sb.AppendLine('echo "Update phase started."')
-        [void]$sb.AppendLine("")
-    }
-    else {
-        [void]$sb.AppendLine('$ErrorActionPreference = "Stop"')
-        [void]$sb.AppendLine('$ProgressPreference = "SilentlyContinue"')
-        [void]$sb.AppendLine('[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12')
-        [void]$sb.AppendLine('Write-Output "Update phase started."')
-        [void]$sb.AppendLine("")
-    }
+    [void]$sb.AppendLine("#!/usr/bin/env bash")
+    [void]$sb.AppendLine("set -euo pipefail")
+    [void]$sb.AppendLine("exec 2>&1")
+    [void]$sb.AppendLine('echo "Update phase started."')
+    [void]$sb.AppendLine("")
 
     foreach ($taskBlock in $TaskBlocks) {
         $taskName = [string]$taskBlock.Name
@@ -1631,13 +2041,7 @@ function Get-CoVmUpdateScriptContentFromTasks {
         [void]$sb.AppendLine("")
     }
 
-    if ($Platform -eq "linux") {
-        [void]$sb.AppendLine('echo "Update phase completed."')
-    }
-    else {
-        [void]$sb.AppendLine('Write-Output "Update phase completed."')
-    }
-
+    [void]$sb.AppendLine('echo "Update phase completed."')
     return $sb.ToString()
 }
 
@@ -1760,12 +2164,42 @@ if (Get-Command docker -ErrorAction SilentlyContinue) {
     docker version
 }
 else {
-    Write-Warning "docker command not found in post-reboot probe."
+    $dockerCliPath = "C:\Program Files\Docker\Docker\resources\bin"
+    if (Test-Path -LiteralPath $dockerCliPath) {
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        if ($machinePath -notmatch [regex]::Escape($dockerCliPath)) {
+            [Environment]::SetEnvironmentVariable("Path", ($machinePath.TrimEnd(';') + ";" + $dockerCliPath), "Machine")
+            $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [Environment]::GetEnvironmentVariable("Path", "User")
+        }
+    }
+
+    if (Get-Command docker -ErrorAction SilentlyContinue) {
+        Write-Output "docker-client:"
+        docker --version
+        Write-Output "docker-daemon:"
+        docker version
+    }
+    else {
+        Write-Warning "docker command not found in post-reboot probe."
+    }
 }
 
 if (Get-Command wsl -ErrorAction SilentlyContinue) {
-    Write-Output "wsl-version:"
-    wsl --version
+    Write-Output "wsl-status:"
+    $wslStatusOutput = @(& cmd.exe /d /c "wsl --status 2>&1")
+    $wslStatusCode = $LASTEXITCODE
+    $wslStatusText = (@($wslStatusOutput) | ForEach-Object { [string]$_ }) -join "`n"
+    if (-not [string]::IsNullOrWhiteSpace($wslStatusText)) {
+        Write-Output $wslStatusText.Trim()
+    }
+
+    if ($wslStatusCode -ne 0 -or $wslStatusText -match '(?i)(not installed|wsl\.exe --install|windows subsystem for linux is not installed)') {
+        Write-Warning "WSL is not installed yet."
+    }
+    else {
+        Write-Output "wsl-version:"
+        & cmd.exe /d /c "wsl --version 2>&1"
+    }
 }
 else {
     Write-Warning "wsl command not found in post-reboot probe."

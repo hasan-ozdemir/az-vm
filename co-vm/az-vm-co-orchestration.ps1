@@ -177,7 +177,8 @@ function Invoke-CoVmPrecheckStep {
 function Invoke-CoVmResourceGroupStep {
     param(
         [hashtable]$Context,
-        [switch]$AutoMode
+        [switch]$AutoMode,
+        [switch]$UpdateMode
     )
 
     $resourceGroup = [string]$Context.ResourceGroup
@@ -189,28 +190,33 @@ function Invoke-CoVmResourceGroupStep {
     $resourceExists = az group exists -n $resourceGroup
     Assert-LastExitCode "az group exists"
     if ($resourceExists -eq 'true') {
-        Write-Host "Resource group '$resourceGroup' will be deleted."
-        $shouldDelete = $true
-        if ($AutoMode) {
-            Write-Host "Auto mode: deletion was confirmed automatically."
+        if ($UpdateMode) {
+            Write-Host "Update mode: existing resource group '$resourceGroup' will be kept." -ForegroundColor Yellow
         }
         else {
-            $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
-        }
+            Write-Host "Resource group '$resourceGroup' will be deleted."
+            $shouldDelete = $true
+            if ($AutoMode) {
+                Write-Host "Auto mode: deletion was confirmed automatically."
+            }
+            else {
+                $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
+            }
 
-        if ($shouldDelete) {
-            Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
-                az group delete -n $resourceGroup --yes --no-wait
-                Assert-LastExitCode "az group delete"
-            } | Out-Null
-            Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
-                az group wait -n $resourceGroup --deleted
-                Assert-LastExitCode "az group wait deleted"
-            } | Out-Null
-            Write-Host "Resource group '$resourceGroup' was deleted."
-        }
-        else {
-            Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with existing resource group." -ForegroundColor Yellow
+            if ($shouldDelete) {
+                Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
+                    az group delete -n $resourceGroup --yes --no-wait
+                    Assert-LastExitCode "az group delete"
+                } | Out-Null
+                Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
+                    az group wait -n $resourceGroup --deleted
+                    Assert-LastExitCode "az group wait deleted"
+                } | Out-Null
+                Write-Host "Resource group '$resourceGroup' was deleted."
+            }
+            else {
+                Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with existing resource group." -ForegroundColor Yellow
+            }
         }
     }
 
@@ -280,6 +286,7 @@ function Invoke-CoVmVmCreateStep {
     param(
         [hashtable]$Context,
         [switch]$AutoMode,
+        [switch]$UpdateMode,
         [scriptblock]$CreateVmAction
     )
 
@@ -303,7 +310,11 @@ function Invoke-CoVmVmCreateStep {
     $shouldDeleteVm = $false
     if ($existingVM) {
         Write-Host "VM '$vmName' exists in resource group '$resourceGroup'."
-        if ($AutoMode) {
+        if ($UpdateMode) {
+            $shouldDeleteVm = $false
+            Write-Host "Update mode: existing VM will be kept; az vm create will run in create-or-update mode." -ForegroundColor Yellow
+        }
+        elseif ($AutoMode) {
             $shouldDeleteVm = $true
             Write-Host "Auto mode: VM deletion was confirmed automatically."
         }
@@ -748,7 +759,9 @@ function Show-CoVmRuntimeConfigurationSnapshot {
         [string]$ScriptName,
         [string]$ScriptRoot,
         [switch]$AutoMode,
+        [switch]$UpdateMode,
         [switch]$SubstepMode,
+        [switch]$SshMode,
         [hashtable]$ConfigMap,
         [hashtable]$ConfigOverrides,
         [hashtable]$Context
@@ -815,13 +828,17 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     $runtimeRows = @()
     $runtimeFields = [ordered]@{
         AutoMode = [bool]$AutoMode
+        UpdateMode = [bool]$UpdateMode
         SubstepMode = [bool]$SubstepMode
+        SshMode = [bool]$SshMode
         ScriptRoot = [string]$ScriptRoot
         ScriptName = [string]$ScriptName
     }
     $runtimeLabels = @{
         AutoMode = "Auto mode"
+        UpdateMode = "Update mode"
         SubstepMode = "Substep mode"
+        SshMode = "SSH mode"
         ScriptRoot = "Script root"
         ScriptName = "Script name"
     }

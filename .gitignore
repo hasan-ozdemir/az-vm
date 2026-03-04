@@ -16,6 +16,7 @@ lin-vm/az-vm-lin-cloud-init.yaml
 lin-vm/az-vm-lin-update.sh
 win-vm/az-vm-win-init.ps1
 win-vm/az-vm-win-update.ps1
+tools/putty/*.exe
 
 # OS/editor noise
 Thumbs.db
