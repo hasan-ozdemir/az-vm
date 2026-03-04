@@ -684,80 +684,22 @@ if (-not (Test-Path $chocoExe)) { throw "choco setup could not be completed." }
 & $chocoExe feature enable -n useEnhancedExitCodes | Out-Null
 & $chocoExe config set --name commandExecutionTimeoutSeconds --value 14400 | Out-Null
 & $chocoExe config set --name cacheLocation --value "$env:ProgramData\chocolatey\cache" | Out-Null
-& $chocoExe install winget -y --no-progress | Out-Null
-$wingetInstallExit = [int]$LASTEXITCODE
-if ($wingetInstallExit -ne 0 -and $wingetInstallExit -ne 2) {
-    Write-Warning ("Chocolatey winget install returned exit code {0}. Winget-dependent tasks may be limited." -f $wingetInstallExit)
+& $chocoExe upgrade winget -y --no-progress | Out-Null
+$wingetUpgradeExit = [int]$LASTEXITCODE
+if ($wingetUpgradeExit -ne 0 -and $wingetUpgradeExit -ne 2) {
+    Write-Warning ("Chocolatey winget upgrade returned exit code {0}. Winget-dependent tasks may be limited." -f $wingetUpgradeExit)
 }
 $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
 if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
 $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ([string]::IsNullOrWhiteSpace($userPath)) { $env:Path = $machinePath } else { $env:Path = "$machinePath;$userPath" }
-$wingetCandidates = @(
-    "$env:ProgramData\chocolatey\bin\winget.exe",
-    "$env:ProgramData\chocolatey\lib\winget\tools\winget.exe"
-)
-if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-    $pathItems = @()
-    if (-not [string]::IsNullOrWhiteSpace($machinePath)) {
-        $pathItems = @($machinePath -split ";" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
-    }
-    foreach ($candidate in @($wingetCandidates)) {
-        $candidateDir = Split-Path -Path $candidate -Parent
-        if ((Test-Path -LiteralPath $candidateDir) -and ($pathItems -notcontains $candidateDir)) {
-            $pathItems += $candidateDir
-        }
-    }
-    if ($pathItems.Count -gt 0) {
-        [Environment]::SetEnvironmentVariable("Path", ($pathItems -join ";"), "Machine")
-        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-        if ([string]::IsNullOrWhiteSpace($userPath)) { $env:Path = $machinePath } else { $env:Path = "$machinePath;$userPath" }
-    }
-}
-$wingetVerified = $false
-foreach ($candidate in @($wingetCandidates)) {
-    if (-not (Test-Path -LiteralPath $candidate)) { continue }
-    try {
-        & $candidate --version | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            $wingetVerified = $true
-            break
-        }
-    }
-    catch { }
-}
-if (-not $wingetVerified) {
-    try {
-        & winget.exe --version | Out-Null
-        if ($LASTEXITCODE -eq 0) { $wingetVerified = $true }
-    }
-    catch { }
-}
-if ($wingetVerified) {
+if (Get-Command winget -ErrorAction SilentlyContinue) {
+    & winget --version | Out-Null
     Write-Output "winget-ready"
 }
 else {
-    $wingetBundlePath = Join-Path $env:TEMP "Microsoft.DesktopAppInstaller.msixbundle"
-    try {
-        Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile $wingetBundlePath -UseBasicParsing
-        Add-AppxPackage -Path $wingetBundlePath -ErrorAction Stop | Out-Null
-        $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-        if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
-        if (Get-Command winget.exe -ErrorAction SilentlyContinue) {
-            $wingetVerified = $true
-            Write-Output "winget-ready"
-        }
-        else {
-            Write-Warning "winget command is still not available after App Installer bootstrap."
-        }
-    }
-    catch {
-        Write-Warning ("winget bootstrap via App Installer failed: {0}" -f $_.Exception.Message)
-    }
-    finally {
-        Remove-Item -Path $wingetBundlePath -Force -ErrorAction SilentlyContinue
-    }
+    Write-Warning "winget command is not available on PATH after choco upgrade + refreshenv."
 }
 & $chocoExe --version
 '@
@@ -823,77 +765,18 @@ python --version
             Script = @'
 $ErrorActionPreference = "Stop"
 
-function Resolve-WingetCommand {
-    $candidates = @()
-    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
-        $candidates += [string]$cmd.Source
-    }
-
-    $localAlias = Join-Path $env:LOCALAPPDATA "Microsoft\WindowsApps\winget.exe"
-    if (Test-Path -LiteralPath $localAlias) {
-        $candidates += $localAlias
-    }
-    foreach ($chocoWingetCandidate in @(
-        "$env:ProgramData\chocolatey\bin\winget.exe",
-        "$env:ProgramData\chocolatey\lib\winget\tools\winget.exe"
-    )) {
-        if (Test-Path -LiteralPath $chocoWingetCandidate) {
-            $candidates += $chocoWingetCandidate
-        }
-    }
-
-    try {
-        Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
-    }
-    catch { }
-    try {
-        $appInstallerPackages = @(Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller*" -ErrorAction SilentlyContinue)
-        foreach ($pkg in @($appInstallerPackages)) {
-            if ([string]::IsNullOrWhiteSpace([string]$pkg.InstallLocation)) {
-                continue
-            }
-            $pkgWinget = Join-Path ([string]$pkg.InstallLocation) "winget.exe"
-            if (Test-Path -LiteralPath $pkgWinget) {
-                $candidates += $pkgWinget
-            }
-        }
-    }
-    catch { }
-
-    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
-    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
-        $candidates += [string]$cmd.Source
-    }
-
-    foreach ($candidate in @($candidates | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
-        try {
-            & $candidate --version | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                return [string]$candidate
-            }
-        }
-        catch {
-            Write-Host ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message) -ForegroundColor DarkGray
-        }
-    }
-
-    return ""
-}
-
 function Invoke-WingetInstall {
     param(
         [string]$Id
     )
 
-    $wingetExe = Resolve-WingetCommand
-    if ([string]::IsNullOrWhiteSpace($wingetExe)) {
+    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         Write-Host ("winget command is not available. Skipping package '{0}'." -f $Id) -ForegroundColor DarkGray
         return $false
     }
 
     try {
-        & $wingetExe install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
+        & winget install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
     }
     catch {
         Write-Host ("winget install failed for '{0}': {1}" -f $Id, $_.Exception.Message) -ForegroundColor DarkGray
