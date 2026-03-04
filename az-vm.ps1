@@ -228,7 +228,7 @@ function Get-CoVmTaskBlocksFromDirectory {
         }
     }
 
-    Write-Output -NoEnumerate $taskBlocks
+    return $taskBlocks
 }
 
 function Get-CoVmTaskTokenReplacements {
@@ -655,9 +655,12 @@ function Invoke-AzVmMain {
                 throw 'Step 8 could not resolve VM SSH host (FQDN/Public IP).'
             }
 
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{ Step8SshHost = $sshHost; Step8SshUser = $vmUser; Step8SshPort = $sshPort }
+            $step8SshUser = [string]$vmUser
+            $step8SshPassword = [string]$vmPass
 
-            Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $vmUser -SshPassword $vmPass -SshPort $sshPort -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -ConfiguredPlinkPath $configuredPlinkPath -ConfiguredPscpPath $configuredPscpPath | Out-Null
+            Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{ Step8SshHost = $sshHost; Step8SshUser = $step8SshUser; Step8SshPort = $sshPort }
+
+            Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -ConfiguredPlinkPath $configuredPlinkPath -ConfiguredPscpPath $configuredPscpPath | Out-Null
         }
 
         Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
@@ -815,7 +818,7 @@ function Invoke-TrackedAction {
     try {
         $result = . $Action
         if ($null -ne $result) {
-            Write-Output -NoEnumerate $result
+            return $result
         }
     }
     finally {
@@ -912,7 +915,7 @@ function ConvertFrom-JsonArrayCompat {
         $result = @($parsed)
     }
 
-    Write-Output -NoEnumerate $result
+    return $result
 }
 
 function ConvertTo-ObjectArrayCompat {
@@ -939,7 +942,7 @@ function ConvertTo-ObjectArrayCompat {
         $result = @($InputObject)
     }
 
-    Write-Output -NoEnumerate $result
+    return $result
 }
 
 function Write-TextFileNormalized {
@@ -1344,7 +1347,7 @@ function Get-CoVmWindowsInitScriptContent {
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-Write-Output "Init phase started."
+Write-Host "Init phase started."
 Set-TimeZone -Id "UTC" -ErrorAction SilentlyContinue
 
 $vmUser = "__VM_USER__"
@@ -1415,7 +1418,7 @@ function Ensure-GroupMembership {
     }
 
     if ($alreadyMember) {
-        Write-Output "User '$MemberName' is already in local group '$GroupName'."
+        Write-Host "User '$MemberName' is already in local group '$GroupName'."
         return
     }
 
@@ -1439,12 +1442,12 @@ function Ensure-GroupMembership {
         $lastAddExitCode = $LASTEXITCODE
 
         if ($lastAddExitCode -eq 0) {
-            Write-Output "User '$addCandidate' was added to local group '$GroupName'."
+            Write-Host "User '$addCandidate' was added to local group '$GroupName'."
             return
         }
 
         if ($lastAddExitCode -eq 1378) {
-            Write-Output "User '$addCandidate' is already in local group '$GroupName' (system error 1378)."
+            Write-Host "User '$addCandidate' is already in local group '$GroupName' (system error 1378)."
             return
         }
     }
@@ -1473,7 +1476,7 @@ function Ensure-LocalPowerAdmin {
 
 Ensure-LocalPowerAdmin -UserName $vmUser -Password $vmPass
 Ensure-LocalPowerAdmin -UserName $assistantUser -Password $assistantPass
-Write-Output "local-admin-users-ready"
+Write-Host "local-admin-users-ready"
 
 if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
     $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
@@ -1502,7 +1505,7 @@ if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
 if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) { throw "OpenSSH setup completed but sshd service was not found." }
 Set-Service -Name sshd -StartupType Automatic
 if (Get-Service ssh-agent -ErrorAction SilentlyContinue) { Set-Service -Name ssh-agent -StartupType Automatic }
-Write-Output "openssh-ready"
+Write-Host "openssh-ready"
 
 $sshdConfig = "C:\ProgramData\ssh\sshd_config"
 if (-not (Test-Path $sshdConfig)) { New-Item -Path $sshdConfig -ItemType File -Force | Out-Null }
@@ -1545,7 +1548,7 @@ Restart-Service -Name sshd -Force
 if (-not (Get-NetFirewallRule -DisplayName "Allow-SSH-__SSH_PORT__" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "Allow-SSH-__SSH_PORT__" -Direction Inbound -Action Allow -Protocol TCP -LocalPort __SSH_PORT__ -RemoteAddress Any -Profile Any | Out-Null
 }
-Write-Output "sshd-config-ready"
+Write-Host "sshd-config-ready"
 
 Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" -Name "fDenyTSConnections" -Value 0
 Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" -Name "UserAuthentication" -Value 0
@@ -1571,8 +1574,8 @@ foreach ($port in @(__TCP_PORTS_PS_ARRAY__)) {
         New-NetFirewallRule -DisplayName $name -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -RemoteAddress Any -Profile Any | Out-Null
     }
 }
-Write-Output "rdp-firewall-ready"
-Write-Output "Init phase completed."
+Write-Host "rdp-firewall-ready"
+Write-Host "Init phase completed."
 '@
 
     return $template.Replace("__VM_USER__", $VmUser).Replace("__VM_PASS__", $VmPass).Replace("__ASSISTANT_USER__", $AssistantUser).Replace("__ASSISTANT_PASS__", $AssistantPass).Replace("__SSH_PORT__", $SshPort).Replace("__TCP_PORTS_PS_ARRAY__", $portsCsv)
@@ -1780,7 +1783,7 @@ function Ensure-GroupMembership {
     }
 
     if ($alreadyMember) {
-        Write-Output "User '$MemberName' is already in local group '$GroupName'."
+        Write-Host "User '$MemberName' is already in local group '$GroupName'."
         return
     }
 
@@ -1804,12 +1807,12 @@ function Ensure-GroupMembership {
         $lastAddExitCode = $LASTEXITCODE
 
         if ($lastAddExitCode -eq 0) {
-            Write-Output "User '$addCandidate' was added to local group '$GroupName'."
+            Write-Host "User '$addCandidate' was added to local group '$GroupName'."
             return
         }
 
         if ($lastAddExitCode -eq 1378) {
-            Write-Output "User '$addCandidate' is already in local group '$GroupName' (system error 1378)."
+            Write-Host "User '$addCandidate' is already in local group '$GroupName' (system error 1378)."
             return
         }
     }
@@ -1838,7 +1841,7 @@ function Ensure-LocalPowerAdmin {
 
 Ensure-LocalPowerAdmin -UserName $vmUser -Password $vmPass
 Ensure-LocalPowerAdmin -UserName $assistantUser -Password $assistantPass
-Write-Output "local-admin-users-ready"
+Write-Host "local-admin-users-ready"
 '@
         },
         [pscustomobject]@{
@@ -1873,7 +1876,7 @@ if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
 if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) { throw "OpenSSH setup completed but sshd service was not found." }
 Set-Service -Name sshd -StartupType Automatic
 if (Get-Service ssh-agent -ErrorAction SilentlyContinue) { Set-Service -Name ssh-agent -StartupType Automatic }
-Write-Output "openssh-ready"
+Write-Host "openssh-ready"
 '@
         },
         [pscustomobject]@{
@@ -1921,7 +1924,7 @@ Restart-Service -Name sshd -Force
 if (-not (Get-NetFirewallRule -DisplayName "Allow-SSH-__SSH_PORT__" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "Allow-SSH-__SSH_PORT__" -Direction Inbound -Action Allow -Protocol TCP -LocalPort __SSH_PORT__ -RemoteAddress Any -Profile Any | Out-Null
 }
-Write-Output "sshd-config-ready"
+Write-Host "sshd-config-ready"
 '@
         },
         [pscustomobject]@{
@@ -1952,7 +1955,7 @@ foreach ($port in @(__TCP_PORTS_PS_ARRAY__)) {
         New-NetFirewallRule -DisplayName $name -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -RemoteAddress Any -Profile Any | Out-Null
     }
 }
-Write-Output "rdp-firewall-ready"
+Write-Host "rdp-firewall-ready"
 '@
         },
         [pscustomobject]@{
@@ -1984,7 +1987,7 @@ $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ([string]::IsNullOrWhiteSpace($userPath)) { $env:Path = $machinePath } else { $env:Path = "$machinePath;$userPath" }
 if (Get-Command winget -ErrorAction SilentlyContinue) {
     & winget --version | Out-Null
-    Write-Output "winget-ready"
+    Write-Host "winget-ready"
 }
 else {
     Write-Warning "winget command is not available on PATH after choco upgrade + refreshenv."
@@ -2111,7 +2114,7 @@ if (-not $localOnlyAccessibilityFound) {
     }
 }
 
-Write-Output "private local-only accessibility-install-check-completed"
+Write-Host "private local-only accessibility-install-check-completed"
 '@
         },
         [pscustomobject]@{
@@ -2150,7 +2153,7 @@ $ErrorActionPreference = "Stop"
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path $chocoExe)) {
     Write-Warning "choco was not found. Extra package installs are skipped."
-    Write-Output "choco-extra-packages-skipped"
+    Write-Host "choco-extra-packages-skipped"
     return
 }
 
@@ -2175,7 +2178,7 @@ function Install-ChocoPackageWarn {
         [string]$PathHint = ""
     )
 
-    Write-Output ("Running: {0}" -f $InstallCommand)
+    Write-Host ("Running: {0}" -f $InstallCommand)
     & cmd.exe /d /c $InstallCommand | Out-Null
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
         Write-Warning ("choco install failed for '{0}' with exit code {1}." -f $PackageId, $LASTEXITCODE)
@@ -2187,7 +2190,7 @@ function Install-ChocoPackageWarn {
 
     if (-not [string]::IsNullOrWhiteSpace($CommandName)) {
         if (Get-Command $CommandName -ErrorAction SilentlyContinue) {
-            Write-Output ("Command check passed: {0}" -f $CommandName)
+            Write-Host ("Command check passed: {0}" -f $CommandName)
         }
         else {
             Write-Warning ("Command '{0}' was not found after '{1}' install." -f $CommandName, $PackageId)
@@ -2195,7 +2198,7 @@ function Install-ChocoPackageWarn {
     }
     elseif (-not [string]::IsNullOrWhiteSpace($PathHint)) {
         if (Test-Path -LiteralPath $PathHint) {
-            Write-Output ("Path check passed: {0}" -f $PathHint)
+            Write-Host ("Path check passed: {0}" -f $PathHint)
         }
         else {
             Write-Warning ("Path '{0}' was not found after '{1}' install." -f $PathHint, $PackageId)
@@ -2212,7 +2215,7 @@ Install-ChocoPackageWarn -PackageId "ffmpeg" -InstallCommand "choco install ffmp
 Install-ChocoPackageWarn -PackageId "7zip" -InstallCommand "choco install 7zip -y --no-progress" -CommandName "7z"
 Install-ChocoPackageWarn -PackageId "azure-cli" -InstallCommand "choco install azure-cli -y --no-progress" -CommandName "az"
 
-Write-Output "choco-extra-packages-completed"
+Write-Host "choco-extra-packages-completed"
 '@
         },
         [pscustomobject]@{
@@ -2402,7 +2405,7 @@ if ([string]::IsNullOrWhiteSpace([string]$chromeExe) -or (-not ([System.IO.Path]
     else {
         Write-Warning "Google Chrome install failed or was skipped."
     }
-    Write-Output "chrome-install-and-shortcut-completed"
+    Write-Host "chrome-install-and-shortcut-completed"
     return
 }
 
@@ -2414,14 +2417,14 @@ $shortcutTargets = @(
 foreach ($shortcutPath in @($shortcutTargets)) {
     try {
         Set-ChromeShortcut -ShortcutPath $shortcutPath -ChromeExe $chromeExe -Args $chromeArgs
-        Write-Output ("Chrome shortcut configured: {0}" -f $shortcutPath)
+        Write-Host ("Chrome shortcut configured: {0}" -f $shortcutPath)
     }
     catch {
         Write-Warning ("Chrome shortcut configuration failed for '{0}': {1}" -f $shortcutPath, $_.Exception.Message)
     }
 }
 
-Write-Output "chrome-install-and-shortcut-completed"
+Write-Host "chrome-install-and-shortcut-completed"
 '@
         },
         [pscustomobject]@{
@@ -2437,7 +2440,7 @@ function Invoke-CommandWarn {
 
     try {
         & $Action
-        Write-Output ("wsl-step-ok: {0}" -f $Label)
+        Write-Host ("wsl-step-ok: {0}" -f $Label)
     }
     catch {
         Write-Warning ("wsl-step-failed: {0} => {1}" -f $Label, $_.Exception.Message)
@@ -2467,7 +2470,7 @@ Invoke-CommandWarn -Label "wsl-version" -Action {
     }
 }
 
-Write-Output "wsl2-install-update-completed"
+Write-Host "wsl2-install-update-completed"
 '@
         },
         [pscustomobject]@{
@@ -2483,7 +2486,7 @@ function Invoke-DockerWarn {
 
     try {
         & $Action
-        Write-Output ("docker-step-ok: {0}" -f $Label)
+        Write-Host ("docker-step-ok: {0}" -f $Label)
     }
     catch {
         Write-Warning ("docker-step-failed: {0} => {1}" -f $Label, $_.Exception.Message)
@@ -2699,11 +2702,11 @@ Invoke-DockerWarn -Label "docker-daemon-version" -Action {
     }
 
     if (-not $daemonReady) {
-        Write-Output "docker-daemon-version-deferred"
+        Write-Host "docker-daemon-version-deferred"
     }
 }
 
-Write-Output "docker-desktop-install-and-configure-completed"
+Write-Host "docker-desktop-install-and-configure-completed"
 '@
         },
         [pscustomobject]@{
@@ -2730,7 +2733,7 @@ function Invoke-Tweak {
 
     try {
         & $Action
-        Write-Output ("tweak-ok: {0}" -f $Name)
+        Write-Host ("tweak-ok: {0}" -f $Name)
     }
     catch {
         $message = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }
@@ -2861,7 +2864,7 @@ function Resolve-TargetHives {
                 }
             }
             else {
-                Write-Output ("User hive could not be loaded for '{0}'. Profile may not be materialized yet." -f $userName)
+                Write-Host ("User hive could not be loaded for '{0}'. Profile may not be materialized yet." -f $userName)
             }
         }
         catch {
@@ -2987,7 +2990,7 @@ Invoke-Tweak -Name "machine-context-menu-classic" -Action {
     $safeCmd = ('reg add "{0}" /ve /f >nul 2>&1' -f ($ctxPath -replace '"', '\"'))
     & cmd.exe /d /c $safeCmd | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Output "machine-context-menu-classic skipped (key may be protected by ACL)."
+        Write-Host "machine-context-menu-classic skipped (key may be protected by ACL)."
     }
 }
 
@@ -3063,7 +3066,7 @@ Invoke-Tweak -Name "notepad-strict-legacy-removal" -Action {
 
     & dism.exe /online /Remove-Capability /CapabilityName:Microsoft.Windows.Notepad~~~~0.0.1.0 /NoRestart | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Output "DISM capability removal for Microsoft.Windows.Notepad was not completed."
+        Write-Host "DISM capability removal for Microsoft.Windows.Notepad was not completed."
     }
 
     if (-not (Test-Path -LiteralPath $notepadPath)) {
@@ -3120,10 +3123,10 @@ if ($tweakWarnings.Count -gt 0) {
     }
 }
 else {
-    Write-Output "windows-ux-performance-tuning completed with no warnings."
+    Write-Host "windows-ux-performance-tuning completed with no warnings."
 }
 
-Write-Output "windows-ux-tuning-ready"
+Write-Host "windows-ux-tuning-ready"
 '@
         },
         [pscustomobject]@{
@@ -3139,7 +3142,7 @@ function Invoke-AdvancedWarn {
 
     try {
         & $Action
-        Write-Output ("advanced-step-ok: {0}" -f $Label)
+        Write-Host ("advanced-step-ok: {0}" -f $Label)
     }
     catch {
         Write-Warning ("advanced-step-failed: {0} => {1}" -f $Label, $_.Exception.Message)
@@ -3275,7 +3278,7 @@ Invoke-AdvancedWarn -Label "refresh-user-visual-parameters" -Action {
     }
 }
 
-Write-Output "windows-advanced-system-settings-completed"
+Write-Host "windows-advanced-system-settings-completed"
 '@
         },
         [pscustomobject]@{
@@ -3297,13 +3300,13 @@ function Disable-ServiceIfSafe {
     )
 
     if ($protectedServices -contains $ServiceName) {
-        Write-Output ("service-skip-protected: {0}" -f $ServiceName)
+        Write-Host ("service-skip-protected: {0}" -f $ServiceName)
         return
     }
 
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if (-not $service) {
-        Write-Output ("service-not-found: {0}" -f $ServiceName)
+        Write-Host ("service-not-found: {0}" -f $ServiceName)
         return
     }
 
@@ -3318,7 +3321,7 @@ function Disable-ServiceIfSafe {
             Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
         }
         Set-Service -Name $ServiceName -StartupType Disabled -ErrorAction Stop
-        Write-Output ("service-disabled: {0}" -f $ServiceName)
+        Write-Host ("service-disabled: {0}" -f $ServiceName)
     }
     catch {
         Write-Warning ("service-disable-failed: {0} => {1}" -f $ServiceName, $_.Exception.Message)
@@ -3329,7 +3332,7 @@ foreach ($candidate in @($disableCandidates)) {
     Disable-ServiceIfSafe -ServiceName $candidate
 }
 
-Write-Output "local-service-disable-conservative-completed"
+Write-Host "local-service-disable-conservative-completed"
 '@
         },
         [pscustomobject]@{
@@ -3337,7 +3340,7 @@ Write-Output "local-service-disable-conservative-completed"
             Script = @'
 $ErrorActionPreference = "Stop"
 $sshdConfig = "C:\ProgramData\ssh\sshd_config"
-Write-Output "Version Info:"
+Write-Host "Version Info:"
 try {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
     [pscustomobject]@{
@@ -3349,52 +3352,52 @@ try {
 catch {
     Write-Warning ("Version info collection failed: {0}" -f $_.Exception.Message)
 }
-Write-Output "APP PATH CHECKS:"
+Write-Host "APP PATH CHECKS:"
 foreach ($commandName in @("choco", "git", "node", "python", "py", "pwsh", "gh", "ffmpeg", "7z", "az", "docker", "wsl", "ollama")) {
     $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
-    if ($cmd) { Write-Output "$commandName => $($cmd.Source)" } else { Write-Output "$commandName => not-found" }
+    if ($cmd) { Write-Host "$commandName => $($cmd.Source)" } else { Write-Host "$commandName => not-found" }
 }
-Write-Output "OPEN Ports:"
+Write-Host "OPEN Ports:"
 Get-NetTCPConnection -LocalPort 3389,__SSH_PORT__ -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize
-Write-Output "Firewall STATUS:"
+Write-Host "Firewall STATUS:"
 Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction | Format-Table -AutoSize
-Write-Output "RDP STATUS:"
+Write-Host "RDP STATUS:"
 Get-Service TermService | Select-Object Name,Status,StartType | Format-List
-Write-Output "SSHD STATUS:"
+Write-Host "SSHD STATUS:"
 Get-Service sshd | Select-Object Name,Status,StartType | Format-List
-Write-Output "SSHD CONFIG:"
+Write-Host "SSHD CONFIG:"
 Get-Content $sshdConfig | Select-String -Pattern "^(Port|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|AllowTcpForwarding|GatewayPorts)" | ForEach-Object { $_.Line }
-Write-Output "POWER STATUS:"
+Write-Host "POWER STATUS:"
 powercfg /getactivescheme
-Write-Output "DOCKER STATUS:"
+Write-Host "DOCKER STATUS:"
 if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
     Get-Service -Name "com.docker.service" | Select-Object Name,Status,StartType | Format-List
 }
 else {
-    Write-Output "com.docker.service => not-found"
+    Write-Host "com.docker.service => not-found"
 }
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     docker --version
     docker version
 }
 else {
-    Write-Output "docker command not found"
+    Write-Host "docker command not found"
 }
-Write-Output "WSL STATUS:"
+Write-Host "WSL STATUS:"
 if (Get-Command wsl -ErrorAction SilentlyContinue) {
     wsl --version
 }
 else {
-    Write-Output "wsl command not found"
+    Write-Host "wsl command not found"
 }
-Write-Output "OLLAMA STATUS:"
+Write-Host "OLLAMA STATUS:"
 if (Get-Command ollama -ErrorAction SilentlyContinue) {
     ollama --version
 }
 else {
-    Write-Output "ollama command not found"
+    Write-Host "ollama command not found"
 }
-Write-Output "CHROME SHORTCUT STATUS:"
+Write-Host "CHROME SHORTCUT STATUS:"
 $chromeShortcutCandidates = @(
     "C:\Users\Public\Desktop\Google Chrome.lnk",
     "C:\Users\__VM_USER__\Desktop\Google Chrome.lnk",
@@ -3403,19 +3406,19 @@ $chromeShortcutCandidates = @(
 $wsh = New-Object -ComObject WScript.Shell
 foreach ($shortcutPath in @($chromeShortcutCandidates)) {
     if (-not (Test-Path -LiteralPath $shortcutPath)) {
-        Write-Output ("missing-shortcut => {0}" -f $shortcutPath)
+        Write-Host ("missing-shortcut => {0}" -f $shortcutPath)
         continue
     }
     $shortcut = $wsh.CreateShortcut($shortcutPath)
-    Write-Output ("shortcut => {0}" -f $shortcutPath)
-    Write-Output (" target => {0}" -f [string]$shortcut.TargetPath)
-    Write-Output (" args => {0}" -f [string]$shortcut.Arguments)
+    Write-Host ("shortcut => {0}" -f $shortcutPath)
+    Write-Host (" target => {0}" -f [string]$shortcut.TargetPath)
+    Write-Host (" args => {0}" -f [string]$shortcut.Arguments)
 }
-Write-Output "NOTEPAD STATUS:"
-if (Test-Path "$env:WINDIR\System32\notepad.exe") { Write-Output "legacy-notepad-exe-found" } else { Write-Output "legacy-notepad-exe-not-found" }
+Write-Host "NOTEPAD STATUS:"
+if (Test-Path "$env:WINDIR\System32\notepad.exe") { Write-Host "legacy-notepad-exe-found" } else { Write-Host "legacy-notepad-exe-not-found" }
 if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
     $notepadPkgs = @(Get-AppxPackage -AllUsers | Where-Object { [string]$_.Name -like "Microsoft.WindowsNotepad*" })
-    Write-Output ("modern-notepad-package-count=" + @($notepadPkgs).Count)
+    Write-Host ("modern-notepad-package-count=" + @($notepadPkgs).Count)
 }
 '@
         }
@@ -3504,7 +3507,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-Write-Output "Update phase started."
+Write-Host "Update phase started."
 
 $stateDir = "C:\ProgramData\az-vm"
 $statePath = Join-Path $stateDir "step8-state.json"
@@ -3661,9 +3664,9 @@ function Set-Step8TaskStatus {
         Detail = [string]$safeDetail
     }
 
-    Write-Output ("TASK_STATUS:{0}:{1}" -f $TaskName, $NewStatus)
+    Write-Host ("TASK_STATUS:{0}:{1}" -f $TaskName, $NewStatus)
     if (-not [string]::IsNullOrWhiteSpace($safeDetail)) {
-        Write-Output ("TASK_DETAIL:{0}:{1}" -f $TaskName, $safeDetail)
+        Write-Host ("TASK_DETAIL:{0}:{1}" -f $TaskName, $safeDetail)
     }
 }
 
@@ -3711,8 +3714,8 @@ if ($state.LastCompletedTaskIndex -lt -1) {
 }
 
 if ($taskCatalog.Count -eq 0) {
-    Write-Output "STEP8_SUMMARY:success=0;warning=0;error=0;reboot=0"
-    Write-Output "Update phase completed."
+    Write-Host "STEP8_SUMMARY:success=0;warning=0;error=0;reboot=0"
+    Write-Host "Update phase completed."
     return
 }
 
@@ -3721,7 +3724,7 @@ $startIndex = [int]$state.LastCompletedTaskIndex + 1
 for ($taskIndex = $startIndex; $taskIndex -lt $taskCatalog.Count; $taskIndex++) {
     $task = $taskCatalog[$taskIndex]
     $taskName = [string]$task.Name
-    Write-Output ("TASK started: {0}" -f $taskName)
+    Write-Host ("TASK started: {0}" -f $taskName)
     $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     try {
@@ -3729,16 +3732,16 @@ for ($taskIndex = $startIndex; $taskIndex -lt $taskCatalog.Count; $taskIndex++) 
         Invoke-Expression $decodedScript
         if ($taskWatch.IsRunning) { $taskWatch.Stop() }
         Set-Step8TaskStatus -State $state -TaskName $taskName -NewStatus "success"
-        Write-Output ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-        Write-Output "TASK result: success"
+        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+        Write-Host "TASK result: success"
     }
     catch {
         if ($taskWatch.IsRunning) { $taskWatch.Stop() }
         $detail = if ($_.Exception) { $_.Exception.Message } else { [string]$_ }
         Set-Step8TaskStatus -State $state -TaskName $taskName -NewStatus "warning" -Detail $detail
         Write-Warning ("TASK warning: {0} => {1}" -f $taskName, $detail)
-        Write-Output ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-        Write-Output "TASK result: warning"
+        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+        Write-Host "TASK result: warning"
     }
 
     $state.LastCompletedTaskIndex = $taskIndex
@@ -3751,9 +3754,9 @@ for ($taskIndex = $startIndex; $taskIndex -lt $taskCatalog.Count; $taskIndex++) 
         $state.RebootRequired = $true
         $state.RebootCount = [int]$state.RebootCount + 1
         Save-Step8State -StatePath $statePath -State $state
-        Write-Output ("TASK_REBOOT_REQUIRED:{0}:true" -f $taskName)
-        Write-Output ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $state.RebootCount)
-        Write-Output ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $state.SuccessCount, $state.WarningCount, $state.ErrorCount, $state.RebootCount)
+        Write-Host ("TASK_REBOOT_REQUIRED:{0}:true" -f $taskName)
+        Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $state.RebootCount)
+        Write-Host ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $state.SuccessCount, $state.WarningCount, $state.ErrorCount, $state.RebootCount)
         return
     }
 }
@@ -3762,8 +3765,8 @@ $state.Completed = $true
 $state.RebootRequired = $false
 Save-Step8State -StatePath $statePath -State $state
 
-Write-Output ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $state.SuccessCount, $state.WarningCount, $state.ErrorCount, $state.RebootCount)
-Write-Output "Update phase completed."
+Write-Host ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $state.SuccessCount, $state.WarningCount, $state.ErrorCount, $state.RebootCount)
+Write-Host "Update phase completed."
 '@
 
     return $template.Replace("__TASK_CATALOG_HASH__", $catalogHash).Replace("__TASK_ROWS__", $taskRows.ToString().TrimEnd())
@@ -3882,10 +3885,10 @@ function Get-CoVmWindowsPostRebootProbeScript {
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-Write-Output "post-reboot-probe-started"
-Write-Output ("server-name=__SERVER_NAME__")
-Write-Output ("manager-user=__VM_USER__")
-Write-Output ("assistant-user=__ASSISTANT_USER__")
+Write-Host "post-reboot-probe-started"
+Write-Host ("server-name=__SERVER_NAME__")
+Write-Host ("manager-user=__VM_USER__")
+Write-Host ("assistant-user=__ASSISTANT_USER__")
 
 if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
     Set-Service -Name "com.docker.service" -StartupType Automatic -ErrorAction SilentlyContinue
@@ -3904,21 +3907,21 @@ if (Test-Path -LiteralPath $dockerDesktopExe) {
     }
 }
 
-Write-Output "service-status:"
+Write-Host "service-status:"
 foreach ($serviceName in @("TermService","sshd","com.docker.service","LxssManager")) {
     $serviceObj = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if ($serviceObj) {
-        Write-Output ("{0} => {1}/{2}" -f $serviceName, $serviceObj.Status, $serviceObj.StartType)
+        Write-Host ("{0} => {1}/{2}" -f $serviceName, $serviceObj.Status, $serviceObj.StartType)
     }
     else {
-        Write-Output ("{0} => not-found" -f $serviceName)
+        Write-Host ("{0} => not-found" -f $serviceName)
     }
 }
 
 if (Get-Command docker -ErrorAction SilentlyContinue) {
-    Write-Output "docker-client:"
+    Write-Host "docker-client:"
     docker --version
-    Write-Output "docker-daemon:"
+    Write-Host "docker-daemon:"
     docker version
 }
 else {
@@ -3932,9 +3935,9 @@ else {
     }
 
     if (Get-Command docker -ErrorAction SilentlyContinue) {
-        Write-Output "docker-client:"
+        Write-Host "docker-client:"
         docker --version
-        Write-Output "docker-daemon:"
+        Write-Host "docker-daemon:"
         docker version
     }
     else {
@@ -3943,19 +3946,19 @@ else {
 }
 
 if (Get-Command wsl -ErrorAction SilentlyContinue) {
-    Write-Output "wsl-status:"
+    Write-Host "wsl-status:"
     $wslStatusOutput = @(& cmd.exe /d /c "wsl --status 2>&1")
     $wslStatusCode = $LASTEXITCODE
     $wslStatusText = (@($wslStatusOutput) | ForEach-Object { [string]$_ }) -join "`n"
     if (-not [string]::IsNullOrWhiteSpace($wslStatusText)) {
-        Write-Output $wslStatusText.Trim()
+        Write-Host $wslStatusText.Trim()
     }
 
     if ($wslStatusCode -ne 0 -or $wslStatusText -match '(?i)(not installed|wsl\.exe --install|windows subsystem for linux is not installed)') {
         Write-Warning "WSL is not installed yet."
     }
     else {
-        Write-Output "wsl-version:"
+        Write-Host "wsl-version:"
         & cmd.exe /d /c "wsl --version 2>&1"
     }
 }
@@ -3964,14 +3967,14 @@ else {
 }
 
 if (Get-Command ollama -ErrorAction SilentlyContinue) {
-    Write-Output "ollama-version:"
+    Write-Host "ollama-version:"
     ollama --version
 }
 else {
     Write-Warning "ollama command not found in post-reboot probe."
 }
 
-Write-Output "post-reboot-probe-completed"
+Write-Host "post-reboot-probe-completed"
 '@.Replace("__SERVER_NAME__", [string]$ServerName).Replace("__VM_USER__", [string]$VmUser).Replace("__ASSISTANT_USER__", [string]$AssistantUser)
 }
 #endregion
@@ -4474,12 +4477,12 @@ function Invoke-CoVmVmCreateStep {
         }
 
         if ($shouldDeleteVm) {
-            Write-Output "VM '$vmName' will be deleted..."
+            Write-Host "VM '$vmName' will be deleted..."
             Invoke-TrackedAction -Label "az vm delete --name $vmName --resource-group $resourceGroup --yes" -Action {
                 az vm delete --name $vmName --resource-group $resourceGroup --yes -o table
                 Assert-LastExitCode "az vm delete"
             } | Out-Null
-            Write-Output "VM '$vmName' was deleted from resource group '$resourceGroup'."
+            Write-Host "VM '$vmName' was deleted from resource group '$resourceGroup'."
         }
         elseif ($effectiveMode -eq "destructive rebuild") {
             Write-Host "destructive rebuild mode: VM '$vmName' was not deleted by user choice; az vm create will run on existing VM." -ForegroundColor Yellow
@@ -4489,7 +4492,7 @@ function Invoke-CoVmVmCreateStep {
         }
     }
     else {
-        Write-Output "VM '$vmName' is not present in resource group '$resourceGroup'. Creating..."
+        Write-Host "VM '$vmName' is not present in resource group '$resourceGroup'. Creating..."
     }
 
     if (-not $shouldCreateVm) {
@@ -5141,15 +5144,17 @@ function Get-CoRunCommandScriptArgs {
         return @($ScriptText)
     }
 
-    if ($CommandId -eq "RunPowerShellScript") {
-        $scriptBytes = [System.Text.Encoding]::UTF8.GetBytes($ScriptText)
-        $scriptBase64 = [System.Convert]::ToBase64String($scriptBytes)
-        $wrapperTemplate = '$__b=''{0}''; $__s=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($__b)); Invoke-Expression $__s'
-        $wrapperScript = [string]::Format($wrapperTemplate, $scriptBase64)
-        return @($wrapperScript)
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'az-vm-run-command'
+    if (-not (Test-Path -LiteralPath $tempRoot)) {
+        [void](New-Item -ItemType Directory -Path $tempRoot -Force)
     }
 
-    return @($ScriptText)
+    $extension = if ($CommandId -eq "RunPowerShellScript") { ".ps1" } else { ".sh" }
+    $fileName = "task-{0}{1}" -f ([System.Guid]::NewGuid().ToString("N")), $extension
+    $tempPath = Join-Path $tempRoot $fileName
+
+    Write-TextFileNormalized -Path $tempPath -Content $ScriptText -Encoding "utf8NoBom" -EnsureTrailingNewline:$true
+    return @("@$tempPath")
 }
 
 function Get-CoRunCommandResultMessage {
@@ -5453,18 +5458,18 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('$ProgressPreference = "SilentlyContinue"')
         [void]$combinedBuilder.AppendLine('function Invoke-CombinedTaskBlock {')
         [void]$combinedBuilder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64)')
-        [void]$combinedBuilder.AppendLine('    Write-Output "TASK started: $TaskName"')
+        [void]$combinedBuilder.AppendLine('    Write-Host "TASK started: $TaskName"')
         [void]$combinedBuilder.AppendLine('    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()')
         [void]$combinedBuilder.AppendLine('    try {')
         [void]$combinedBuilder.AppendLine('        $decodedScript = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ScriptBase64))')
         [void]$combinedBuilder.AppendLine('        Invoke-Expression $decodedScript')
         [void]$combinedBuilder.AppendLine('        $taskWatch.Stop()')
-        [void]$combinedBuilder.AppendLine('        Write-Output ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
-        [void]$combinedBuilder.AppendLine('        Write-Output "TASK result: success"')
+        [void]$combinedBuilder.AppendLine('        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
+        [void]$combinedBuilder.AppendLine('        Write-Host "TASK result: success"')
         [void]$combinedBuilder.AppendLine('    }')
         [void]$combinedBuilder.AppendLine('    catch {')
         [void]$combinedBuilder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
-        [void]$combinedBuilder.AppendLine('        Write-Output "TASK result: failure ($TaskName)"')
+        [void]$combinedBuilder.AppendLine('        Write-Host "TASK result: failure ($TaskName)"')
         [void]$combinedBuilder.AppendLine('        throw')
         [void]$combinedBuilder.AppendLine('    }')
         [void]$combinedBuilder.AppendLine('}')
@@ -5555,7 +5560,7 @@ function Apply-CoVmTaskBlockReplacements {
         }
     }
 
-    Write-Output -NoEnumerate $resolvedBlocks
+    return $resolvedBlocks
 }
 
 function Wait-CoVmVmRunningState {
@@ -6859,7 +6864,7 @@ function Get-AzLocationCatalog {
             -Hint "Check Azure account/subscription context and location metadata availability."
     }
 
-    Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($locations | Sort-Object DisplayName, Name))
+    return (ConvertTo-ObjectArrayCompat -InputObject @($locations | Sort-Object DisplayName, Name))
     return
 }
 
@@ -7040,7 +7045,7 @@ function Get-LocationSkusForSelection {
     )
 
     if ($filterText -eq "") {
-        Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($namedSkus | Sort-Object name -Unique))
+        return (ConvertTo-ObjectArrayCompat -InputObject @($namedSkus | Sort-Object name -Unique))
         return
     }
 
@@ -7052,7 +7057,7 @@ function Get-LocationSkusForSelection {
         }
     }
 
-    Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject @($filtered | Sort-Object name -Unique))
+    return (ConvertTo-ObjectArrayCompat -InputObject @($filtered | Sort-Object name -Unique))
     return
 }
 
@@ -7276,7 +7281,7 @@ function Build-VmSkuSelectionRows {
         $rows += [PSCustomObject]$row
     }
 
-    Write-Output -NoEnumerate (ConvertTo-ObjectArrayCompat -InputObject $rows)
+    return (ConvertTo-ObjectArrayCompat -InputObject $rows)
     return
 }
 
@@ -7412,3 +7417,5 @@ if ($MyInvocation.InvocationName -eq '.') {
 }
 
 Invoke-AzVmMain -WindowsFlag:$Windows -LinuxFlag:$Linux
+
+
