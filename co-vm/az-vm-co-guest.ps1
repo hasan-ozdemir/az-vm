@@ -694,6 +694,71 @@ if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
 $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ([string]::IsNullOrWhiteSpace($userPath)) { $env:Path = $machinePath } else { $env:Path = "$machinePath;$userPath" }
+$wingetCandidates = @(
+    "$env:ProgramData\chocolatey\bin\winget.exe",
+    "$env:ProgramData\chocolatey\lib\winget\tools\winget.exe"
+)
+if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
+    $pathItems = @()
+    if (-not [string]::IsNullOrWhiteSpace($machinePath)) {
+        $pathItems = @($machinePath -split ";" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    }
+    foreach ($candidate in @($wingetCandidates)) {
+        $candidateDir = Split-Path -Path $candidate -Parent
+        if ((Test-Path -LiteralPath $candidateDir) -and ($pathItems -notcontains $candidateDir)) {
+            $pathItems += $candidateDir
+        }
+    }
+    if ($pathItems.Count -gt 0) {
+        [Environment]::SetEnvironmentVariable("Path", ($pathItems -join ";"), "Machine")
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        if ([string]::IsNullOrWhiteSpace($userPath)) { $env:Path = $machinePath } else { $env:Path = "$machinePath;$userPath" }
+    }
+}
+$wingetVerified = $false
+foreach ($candidate in @($wingetCandidates)) {
+    if (-not (Test-Path -LiteralPath $candidate)) { continue }
+    try {
+        & $candidate --version | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            $wingetVerified = $true
+            break
+        }
+    }
+    catch { }
+}
+if (-not $wingetVerified) {
+    try {
+        & winget.exe --version | Out-Null
+        if ($LASTEXITCODE -eq 0) { $wingetVerified = $true }
+    }
+    catch { }
+}
+if ($wingetVerified) {
+    Write-Output "winget-ready"
+}
+else {
+    $wingetBundlePath = Join-Path $env:TEMP "Microsoft.DesktopAppInstaller.msixbundle"
+    try {
+        Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile $wingetBundlePath -UseBasicParsing
+        Add-AppxPackage -Path $wingetBundlePath -ErrorAction Stop | Out-Null
+        $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
+        if (Test-Path $refreshEnvCmd) { cmd.exe /c "`"$refreshEnvCmd`" >nul 2>&1" }
+        if (Get-Command winget.exe -ErrorAction SilentlyContinue) {
+            $wingetVerified = $true
+            Write-Output "winget-ready"
+        }
+        else {
+            Write-Warning "winget command is still not available after App Installer bootstrap."
+        }
+    }
+    catch {
+        Write-Warning ("winget bootstrap via App Installer failed: {0}" -f $_.Exception.Message)
+    }
+    finally {
+        Remove-Item -Path $wingetBundlePath -Force -ErrorAction SilentlyContinue
+    }
+}
 & $chocoExe --version
 '@
         },
@@ -769,9 +834,30 @@ function Resolve-WingetCommand {
     if (Test-Path -LiteralPath $localAlias) {
         $candidates += $localAlias
     }
+    foreach ($chocoWingetCandidate in @(
+        "$env:ProgramData\chocolatey\bin\winget.exe",
+        "$env:ProgramData\chocolatey\lib\winget\tools\winget.exe"
+    )) {
+        if (Test-Path -LiteralPath $chocoWingetCandidate) {
+            $candidates += $chocoWingetCandidate
+        }
+    }
 
     try {
         Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
+    }
+    catch { }
+    try {
+        $appInstallerPackages = @(Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller*" -ErrorAction SilentlyContinue)
+        foreach ($pkg in @($appInstallerPackages)) {
+            if ([string]::IsNullOrWhiteSpace([string]$pkg.InstallLocation)) {
+                continue
+            }
+            $pkgWinget = Join-Path ([string]$pkg.InstallLocation) "winget.exe"
+            if (Test-Path -LiteralPath $pkgWinget) {
+                $candidates += $pkgWinget
+            }
+        }
     }
     catch { }
 
@@ -788,7 +874,7 @@ function Resolve-WingetCommand {
             }
         }
         catch {
-            Write-Warning ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message)
+            Write-Host ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message) -ForegroundColor DarkGray
         }
     }
 
@@ -802,7 +888,7 @@ function Invoke-WingetInstall {
 
     $wingetExe = Resolve-WingetCommand
     if ([string]::IsNullOrWhiteSpace($wingetExe)) {
-        Write-Warning ("winget command is not available. Skipping package '{0}'." -f $Id)
+        Write-Host ("winget command is not available. Skipping package '{0}'." -f $Id) -ForegroundColor DarkGray
         return $false
     }
 
@@ -810,11 +896,11 @@ function Invoke-WingetInstall {
         & $wingetExe install -e --id $Id --accept-source-agreements --accept-package-agreements --disable-interactivity | Out-Null
     }
     catch {
-        Write-Warning ("winget install failed for '{0}': {1}" -f $Id, $_.Exception.Message)
+        Write-Host ("winget install failed for '{0}': {1}" -f $Id, $_.Exception.Message) -ForegroundColor DarkGray
         return $false
     }
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning ("winget install failed for '{0}' with exit code {1}." -f $Id, $LASTEXITCODE)
+        Write-Host ("winget install failed for '{0}' with exit code {1}." -f $Id, $LASTEXITCODE) -ForegroundColor DarkGray
         return $false
     }
 
@@ -850,7 +936,7 @@ if (-not $localOnlyAccessibilityFound) {
         Write-Warning "private local-only accessibility install command completed but executable path was not detected yet."
     }
     else {
-        Write-Warning "private local-only accessibility install step was skipped or failed."
+        Write-Host "private local-only accessibility install step was skipped or failed." -ForegroundColor DarkGray
     }
 }
 
@@ -978,9 +1064,38 @@ function Install-ChromeWithWinget {
         if (Test-Path -LiteralPath $localAlias) {
             $candidates += $localAlias
         }
+        foreach ($chocoWingetCandidate in @(
+            "$env:ProgramData\chocolatey\bin\winget.exe",
+            "$env:ProgramData\chocolatey\lib\winget\tools\winget.exe"
+        )) {
+            if (Test-Path -LiteralPath $chocoWingetCandidate) {
+                $candidates += $chocoWingetCandidate
+            }
+        }
+        foreach ($chocoWingetCandidate in @(
+            "$env:ProgramData\chocolatey\bin\winget.exe",
+            "$env:ProgramData\chocolatey\lib\winget\tools\winget.exe"
+        )) {
+            if (Test-Path -LiteralPath $chocoWingetCandidate) {
+                $candidates += $chocoWingetCandidate
+            }
+        }
 
         try {
             Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
+        }
+        catch { }
+        try {
+            $appInstallerPackages = @(Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller*" -ErrorAction SilentlyContinue)
+            foreach ($pkg in @($appInstallerPackages)) {
+                if ([string]::IsNullOrWhiteSpace([string]$pkg.InstallLocation)) {
+                    continue
+                }
+                $pkgWinget = Join-Path ([string]$pkg.InstallLocation) "winget.exe"
+                if (Test-Path -LiteralPath $pkgWinget) {
+                    $candidates += $pkgWinget
+                }
+            }
         }
         catch { }
 
@@ -997,7 +1112,7 @@ function Install-ChromeWithWinget {
                 }
             }
             catch {
-                Write-Warning ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message)
+                Write-Host ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message) -ForegroundColor DarkGray
             }
         }
 
@@ -1031,7 +1146,7 @@ function Install-ChromeWithWinget {
         }
     }
     else {
-        Write-Warning "winget command is not available. Falling back to Chocolatey for Google Chrome."
+        Write-Host "winget command is not available. Falling back to Chocolatey for Google Chrome." -ForegroundColor DarkGray
     }
 
     $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
@@ -1040,24 +1155,13 @@ function Install-ChromeWithWinget {
         return $false
     }
 
-    & $chocoExe upgrade googlechrome -y --no-progress | Out-Null
+    & $chocoExe upgrade googlechrome -y --no-progress --ignore-detected-reboot | Out-Null
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-        Write-Warning ("choco install failed for googlechrome with exit code {0}. Trying direct installer fallback." -f $LASTEXITCODE)
-        $chromeInstaller = Join-Path $env:TEMP "chrome_installer.exe"
-        try {
-            Invoke-WebRequest -Uri "https://dl.google.com/chrome/install/latest/chrome_installer.exe" -OutFile $chromeInstaller -UseBasicParsing
-            $installProc = Start-Process -FilePath $chromeInstaller -ArgumentList "/silent", "/install" -Wait -PassThru
-            if ($installProc.ExitCode -ne 0) {
-                Write-Warning ("Direct Chrome installer exited with code {0}." -f $installProc.ExitCode)
-                return $false
-            }
-        }
-        catch {
-            Write-Warning ("Direct Chrome installer fallback failed: {0}" -f $_.Exception.Message)
+        Write-Warning ("choco upgrade failed for googlechrome with exit code {0}. Trying install." -f $LASTEXITCODE)
+        & $chocoExe install googlechrome -y --no-progress --ignore-detected-reboot --ignore-checksums | Out-Null
+        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+            Write-Warning ("choco install failed for googlechrome with exit code {0}." -f $LASTEXITCODE)
             return $false
-        }
-        finally {
-            Remove-Item -Path $chromeInstaller -Force -ErrorAction SilentlyContinue
         }
     }
     Refresh-SessionPath
@@ -1068,7 +1172,14 @@ function Install-ChromeWithWinget {
 function Resolve-ChromeExecutable {
     $cmd = Get-Command chrome.exe -ErrorAction SilentlyContinue
     if ($cmd) {
-        return [string]$cmd.Source
+        foreach ($candidate in @([string]$cmd.Source, [string]$cmd.Path, [string]$cmd.Definition)) {
+            if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+                continue
+            }
+            if (([System.IO.Path]::IsPathRooted([string]$candidate)) -and (Test-Path -LiteralPath $candidate)) {
+                return [string]$candidate
+            }
+        }
     }
 
     foreach ($candidate in @(
@@ -1090,7 +1201,14 @@ function Set-ChromeShortcut {
         [string]$Args
     )
 
+    if ([string]::IsNullOrWhiteSpace([string]$ChromeExe) -or (-not ([System.IO.Path]::IsPathRooted([string]$ChromeExe))) -or (-not (Test-Path -LiteralPath $ChromeExe))) {
+        throw ("Chrome executable path is invalid: '{0}'." -f [string]$ChromeExe)
+    }
+
     $shortcutDir = Split-Path -Path $ShortcutPath -Parent
+    if ([string]::IsNullOrWhiteSpace([string]$shortcutDir)) {
+        throw ("Shortcut directory is invalid for path '{0}'." -f [string]$ShortcutPath)
+    }
     if (-not (Test-Path -LiteralPath $shortcutDir)) {
         New-Item -Path $shortcutDir -ItemType Directory -Force | Out-Null
     }
@@ -1106,7 +1224,7 @@ function Set-ChromeShortcut {
 
 $installed = Install-ChromeWithWinget
 $chromeExe = Resolve-ChromeExecutable
-if ([string]::IsNullOrWhiteSpace($chromeExe)) {
+if ([string]::IsNullOrWhiteSpace([string]$chromeExe) -or (-not ([System.IO.Path]::IsPathRooted([string]$chromeExe))) -or (-not (Test-Path -LiteralPath $chromeExe))) {
     if ($installed) {
         Write-Warning "Google Chrome install command completed but executable path was not detected."
     }
@@ -1218,6 +1336,19 @@ Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
             Add-AppxPackage -RegisterByFamilyName -MainPackage "Microsoft.DesktopAppInstaller_8wekyb3d8bbwe" -ErrorAction SilentlyContinue | Out-Null
         }
         catch { }
+        try {
+            $appInstallerPackages = @(Get-AppxPackage -AllUsers -Name "Microsoft.DesktopAppInstaller*" -ErrorAction SilentlyContinue)
+            foreach ($pkg in @($appInstallerPackages)) {
+                if ([string]::IsNullOrWhiteSpace([string]$pkg.InstallLocation)) {
+                    continue
+                }
+                $pkgWinget = Join-Path ([string]$pkg.InstallLocation) "winget.exe"
+                if (Test-Path -LiteralPath $pkgWinget) {
+                    $candidates += $pkgWinget
+                }
+            }
+        }
+        catch { }
 
         $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue
         if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
@@ -1232,7 +1363,7 @@ Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
                 }
             }
             catch {
-                Write-Warning ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message)
+                Write-Host ("winget candidate rejected: {0} => {1}" -f $candidate, $_.Exception.Message) -ForegroundColor DarkGray
             }
         }
 
@@ -1261,11 +1392,11 @@ Invoke-DockerWarn -Label "winget-install-docker-desktop" -Action {
                 $installed = $true
             }
             else {
-                Write-Warning ("winget install failed for Docker.DockerDesktop with exit code {0}." -f $LASTEXITCODE)
+                Write-Host ("winget install failed for Docker.DockerDesktop with exit code {0}." -f $LASTEXITCODE) -ForegroundColor DarkGray
             }
         }
         catch {
-            Write-Warning ("winget install failed for Docker.DockerDesktop: {0}" -f $_.Exception.Message)
+            Write-Host ("winget install failed for Docker.DockerDesktop: {0}" -f $_.Exception.Message) -ForegroundColor DarkGray
         }
     }
 
@@ -1376,7 +1507,29 @@ Invoke-DockerWarn -Label "docker-client-version" -Action {
 
 Invoke-DockerWarn -Label "docker-daemon-version" -Action {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { throw "docker command is not available." }
-    & docker version
+    $daemonReady = $false
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $daemonCommandThrew = $false
+        try {
+            & docker version 2>$null
+        }
+        catch {
+            $daemonCommandThrew = $true
+        }
+
+        if ((-not $daemonCommandThrew) -and ($LASTEXITCODE -eq 0)) {
+            $daemonReady = $true
+            break
+        }
+
+        if ($attempt -lt 3) {
+            Start-Sleep -Seconds 5
+        }
+    }
+
+    if (-not $daemonReady) {
+        Write-Output "docker-daemon-version-deferred"
+    }
 }
 
 Write-Output "docker-desktop-install-and-configure-completed"
@@ -1439,8 +1592,19 @@ function Invoke-RegAdd {
         $args += @("/d", $Value)
     }
 
-    & reg.exe @args 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $escapedArgs = @()
+    foreach ($arg in @($args)) {
+        $text = [string]$arg
+        if ($text -match '\s') {
+            $escapedArgs += ('"{0}"' -f ($text -replace '"', '\"'))
+        }
+        else {
+            $escapedArgs += $text
+        }
+    }
+    $cmdLine = ("reg {0} >nul 2>&1" -f ($escapedArgs -join " "))
+    & cmd.exe /d /c $cmdLine | Out-Null
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1 -and $LASTEXITCODE -ne 2) {
         throw ("reg add failed for path '{0}' name '{1}'." -f $Path, $Name)
     }
 }
@@ -1450,7 +1614,8 @@ function Invoke-RegDelete {
         [string]$Path
     )
 
-    & reg.exe delete $Path /f 2>$null | Out-Null
+    $cmdLine = ('reg delete "{0}" /f >nul 2>&1' -f ($Path -replace '"', '\"'))
+    & cmd.exe /d /c $cmdLine | Out-Null
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 1 -and $LASTEXITCODE -ne 2) {
         throw ("reg delete failed for path '{0}'." -f $Path)
     }
@@ -1525,7 +1690,7 @@ function Resolve-TargetHives {
                 }
             }
             else {
-                Write-Warning ("User hive could not be loaded for '{0}'. Profile may not be materialized yet." -f $userName)
+                Write-Output ("User hive could not be loaded for '{0}'. Profile may not be materialized yet." -f $userName)
             }
         }
         catch {
@@ -1648,7 +1813,8 @@ Invoke-Tweak -Name "machine-welcome-suppression" -Action {
 
 Invoke-Tweak -Name "machine-context-menu-classic" -Action {
     $ctxPath = "HKLM\SOFTWARE\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32"
-    & reg.exe add $ctxPath /ve /f 2>$null | Out-Null
+    $safeCmd = ('reg add "{0}" /ve /f >nul 2>&1' -f ($ctxPath -replace '"', '\"'))
+    & cmd.exe /d /c $safeCmd | Out-Null
     if ($LASTEXITCODE -ne 0) {
         Write-Output "machine-context-menu-classic skipped (key may be protected by ACL)."
     }
@@ -1726,7 +1892,7 @@ Invoke-Tweak -Name "notepad-strict-legacy-removal" -Action {
 
     & dism.exe /online /Remove-Capability /CapabilityName:Microsoft.Windows.Notepad~~~~0.0.1.0 /NoRestart | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Warning "DISM capability removal for Microsoft.Windows.Notepad was not completed."
+        Write-Output "DISM capability removal for Microsoft.Windows.Notepad was not completed."
     }
 
     if (-not (Test-Path -LiteralPath $notepadPath)) {
@@ -1809,6 +1975,22 @@ function Invoke-AdvancedWarn {
     }
 }
 
+function Invoke-RegCmdWithAllowedExitCodes {
+    param(
+        [string]$CommandText,
+        [int[]]$AllowedExitCodes = @(0)
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$CommandText)) {
+        throw "Registry command text is empty."
+    }
+
+    & cmd.exe /d /c $CommandText | Out-Null
+    if ($AllowedExitCodes -notcontains [int]$LASTEXITCODE) {
+        throw ("Registry command failed with exit code {0}: {1}" -f [int]$LASTEXITCODE, [string]$CommandText)
+    }
+}
+
 function Set-DesktopIconSelection {
     param(
         [string]$HiveRoot
@@ -1816,10 +1998,11 @@ function Set-DesktopIconSelection {
 
     foreach ($viewKey in @("NewStartPanel", "ClassicStartMenu")) {
         $path = "{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\{1}" -f $HiveRoot, $viewKey
-        & reg.exe add $path /v "{59031a47-3f72-44a7-89c5-5595fe6b30ee}" /t REG_DWORD /d 0 /f | Out-Null  # User Files
-        & reg.exe add $path /v "{20D04FE0-3AEA-1069-A2D8-08002B30309D}" /t REG_DWORD /d 0 /f | Out-Null  # This PC
-        & reg.exe add $path /v "{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}" /t REG_DWORD /d 0 /f | Out-Null  # Control Panel
-        & reg.exe add $path /v "{645FF040-5081-101B-9F08-00AA002F954E}" /t REG_DWORD /d 1 /f | Out-Null  # Recycle Bin hidden
+        $pathEscaped = ($path -replace '"', '\"')
+        Invoke-RegCmdWithAllowedExitCodes -CommandText ("reg add `"" + $pathEscaped + "`" /v `"{59031a47-3f72-44a7-89c5-5595fe6b30ee}`" /t REG_DWORD /d 0 /f >nul 2>&1") # User Files
+        Invoke-RegCmdWithAllowedExitCodes -CommandText ("reg add `"" + $pathEscaped + "`" /v `"{20D04FE0-3AEA-1069-A2D8-08002B30309D}`" /t REG_DWORD /d 0 /f >nul 2>&1") # This PC
+        Invoke-RegCmdWithAllowedExitCodes -CommandText ("reg add `"" + $pathEscaped + "`" /v `"{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}`" /t REG_DWORD /d 0 /f >nul 2>&1") # Control Panel
+        Invoke-RegCmdWithAllowedExitCodes -CommandText ("reg add `"" + $pathEscaped + "`" /v `"{645FF040-5081-101B-9F08-00AA002F954E}`" /t REG_DWORD /d 1 /f >nul 2>&1") # Recycle Bin hidden
     }
 }
 
@@ -1828,11 +2011,11 @@ function Set-ClassicProfileVisualSettings {
         [string]$HiveRoot
     )
 
-    & reg.exe delete "$HiveRoot\Control Panel\Desktop" /v Wallpaper /f 2>$null | Out-Null
-    & reg.exe add "$HiveRoot\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f | Out-Null
-    & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f | Out-Null
-    & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewAlphaSelect /t REG_DWORD /d 0 /f | Out-Null
-    & reg.exe add "$HiveRoot\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f | Out-Null
+    Invoke-RegCmdWithAllowedExitCodes -CommandText ('reg delete "{0}\Control Panel\Desktop" /v Wallpaper /f >nul 2>&1' -f ($HiveRoot -replace '"', '\"')) -AllowedExitCodes @(0,1,2)
+    Invoke-RegCmdWithAllowedExitCodes -CommandText ('reg add "{0}\Control Panel\Colors" /v Background /t REG_SZ /d "0 0 0" /f >nul 2>&1' -f ($HiveRoot -replace '"', '\"'))
+    Invoke-RegCmdWithAllowedExitCodes -CommandText ('reg add "{0}\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" /v EnableTransparency /t REG_DWORD /d 0 /f >nul 2>&1' -f ($HiveRoot -replace '"', '\"'))
+    Invoke-RegCmdWithAllowedExitCodes -CommandText ('reg add "{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v ListviewAlphaSelect /t REG_DWORD /d 0 /f >nul 2>&1' -f ($HiveRoot -replace '"', '\"'))
+    Invoke-RegCmdWithAllowedExitCodes -CommandText ('reg add "{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" /v TaskbarAnimations /t REG_DWORD /d 0 /f >nul 2>&1' -f ($HiveRoot -replace '"', '\"'))
 }
 
 function Resolve-AdvancedTargetHives {
@@ -1878,11 +2061,18 @@ Invoke-AdvancedWarn -Label "custom-pagefile-800-8192" -Action {
         Remove-CimInstance -InputObject $existingPageFile -ErrorAction SilentlyContinue
     }
 
-    New-CimInstance -ClassName Win32_PageFileSetting -Property @{
-        Name = "C:\\pagefile.sys"
-        InitialSize = 800
-        MaximumSize = 8192
-    } | Out-Null
+    try {
+        New-CimInstance -ClassName Win32_PageFileSetting -Property @{
+            Name = "C:\\pagefile.sys"
+            InitialSize = [uint32]800
+            MaximumSize = [uint32]8192
+        } | Out-Null
+    }
+    catch {
+        Invoke-RegCmdWithAllowedExitCodes -CommandText 'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v PagingFiles /t REG_MULTI_SZ /d "C:\pagefile.sys 800 8192" /f >nul 2>&1'
+        Invoke-RegCmdWithAllowedExitCodes -CommandText 'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v ExistingPageFiles /t REG_MULTI_SZ /d "\??\C:\pagefile.sys" /f >nul 2>&1'
+        Invoke-RegCmdWithAllowedExitCodes -CommandText 'reg add "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v TempPageFile /t REG_DWORD /d 0 /f >nul 2>&1'
+    }
 }
 
 Invoke-AdvancedWarn -Label "boot-timeout-and-dump-off" -Action {
