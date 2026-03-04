@@ -189,8 +189,16 @@ def run_session(args: argparse.Namespace) -> int:
 
     client = build_client(args.host, args.port, args.user, args.password, args.timeout)
     try:
-        for raw_line in sys.stdin:
-            line = (raw_line or "").strip()
+        for raw_bytes in sys.stdin.buffer:
+            if not raw_bytes:
+                continue
+            try:
+                line = raw_bytes.decode("utf-8-sig", errors="replace").strip()
+            except Exception:
+                line = (str(raw_bytes) if raw_bytes is not None else "").strip()
+            line = line.replace("\x00", "")
+            if line.startswith("\ufeff"):
+                line = line.lstrip("\ufeff")
             if not line:
                 continue
 

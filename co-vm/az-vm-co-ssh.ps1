@@ -316,57 +316,56 @@ function Start-CoVmPersistentSshSession {
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8
-
-    $queue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[object]'
-    $signal = New-Object System.Threading.AutoResetEvent($false)
-
-    $outputHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($null -ne $eventArgs.Data) {
-            [void]$queue.Enqueue([pscustomobject]@{
-                Stream = "stdout"
-                Line = [string]$eventArgs.Data
-            })
-            [void]$signal.Set()
-        }
+    $psiType = $psi.GetType()
+    if ($psiType.GetProperty("StandardInputEncoding")) {
+        try { $psi.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }
     }
-    $errorHandler = [System.Diagnostics.DataReceivedEventHandler]{
-        param($sender, $eventArgs)
-        if ($null -ne $eventArgs.Data) {
-            [void]$queue.Enqueue([pscustomobject]@{
-                Stream = "stderr"
-                Line = [string]$eventArgs.Data
-            })
-            [void]$signal.Set()
-        }
+    if ($psiType.GetProperty("StandardOutputEncoding")) {
+        try { $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+    }
+    if ($psiType.GetProperty("StandardErrorEncoding")) {
+        try { $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8 } catch { }
     }
 
     $proc = New-Object System.Diagnostics.Process
     $proc.StartInfo = $psi
-    $proc.add_OutputDataReceived($outputHandler)
-    $proc.add_ErrorDataReceived($errorHandler)
 
     if (-not $proc.Start()) {
         throw "Persistent SSH python process could not be started."
     }
 
-    $proc.BeginOutputReadLine()
-    $proc.BeginErrorReadLine()
-
     return [pscustomobject]@{
         Process = $proc
-        Queue = $queue
-        Signal = $signal
-        OutputHandler = $outputHandler
-        ErrorHandler = $errorHandler
+        StdoutReader = $proc.StandardOutput
+        StderrReader = $proc.StandardError
+        PendingStdoutTask = $null
+        PendingStderrTask = $null
         HostName = [string]$HostName
         UserName = [string]$UserName
         Port = [string]$Port
         Shell = [string]$Shell
         DefaultTaskTimeoutSeconds = [int]$DefaultTaskTimeoutSeconds
     }
+}
+
+function Write-CoVmPersistentSshProtocolLine {
+    param(
+        [psobject]$Session,
+        [string]$Line
+    )
+
+    if ($null -eq $Session -or $null -eq $Session.Process) {
+        throw "Persistent SSH session is not initialized."
+    }
+    if ($Session.Process.HasExited) {
+        throw ("Persistent SSH session process has already exited (code={0})." -f $Session.Process.ExitCode)
+    }
+
+    $text = [string]$Line
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($text + "`n")
+    $stream = $Session.Process.StandardInput.BaseStream
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Flush()
 }
 
 function Invoke-CoVmPersistentSshTask {
@@ -381,7 +380,14 @@ function Invoke-CoVmPersistentSshTask {
         throw "Persistent SSH session is not initialized."
     }
     if ($Session.Process.HasExited) {
-        throw ("Persistent SSH session process has already exited (code={0})." -f $Session.Process.ExitCode)
+        $stdoutTail = ""
+        $stderrTail = ""
+        try { $stdoutTail = [string]$Session.Process.StandardOutput.ReadToEnd() } catch { }
+        try { $stderrTail = [string]$Session.Process.StandardError.ReadToEnd() } catch { }
+        $detail = ""
+        if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) { $detail += (" stdout={0}" -f $stdoutTail.Trim()) }
+        if (-not [string]::IsNullOrWhiteSpace($stderrTail)) { $detail += (" stderr={0}" -f $stderrTail.Trim()) }
+        throw ("Persistent SSH session process has already exited (code={0}).{1}" -f $Session.Process.ExitCode, $detail)
     }
     if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }
 
@@ -392,9 +398,26 @@ function Invoke-CoVmPersistentSshTask {
         script = [string]$TaskScript
     } | ConvertTo-Json -Compress -Depth 20
 
-    $Session.Process.StandardInput.WriteLine([string]$payload)
-    $Session.Process.StandardInput.Flush()
+    Write-CoVmPersistentSshProtocolLine -Session $Session -Line ([string]$payload)
 
+    $proc = $Session.Process
+    $stdoutReader = $Session.StdoutReader
+    if ($null -eq $stdoutReader) {
+        $stdoutReader = $proc.StandardOutput
+        $Session.StdoutReader = $stdoutReader
+    }
+    $stderrReader = $Session.StderrReader
+    if ($null -eq $stderrReader) {
+        $stderrReader = $proc.StandardError
+        $Session.StderrReader = $stderrReader
+    }
+
+    if ($null -eq $Session.PendingStdoutTask) {
+        $Session.PendingStdoutTask = $stdoutReader.ReadLineAsync()
+    }
+    if ($null -eq $Session.PendingStderrTask) {
+        $Session.PendingStderrTask = $stderrReader.ReadLineAsync()
+    }
     $outputLines = New-Object 'System.Collections.Generic.List[string]'
     $endMarkerRegex = '^CO_VM_TASK_END:(?<task>.+?):(?<code>-?\d+)$'
     $beginMarkerRegex = '^CO_VM_TASK_BEGIN:(?<task>.+)$'
@@ -402,52 +425,63 @@ function Invoke-CoVmPersistentSshTask {
     $exitCode = $null
 
     while ($null -eq $exitCode) {
-        $entry = $null
-        $drained = $false
-        while ($Session.Queue.TryDequeue([ref]$entry)) {
-            $drained = $true
-            if ($null -eq $entry) {
-                continue
-            }
+        $stdoutTask = $Session.PendingStdoutTask
+        $stderrTask = $Session.PendingStderrTask
+        $completedIndex = [System.Threading.Tasks.Task]::WaitAny(@($stdoutTask, $stderrTask), 250)
 
-            $stream = [string]$entry.Stream
-            $line = [string]$entry.Line
-            if ($null -eq $line) {
-                continue
-            }
-            [void]$outputLines.Add($line)
-
-            if ($stream -eq "stderr") {
-                Write-Warning $line
-            }
-            else {
-                Write-Host $line
-            }
-
-            if ($stream -eq "stdout" -and $line -match $beginMarkerRegex) {
-                continue
-            }
-            if ($stream -eq "stdout" -and $line -match $endMarkerRegex) {
-                $markerTask = [string]$Matches.task
-                if ([string]::Equals($markerTask, [string]$TaskName, [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $exitCode = [int]$Matches.code
-                    break
+        if ($completedIndex -eq 0) {
+            $line = $stdoutTask.Result
+            $Session.PendingStdoutTask = $stdoutReader.ReadLineAsync()
+            if ($null -ne $line) {
+                [void]$outputLines.Add([string]$line)
+                Write-Host ([string]$line)
+                if (($line -as [string]) -like "CO_VM_SESSION_ERROR:*") {
+                    throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$line)
+                }
+                if ($line -match $beginMarkerRegex) {
+                    continue
+                }
+                if ($line -match $endMarkerRegex) {
+                    $markerTask = [string]$Matches.task
+                    if ([string]::Equals($markerTask, [string]$TaskName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $exitCode = [int]$Matches.code
+                        break
+                    }
                 }
             }
         }
-
-        if ($null -ne $exitCode) {
-            break
+        elseif ($completedIndex -eq 1) {
+            $line = $stderrTask.Result
+            $Session.PendingStderrTask = $stderrReader.ReadLineAsync()
+            if ($null -ne $line) {
+                [void]$outputLines.Add([string]$line)
+                Write-Warning ([string]$line)
+            }
         }
-        if ($Session.Process.HasExited) {
-            throw ("Persistent SSH session process exited before task completion (code={0})." -f $Session.Process.ExitCode)
+
+        if ($proc.HasExited -and $null -eq $exitCode) {
+            $stdoutTail = ""
+            $stderrTail = ""
+            try { $stdoutTail = [string]$stdoutReader.ReadToEnd() } catch { }
+            try { $stderrTail = [string]$stderrReader.ReadToEnd() } catch { }
+            if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
+                foreach ($line in ($stdoutTail -split "`r?`n")) {
+                    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                    [void]$outputLines.Add([string]$line)
+                    Write-Host ([string]$line)
+                }
+            }
+            if (-not [string]::IsNullOrWhiteSpace($stderrTail)) {
+                foreach ($line in ($stderrTail -split "`r?`n")) {
+                    if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                    [void]$outputLines.Add([string]$line)
+                    Write-Warning ([string]$line)
+                }
+            }
+            throw ("Persistent SSH session process exited before task completion (code={0})." -f $proc.ExitCode)
         }
         if ($taskWatch.Elapsed.TotalSeconds -gt ($TimeoutSeconds + 60)) {
             throw ("Persistent SSH task timeout guard reached for '{0}'." -f $TaskName)
-        }
-
-        if (-not $drained) {
-            [void]$Session.Signal.WaitOne(250)
         }
     }
 
@@ -473,8 +507,7 @@ function Stop-CoVmPersistentSshSession {
             if (-not $proc.HasExited) {
                 try {
                     $closePayload = @{ action = "close" } | ConvertTo-Json -Compress
-                    $proc.StandardInput.WriteLine([string]$closePayload)
-                    $proc.StandardInput.Flush()
+                    Write-CoVmPersistentSshProtocolLine -Session $Session -Line ([string]$closePayload)
                     $proc.StandardInput.Close()
                 }
                 catch { }
@@ -486,24 +519,9 @@ function Stop-CoVmPersistentSshSession {
             }
         }
         finally {
-            try { $proc.CancelOutputRead() } catch { }
-            try { $proc.CancelErrorRead() } catch { }
-            try {
-                if ($Session.OutputHandler) { $proc.remove_OutputDataReceived($Session.OutputHandler) }
-            }
-            catch { }
-            try {
-                if ($Session.ErrorHandler) { $proc.remove_ErrorDataReceived($Session.ErrorHandler) }
-            }
-            catch { }
             try { $proc.Dispose() } catch { }
         }
     }
-
-    try {
-        if ($Session.Signal) { $Session.Signal.Dispose() }
-    }
-    catch { }
 }
 
 function Invoke-CoVmStep8OverSsh {
@@ -655,6 +673,19 @@ function Invoke-CoVmStep8OverSsh {
                             Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
                             Write-Host "TASK result: warning"
                             Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                            try {
+                                Stop-CoVmPersistentSshSession -Session $persistentSession
+                            }
+                            catch { }
+                            $persistentSession = Start-CoVmPersistentSshSession `
+                                -PySshClientPath ([string]$putty.PlinkPath) `
+                                -HostName $SshHost `
+                                -UserName $SshUser `
+                                -Password $SshPassword `
+                                -Port $SshPort `
+                                -Shell "powershell" `
+                                -ConnectTimeoutSeconds 30 `
+                                -DefaultTaskTimeoutSeconds 1800
                             continue
                         }
 
