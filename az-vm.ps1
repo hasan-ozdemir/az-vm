@@ -497,10 +497,9 @@ function Invoke-CoVmSshTaskBlocks {
     $maxReboots = 3
 
     try {
-        Write-Host 'Task-by-task mode is enabled: Step 8 tasks are executed one-by-one over SSH.'
-        Write-Host 'Persistent SSH task session is enabled: one SSH connection will be reused for Step 8 tasks.' -ForegroundColor DarkCyan
-        Write-Host ("Task outcome mode: {0}" -f $TaskOutcomeMode)
-        Write-Host ("SSH task timeout: {0}s | SSH connect timeout: {1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
+        Write-Host 'Step 8 mode: tasks run one-by-one over a persistent SSH session.'
+        Write-Host ("Task outcome policy: {0}" -f $TaskOutcomeMode)
+        Write-Host ("SSH timeouts: task={0}s, connect={1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
 
         $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
 
@@ -512,7 +511,7 @@ function Invoke-CoVmSshTaskBlocks {
             $taskResult = $null
             $taskInvocationError = $null
 
-            Write-Host ("TASK started: {0}" -f $taskName)
+            Write-Host ("Task started: {0}" -f $taskName)
 
             for ($attempt = 1; $attempt -le $SshMaxRetries; $attempt++) {
                 $taskInvocationError = $null
@@ -535,37 +534,29 @@ function Invoke-CoVmSshTaskBlocks {
             if ($null -ne $taskInvocationError) {
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
-                    Write-Warning ("TASK warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
-                    Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                    Write-Host 'TASK result: warning'
-                    Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                    Write-Warning ("Task warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
+                    Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
                     continue
                 }
 
                 $totalErrors++
-                Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
-                Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
+                Write-Host ("Task failed: {0}" -f $taskName) -ForegroundColor Red
                 throw ("Step 8 SSH task failed in persistent session: {0} => {1}" -f $taskName, $taskInvocationError.Exception.Message)
             }
 
             if ([int]$taskResult.ExitCode -eq 0) {
                 $totalSuccess++
-                Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                Write-Host 'TASK result: success'
-                Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
+                Write-Host ("Task completed: {0} ({1:N1}s) - success" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
             }
             else {
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
-                    Write-Warning ("TASK warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
-                    Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                    Write-Host 'TASK result: warning'
-                    Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
+                    Write-Warning ("Task warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
+                    Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
                 }
                 else {
                     $totalErrors++
-                    Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
-                    Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
+                    Write-Host ("Task failed: {0}" -f $taskName) -ForegroundColor Red
                     throw ("Step 8 SSH task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
                 }
             }
@@ -613,7 +604,7 @@ function Invoke-CoVmSshTaskBlocks {
             }
         }
 
-        Write-Host ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
+        Write-Host ("Step 8 summary: success={0}, warning={1}, error={2}, reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
         if ($TaskOutcomeMode -eq 'strict' -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
             throw ("Step 8 strict task outcome mode blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
         }
@@ -3481,6 +3472,29 @@ function Clear-CoVmTransientConsoleText {
     [Console]::WriteLine("")
 }
 
+function Test-CoVmTaskOutputNoiseLine {
+    param(
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ($null -eq $Text) {
+        return $false
+    }
+
+    $value = [string]$Text
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $false
+    }
+
+    return (
+        $value.StartsWith("CO_VM_TASK_BEGIN:", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $value.StartsWith("CO_VM_TASK_END:", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $value.StartsWith("Update task started:", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $value.StartsWith("Update task completed:", [System.StringComparison]::OrdinalIgnoreCase)
+    )
+}
+
 function Invoke-CoVmPersistentSshTask {
     param(
         [psobject]$Session,
@@ -3549,6 +3563,23 @@ function Invoke-CoVmPersistentSshTask {
                 $lineText = [string]$line
                 $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
                 if ($null -eq $normalizedLine) { $normalizedLine = "" }
+                if (($normalizedLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
+                    throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$normalizedLine)
+                }
+                if ($normalizedLine -match $endMarkerRegex) {
+                    $markerTask = [string]$Matches.task
+                    if ([string]::Equals($markerTask, [string]$TaskName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $exitCode = [int]$Matches.code
+                        break
+                    }
+                    continue
+                }
+                if ($normalizedLine -match $beginMarkerRegex) {
+                    continue
+                }
+                if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
+                    continue
+                }
                 if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
                     Write-CoVmTransientConsoleText -Text ([string]$normalizedLine)
                     $Session.TransientConsoleActive = $true
@@ -3560,19 +3591,6 @@ function Invoke-CoVmPersistentSshTask {
                 }
                 [void]$outputLines.Add([string]$normalizedLine)
                 Write-Host ([string]$normalizedLine)
-                if (($normalizedLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
-                    throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$normalizedLine)
-                }
-                if ($normalizedLine -match $beginMarkerRegex) {
-                    continue
-                }
-                if ($normalizedLine -match $endMarkerRegex) {
-                    $markerTask = [string]$Matches.task
-                    if ([string]::Equals($markerTask, [string]$TaskName, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        $exitCode = [int]$Matches.code
-                        break
-                    }
-                }
             }
         }
         elseif ($completedIndex -eq 1) {
@@ -3582,6 +3600,9 @@ function Invoke-CoVmPersistentSshTask {
                 $lineText = [string]$line
                 $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
                 if ($null -eq $normalizedLine) { $normalizedLine = "" }
+                if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
+                    continue
+                }
                 if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
                     Write-CoVmTransientConsoleText -Text ([string]$normalizedLine)
                     $Session.TransientConsoleActive = $true
@@ -3605,6 +3626,12 @@ function Invoke-CoVmPersistentSshTask {
                 foreach ($line in ($stdoutTail -split "`r?`n")) {
                     $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
                     if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
+                    if (($normalizedTailLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
+                        throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$normalizedTailLine)
+                    }
+                    if ($normalizedTailLine -match $beginMarkerRegex) { continue }
+                    if ($normalizedTailLine -match $endMarkerRegex) { continue }
+                    if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
                     if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
                         Write-CoVmTransientConsoleText -Text ([string]$normalizedTailLine)
                         $Session.TransientConsoleActive = $true
@@ -3622,6 +3649,7 @@ function Invoke-CoVmPersistentSshTask {
                 foreach ($line in ($stderrTail -split "`r?`n")) {
                     $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
                     if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
+                    if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
                     if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
                         Write-CoVmTransientConsoleText -Text ([string]$normalizedTailLine)
                         $Session.TransientConsoleActive = $true
