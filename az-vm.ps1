@@ -2462,8 +2462,7 @@ function Show-CoVmStepFirstUseValues {
         Write-Host ("Step value usage ({0}) - new/updated values:" -f $StepLabel) -ForegroundColor DarkCyan
     }
     foreach ($row in @($rows)) {
-        $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-        Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Key, [string]$row.Value, $statusTag)
+        Write-Host ("- {0} = {1}" -f [string]$row.Key, [string]$row.Value)
     }
 }
 
@@ -2624,8 +2623,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($accountRows.Count -gt 0) {
         Write-Host "Azure account:"
         foreach ($row in @($accountRows)) {
-            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-            Write-Host ("- {0}: {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+            Write-Host ("- {0}: {1}" -f [string]$row.Label, [string]$row.Value)
         }
     }
 
@@ -2651,8 +2649,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
         if ($selectedRows.Count -gt 0) {
             Write-Host "Selected deployment values:"
             foreach ($row in @($selectedRows)) {
-                $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-                Write-Host ("- {0}: {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+                Write-Host ("- {0}: {1}" -f [string]$row.Label, [string]$row.Value)
             }
         }
     }
@@ -2685,8 +2682,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($runtimeRows.Count -gt 0) {
         Write-Host "Runtime flags and app parameters:"
         foreach ($row in @($runtimeRows)) {
-            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-            Write-Host ("- {0}: {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+            Write-Host ("- {0}: {1}" -f [string]$row.Label, [string]$row.Value)
         }
     }
 
@@ -2707,8 +2703,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($envRows.Count -gt 0) {
         Write-Host ".env loaded values:"
         foreach ($row in @($envRows)) {
-            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-            Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+            Write-Host ("- {0} = {1}" -f [string]$row.Label, [string]$row.Value)
         }
     }
 
@@ -2729,8 +2724,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($overrideRows.Count -gt 0) {
         Write-Host "Runtime overrides:"
         foreach ($row in @($overrideRows)) {
-            $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-            Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+            Write-Host ("- {0} = {1}" -f [string]$row.Label, [string]$row.Value)
         }
     }
 
@@ -2749,8 +2743,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
         if ($effectiveRows.Count -gt 0) {
             Write-Host "Resolved effective values:"
             foreach ($row in @($effectiveRows)) {
-                $statusTag = if ($row.IsFirst) { "new" } else { "updated" }
-                Write-Host ("- {0} = {1} [{2}]" -f [string]$row.Label, [string]$row.Value, $statusTag)
+                Write-Host ("- {0} = {1}" -f [string]$row.Label, [string]$row.Value)
             }
         }
     }
