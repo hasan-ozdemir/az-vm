@@ -9,7 +9,9 @@ This repository manages unified Azure VM provisioning for Linux and Windows from
 - `linux/init/*.sh`: Linux VM init task catalog.
 - `linux/update/*.sh`: Linux VM update task catalog.
 - `windows/init/*.ps1`: Windows VM init task catalog.
+- `windows/init/disabled/*.ps1`: Windows init tasks intentionally disabled.
 - `windows/update/*.ps1`: Windows VM update task catalog.
+- `windows/update/disabled/*.ps1`: Windows update tasks intentionally disabled.
 - `tools/`: pyssh/utility scripts.
 - `tests/`: PowerShell compatibility smoke tests.
 
@@ -30,7 +32,7 @@ This repository manages unified Azure VM provisioning for Linux and Windows from
 ### Mode Semantics
 - `Step 1..9` are top-level orchestration steps.
 - `Step 8` executes guest-side tasks.
-- Init tasks run via Azure Run Command task-by-task.
+- Init tasks (Windows + Linux) run once via Azure Run Command in task-batch mode when VM is newly created.
 - Update tasks run via persistent pyssh task-by-task.
 
 ## OS Selection
@@ -50,6 +52,7 @@ This repository manages unified Azure VM provisioning for Linux and Windows from
 - `NN` is two-digit execution order.
 - `verb-topic` must contain 2-5 English words in kebab-case.
 - Linux extensions: `.sh`; Windows extensions: `.ps1`.
+- `disabled/` subfolders are reserved for intentionally skipped tasks.
 
 ## Networking and Security Rules
 - Ports defined by `TCP_PORTS` must be consistently applied to:

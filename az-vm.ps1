@@ -3,7 +3,7 @@ Script Filename: az-vm.ps1
 Script Description:
 - Unified Azure VM provisioning flow for Windows and Linux.
 - OS selection: --windows or --linux (or VM_OS_TYPE from .env).
-- Windows init tasks run once on first VM creation via Custom Script Extension.
+- Init tasks run once on first VM creation via Azure Run Command task-batch.
 - Update tasks run via persistent pyssh task-by-task.
 #>
 
@@ -641,7 +641,7 @@ function Invoke-AzVmMain {
         Write-Host "script description:
 - A unified Linux/Windows virtual machine deployment flow is executed.
 - OS type is selected by --windows/--linux or VM_OS_TYPE from .env.
-- Windows init tasks run once on first VM creation via Custom Script Extension.
+- Init tasks run once on first VM creation via Azure Run Command task-batch.
 - Update tasks run via persistent pyssh task-by-task.
 - SSH (default 444) and RDP (Windows) access are prepared.
 - Run mode: interactive (default), auto (--auto / -a).

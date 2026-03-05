@@ -62,8 +62,7 @@ Selection precedence:
 6. Load and prepare update task files
 7. VM create/update
 8. Guest execution
-   - Windows init tasks: one-time on first VM creation with Azure Custom Script Extension
-   - Linux init tasks: `az vm run-command` task-batch execution
+   - Init tasks (Windows + Linux): one-time on first VM creation with `az vm run-command` task-batch execution
    - update tasks: pyssh persistent session task-by-task
 9. Print SSH/RDP details
 
