@@ -8,27 +8,17 @@ Script Description:
 #>
 
 param(
-    [Alias('a','NonInteractive')]
-    [switch]$Auto,
-    [Alias('u')]
-    [switch]$Update,
-    [Alias('r')]
-    [switch]$destructive rebuild,
-    [Alias('p')]
-    [switch]$Perf,
-    [switch]$Windows,
-    [switch]$Linux
+    [Parameter(Position = 0)]
+    [string]$Command,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    [string[]]$CliArgs
 )
 
-$script:AutoMode = [bool]$Auto
-$script:UpdateMode = [bool]$Update
-$script:RenewMode = [bool]$destructive rebuild
-$script:PerfMode = [bool]$Perf
-
-# In interactive mode, destructive rebuild is the default flow unless a mode flag is provided.
-if (-not $script:AutoMode -and -not $script:UpdateMode -and -not $script:RenewMode) {
-    $script:RenewMode = $true
-}
+$script:ActiveCommand = ''
+$script:AutoMode = $false
+$script:UpdateMode = $false
+$script:RenewMode = $false
+$script:PerfMode = $false
 
 $script:TranscriptStarted = $false
 $script:HadError = $false
@@ -627,10 +617,16 @@ function Invoke-CoVmSshTaskBlocks {
 function Invoke-AzVmMain {
     param(
         [switch]$WindowsFlag,
-        [switch]$LinuxFlag
+        [switch]$LinuxFlag,
+        [ValidateSet('create','update','change')]
+        [string]$CommandName = 'create',
+        [hashtable]$InitialConfigOverrides = @{}
     )
 
     try {
+        $script:HadError = $false
+        $script:ExitCode = 0
+        $script:TranscriptStarted = $false
         chcp 65001 | Out-Null
         $Host.UI.RawUI.WindowTitle = 'az vm'
 
@@ -641,14 +637,12 @@ function Invoke-AzVmMain {
 - Init tasks run once on first VM creation via Azure Run Command task-batch.
 - Update tasks run via persistent pyssh task-by-task.
 - SSH (default 444) and RDP (Windows) access are prepared.
-- Run mode: interactive (default), auto (--auto / -a).
-- Performance timing mode: --perf / -p.
-- Default mode: existing resources are kept and skipped; missing resources are created.
-- Update mode: --update / -u (creation commands always run; no delete flow).
-- destructive rebuild mode: explicit destructive rebuild flow / -r (interactive delete confirmation, auto delete in --auto mode, then creation commands always run)."
-        if ($script:RenewMode -and $script:UpdateMode) {
-            Write-Host 'Both explicit destructive rebuild flow and --update were provided. destructive rebuild mode takes precedence.' -ForegroundColor Yellow
-        }
+- Command mode: $CommandName.
+- Run mode: interactive (default), auto (--auto).
+- Performance timing mode: --perf.
+- Create mode: keep existing resources by default.
+- Purge mode: delete first, then recreate.
+- Update mode: always run create-or-update commands without delete."
 
         if (-not $script:AutoMode) {
             Read-Host -Prompt 'Press Enter to start...' | Out-Null
@@ -660,6 +654,17 @@ function Invoke-AzVmMain {
         $platform = Resolve-CoVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
         $platformDefaults = Get-CoVmPlatformDefaults -Platform $platform
         $effectiveConfigMap = Resolve-CoVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
+        if ($InitialConfigOverrides -and $InitialConfigOverrides.Count -gt 0) {
+            foreach ($overrideKey in @($InitialConfigOverrides.Keys)) {
+                $overrideName = [string]$overrideKey
+                $overrideValue = [string]$InitialConfigOverrides[$overrideKey]
+                if ([string]::IsNullOrWhiteSpace($overrideName)) {
+                    continue
+                }
+                $effectiveConfigMap[$overrideName] = $overrideValue
+                $script:ConfigOverrides[$overrideName] = $overrideValue
+            }
+        }
 
         $logTimestamp = (Get-Date).ToString('ddMMMyy-HHmmss', [System.Globalization.CultureInfo]::InvariantCulture).ToLowerInvariant()
         $logPath = Join-Path $PSScriptRoot ("az-vm-log-{0}.txt" -f $logTimestamp)
@@ -1103,6 +1108,223 @@ function Throw-FriendlyError {
     $ex.Data["Summary"] = $Summary
     $ex.Data["Hint"] = $Hint
     throw $ex
+}
+
+function Show-CoVmCommandHelp {
+    Write-Host "Usage: az-vm <command> [--option] [--option=value]"
+    Write-Host ""
+    Write-Host "Commands:"
+    Write-Host "  create   Create missing resources. Use --purge to delete first."
+    Write-Host "  update   Re-run create-or-update operations on existing resources."
+    Write-Host "  change   Change VM region and/or VM size."
+    Write-Host "  exec     Execute one VM init/update task."
+    Write-Host ""
+    Write-Host "Common options:"
+    Write-Host "  --auto[=true|false]      Auto mode (interactive disabled)."
+    Write-Host "  --perf[=true|false]      Print performance timing logs."
+    Write-Host "  --windows[=true|false]   Force VM OS type to windows."
+    Write-Host "  --linux[=true|false]     Force VM OS type to linux."
+    Write-Host ""
+    Write-Host "Command options:"
+    Write-Host "  create --purge[=true|false]"
+    Write-Host "  change --vm-region=<name> --vm-size=<sku>"
+    Write-Host "  exec --init-task=<NN> | --update-task=<NN>"
+}
+
+function Parse-CoVmCliArguments {
+    param(
+        [string]$CommandToken,
+        [string[]]$RawArgs
+    )
+
+    $rawCommand = if ($null -eq $CommandToken) { '' } else { [string]$CommandToken }
+    $remaining = @()
+    if (-not [string]::IsNullOrWhiteSpace($rawCommand) -and $rawCommand.StartsWith('-')) {
+        $remaining += $rawCommand
+        $rawCommand = ''
+    }
+    $remaining += @($RawArgs)
+
+    if ([string]::IsNullOrWhiteSpace($rawCommand)) {
+        Throw-FriendlyError `
+            -Detail "No command was provided." `
+            -Code 2 `
+            -Summary "Command is required." `
+            -Hint "Use one command: create | update | change | exec. Example: az-vm create --auto"
+    }
+
+    $command = $rawCommand.Trim().ToLowerInvariant()
+    $validCommands = @('create','update','change','exec','help')
+    if ($validCommands -notcontains $command) {
+        Throw-FriendlyError `
+            -Detail ("Unknown command '{0}'." -f $rawCommand) `
+            -Code 2 `
+            -Summary "Unknown command." `
+            -Hint "Use one command: create | update | change | exec."
+    }
+
+    $options = @{}
+    $positionals = @()
+    foreach ($arg in @($remaining)) {
+        $text = if ($null -eq $arg) { '' } else { [string]$arg }
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            continue
+        }
+
+        if ($text.StartsWith('--')) {
+            $body = $text.Substring(2)
+            if ([string]::IsNullOrWhiteSpace($body)) {
+                continue
+            }
+
+            $name = $body
+            $value = $true
+            $eqIndex = $body.IndexOf('=')
+            if ($eqIndex -ge 0) {
+                $name = $body.Substring(0, $eqIndex)
+                $value = $body.Substring($eqIndex + 1)
+            }
+
+            $nameKey = [string]$name
+            $nameKey = $nameKey.Trim().ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace($nameKey)) {
+                continue
+            }
+
+            $options[$nameKey] = $value
+            continue
+        }
+
+        if ($text.StartsWith('-')) {
+            Throw-FriendlyError `
+                -Detail ("Unsupported legacy option format '{0}'." -f $text) `
+                -Code 2 `
+                -Summary "Invalid option format." `
+                -Hint "Use long options only: --option or --option=value."
+        }
+
+        $positionals += $text
+    }
+
+    if ($positionals.Count -gt 0) {
+        Throw-FriendlyError `
+            -Detail ("Unexpected positional argument(s): {0}" -f ($positionals -join ', ')) `
+            -Code 2 `
+            -Summary "Unexpected arguments were provided." `
+            -Hint "Use only --option or --option=value syntax after the command."
+    }
+
+    return [pscustomobject]@{
+        Command = $command
+        Options = $options
+    }
+}
+
+function Get-CoVmCliOptionRaw {
+    param(
+        [hashtable]$Options,
+        [string]$Name
+    )
+
+    if ($null -eq $Options) {
+        return $null
+    }
+
+    $key = [string]$Name
+    if ([string]::IsNullOrWhiteSpace($key)) {
+        return $null
+    }
+
+    $key = $key.Trim().ToLowerInvariant()
+    if ($Options.ContainsKey($key)) {
+        return $Options[$key]
+    }
+
+    return $null
+}
+
+function Test-CoVmCliOptionPresent {
+    param(
+        [hashtable]$Options,
+        [string]$Name
+    )
+
+    if ($null -eq $Options) {
+        return $false
+    }
+
+    $key = [string]$Name
+    if ([string]::IsNullOrWhiteSpace($key)) {
+        return $false
+    }
+
+    return $Options.ContainsKey($key.Trim().ToLowerInvariant())
+}
+
+function Convert-CoVmCliValueToBool {
+    param(
+        [string]$OptionName,
+        [object]$RawValue
+    )
+
+    if ($RawValue -is [bool]) {
+        return [bool]$RawValue
+    }
+
+    $text = [string]$RawValue
+    $trimmed = $text.Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($trimmed)) {
+        return $true
+    }
+    if ($trimmed -in @('1','true','yes','y','on')) {
+        return $true
+    }
+    if ($trimmed -in @('0','false','no','n','off')) {
+        return $false
+    }
+
+    Throw-FriendlyError `
+        -Detail ("Option '--{0}' received invalid boolean value '{1}'." -f $OptionName, $text) `
+        -Code 2 `
+        -Summary "Invalid boolean option value." `
+        -Hint ("Use '--{0}' or '--{0}=true|false'." -f $OptionName)
+}
+
+function Get-CoVmCliOptionBool {
+    param(
+        [hashtable]$Options,
+        [string]$Name,
+        [bool]$DefaultValue = $false
+    )
+
+    if (-not (Test-CoVmCliOptionPresent -Options $Options -Name $Name)) {
+        return [bool]$DefaultValue
+    }
+
+    $raw = Get-CoVmCliOptionRaw -Options $Options -Name $Name
+    return (Convert-CoVmCliValueToBool -OptionName $Name -RawValue $raw)
+}
+
+function Get-CoVmCliOptionText {
+    param(
+        [hashtable]$Options,
+        [string]$Name
+    )
+
+    if (-not (Test-CoVmCliOptionPresent -Options $Options -Name $Name)) {
+        return $null
+    }
+
+    $raw = Get-CoVmCliOptionRaw -Options $Options -Name $Name
+    if ($raw -is [bool]) {
+        if ([bool]$raw) {
+            return ''
+        }
+
+        return $null
+    }
+
+    return [string]$raw
 }
 
 function ConvertFrom-JsonCompat {
@@ -1679,7 +1901,28 @@ function Invoke-CoVmStep1Common {
     $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_SIZE" -DefaultValue "Standard_B2as_v2") -ServerName $serverName
     $azLocation = $defaultAzLocation
     $vmSize = $defaultVmSize
-    if (-not $AutoMode) {
+    $forcedAzLocation = ''
+    $forcedVmSize = ''
+    if ($ConfigOverrides) {
+        if ($ConfigOverrides.ContainsKey('AZ_LOCATION')) {
+            $forcedAzLocation = [string]$ConfigOverrides['AZ_LOCATION']
+        }
+        if ($ConfigOverrides.ContainsKey('VM_SIZE')) {
+            $forcedVmSize = [string]$ConfigOverrides['VM_SIZE']
+        }
+    }
+
+    $hasForcedAzLocation = -not [string]::IsNullOrWhiteSpace([string]$forcedAzLocation)
+    $hasForcedVmSize = -not [string]::IsNullOrWhiteSpace([string]$forcedVmSize)
+    if ($hasForcedAzLocation) {
+        $azLocation = [string]$forcedAzLocation
+    }
+    if ($hasForcedVmSize) {
+        $vmSize = [string]$forcedVmSize
+    }
+
+    $shouldPromptLocationAndSku = (-not $AutoMode) -and -not ($hasForcedAzLocation -or $hasForcedVmSize)
+    if ($shouldPromptLocationAndSku) {
         $priceHours = Get-PriceHoursFromConfig -Config $ConfigMap -DefaultHours 730
         $regionBackToken = Get-CoVmSkuPickerRegionBackToken
         while ($true) {
@@ -4326,12 +4569,586 @@ function Select-VmSkuInteractive {
         }
     }
 }
+
+function Assert-CoVmCommandOptions {
+    param(
+        [string]$CommandName,
+        [hashtable]$Options
+    )
+
+    $allowed = @('auto','perf','windows','linux')
+    switch ($CommandName) {
+        'create' { $allowed += @('purge') }
+        'update' { $allowed += @() }
+        'change' { $allowed += @('vm-region','vm-size') }
+        'exec'   { $allowed += @('init-task','update-task') }
+        'help'   { $allowed += @() }
+        default {
+            Throw-FriendlyError `
+                -Detail ("Unsupported command '{0}'." -f $CommandName) `
+                -Code 2 `
+                -Summary "Unknown command." `
+                -Hint "Use one command: create | update | change | exec."
+        }
+    }
+
+    foreach ($key in @($Options.Keys)) {
+        $optionName = [string]$key
+        if ($allowed -notcontains $optionName) {
+            Throw-FriendlyError `
+                -Detail ("Option '--{0}' is not supported for command '{1}'." -f $optionName, $CommandName) `
+                -Code 2 `
+                -Summary "Unsupported command option." `
+                -Hint ("Use valid options for '{0}' only." -f $CommandName)
+        }
+    }
+
+    if ($CommandName -eq 'update' -and (Test-CoVmCliOptionPresent -Options $Options -Name 'purge')) {
+        Throw-FriendlyError `
+            -Detail "Option '--purge' is not valid with command 'update'." `
+            -Code 2 `
+            -Summary "Invalid option combination." `
+            -Hint "Use 'az-vm create --purge' for delete-and-recreate behavior."
+    }
+}
+
+function Initialize-CoVmCommandRuntimeContext {
+    param(
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag,
+        [hashtable]$ConfigMapOverrides = @{}
+    )
+
+    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $platform = Resolve-CoVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
+    $platformDefaults = Get-CoVmPlatformDefaults -Platform $platform
+    $effectiveConfigMap = Resolve-CoVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
+    foreach ($key in @($ConfigMapOverrides.Keys)) {
+        $overrideKey = [string]$key
+        if ([string]::IsNullOrWhiteSpace($overrideKey)) {
+            continue
+        }
+        $effectiveConfigMap[$overrideKey] = [string]$ConfigMapOverrides[$key]
+        $script:ConfigOverrides[$overrideKey] = [string]$ConfigMapOverrides[$key]
+    }
+
+    $step1Context = Invoke-CoVmStep1Common `
+        -ConfigMap $effectiveConfigMap `
+        -EnvFilePath $envFilePath `
+        -AutoMode:$true `
+        -ScriptRoot $PSScriptRoot `
+        -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
+        -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
+        -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
+        -VmUpdateConfigKey 'VM_UPDATE_TASK_DIR' `
+        -VmUpdateDefault ([string]$platformDefaults.VmUpdateTaskDirDefault) `
+        -ConfigOverrides $script:ConfigOverrides
+
+    $serverName = [string]$step1Context.ServerName
+    $vmInitTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_INIT_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault)) -ServerName $serverName
+    $vmUpdateTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_UPDATE_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault)) -ServerName $serverName
+    $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $PSScriptRoot
+    $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $PSScriptRoot
+    $step1Context['VmInitTaskDir'] = $vmInitTaskDir
+    $step1Context['VmUpdateTaskDir'] = $vmUpdateTaskDir
+    $step1Context['VmOsType'] = $platform
+
+    $taskOutcomeModeRaw = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'TASK_OUTCOME_MODE' -DefaultValue 'continue')
+    if ([string]::IsNullOrWhiteSpace($taskOutcomeModeRaw)) { $taskOutcomeModeRaw = 'continue' }
+    $taskOutcomeMode = $taskOutcomeModeRaw.Trim().ToLowerInvariant()
+    if ($taskOutcomeMode -ne 'continue' -and $taskOutcomeMode -ne 'strict') {
+        $taskOutcomeMode = 'continue'
+    }
+    if ($platform -eq 'windows') {
+        $taskOutcomeMode = 'strict'
+    }
+
+    $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
+    $sshTaskTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_TASK_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshTaskTimeoutSeconds))
+    $sshTaskTimeoutSeconds = $script:SshTaskTimeoutSeconds
+    if ($sshTaskTimeoutText -match '^\d+$') { $sshTaskTimeoutSeconds = [int]$sshTaskTimeoutText }
+    if ($sshTaskTimeoutSeconds -lt 30) { $sshTaskTimeoutSeconds = 30 }
+    if ($sshTaskTimeoutSeconds -gt 7200) { $sshTaskTimeoutSeconds = 7200 }
+
+    $sshConnectTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_CONNECT_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshConnectTimeoutSeconds))
+    $sshConnectTimeoutSeconds = $script:SshConnectTimeoutSeconds
+    if ($sshConnectTimeoutText -match '^\d+$') { $sshConnectTimeoutSeconds = [int]$sshConnectTimeoutText }
+    if ($sshConnectTimeoutSeconds -lt 5) { $sshConnectTimeoutSeconds = 5 }
+    if ($sshConnectTimeoutSeconds -gt 300) { $sshConnectTimeoutSeconds = 300 }
+
+    $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
+    $azCommandTimeoutSeconds = $script:AzCommandTimeoutSeconds
+    if ($azCommandTimeoutText -match '^\d+$') { $azCommandTimeoutSeconds = [int]$azCommandTimeoutText }
+    if ($azCommandTimeoutSeconds -lt 30) { $azCommandTimeoutSeconds = 30 }
+    if ($azCommandTimeoutSeconds -gt 7200) { $azCommandTimeoutSeconds = 7200 }
+
+    $script:AzCommandTimeoutSeconds = $azCommandTimeoutSeconds
+    $script:SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+    $script:SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+    $step1Context['AzCommandTimeoutSeconds'] = $azCommandTimeoutSeconds
+    $step1Context['SshTaskTimeoutSeconds'] = $sshTaskTimeoutSeconds
+    $step1Context['SshConnectTimeoutSeconds'] = $sshConnectTimeoutSeconds
+
+    return [pscustomobject]@{
+        EnvFilePath = $envFilePath
+        ConfigMap = $configMap
+        EffectiveConfigMap = $effectiveConfigMap
+        Platform = $platform
+        PlatformDefaults = $platformDefaults
+        Context = $step1Context
+        TaskOutcomeMode = $taskOutcomeMode
+        ConfiguredPySshClientPath = $configuredPySshClientPath
+        SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+        SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+    }
+}
+
+function Resolve-CoVmTaskSelection {
+    param(
+        [object[]]$TaskBlocks,
+        [string]$TaskNumberOrName,
+        [string]$Stage,
+        [switch]$AutoMode
+    )
+
+    $allTasks = @($TaskBlocks)
+    if ($allTasks.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail ("No active {0} tasks were found." -f $Stage) `
+            -Code 60 `
+            -Summary "Task list is empty." `
+            -Hint ("Add files under the '{0}' task directory." -f $Stage)
+    }
+
+    $selectedToken = if ($null -eq $TaskNumberOrName) { '' } else { [string]$TaskNumberOrName }
+    $selectedToken = $selectedToken.Trim()
+    if ([string]::IsNullOrWhiteSpace($selectedToken)) {
+        if ($AutoMode) {
+            Throw-FriendlyError `
+                -Detail ("Option '--{0}-task' is required in auto mode." -f $Stage) `
+                -Code 60 `
+                -Summary "Task selection is required in auto mode." `
+                -Hint ("Provide --{0}-task=<NN>." -f $Stage)
+        }
+
+        Write-Host ("Available {0} tasks:" -f $Stage) -ForegroundColor Cyan
+        for ($i = 0; $i -lt $allTasks.Count; $i++) {
+            Write-Host ("{0}. {1}" -f ($i + 1), [string]$allTasks[$i].Name)
+        }
+        while ($true) {
+            $pickRaw = Read-Host ("Enter {0} task number" -f $Stage)
+            if ($pickRaw -match '^\d+$') {
+                $pickNumber = [int]$pickRaw
+                if ($pickNumber -ge 1 -and $pickNumber -le $allTasks.Count) {
+                    return $allTasks[$pickNumber - 1]
+                }
+            }
+            Write-Host "Invalid task selection. Please enter a valid number." -ForegroundColor Yellow
+        }
+    }
+
+    $selectedTask = $null
+    if ($selectedToken -match '^\d+$') {
+        $prefix = ([int]$selectedToken).ToString('00')
+        $selectedTask = @($allTasks | Where-Object { ([string]$_.Name).StartsWith($prefix + '-', [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+    }
+    else {
+        $selectedTask = @($allTasks | Where-Object { [string]::Equals([string]$_.Name, $selectedToken, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+    }
+
+    if ($null -eq $selectedTask -or @($selectedTask).Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail ("Task '{0}' was not found in {1} catalog." -f $selectedToken, $Stage) `
+            -Code 60 `
+            -Summary "Task selection is invalid." `
+            -Hint ("List valid {0} task numbers with 'az-vm exec' in interactive mode." -f $Stage)
+    }
+
+    return $selectedTask[0]
+}
+
+function Invoke-CoVmExecCommand {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $context = $runtime.Context
+    $platform = [string]$runtime.Platform
+    $platformDefaults = $runtime.PlatformDefaults
+
+    $hasInitTask = Test-CoVmCliOptionPresent -Options $Options -Name 'init-task'
+    $hasUpdateTask = Test-CoVmCliOptionPresent -Options $Options -Name 'update-task'
+    if ($hasInitTask -and $hasUpdateTask) {
+        Throw-FriendlyError `
+            -Detail "Both --init-task and --update-task were provided." `
+            -Code 61 `
+            -Summary "Only one task selector can be used at a time." `
+            -Hint "Use either --init-task=<NN> or --update-task=<NN>."
+    }
+
+    $stage = ''
+    if ($hasInitTask) {
+        $stage = 'init'
+    }
+    elseif ($hasUpdateTask) {
+        $stage = 'update'
+    }
+    else {
+        if ($AutoMode) {
+            Throw-FriendlyError `
+                -Detail "Neither --init-task nor --update-task was provided in auto mode." `
+                -Code 61 `
+                -Summary "Task selector is required in auto mode." `
+                -Hint "Use --init-task=<NN> or --update-task=<NN>."
+        }
+
+        while ($true) {
+            $stagePick = Read-Host "Select task stage (init/update)"
+            if ($null -eq $stagePick) { $stagePick = '' }
+            $stagePick = $stagePick.Trim().ToLowerInvariant()
+            if ($stagePick -eq 'init' -or $stagePick -eq 'i') { $stage = 'init'; break }
+            if ($stagePick -eq 'update' -or $stagePick -eq 'u') { $stage = 'update'; break }
+            Write-Host "Please enter init or update." -ForegroundColor Yellow
+        }
+    }
+
+    if ($stage -eq 'init') {
+        $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
+        $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
+        $requested = Get-CoVmCliOptionText -Options $Options -Name 'init-task'
+        $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
+        $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
+        Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell | Out-Null
+        Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
+        return
+    }
+
+    $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
+    $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
+    $requested = Get-CoVmCliOptionText -Options $Options -Name 'update-task'
+    $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'update' -AutoMode:$AutoMode
+
+    $vmRuntimeDetails = Get-CoVmVmDetails -Context $context
+    $sshHost = [string]$vmRuntimeDetails.VmFqdn
+    if ([string]::IsNullOrWhiteSpace($sshHost)) {
+        $sshHost = [string]$vmRuntimeDetails.PublicIP
+    }
+    if ([string]::IsNullOrWhiteSpace($sshHost)) {
+        throw "Exec could not resolve VM SSH host (FQDN/Public IP)."
+    }
+
+    Invoke-CoVmSshTaskBlocks `
+        -Platform $platform `
+        -RepoRoot $PSScriptRoot `
+        -SshHost $sshHost `
+        -SshUser ([string]$context.VmUser) `
+        -SshPassword ([string]$context.VmPass) `
+        -SshPort ([string]$context.SshPort) `
+        -ResourceGroup ([string]$context.ResourceGroup) `
+        -VmName ([string]$context.VmName) `
+        -TaskBlocks @($selectedTask) `
+        -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) `
+        -SshMaxRetries 1 `
+        -SshTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds) `
+        -SshConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
+        -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath) | Out-Null
+
+    Write-Host ("Exec completed: update task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
+}
+
+function Invoke-CoVmChangeCommand {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $context = $runtime.Context
+    $envFilePath = [string]$runtime.EnvFilePath
+    $resourceGroup = [string]$context.ResourceGroup
+    $vmName = [string]$context.VmName
+
+    $vmJson = az vm show -g $resourceGroup -n $vmName -o json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmJson)) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' was not found in resource group '{1}'." -f $vmName, $resourceGroup) `
+            -Code 62 `
+            -Summary "Change command cannot continue because VM does not exist." `
+            -Hint "Run 'az-vm create' first, or check RESOURCE_GROUP/VM_NAME in .env."
+    }
+    $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
+    $currentRegion = [string]$vmObject.location
+    $currentSize = [string]$vmObject.hardwareProfile.vmSize
+    if ([string]::IsNullOrWhiteSpace($currentRegion)) { $currentRegion = [string]$context.AzLocation }
+    if ([string]::IsNullOrWhiteSpace($currentSize)) { $currentSize = [string]$context.VmSize }
+
+    $hasRegionOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-region'
+    $hasSizeOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-size'
+    $targetRegion = ''
+    $targetSize = ''
+
+    if ($hasRegionOption) {
+        $targetRegion = [string](Get-CoVmCliOptionText -Options $Options -Name 'vm-region')
+        if ([string]::IsNullOrWhiteSpace($targetRegion)) {
+            if ($AutoMode) {
+                Throw-FriendlyError `
+                    -Detail "Option '--vm-region' was provided without a value in auto mode." `
+                    -Code 62 `
+                    -Summary "Region value is required in auto mode." `
+                    -Hint "Provide --vm-region=<azure-region>."
+            }
+            $targetRegion = Select-AzLocationInteractive -DefaultLocation $currentRegion
+        }
+    }
+
+    if ($hasSizeOption) {
+        $targetSize = [string](Get-CoVmCliOptionText -Options $Options -Name 'vm-size')
+        if ([string]::IsNullOrWhiteSpace($targetSize)) {
+            if ($AutoMode) {
+                Throw-FriendlyError `
+                    -Detail "Option '--vm-size' was provided without a value in auto mode." `
+                    -Code 62 `
+                    -Summary "VM size value is required in auto mode." `
+                    -Hint "Provide --vm-size=<vm-sku>."
+            }
+
+            $pickerLocation = $currentRegion
+            if (-not [string]::IsNullOrWhiteSpace($targetRegion)) {
+                $pickerLocation = $targetRegion
+            }
+            $priceHours = Get-PriceHoursFromConfig -Config $runtime.EffectiveConfigMap -DefaultHours 730
+            $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
+            if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
+                Throw-FriendlyError `
+                    -Detail "Region-back token is not supported in change command size picker." `
+                    -Code 62 `
+                    -Summary "VM size selection was canceled." `
+                    -Hint "Run change command again and select a VM size."
+            }
+            $targetSize = [string]$sizePick
+        }
+    }
+
+    if (-not $hasRegionOption -and -not $hasSizeOption) {
+        if ($AutoMode) {
+            Throw-FriendlyError `
+                -Detail "Change command requires --vm-region and/or --vm-size in auto mode." `
+                -Code 62 `
+                -Summary "No change target was provided." `
+                -Hint "Use --vm-region=<region> and/or --vm-size=<sku>."
+        }
+
+        $changeRegion = Read-StrictYesNo -PromptText "Do you want to change VM region?"
+        if ($changeRegion) {
+            $targetRegion = Select-AzLocationInteractive -DefaultLocation $currentRegion
+            $hasRegionOption = $true
+        }
+
+        $changeSize = Read-StrictYesNo -PromptText "Do you want to change VM size?"
+        if ($changeSize) {
+            $pickerLocation = if ([string]::IsNullOrWhiteSpace($targetRegion)) { $currentRegion } else { $targetRegion }
+            $priceHours = Get-PriceHoursFromConfig -Config $runtime.EffectiveConfigMap -DefaultHours 730
+            $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
+            if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
+                Throw-FriendlyError `
+                    -Detail "Region-back token is not supported in change command size picker." `
+                    -Code 62 `
+                    -Summary "VM size selection was canceled." `
+                    -Hint "Run change command again and select a VM size."
+            }
+            $targetSize = [string]$sizePick
+            $hasSizeOption = $true
+        }
+
+        if (-not $hasRegionOption -and -not $hasSizeOption) {
+            Write-Host "No change target was selected. Command exited with no operation." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($targetRegion)) { $targetRegion = $currentRegion }
+    if ([string]::IsNullOrWhiteSpace($targetSize)) { $targetSize = $currentSize }
+    $targetRegion = $targetRegion.Trim().ToLowerInvariant()
+    $targetSize = $targetSize.Trim()
+
+    Assert-LocationExists -Location $targetRegion
+    Assert-VmSkuAvailableViaRest -Location $targetRegion -VmSize $targetSize
+
+    $regionChanged = -not [string]::Equals($targetRegion, $currentRegion, [System.StringComparison]::OrdinalIgnoreCase)
+    $sizeChanged = -not [string]::Equals($targetSize, $currentSize, [System.StringComparison]::OrdinalIgnoreCase)
+    if (-not $regionChanged -and -not $sizeChanged) {
+        Write-Host "No effective change is required. Region and VM size are already at target values." -ForegroundColor Yellow
+        return
+    }
+
+    if ($regionChanged) {
+        Write-Host "Region change requires controlled recreate because direct cross-region VM move is not supported in Azure CLI." -ForegroundColor Yellow
+        Write-Host ("Current: region={0}, size={1}" -f $currentRegion, $currentSize)
+        Write-Host ("Target : region={0}, size={1}" -f $targetRegion, $targetSize)
+        if (-not $AutoMode) {
+            $approveRegionRebuild = Confirm-YesNo -PromptText "Continue with recreate flow (best effort to keep resource names)?" -DefaultYes $false
+            if (-not $approveRegionRebuild) {
+                Write-Host "Change command canceled by user." -ForegroundColor Yellow
+                return
+            }
+        }
+
+        Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+            az vm deallocate -g $resourceGroup -n $vmName -o none
+            Assert-LastExitCode "az vm deallocate"
+        } | Out-Null
+        Invoke-TrackedAction -Label ("az vm wait --deallocated -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+            az vm wait --deallocated -g $resourceGroup -n $vmName
+            Assert-LastExitCode "az vm wait --deallocated"
+        } | Out-Null
+
+        Set-DotEnvValue -Path $envFilePath -Key 'AZ_LOCATION' -Value $targetRegion
+        Set-DotEnvValue -Path $envFilePath -Key 'VM_SIZE' -Value $targetSize
+        $script:ConfigOverrides['AZ_LOCATION'] = $targetRegion
+        $script:ConfigOverrides['VM_SIZE'] = $targetSize
+
+        $script:UpdateMode = $false
+        $script:RenewMode = $true
+        $script:ExecutionMode = 'destructive rebuild'
+
+        $isWindowsPlatform = [string]::Equals([string]$runtime.Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)
+        Invoke-AzVmMain `
+            -WindowsFlag:([bool]$isWindowsPlatform) `
+            -LinuxFlag:([bool](-not $isWindowsPlatform)) `
+            -CommandName 'change' `
+            -InitialConfigOverrides @{ AZ_LOCATION = $targetRegion; VM_SIZE = $targetSize }
+        return
+    }
+
+    Write-Host ("Applying VM size change: {0} -> {1}" -f $currentSize, $targetSize)
+    if (-not $AutoMode) {
+        $approveResize = Confirm-YesNo -PromptText "Continue with VM size change?" -DefaultYes $false
+        if (-not $approveResize) {
+            Write-Host "Change command canceled by user." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+        az vm deallocate -g $resourceGroup -n $vmName -o none
+        Assert-LastExitCode "az vm deallocate"
+    } | Out-Null
+    Invoke-TrackedAction -Label ("az vm wait --deallocated -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+        az vm wait --deallocated -g $resourceGroup -n $vmName
+        Assert-LastExitCode "az vm wait --deallocated"
+    } | Out-Null
+    Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $resourceGroup, $vmName, $targetSize) -Action {
+        az vm resize -g $resourceGroup -n $vmName --size $targetSize -o none
+        Assert-LastExitCode "az vm resize"
+    } | Out-Null
+    Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+        az vm start -g $resourceGroup -n $vmName -o none
+        Assert-LastExitCode "az vm start"
+    } | Out-Null
+
+    $running = Wait-CoVmVmRunningState -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 3 -DelaySeconds 10
+    if (-not $running) {
+        Throw-FriendlyError `
+            -Detail "VM did not return to running state after size change." `
+            -Code 62 `
+            -Summary "VM size change completed with unhealthy power state." `
+            -Hint "Check VM power state in Azure Portal and start VM manually if needed."
+    }
+
+    Set-DotEnvValue -Path $envFilePath -Key 'VM_SIZE' -Value $targetSize
+    $script:ConfigOverrides['VM_SIZE'] = $targetSize
+    Write-Host ("Change completed successfully. VM size is now '{0}'." -f $targetSize) -ForegroundColor Green
+}
+
+function Invoke-CoVmCommandDispatcher {
+    param(
+        [string]$CommandName,
+        [hashtable]$Options
+    )
+
+    Assert-CoVmCommandOptions -CommandName $CommandName -Options $Options
+
+    $script:AutoMode = Get-CoVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $false
+    $script:PerfMode = Get-CoVmCliOptionBool -Options $Options -Name 'perf' -DefaultValue $false
+    $windowsFlag = Get-CoVmCliOptionBool -Options $Options -Name 'windows' -DefaultValue $false
+    $linuxFlag = Get-CoVmCliOptionBool -Options $Options -Name 'linux' -DefaultValue $false
+    if ($windowsFlag -and $linuxFlag) {
+        Throw-FriendlyError `
+            -Detail "Both --windows and --linux were provided." `
+            -Code 2 `
+            -Summary "Conflicting OS selection flags were provided." `
+            -Hint "Use only one of --windows or --linux."
+    }
+
+    $script:ConfigOverrides = @{}
+    $script:ActiveCommand = [string]$CommandName
+    switch ($CommandName) {
+        'help' {
+            Show-CoVmCommandHelp
+            return
+        }
+        'create' {
+            $purge = Get-CoVmCliOptionBool -Options $Options -Name 'purge' -DefaultValue $false
+            $script:UpdateMode = $false
+            $script:RenewMode = [bool]$purge
+            $script:ExecutionMode = if ($purge) { 'destructive rebuild' } else { 'default' }
+            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create'
+            return
+        }
+        'update' {
+            $script:UpdateMode = $true
+            $script:RenewMode = $false
+            $script:ExecutionMode = 'update'
+            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'update'
+            return
+        }
+        'change' {
+            $script:UpdateMode = $false
+            $script:RenewMode = $false
+            $script:ExecutionMode = 'default'
+            Invoke-CoVmChangeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+            return
+        }
+        'exec' {
+            $script:UpdateMode = $false
+            $script:RenewMode = $false
+            $script:ExecutionMode = 'default'
+            Invoke-CoVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+            return
+        }
+        default {
+            Throw-FriendlyError `
+                -Detail ("Unknown command '{0}'." -f $CommandName) `
+                -Code 2 `
+                -Summary "Unknown command." `
+                -Hint "Use one command: create | update | change | exec."
+        }
+    }
+}
 #endregion
 
 if ($MyInvocation.InvocationName -eq '.') {
     return
 }
 
-Invoke-AzVmMain -WindowsFlag:$Windows -LinuxFlag:$Linux
-
-
+try {
+    $parsedCli = Parse-CoVmCliArguments -CommandToken $Command -RawArgs $CliArgs
+    Invoke-CoVmCommandDispatcher -CommandName ([string]$parsedCli.Command) -Options $parsedCli.Options
+}
+catch {
+    $resolvedError = Resolve-CoVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
+    Write-Host ''
+    Write-Host 'Script exited gracefully.' -ForegroundColor Yellow
+    Write-Host ("Reason: {0}" -f $resolvedError.Summary) -ForegroundColor Red
+    Write-Host ("Detail: {0}" -f $resolvedError.ErrorMessage)
+    Write-Host ("Suggested action: {0}" -f $resolvedError.Hint) -ForegroundColor Cyan
+    exit ([int]$resolvedError.Code)
+}
