@@ -1708,7 +1708,11 @@ function Invoke-CoVmStep1Common {
     $vmPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
     $vmAssistantUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -ServerName $serverName
     $vmAssistantPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
-    $sshPort = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444") -ServerName $serverName
+    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "ssh_port" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($sshPortValue)) {
+        $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444")
+    }
+    $sshPort = Resolve-ServerTemplate -Value $sshPortValue -ServerName $serverName
 
     $vmCloudInitScriptFile = $null
     if (-not [string]::IsNullOrWhiteSpace($VmCloudInitConfigKey)) {
