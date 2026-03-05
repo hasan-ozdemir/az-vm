@@ -36,16 +36,25 @@ Set at least:
 
 ## Commands
 - `create`
-  - create missing resources; use `--purge` to delete first
+  - create missing resources
+  - supports step slicing: `--to-step`, `--from-step`, `--single-step`
 - `update`
   - re-run create-or-update operations on existing resources
+  - supports step slicing: `--to-step`, `--from-step`, `--single-step`
 - `change`
+  - no-parameter call starts interactive RG + VM + region + VM size picker flow
   - `--vm-size=<sku>`: in-place VM resize
   - `--vm-region=<region>`: snapshot-based region migration with target-side rollback cleanup
   - OS disk migration is supported in this flow (attached data disks must be handled separately)
   - supports combined use: region migration first, then size change
 - `exec`
-  - run one init or update task directly
+  - run one init or update task directly (`--init-task` / `--update-task`)
+  - no-parameter call opens interactive persistent pyssh REPL session
+  - optional scope: `--group=<resource-group>`
+- `delete`
+  - purge selected resources: `--target=group|network|vm|disk`
+  - optional scope: `--group=<resource-group>`
+  - non-interactive approval: `--yes`
 
 ## Run Mode
 - `interactive` (default)

@@ -668,14 +668,13 @@ function Invoke-AzVmMain {
 - Run mode: interactive (default), auto (--auto).
 - Performance timing mode: --perf.
 - Create mode: keep existing resources by default.
-- Purge mode: delete first, then recreate.
 - Update mode: always run create-or-update commands without delete."
 
         $effectiveActionPlan = $ActionPlan
         if ($null -eq $effectiveActionPlan) {
             $effectiveActionPlan = [pscustomobject]@{
                 Mode = 'full'
-                Target = 'finish'
+                Target = 'vm-summary'
                 Actions = @(Get-CoVmActionOrder)
             }
         }
@@ -684,7 +683,7 @@ function Invoke-AzVmMain {
         $actionTarget = [string]$effectiveActionPlan.Target
         $isPartialActionMode = -not [string]::Equals($actionMode, 'full', [System.StringComparison]::OrdinalIgnoreCase)
         if ($isPartialActionMode) {
-            Write-Host ("Selected execution mode: {0}-action (target={1})" -f $actionMode, $actionTarget) -ForegroundColor Cyan
+            Write-Host ("Selected execution mode: {0} (step target={1})" -f $actionMode, $actionTarget) -ForegroundColor Cyan
         }
 
         if (-not $script:AutoMode) {
@@ -718,10 +717,10 @@ function Invoke-AzVmMain {
         $runConfigAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'config'
         $runGroupAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'group'
         $runNetworkAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'network'
-        $runDeployAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'deploy'
-        $runInitAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'init'
-        $runUpdateAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'update'
-        $runFinishAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'finish'
+        $runDeployAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-deploy'
+        $runInitAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-init'
+        $runUpdateAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-update'
+        $runFinishAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-summary'
 
         if ($isPartialActionMode) {
             $bootstrapRuntime = Initialize-CoVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
@@ -1517,10 +1516,11 @@ function Show-CoVmCommandHelp {
     Write-Host "Usage: az-vm <command> [--option] [--option=value]"
     Write-Host ""
     Write-Host "Commands:"
-    Write-Host "  create   Create missing resources. Use --purge to delete first."
+    Write-Host "  create   Create missing resources."
     Write-Host "  update   Re-run create-or-update operations on existing resources."
     Write-Host "  change   Change VM region/size; region move uses snapshot-based migration."
-    Write-Host "  exec     Execute one VM init/update task."
+    Write-Host "  exec     Execute one VM init/update task, or open interactive SSH REPL."
+    Write-Host "  delete   Delete target resources from a selected resource group."
     Write-Host ""
     Write-Host "Common options:"
     Write-Host "  --auto[=true|false]      Auto mode (interactive disabled)."
@@ -1529,13 +1529,15 @@ function Show-CoVmCommandHelp {
     Write-Host "  --linux[=true|false]     Force VM OS type to linux."
     Write-Host ""
     Write-Host "Command options:"
-    Write-Host "  create --purge[=true|false]"
-    Write-Host "  create --multi-action=<config|group|network|deploy|init|update|finish>"
-    Write-Host "  create --single-action=<config|group|network|deploy|init|update|finish>"
-    Write-Host "  update --multi-action=<config|group|network|deploy|init|update|finish>"
-    Write-Host "  update --single-action=<config|group|network|deploy|init|update|finish>"
+    Write-Host "  create --to-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
+    Write-Host "  create --from-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
+    Write-Host "  create --single-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
+    Write-Host "  update --to-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
+    Write-Host "  update --from-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
+    Write-Host "  update --single-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
     Write-Host "  change --vm-region=<name> --vm-size=<sku>"
-    Write-Host "  exec --init-task=<NN> | --update-task=<NN>"
+    Write-Host "  exec --group=<resource-group> --init-task=<NN> | --update-task=<NN>"
+    Write-Host "  delete --target=<group|network|vm|disk> [--group=<resource-group>] [--yes]"
 }
 
 function Parse-CoVmCliArguments {
@@ -1557,17 +1559,17 @@ function Parse-CoVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | change | exec. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | change | exec | delete. Example: az-vm create --auto"
     }
 
     $command = $rawCommand.Trim().ToLowerInvariant()
-    $validCommands = @('create','update','change','exec','help')
+    $validCommands = @('create','update','change','exec','delete','help')
     if ($validCommands -notcontains $command) {
         Throw-FriendlyError `
             -Detail ("Unknown command '{0}'." -f $rawCommand) `
             -Code 2 `
             -Summary "Unknown command." `
-            -Hint "Use one command: create | update | change | exec."
+            -Hint "Use one command: create | update | change | exec | delete."
     }
 
     $options = @{}
@@ -1735,7 +1737,7 @@ function Get-CoVmCliOptionText {
 }
 
 function Get-CoVmActionOrder {
-    return @('config', 'group', 'network', 'deploy', 'init', 'update', 'finish')
+    return @('config', 'group', 'network', 'vm-deploy', 'vm-init', 'vm-update', 'vm-summary')
 }
 
 function Resolve-CoVmActionValue {
@@ -1750,8 +1752,8 @@ function Resolve-CoVmActionValue {
         Throw-FriendlyError `
             -Detail ("Option '--{0}' requires a value." -f $OptionName) `
             -Code 2 `
-            -Summary "Action option value is missing." `
-            -Hint ("Use '--{0}=config|group|network|deploy|init|update|finish'." -f $OptionName)
+            -Summary "Step option value is missing." `
+            -Hint ("Use '--{0}=config|group|network|vm-deploy|vm-init|vm-update|vm-summary'." -f $OptionName)
     }
 
     $allowed = Get-CoVmActionOrder
@@ -1759,7 +1761,7 @@ function Resolve-CoVmActionValue {
         Throw-FriendlyError `
             -Detail ("Option '--{0}' received invalid value '{1}'." -f $OptionName, $RawValue) `
             -Code 2 `
-            -Summary "Invalid action option value." `
+            -Summary "Invalid step option value." `
             -Hint ("Valid values: {0}" -f ($allowed -join ', '))
     }
 
@@ -1774,57 +1776,79 @@ function Resolve-CoVmActionPlan {
 
     $order = Get-CoVmActionOrder
     $supportsActionOptions = ($CommandName -in @('create', 'update'))
-    $hasMulti = Test-CoVmCliOptionPresent -Options $Options -Name 'multi-action'
-    $hasSingle = Test-CoVmCliOptionPresent -Options $Options -Name 'single-action'
+    $hasFrom = Test-CoVmCliOptionPresent -Options $Options -Name 'from-step'
+    $hasTo = Test-CoVmCliOptionPresent -Options $Options -Name 'to-step'
+    $hasSingle = Test-CoVmCliOptionPresent -Options $Options -Name 'single-step'
 
-    if (-not $supportsActionOptions -and ($hasMulti -or $hasSingle)) {
+    if (-not $supportsActionOptions -and ($hasFrom -or $hasTo -or $hasSingle)) {
         Throw-FriendlyError `
-            -Detail ("Action options are not supported for command '{0}'." -f $CommandName) `
+            -Detail ("Step options are not supported for command '{0}'." -f $CommandName) `
             -Code 2 `
             -Summary "Unsupported command option." `
-            -Hint "Use --multi-action/--single-action only with create or update."
+            -Hint "Use --from-step/--to-step/--single-step only with create or update."
     }
 
-    if ($hasMulti -and $hasSingle) {
+    if ($hasSingle -and ($hasFrom -or $hasTo)) {
         Throw-FriendlyError `
-            -Detail "Both --multi-action and --single-action were provided." `
+            -Detail "Option '--single-step' cannot be combined with '--from-step' or '--to-step'." `
             -Code 2 `
-            -Summary "Conflicting action options were provided." `
-            -Hint "Use only one of --multi-action or --single-action."
+            -Summary "Conflicting step options were provided." `
+            -Hint "Use --single-step alone, or use --from-step/--to-step as a range."
     }
 
-    if (-not $hasMulti -and -not $hasSingle) {
+    if (-not $hasFrom -and -not $hasTo -and -not $hasSingle) {
         return [pscustomobject]@{
             Mode = 'full'
-            Target = 'finish'
+            Target = 'vm-summary'
             Actions = @($order)
         }
     }
 
-    if ($hasMulti) {
-        $target = Resolve-CoVmActionValue -OptionName 'multi-action' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'multi-action'))
-        $targetIndex = [array]::IndexOf($order, $target)
-        if ($targetIndex -lt 0) {
-            throw ("Action target '{0}' could not be mapped." -f $target)
-        }
-
-        $actions = @()
-        for ($i = 0; $i -le $targetIndex; $i++) {
-            $actions += [string]$order[$i]
-        }
-
+    if ($hasSingle) {
+        $singleTarget = Resolve-CoVmActionValue -OptionName 'single-step' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'single-step'))
         return [pscustomobject]@{
-            Mode = 'multi'
-            Target = $target
-            Actions = @($actions)
+            Mode = 'single'
+            Target = $singleTarget
+            Actions = @($singleTarget)
         }
     }
 
-    $singleTarget = Resolve-CoVmActionValue -OptionName 'single-action' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'single-action'))
+    $fromStep = if ($hasFrom) {
+        Resolve-CoVmActionValue -OptionName 'from-step' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'from-step'))
+    }
+    else {
+        [string]$order[0]
+    }
+    $toStep = if ($hasTo) {
+        Resolve-CoVmActionValue -OptionName 'to-step' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'to-step'))
+    }
+    else {
+        [string]$order[$order.Count - 1]
+    }
+
+    $fromIndex = [array]::IndexOf($order, $fromStep)
+    $toIndex = [array]::IndexOf($order, $toStep)
+    if ($fromIndex -lt 0 -or $toIndex -lt 0) {
+        throw ("Step range '{0}' -> '{1}' could not be mapped." -f $fromStep, $toStep)
+    }
+    if ($fromIndex -gt $toIndex) {
+        Throw-FriendlyError `
+            -Detail ("Option '--from-step={0}' is after '--to-step={1}'." -f $fromStep, $toStep) `
+            -Code 2 `
+            -Summary "Invalid step range." `
+            -Hint "Provide a forward step range where from-step is before or equal to to-step."
+    }
+
+    $actions = @()
+    for ($i = $fromIndex; $i -le $toIndex; $i++) {
+        $actions += [string]$order[$i]
+    }
+
     return [pscustomobject]@{
-        Mode = 'single'
-        Target = $singleTarget
-        Actions = @($singleTarget)
+        Mode = 'range'
+        Target = $toStep
+        Start = $fromStep
+        Actions = @($actions)
     }
 }
 
@@ -2949,7 +2973,7 @@ function Test-CoVmAzResourceExists {
 
 function Assert-CoVmSingleActionDependencies {
     param(
-        [ValidateSet('config','group','network','deploy','init','update','finish')]
+        [ValidateSet('config','group','network','vm-deploy','vm-init','vm-update','vm-summary')]
         [string]$ActionName,
         [hashtable]$Context
     )
@@ -2967,45 +2991,45 @@ function Assert-CoVmSingleActionDependencies {
         $groupExistsBool = [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
         if (-not $groupExistsBool) {
             Throw-FriendlyError `
-                -Detail ("single-action '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
+                -Detail ("single-step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
                 -Code 63 `
                 -Summary "Action dependency is missing." `
-                -Hint "Run create/update with --multi-action=group first, or use --multi-action=network."
+                -Hint "Run create/update with --single-step=group first, or run with --to-step=network."
         }
         return
     }
 
-    if ($ActionName -eq 'deploy') {
+    if ($ActionName -eq 'vm-deploy') {
         $groupExists = az group exists -n $resourceGroup
         Assert-LastExitCode "az group exists"
         $groupExistsBool = [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
         if (-not $groupExistsBool) {
             Throw-FriendlyError `
-                -Detail ("single-action '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
+                -Detail ("single-step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
                 -Code 63 `
                 -Summary "Action dependency is missing." `
-                -Hint "Run create/update with --multi-action=group first."
+                -Hint "Run create/update with --single-step=group first."
         }
 
         $nicExists = Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", [string]$Context.NIC)
         if (-not $nicExists) {
             Throw-FriendlyError `
-                -Detail ("single-action '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
+                -Detail ("single-step '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
                 -Code 63 `
                 -Summary "Action dependency is missing." `
-                -Hint "Run create/update with --multi-action=network first."
+                -Hint "Run create/update with --single-step=network first."
         }
         return
     }
 
-    if ($ActionName -in @('init', 'update', 'finish')) {
+    if ($ActionName -in @('vm-init', 'vm-update', 'vm-summary')) {
         $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
         if (-not $vmExists) {
             Throw-FriendlyError `
-                -Detail ("single-action '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
+                -Detail ("single-step '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
                 -Code 63 `
                 -Summary "Action dependency is missing." `
-                -Hint "Run create/update with --multi-action=deploy first."
+                -Hint "Run create/update with --single-step=vm-deploy first."
         }
         return
     }
@@ -5444,6 +5468,239 @@ function Select-VmSkuInteractive {
     }
 }
 
+function Get-CoVmResourceGroupsForSelection {
+    param(
+        [string]$ServerName
+    )
+
+    $raw = az group list --query "[].name" -o json --only-show-errors
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$raw)) {
+        Throw-FriendlyError `
+            -Detail "az group list failed while loading resource groups." `
+            -Code 64 `
+            -Summary "Resource group list could not be loaded." `
+            -Hint "Run az login and verify subscription access."
+    }
+
+    $names = @(
+        ConvertFrom-JsonArrayCompat -InputObject $raw |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+    if ($names.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail "No resource groups were returned from Azure." `
+            -Code 64 `
+            -Summary "Resource group list is empty." `
+            -Hint "Create a resource group first or verify the active subscription."
+    }
+
+    $filtered = @($names | Where-Object { ([string]$_).StartsWith("rg-", [System.StringComparison]::OrdinalIgnoreCase) })
+    if ($filtered.Count -eq 0) {
+        $filtered = @($names)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$ServerName)) {
+        $needle = [string]$ServerName.Trim().ToLowerInvariant()
+        $serverMatches = @(
+            $filtered | Where-Object {
+                $candidate = ([string]$_).ToLowerInvariant()
+                $candidate.Contains($needle)
+            }
+        )
+        if ($serverMatches.Count -gt 0) {
+            $filtered = @($serverMatches)
+        }
+    }
+
+    return @($filtered | Sort-Object -Unique)
+}
+
+function Select-CoVmResourceGroupInteractive {
+    param(
+        [string]$DefaultResourceGroup,
+        [string]$ServerName
+    )
+
+    $groups = @(Get-CoVmResourceGroupsForSelection -ServerName $ServerName)
+    if ($groups.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail "No selectable resource group was found." `
+            -Code 64 `
+            -Summary "Resource group selection cannot continue." `
+            -Hint "Create a resource group first, then retry."
+    }
+
+    $defaultIndex = 1
+    for ($i = 0; $i -lt $groups.Count; $i++) {
+        if ([string]::Equals([string]$groups[$i], [string]$DefaultResourceGroup, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $defaultIndex = $i + 1
+            break
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Available resource groups (select by number):" -ForegroundColor Cyan
+    for ($i = 0; $i -lt $groups.Count; $i++) {
+        $label = if (($i + 1) -eq $defaultIndex) { "*{0}-{1}." -f ($i + 1), [string]$groups[$i] } else { "{0}-{1}." -f ($i + 1), [string]$groups[$i] }
+        Write-Host $label
+    }
+
+    while ($true) {
+        $raw = Read-Host ("Enter resource group number (default={0})" -f $defaultIndex)
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return [string]$groups[$defaultIndex - 1]
+        }
+        if ($raw -match '^\d+$') {
+            $index = [int]$raw
+            if ($index -ge 1 -and $index -le $groups.Count) {
+                return [string]$groups[$index - 1]
+            }
+        }
+        Write-Host "Invalid resource group selection. Please enter a valid number." -ForegroundColor Yellow
+    }
+}
+
+function Get-CoVmVmNamesForResourceGroup {
+    param(
+        [string]$ResourceGroup
+    )
+
+    $raw = az vm list -g $ResourceGroup --query "[].name" -o json --only-show-errors
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$raw)) {
+        Throw-FriendlyError `
+            -Detail ("az vm list failed for resource group '{0}'." -f $ResourceGroup) `
+            -Code 65 `
+            -Summary "VM list could not be loaded." `
+            -Hint "Verify the resource group name and Azure access."
+    }
+
+    $vmNames = @(
+        ConvertFrom-JsonArrayCompat -InputObject $raw |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+    return @($vmNames)
+}
+
+function Select-CoVmVmInteractive {
+    param(
+        [string]$ResourceGroup,
+        [string]$DefaultVmName
+    )
+
+    $vmNames = @(Get-CoVmVmNamesForResourceGroup -ResourceGroup $ResourceGroup)
+    if ($vmNames.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' does not contain any VM." -f $ResourceGroup) `
+            -Code 65 `
+            -Summary "VM selection cannot continue because the VM list is empty." `
+            -Hint "Create a VM first or choose another resource group."
+    }
+
+    $defaultIndex = 1
+    for ($i = 0; $i -lt $vmNames.Count; $i++) {
+        if ([string]::Equals([string]$vmNames[$i], [string]$DefaultVmName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $defaultIndex = $i + 1
+            break
+        }
+    }
+
+    Write-Host ""
+    Write-Host ("Available VM names in '{0}' (select by number):" -f $ResourceGroup) -ForegroundColor Cyan
+    for ($i = 0; $i -lt $vmNames.Count; $i++) {
+        $label = if (($i + 1) -eq $defaultIndex) { "*{0}-{1}." -f ($i + 1), [string]$vmNames[$i] } else { "{0}-{1}." -f ($i + 1), [string]$vmNames[$i] }
+        Write-Host $label
+    }
+
+    while ($true) {
+        $raw = Read-Host ("Enter VM number (default={0})" -f $defaultIndex)
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return [string]$vmNames[$defaultIndex - 1]
+        }
+        if ($raw -match '^\d+$') {
+            $index = [int]$raw
+            if ($index -ge 1 -and $index -le $vmNames.Count) {
+                return [string]$vmNames[$index - 1]
+            }
+        }
+        Write-Host "Invalid VM selection. Please enter a valid number." -ForegroundColor Yellow
+    }
+}
+
+function Get-CoVmVmNetworkDescriptor {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName
+    )
+
+    $vmJson = az vm show -g $ResourceGroup -n $VmName -o json --only-show-errors
+    Assert-LastExitCode "az vm show (network descriptor)"
+    $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
+    if (-not $vmObject) {
+        throw "VM metadata could not be parsed while collecting network resources."
+    }
+
+    $osDiskName = [string]$vmObject.storageProfile.osDisk.name
+    $nicName = ""
+    $nicEntries = @($vmObject.networkProfile.networkInterfaces)
+    if ($nicEntries.Count -gt 0) {
+        $primaryNic = @($nicEntries | Where-Object { $_.primary -eq $true } | Select-Object -First 1)
+        if ($null -eq $primaryNic -or @($primaryNic).Count -eq 0) {
+            $primaryNic = @($nicEntries | Select-Object -First 1)
+        }
+        if ($primaryNic -is [System.Array]) { $primaryNic = [object]$primaryNic[0] }
+        $nicId = [string]$primaryNic.id
+        if (-not [string]::IsNullOrWhiteSpace([string]$nicId)) {
+            $nicParts = @($nicId -split '/')
+            $nicName = [string]$nicParts[$nicParts.Count - 1]
+        }
+    }
+
+    $publicIpName = ""
+    $nsgName = ""
+    $vnetName = ""
+    if (-not [string]::IsNullOrWhiteSpace($nicName)) {
+        $nicJson = az network nic show -g $ResourceGroup -n $nicName -o json --only-show-errors
+        Assert-LastExitCode "az network nic show (network descriptor)"
+        $nicObject = ConvertFrom-JsonCompat -InputObject $nicJson
+        if ($nicObject) {
+            $publicIpId = [string]$nicObject.ipConfigurations[0].publicIPAddress.id
+            if (-not [string]::IsNullOrWhiteSpace([string]$publicIpId)) {
+                $publicIpParts = @($publicIpId -split '/')
+                $publicIpName = [string]$publicIpParts[$publicIpParts.Count - 1]
+            }
+
+            $nsgId = [string]$nicObject.networkSecurityGroup.id
+            if (-not [string]::IsNullOrWhiteSpace([string]$nsgId)) {
+                $nsgParts = @($nsgId -split '/')
+                $nsgName = [string]$nsgParts[$nsgParts.Count - 1]
+            }
+
+            $subnetId = [string]$nicObject.ipConfigurations[0].subnet.id
+            if (-not [string]::IsNullOrWhiteSpace([string]$subnetId)) {
+                $subnetParts = @($subnetId -split '/')
+                for ($i = 0; $i -lt $subnetParts.Count - 1; $i++) {
+                    if ([string]::Equals([string]$subnetParts[$i], 'virtualNetworks', [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $vnetName = [string]$subnetParts[$i + 1]
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        OsDiskName = $osDiskName
+        NicName = $nicName
+        PublicIpName = $publicIpName
+        NsgName = $nsgName
+        VnetName = $vnetName
+    }
+}
+
 function Assert-CoVmCommandOptions {
     param(
         [string]$CommandName,
@@ -5451,18 +5708,30 @@ function Assert-CoVmCommandOptions {
     )
 
     $allowed = @('auto','perf','windows','linux')
+    $legacyStepOptions = @('multi-action','single-action')
+    foreach ($legacy in $legacyStepOptions) {
+        if (Test-CoVmCliOptionPresent -Options $Options -Name $legacy) {
+            Throw-FriendlyError `
+                -Detail ("Legacy option '--{0}' is no longer supported." -f $legacy) `
+                -Code 2 `
+                -Summary "Deprecated option was provided." `
+                -Hint "Use --to-step/--from-step/--single-step."
+        }
+    }
+
     switch ($CommandName) {
-        'create' { $allowed += @('purge', 'multi-action', 'single-action') }
-        'update' { $allowed += @('multi-action', 'single-action') }
+        'create' { $allowed += @('to-step','from-step','single-step') }
+        'update' { $allowed += @('to-step','from-step','single-step') }
         'change' { $allowed += @('vm-region','vm-size') }
-        'exec'   { $allowed += @('init-task','update-task') }
+        'exec'   { $allowed += @('group','init-task','update-task') }
+        'delete' { $allowed += @('target','group','yes') }
         'help'   { $allowed += @() }
         default {
             Throw-FriendlyError `
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | change | exec."
+                -Hint "Use one command: create | update | change | exec | delete."
         }
     }
 
@@ -5477,12 +5746,32 @@ function Assert-CoVmCommandOptions {
         }
     }
 
-    if ($CommandName -eq 'update' -and (Test-CoVmCliOptionPresent -Options $Options -Name 'purge')) {
+    if (Test-CoVmCliOptionPresent -Options $Options -Name 'purge') {
         Throw-FriendlyError `
-            -Detail "Option '--purge' is not valid with command 'update'." `
+            -Detail "Option '--purge' is no longer supported." `
             -Code 2 `
-            -Summary "Invalid option combination." `
-            -Hint "Use 'az-vm create --purge' for delete-and-recreate behavior."
+            -Summary "Deprecated option was provided." `
+            -Hint "Use command 'delete --target=group --yes' before create/update when a full purge is needed."
+    }
+
+    if ($CommandName -eq 'delete') {
+        $targetText = [string](Get-CoVmCliOptionText -Options $Options -Name 'target')
+        $target = $targetText.Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($target)) {
+            Throw-FriendlyError `
+                -Detail "Option '--target' is required for delete command." `
+                -Code 2 `
+                -Summary "Delete target is missing." `
+                -Hint "Use --target=group|network|vm|disk."
+        }
+
+        if ($target -notin @('group','network','vm','disk')) {
+            Throw-FriendlyError `
+                -Detail ("Invalid delete target '{0}'." -f $targetText) `
+                -Code 2 `
+                -Summary "Delete target is invalid." `
+                -Hint "Valid targets: group, network, vm, disk."
+        }
     }
 }
 
@@ -5651,7 +5940,18 @@ function Invoke-CoVmExecCommand {
         [switch]$LinuxFlag
     )
 
-    $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $groupOverrideValue = [string](Get-CoVmCliOptionText -Options $Options -Name 'group')
+    $groupOverride = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$groupOverrideValue)) {
+        $groupOverride = $groupOverrideValue.Trim()
+    }
+
+    $runtimeConfigOverrides = @{}
+    if (-not [string]::IsNullOrWhiteSpace([string]$groupOverride)) {
+        $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOverride
+    }
+
+    $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
     $context = $runtime.Context
     $platform = [string]$runtime.Platform
     $platformDefaults = $runtime.PlatformDefaults
@@ -5666,74 +5966,165 @@ function Invoke-CoVmExecCommand {
             -Hint "Use either --init-task=<NN> or --update-task=<NN>."
     }
 
-    $stage = ''
-    if ($hasInitTask) {
-        $stage = 'init'
-    }
-    elseif ($hasUpdateTask) {
-        $stage = 'update'
-    }
-    else {
-        if ($AutoMode) {
-            Throw-FriendlyError `
-                -Detail "Neither --init-task nor --update-task was provided in auto mode." `
-                -Code 61 `
-                -Summary "Task selector is required in auto mode." `
-                -Hint "Use --init-task=<NN> or --update-task=<NN>."
+    $hasTaskSelector = ($hasInitTask -or $hasUpdateTask)
+    if ($hasTaskSelector) {
+        $stage = if ($hasInitTask) { 'init' } else { 'update' }
+        $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", [string]$context.ResourceGroup, "-n", [string]$context.VmName)
+        if (-not $vmExists) {
+            if ($AutoMode) {
+                Throw-FriendlyError `
+                    -Detail ("VM '{0}' was not found in resource group '{1}' for exec task mode." -f [string]$context.VmName, [string]$context.ResourceGroup) `
+                    -Code 61 `
+                    -Summary "Exec task mode cannot continue because VM was not found." `
+                    -Hint "Set VM_NAME in .env or run exec in interactive mode and select a VM."
+            }
+            $context.VmName = Select-CoVmVmInteractive -ResourceGroup ([string]$context.ResourceGroup) -DefaultVmName ([string]$context.VmName)
         }
 
-        while ($true) {
-            $stagePick = Read-Host "Select task stage (init/update)"
-            if ($null -eq $stagePick) { $stagePick = '' }
-            $stagePick = $stagePick.Trim().ToLowerInvariant()
-            if ($stagePick -eq 'init' -or $stagePick -eq 'i') { $stage = 'init'; break }
-            if ($stagePick -eq 'update' -or $stagePick -eq 'u') { $stage = 'update'; break }
-            Write-Host "Please enter init or update." -ForegroundColor Yellow
+        if ($stage -eq 'init') {
+            $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
+            $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
+            $requested = Get-CoVmCliOptionText -Options $Options -Name 'init-task'
+            $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
+            $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
+            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell | Out-Null
+            Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
+            return
         }
-    }
 
-    if ($stage -eq 'init') {
-        $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
+        $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
         $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
-        $requested = Get-CoVmCliOptionText -Options $Options -Name 'init-task'
-        $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
-        $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-        Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell | Out-Null
-        Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
+        $requested = Get-CoVmCliOptionText -Options $Options -Name 'update-task'
+        $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'update' -AutoMode:$AutoMode
+
+        $vmRuntimeDetails = Get-CoVmVmDetails -Context $context
+        $sshHost = [string]$vmRuntimeDetails.VmFqdn
+        if ([string]::IsNullOrWhiteSpace($sshHost)) {
+            $sshHost = [string]$vmRuntimeDetails.PublicIP
+        }
+        if ([string]::IsNullOrWhiteSpace($sshHost)) {
+            throw "Exec could not resolve VM SSH host (FQDN/Public IP)."
+        }
+
+        Invoke-CoVmSshTaskBlocks `
+            -Platform $platform `
+            -RepoRoot $PSScriptRoot `
+            -SshHost $sshHost `
+            -SshUser ([string]$context.VmUser) `
+            -SshPassword ([string]$context.VmPass) `
+            -SshPort ([string]$context.SshPort) `
+            -ResourceGroup ([string]$context.ResourceGroup) `
+            -VmName ([string]$context.VmName) `
+            -TaskBlocks @($selectedTask) `
+            -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) `
+            -SshMaxRetries 1 `
+            -SshTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds) `
+            -SshConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
+            -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath) | Out-Null
+
+        Write-Host ("Exec completed: update task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
         return
     }
 
-    $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
-    $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
-    $requested = Get-CoVmCliOptionText -Options $Options -Name 'update-task'
-    $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'update' -AutoMode:$AutoMode
+    $selectedResourceGroup = [string]$context.ResourceGroup
+    if (-not [string]::IsNullOrWhiteSpace([string]$groupOverride)) {
+        $selectedResourceGroup = $groupOverride
+    }
+    else {
+        $selectedResourceGroup = Select-CoVmResourceGroupInteractive -DefaultResourceGroup $selectedResourceGroup -ServerName ([string]$context.ServerName)
+    }
 
-    $vmRuntimeDetails = Get-CoVmVmDetails -Context $context
+    $groupExists = az group exists -n $selectedResourceGroup --only-show-errors
+    Assert-LastExitCode "az group exists (exec repl)"
+    if (-not [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' was not found." -f $selectedResourceGroup) `
+            -Code 61 `
+            -Summary "Exec REPL cannot continue because resource group was not found." `
+            -Hint "Provide a valid --group value or select a valid group in interactive mode."
+    }
+
+    $selectedVmName = Select-CoVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName ([string]$context.VmName)
+    $vmDetailContext = [ordered]@{
+        ResourceGroup = $selectedResourceGroup
+        VmName = $selectedVmName
+        AzLocation = [string]$context.AzLocation
+        SshPort = [string]$context.SshPort
+    }
+
+    $vmRuntimeDetails = Get-CoVmVmDetails -Context $vmDetailContext
     $sshHost = [string]$vmRuntimeDetails.VmFqdn
     if ([string]::IsNullOrWhiteSpace($sshHost)) {
         $sshHost = [string]$vmRuntimeDetails.PublicIP
     }
     if ([string]::IsNullOrWhiteSpace($sshHost)) {
-        throw "Exec could not resolve VM SSH host (FQDN/Public IP)."
+        throw "Exec REPL could not resolve VM SSH host (FQDN/Public IP)."
     }
 
-    Invoke-CoVmSshTaskBlocks `
-        -Platform $platform `
-        -RepoRoot $PSScriptRoot `
-        -SshHost $sshHost `
-        -SshUser ([string]$context.VmUser) `
-        -SshPassword ([string]$context.VmPass) `
-        -SshPort ([string]$context.SshPort) `
-        -ResourceGroup ([string]$context.ResourceGroup) `
-        -VmName ([string]$context.VmName) `
-        -TaskBlocks @($selectedTask) `
-        -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) `
-        -SshMaxRetries 1 `
-        -SshTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds) `
-        -SshConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
-        -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath) | Out-Null
+    $vmJson = az vm show -g $selectedResourceGroup -n $selectedVmName -o json --only-show-errors
+    Assert-LastExitCode "az vm show (exec repl)"
+    $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
+    $osType = [string]$vmObject.storageProfile.osDisk.osType
+    $replPlatform = if ([string]::Equals($osType, 'Linux', [System.StringComparison]::OrdinalIgnoreCase)) { 'linux' } else { 'windows' }
+    $shell = if ($replPlatform -eq 'linux') { 'bash' } else { 'powershell' }
 
-    Write-Host ("Exec completed: update task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
+    $pySsh = Ensure-CoVmPySshTools -RepoRoot $PSScriptRoot -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
+    $bootstrap = Initialize-CoVmSshHostKey `
+        -PySshPythonPath ([string]$pySsh.PythonPath) `
+        -PySshClientPath ([string]$pySsh.ClientPath) `
+        -HostName $sshHost `
+        -UserName ([string]$context.VmUser) `
+        -Password ([string]$context.VmPass) `
+        -Port ([string]$context.SshPort) `
+        -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds)
+    if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
+        Write-Host ([string]$bootstrap.Output)
+    }
+
+    $session = $null
+    try {
+        $session = Start-CoVmPersistentSshSession `
+            -PySshPythonPath ([string]$pySsh.PythonPath) `
+            -PySshClientPath ([string]$pySsh.ClientPath) `
+            -HostName $sshHost `
+            -UserName ([string]$context.VmUser) `
+            -Password ([string]$context.VmPass) `
+            -Port ([string]$context.SshPort) `
+            -Shell $shell `
+            -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
+            -DefaultTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
+
+        Write-Host ("Interactive exec REPL connected: {0}@{1}:{2} ({3})" -f [string]$context.VmUser, $sshHost, [string]$context.SshPort, $shell) -ForegroundColor Green
+        Write-Host "Type commands and press Enter. Type 'exit' to close REPL." -ForegroundColor Cyan
+
+        $commandIndex = 1
+        while ($true) {
+            $prompt = ("ssh:{0}> " -f $selectedVmName)
+            $rawCommand = Read-Host $prompt
+            if ($null -eq $rawCommand) { $rawCommand = '' }
+            $commandText = $rawCommand.Trim()
+            if ([string]::IsNullOrWhiteSpace($commandText)) {
+                continue
+            }
+            if ([string]::Equals($commandText, 'exit', [System.StringComparison]::OrdinalIgnoreCase)) {
+                break
+            }
+
+            $taskName = ("repl-{0:D4}" -f $commandIndex)
+            $taskResult = Invoke-CoVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $commandText -TimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
+            if ([int]$taskResult.ExitCode -ne 0) {
+                Write-Warning ("Remote command exit code: {0}" -f [int]$taskResult.ExitCode)
+            }
+            $commandIndex++
+        }
+    }
+    finally {
+        if ($null -ne $session) {
+            Stop-CoVmPersistentSshSession -Session $session
+        }
+    }
+
+    Write-Host "Exec REPL session closed." -ForegroundColor Green
 }
 
 function Invoke-CoVmChangeCommand {
@@ -5751,6 +6142,40 @@ function Invoke-CoVmChangeCommand {
     $resourceGroup = [string]$context.ResourceGroup
     $vmName = [string]$context.VmName
 
+    $hasRegionOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-region'
+    $hasSizeOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-size'
+    $targetRegion = ''
+    $targetSize = ''
+
+    if (-not $hasRegionOption -and -not $hasSizeOption) {
+        if ($AutoMode) {
+            Throw-FriendlyError `
+                -Detail "Change command requires --vm-region and/or --vm-size in auto mode." `
+                -Code 62 `
+                -Summary "No change target was provided." `
+                -Hint "Use --vm-region=<region> and/or --vm-size=<sku>."
+        }
+
+        $selectedResourceGroup = Select-CoVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -ServerName ([string]$context.ServerName)
+        $selectedVmName = Select-CoVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName $vmName
+
+        if (-not [string]::Equals($selectedResourceGroup, $resourceGroup, [System.StringComparison]::OrdinalIgnoreCase) -or -not [string]::Equals($selectedVmName, $vmName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $runtime = Initialize-CoVmCommandRuntimeContext `
+                -AutoMode:$AutoMode `
+                -WindowsFlag:$WindowsFlag `
+                -LinuxFlag:$LinuxFlag `
+                -ConfigMapOverrides @{
+                    RESOURCE_GROUP = $selectedResourceGroup
+                    VM_NAME = $selectedVmName
+                }
+            $context = $runtime.Context
+            $envFilePath = [string]$runtime.EnvFilePath
+            $effectiveConfigMap = $runtime.EffectiveConfigMap
+            $resourceGroup = [string]$context.ResourceGroup
+            $vmName = [string]$context.VmName
+        }
+    }
+
     $vmJson = az vm show -g $resourceGroup -n $vmName -o json --only-show-errors
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmJson)) {
         Throw-FriendlyError `
@@ -5765,11 +6190,6 @@ function Invoke-CoVmChangeCommand {
     $currentSize = [string]$vmObject.hardwareProfile.vmSize
     if ([string]::IsNullOrWhiteSpace($currentRegion)) { $currentRegion = [string]$context.AzLocation }
     if ([string]::IsNullOrWhiteSpace($currentSize)) { $currentSize = [string]$context.VmSize }
-
-    $hasRegionOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-region'
-    $hasSizeOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-size'
-    $targetRegion = ''
-    $targetSize = ''
 
     if ($hasRegionOption) {
         $targetRegion = [string](Get-CoVmCliOptionText -Options $Options -Name 'vm-region')
@@ -5801,52 +6221,34 @@ function Invoke-CoVmChangeCommand {
                 $pickerLocation = $targetRegion
             }
             $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
-            $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
-            if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
-                Throw-FriendlyError `
-                    -Detail "Region-back token is not supported in change command size picker." `
-                    -Code 62 `
-                    -Summary "VM size selection was canceled." `
-                    -Hint "Run change command again and select a VM size."
+            while ($true) {
+                $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
+                if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
+                    $pickerLocation = Select-AzLocationInteractive -DefaultLocation $pickerLocation
+                    if (-not $hasRegionOption) {
+                        $targetRegion = $pickerLocation
+                    }
+                    continue
+                }
+                $targetSize = [string]$sizePick
+                break
             }
-            $targetSize = [string]$sizePick
         }
     }
 
     if (-not $hasRegionOption -and -not $hasSizeOption) {
-        if ($AutoMode) {
-            Throw-FriendlyError `
-                -Detail "Change command requires --vm-region and/or --vm-size in auto mode." `
-                -Code 62 `
-                -Summary "No change target was provided." `
-                -Hint "Use --vm-region=<region> and/or --vm-size=<sku>."
-        }
-
-        $changeRegion = Read-StrictYesNo -PromptText "Do you want to change VM region?"
-        if ($changeRegion) {
-            $targetRegion = Select-AzLocationInteractive -DefaultLocation $currentRegion
-            $hasRegionOption = $true
-        }
-
-        $changeSize = Read-StrictYesNo -PromptText "Do you want to change VM size?"
-        if ($changeSize) {
-            $pickerLocation = if ([string]::IsNullOrWhiteSpace($targetRegion)) { $currentRegion } else { $targetRegion }
-            $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
-            $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
+        $targetRegion = Select-AzLocationInteractive -DefaultLocation $currentRegion
+        $hasRegionOption = $true
+        $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
+        while ($true) {
+            $sizePick = Select-VmSkuInteractive -Location $targetRegion -DefaultVmSize $currentSize -PriceHours $priceHours
             if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
-                Throw-FriendlyError `
-                    -Detail "Region-back token is not supported in change command size picker." `
-                    -Code 62 `
-                    -Summary "VM size selection was canceled." `
-                    -Hint "Run change command again and select a VM size."
+                $targetRegion = Select-AzLocationInteractive -DefaultLocation $targetRegion
+                continue
             }
             $targetSize = [string]$sizePick
             $hasSizeOption = $true
-        }
-
-        if (-not $hasRegionOption -and -not $hasSizeOption) {
-            Write-Host "No change target was selected. Command exited with no operation." -ForegroundColor Yellow
-            return
+            break
         }
     }
 
@@ -6196,6 +6598,231 @@ function Invoke-CoVmChangeCommand {
     }
 }
 
+function Invoke-CoVmDeleteCommand {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $defaultVmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
+    $defaultVmDiskName = [string](Get-ConfigValue -Config $configMap -Key 'VM_DISK_NAME' -DefaultValue '')
+
+    $targetRaw = [string](Get-CoVmCliOptionText -Options $Options -Name 'target')
+    $target = $targetRaw.Trim().ToLowerInvariant()
+    if ($target -notin @('group','network','vm','disk')) {
+        Throw-FriendlyError `
+            -Detail ("Invalid delete target '{0}'." -f $targetRaw) `
+            -Code 66 `
+            -Summary "Delete target is invalid." `
+            -Hint "Use --target=group|network|vm|disk."
+    }
+
+    $groupOption = [string](Get-CoVmCliOptionText -Options $Options -Name 'group')
+    $resourceGroup = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$groupOption)) {
+        $resourceGroup = $groupOption.Trim()
+    }
+    elseif ($AutoMode) {
+        if ([string]::IsNullOrWhiteSpace([string]$defaultResourceGroup)) {
+            Throw-FriendlyError `
+                -Detail "Resource group is required in auto mode when --group is not provided." `
+                -Code 66 `
+                -Summary "Delete command cannot resolve target resource group." `
+                -Hint "Provide --group=<name> or set RESOURCE_GROUP in .env."
+        }
+        $resourceGroup = $defaultResourceGroup.Trim()
+    }
+    else {
+        $resourceGroup = Select-CoVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -ServerName $serverName
+    }
+
+    $groupExists = az group exists -n $resourceGroup --only-show-errors
+    Assert-LastExitCode "az group exists (delete)"
+    if (-not [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' was not found." -f $resourceGroup) `
+            -Code 66 `
+            -Summary "Delete command cannot continue because resource group was not found." `
+            -Hint "Select an existing resource group."
+    }
+
+    $forceYes = Get-CoVmCliOptionBool -Options $Options -Name 'yes' -DefaultValue $false
+
+    if ($target -eq 'group') {
+        $approved = ($forceYes -or $AutoMode)
+        if (-not $approved) {
+            $approved = Confirm-YesNo -PromptText ("Delete resource group '{0}' and all resources?" -f $resourceGroup) -DefaultYes $false
+        }
+        if (-not $approved) {
+            Write-Host "Delete command canceled by user." -ForegroundColor Yellow
+            return
+        }
+
+        Invoke-TrackedAction -Label ("az group delete -n {0} --yes --no-wait" -f $resourceGroup) -Action {
+            az group delete -n $resourceGroup --yes --no-wait --only-show-errors
+            Assert-LastExitCode "az group delete"
+        } | Out-Null
+        Invoke-TrackedAction -Label ("az group wait -n {0} --deleted" -f $resourceGroup) -Action {
+            az group wait -n $resourceGroup --deleted --only-show-errors
+            Assert-LastExitCode "az group wait --deleted"
+        } | Out-Null
+
+        Write-Host ("Delete completed: resource group '{0}' was purged." -f $resourceGroup) -ForegroundColor Green
+        return
+    }
+
+    $vmNames = @(Get-CoVmVmNamesForResourceGroup -ResourceGroup $resourceGroup)
+    if ($vmNames.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail ("No VM found in resource group '{0}' for target '{1}'." -f $resourceGroup, $target) `
+            -Code 66 `
+            -Summary "Delete target requires a VM context but none was found." `
+            -Hint "Create a VM first or choose another resource group."
+    }
+
+    $selectedVmName = ''
+    if ($AutoMode) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$defaultVmName)) {
+            $candidate = $defaultVmName.Trim()
+            if (@($vmNames | Where-Object { [string]::Equals([string]$_, $candidate, [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+                $selectedVmName = $candidate
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$selectedVmName)) {
+            if ($vmNames.Count -eq 1) {
+                $selectedVmName = [string]$vmNames[0]
+            }
+            else {
+                Throw-FriendlyError `
+                    -Detail ("Auto mode could not resolve a unique VM in resource group '{0}'." -f $resourceGroup) `
+                    -Code 66 `
+                    -Summary "Delete command needs an explicit VM in auto mode." `
+                    -Hint "Set VM_NAME in .env to one VM in the selected group."
+            }
+        }
+    }
+    else {
+        $selectedVmName = Select-CoVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
+    }
+
+    $descriptor = Get-CoVmVmNetworkDescriptor -ResourceGroup $resourceGroup -VmName $selectedVmName
+    $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $selectedVmName)
+
+    $confirmPrompt = switch ($target) {
+        'vm' { "Delete VM '$selectedVmName' from resource group '$resourceGroup'?" }
+        'disk' { "Delete OS disk for VM '$selectedVmName' in resource group '$resourceGroup'?" }
+        default { "Delete VM-bound network resources for '$selectedVmName' in resource group '$resourceGroup'?" }
+    }
+    $approved = ($forceYes -or $AutoMode)
+    if (-not $approved) {
+        $approved = Confirm-YesNo -PromptText $confirmPrompt -DefaultYes $false
+    }
+    if (-not $approved) {
+        Write-Host "Delete command canceled by user." -ForegroundColor Yellow
+        return
+    }
+
+    if ($target -eq 'vm') {
+        if (-not $vmExists) {
+            Write-Host ("VM '{0}' is already absent in resource group '{1}'." -f $selectedVmName, $resourceGroup) -ForegroundColor Yellow
+            return
+        }
+        Invoke-TrackedAction -Label ("az vm delete -g {0} -n {1} --yes" -f $resourceGroup, $selectedVmName) -Action {
+            az vm delete -g $resourceGroup -n $selectedVmName --yes -o none --only-show-errors
+            Assert-LastExitCode "az vm delete"
+        } | Out-Null
+        Write-Host ("Delete completed: VM '{0}' was purged." -f $selectedVmName) -ForegroundColor Green
+        return
+    }
+
+    if ($vmExists) {
+        Invoke-TrackedAction -Label ("az vm delete -g {0} -n {1} --yes" -f $resourceGroup, $selectedVmName) -Action {
+            az vm delete -g $resourceGroup -n $selectedVmName --yes -o none --only-show-errors
+            Assert-LastExitCode "az vm delete"
+        } | Out-Null
+    }
+
+    if ($target -eq 'disk') {
+        $diskName = [string]$descriptor.OsDiskName
+        if ([string]::IsNullOrWhiteSpace([string]$diskName)) {
+            $diskName = $defaultVmDiskName
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$diskName)) {
+            Throw-FriendlyError `
+                -Detail "OS disk name could not be resolved." `
+                -Code 66 `
+                -Summary "Delete disk target failed before execution." `
+                -Hint "Set VM_DISK_NAME in .env or ensure VM metadata is available."
+        }
+
+        $diskExists = Test-CoVmAzResourceExists -AzArgs @("disk", "show", "-g", $resourceGroup, "-n", $diskName)
+        if ($diskExists) {
+            Invoke-TrackedAction -Label ("az disk delete -g {0} -n {1} --yes" -f $resourceGroup, $diskName) -Action {
+                az disk delete -g $resourceGroup -n $diskName --yes -o none --only-show-errors
+                Assert-LastExitCode "az disk delete"
+            } | Out-Null
+            Write-Host ("Delete completed: disk '{0}' was purged." -f $diskName) -ForegroundColor Green
+        }
+        else {
+            Write-Host ("Disk '{0}' is already absent in resource group '{1}'." -f $diskName, $resourceGroup) -ForegroundColor Yellow
+        }
+        return
+    }
+
+    $nicName = [string]$descriptor.NicName
+    if (-not [string]::IsNullOrWhiteSpace([string]$nicName)) {
+        $nicExists = Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", $nicName)
+        if ($nicExists) {
+            Invoke-TrackedAction -Label ("az network nic delete -g {0} -n {1}" -f $resourceGroup, $nicName) -Action {
+                az network nic delete -g $resourceGroup -n $nicName --only-show-errors
+                Assert-LastExitCode "az network nic delete"
+            } | Out-Null
+        }
+    }
+
+    $publicIpName = [string]$descriptor.PublicIpName
+    if (-not [string]::IsNullOrWhiteSpace([string]$publicIpName)) {
+        $ipExists = Test-CoVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", $resourceGroup, "-n", $publicIpName)
+        if ($ipExists) {
+            Invoke-TrackedAction -Label ("az network public-ip delete -g {0} -n {1}" -f $resourceGroup, $publicIpName) -Action {
+                az network public-ip delete -g $resourceGroup -n $publicIpName --only-show-errors
+                Assert-LastExitCode "az network public-ip delete"
+            } | Out-Null
+        }
+    }
+
+    $nsgName = [string]$descriptor.NsgName
+    if (-not [string]::IsNullOrWhiteSpace([string]$nsgName)) {
+        $nsgExists = Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", $resourceGroup, "-n", $nsgName)
+        if ($nsgExists) {
+            Invoke-TrackedAction -Label ("az network nsg delete -g {0} -n {1}" -f $resourceGroup, $nsgName) -Action {
+                az network nsg delete -g $resourceGroup -n $nsgName --only-show-errors
+                Assert-LastExitCode "az network nsg delete"
+            } | Out-Null
+        }
+    }
+
+    $vnetName = [string]$descriptor.VnetName
+    if (-not [string]::IsNullOrWhiteSpace([string]$vnetName)) {
+        $vnetExists = Test-CoVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", $resourceGroup, "-n", $vnetName)
+        if ($vnetExists) {
+            Invoke-TrackedAction -Label ("az network vnet delete -g {0} -n {1}" -f $resourceGroup, $vnetName) -Action {
+                az network vnet delete -g $resourceGroup -n $vnetName --only-show-errors
+                Assert-LastExitCode "az network vnet delete"
+            } | Out-Null
+        }
+    }
+
+    Write-Host ("Delete completed: VM-bound network resources for '{0}' were purged." -f $selectedVmName) -ForegroundColor Green
+}
+
 function Invoke-CoVmCommandDispatcher {
     param(
         [string]$CommandName,
@@ -6225,11 +6852,10 @@ function Invoke-CoVmCommandDispatcher {
             return
         }
         'create' {
-            $purge = Get-CoVmCliOptionBool -Options $Options -Name 'purge' -DefaultValue $false
             $actionPlan = Resolve-CoVmActionPlan -CommandName 'create' -Options $Options
             $script:UpdateMode = $false
-            $script:RenewMode = [bool]$purge
-            $script:ExecutionMode = if ($purge) { 'destructive rebuild' } else { 'default' }
+            $script:RenewMode = $false
+            $script:ExecutionMode = 'default'
             Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create' -ActionPlan $actionPlan
             return
         }
@@ -6255,12 +6881,19 @@ function Invoke-CoVmCommandDispatcher {
             Invoke-CoVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
             return
         }
+        'delete' {
+            $script:UpdateMode = $false
+            $script:RenewMode = $false
+            $script:ExecutionMode = 'default'
+            Invoke-CoVmDeleteCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+            return
+        }
         default {
             Throw-FriendlyError `
                 -Detail ("Unknown command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | change | exec."
+                -Hint "Use one command: create | update | change | exec | delete."
         }
     }
 }
