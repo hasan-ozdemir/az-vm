@@ -3390,6 +3390,7 @@ function Start-CoVmPersistentSshSession {
         StderrReader = $proc.StandardError
         PendingStdoutTask = $null
         PendingStderrTask = $null
+        TransientConsoleActive = $false
         HostName = [string]$HostName
         UserName = [string]$UserName
         Port = [string]$Port
@@ -3433,6 +3434,43 @@ function Normalize-CoVmProtocolLine {
     $value = $value.TrimStart([char]0xFEFF)
     $value = $value.TrimEnd("`r", "`n")
     return $value
+}
+
+function Test-CoVmTransientSpinnerLine {
+    param(
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ($null -eq $Text) {
+        return $false
+    }
+
+    $value = [string]$Text
+    if ($value.StartsWith("[stderr] ", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $value = $value.Substring(9)
+    }
+
+    $value = $value.Trim()
+    if ([string]::IsNullOrWhiteSpace($value)) {
+        return $false
+    }
+
+    return [regex]::IsMatch($value, '^[\|/\\-]{1,16}$')
+}
+
+function Write-CoVmTransientConsoleText {
+    param(
+        [AllowNull()]
+        [string]$Text
+    )
+
+    $value = if ($null -eq $Text) { "" } else { [string]$Text }
+    [Console]::Write(("`r{0}" -f $value))
+}
+
+function Clear-CoVmTransientConsoleText {
+    [Console]::WriteLine("")
 }
 
 function Invoke-CoVmPersistentSshTask {
@@ -3503,6 +3541,15 @@ function Invoke-CoVmPersistentSshTask {
                 $lineText = [string]$line
                 $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
                 if ($null -eq $normalizedLine) { $normalizedLine = "" }
+                if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
+                    Write-CoVmTransientConsoleText -Text ([string]$normalizedLine)
+                    $Session.TransientConsoleActive = $true
+                    continue
+                }
+                if ($Session.TransientConsoleActive) {
+                    Clear-CoVmTransientConsoleText
+                    $Session.TransientConsoleActive = $false
+                }
                 [void]$outputLines.Add([string]$normalizedLine)
                 Write-Host ([string]$normalizedLine)
                 if (($normalizedLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
@@ -3527,6 +3574,15 @@ function Invoke-CoVmPersistentSshTask {
                 $lineText = [string]$line
                 $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
                 if ($null -eq $normalizedLine) { $normalizedLine = "" }
+                if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
+                    Write-CoVmTransientConsoleText -Text ([string]$normalizedLine)
+                    $Session.TransientConsoleActive = $true
+                    continue
+                }
+                if ($Session.TransientConsoleActive) {
+                    Clear-CoVmTransientConsoleText
+                    $Session.TransientConsoleActive = $false
+                }
                 [void]$outputLines.Add([string]$normalizedLine)
                 Write-Warning ([string]$normalizedLine)
             }
@@ -3541,6 +3597,15 @@ function Invoke-CoVmPersistentSshTask {
                 foreach ($line in ($stdoutTail -split "`r?`n")) {
                     $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
                     if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
+                    if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
+                        Write-CoVmTransientConsoleText -Text ([string]$normalizedTailLine)
+                        $Session.TransientConsoleActive = $true
+                        continue
+                    }
+                    if ($Session.TransientConsoleActive) {
+                        Clear-CoVmTransientConsoleText
+                        $Session.TransientConsoleActive = $false
+                    }
                     [void]$outputLines.Add([string]$normalizedTailLine)
                     Write-Host ([string]$normalizedTailLine)
                 }
@@ -3549,6 +3614,15 @@ function Invoke-CoVmPersistentSshTask {
                 foreach ($line in ($stderrTail -split "`r?`n")) {
                     $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
                     if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
+                    if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
+                        Write-CoVmTransientConsoleText -Text ([string]$normalizedTailLine)
+                        $Session.TransientConsoleActive = $true
+                        continue
+                    }
+                    if ($Session.TransientConsoleActive) {
+                        Clear-CoVmTransientConsoleText
+                        $Session.TransientConsoleActive = $false
+                    }
                     [void]$outputLines.Add([string]$normalizedTailLine)
                     Write-Warning ([string]$normalizedTailLine)
                 }
@@ -3561,6 +3635,10 @@ function Invoke-CoVmPersistentSshTask {
     }
 
     if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+    if ($Session.TransientConsoleActive) {
+        Clear-CoVmTransientConsoleText
+        $Session.TransientConsoleActive = $false
+    }
     return [pscustomobject]@{
         ExitCode = [int]$exitCode
         Output = ($outputLines -join "`n")
@@ -3574,6 +3652,11 @@ function Stop-CoVmPersistentSshSession {
 
     if ($null -eq $Session) {
         return
+    }
+
+    if ($Session.PSObject.Properties.Match('TransientConsoleActive').Count -gt 0 -and [bool]$Session.TransientConsoleActive) {
+        Clear-CoVmTransientConsoleText
+        $Session.TransientConsoleActive = $false
     }
 
     $proc = $Session.Process

@@ -5,6 +5,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
+from typing import Optional
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -71,8 +72,24 @@ def sanitize_stream_text(text: str) -> str:
     return value
 
 
-def build_client(host: str, port: int, user: str, password: str, timeout: int) -> paramiko.SSHClient:
+def clamp_int(value: int, minimum: int, maximum: int, default: int) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        parsed = int(default)
+    return max(minimum, min(maximum, parsed))
+
+
+def build_client(
+    host: str,
+    port: int,
+    user: str,
+    password: str,
+    timeout: int,
+    keepalive_seconds: int = 15,
+) -> paramiko.SSHClient:
     connect_timeout = max(5, min(int(timeout), 60)) if timeout > 0 else 30
+    keepalive = clamp_int(keepalive_seconds, 5, 120, 15)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(
@@ -86,11 +103,38 @@ def build_client(host: str, port: int, user: str, password: str, timeout: int) -
         look_for_keys=False,
         allow_agent=False,
     )
+    transport = client.get_transport()
+    if transport is not None:
+        transport.set_keepalive(keepalive)
     return client
 
 
+def reconnect_client(current_client: Optional[paramiko.SSHClient], args: argparse.Namespace) -> paramiko.SSHClient:
+    if current_client is not None:
+        try:
+            current_client.close()
+        except Exception:
+            pass
+
+    return build_client(
+        host=args.host,
+        port=args.port,
+        user=args.user,
+        password=args.password,
+        timeout=args.timeout,
+        keepalive_seconds=args.keepalive_seconds,
+    )
+
+
 def run_exec(args: argparse.Namespace) -> int:
-    client = build_client(args.host, args.port, args.user, args.password, args.timeout)
+    client = build_client(
+        args.host,
+        args.port,
+        args.user,
+        args.password,
+        args.timeout,
+        args.keepalive_seconds,
+    )
     try:
         transport = client.get_transport()
         if transport is None:
@@ -150,7 +194,14 @@ def run_copy(args: argparse.Namespace) -> int:
         write_stderr(f"Local file was not found: {local_path}\n")
         return 2
 
-    client = build_client(args.host, args.port, args.user, args.password, args.timeout)
+    client = build_client(
+        args.host,
+        args.port,
+        args.user,
+        args.password,
+        args.timeout,
+        args.keepalive_seconds,
+    )
     try:
         sftp = client.open_sftp()
         try:
@@ -264,11 +315,11 @@ def run_stdin_task(
 
 def run_session(args: argparse.Namespace) -> int:
     session_command = resolve_session_command(args.shell)
-    default_task_timeout = int(args.task_timeout)
-    if default_task_timeout < 5:
-        default_task_timeout = 5
+    default_task_timeout = clamp_int(args.task_timeout, 5, 7200, 1800)
+    reconnect_retries = clamp_int(args.reconnect_retries, 1, 3, 3)
+    keepalive_seconds = clamp_int(args.keepalive_seconds, 5, 120, 15)
 
-    client = build_client(args.host, args.port, args.user, args.password, args.timeout)
+    client = reconnect_client(None, args)
     try:
         for raw_bytes in sys.stdin.buffer:
             if not raw_bytes:
@@ -309,19 +360,36 @@ def run_session(args: argparse.Namespace) -> int:
 
             write_stdout(f"CO_VM_TASK_BEGIN:{task_name}\n")
 
-            try:
-                transport = client.get_transport()
-                if transport is None or not transport.is_active():
-                    client.close()
-                    client = build_client(args.host, args.port, args.user, args.password, args.timeout)
-                task_exit_code = run_stdin_task(
-                    client=client,
-                    command=session_command,
-                    script_text=script_text,
-                    timeout_seconds=task_timeout,
-                )
-            except Exception as exc:
-                write_stdout(f"[stderr] CO_VM_SESSION_TASK_ERROR:{task_name}:{exc}\n")
+            task_exit_code = 1
+            last_exception = None
+            for attempt in range(1, reconnect_retries + 1):
+                try:
+                    transport = client.get_transport()
+                    if transport is None or not transport.is_active():
+                        client = reconnect_client(client, args)
+                        transport = client.get_transport()
+                        if transport is not None:
+                            transport.set_keepalive(keepalive_seconds)
+                    task_exit_code = run_stdin_task(
+                        client=client,
+                        command=session_command,
+                        script_text=script_text,
+                        timeout_seconds=task_timeout,
+                    )
+                    last_exception = None
+                    break
+                except Exception as exc:
+                    last_exception = exc
+                    if attempt >= reconnect_retries:
+                        break
+                    write_stdout(
+                        f"[stderr] CO_VM_SESSION_RECONNECT_RETRY:{task_name}:{attempt}/{reconnect_retries}:{exc}\n"
+                    )
+                    time.sleep(2)
+                    client = reconnect_client(client, args)
+
+            if last_exception is not None:
+                write_stdout(f"[stderr] CO_VM_SESSION_TASK_ERROR:{task_name}:{last_exception}\n")
                 task_exit_code = 1
 
             write_stdout(f"CO_VM_TASK_END:{task_name}:{task_exit_code}\n")
@@ -341,6 +409,18 @@ def parse_args() -> argparse.Namespace:
         common_parser.add_argument("--user", required=True, help="SSH username")
         common_parser.add_argument("--password", required=True, help="SSH password")
         common_parser.add_argument("--timeout", type=int, default=30, help="Connection timeout in seconds")
+        common_parser.add_argument(
+            "--reconnect-retries",
+            type=int,
+            default=3,
+            help="Maximum reconnect retries when the SSH link drops (1-3)",
+        )
+        common_parser.add_argument(
+            "--keepalive-seconds",
+            type=int,
+            default=15,
+            help="SSH keepalive interval in seconds",
+        )
 
     exec_parser = subparsers.add_parser("exec", help="Execute a remote command over SSH")
     add_common(exec_parser)
