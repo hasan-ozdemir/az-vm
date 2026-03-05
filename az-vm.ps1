@@ -24,6 +24,12 @@ $script:AutoMode = [bool]$Auto
 $script:UpdateMode = [bool]$Update
 $script:RenewMode = [bool]$destructive rebuild
 $script:PerfMode = [bool]$Perf
+
+# In interactive mode, destructive rebuild is the default flow unless a mode flag is provided.
+if (-not $script:AutoMode -and -not $script:UpdateMode -and -not $script:RenewMode) {
+    $script:RenewMode = $true
+}
+
 $script:TranscriptStarted = $false
 $script:HadError = $false
 $script:ExitCode = 0
