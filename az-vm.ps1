@@ -2454,13 +2454,6 @@ function Show-CoVmStepFirstUseValues {
         return
     }
 
-    Write-Host ""
-    if ([string]::IsNullOrWhiteSpace($StepLabel)) {
-        Write-Host "Step value usage (new/updated values):" -ForegroundColor DarkCyan
-    }
-    else {
-        Write-Host ("Step value usage ({0}) - new/updated values:" -f $StepLabel) -ForegroundColor DarkCyan
-    }
     foreach ($row in @($rows)) {
         Write-Host ("- {0} = {1}" -f [string]$row.Key, [string]$row.Value)
     }
