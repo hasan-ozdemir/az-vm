@@ -114,10 +114,15 @@ else {
 }
 
 if (-not (Test-Path -LiteralPath $RequirementsFile)) {
-    @(
+    $requirementsText = @(
         "# pyssh runtime dependencies"
         "paramiko==4.0.0"
-    ) | Set-Content -LiteralPath $RequirementsFile -Encoding utf8
+    ) -join "`n"
+    [System.IO.File]::WriteAllText(
+        $RequirementsFile,
+        ($requirementsText + "`n"),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
     Write-Host ("Created default requirements file: {0}" -f $RequirementsFile)
 }
 
