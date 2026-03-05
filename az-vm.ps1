@@ -1512,32 +1512,203 @@ function Convert-CoVmCliTextToTokens {
     )
 }
 
-function Show-CoVmCommandHelp {
+function Get-CoVmValidCommandList {
+    return @('create', 'update', 'change', 'exec', 'delete', 'help')
+}
+
+function Show-CoVmCommandHelpOverview {
+    Write-Host "az-vm quick help"
     Write-Host "Usage: az-vm <command> [--option] [--option=value]"
     Write-Host ""
-    Write-Host "Commands:"
-    Write-Host "  create   Create missing resources."
-    Write-Host "  update   Re-run create-or-update operations on existing resources."
-    Write-Host "  change   Change VM region/size; region move uses snapshot-based migration."
-    Write-Host "  exec     Execute one VM init/update task, or open interactive SSH REPL."
-    Write-Host "  delete   Delete target resources from a selected resource group."
+    Write-Host "Commands (full details: az-vm help <command>):"
+    Write-Host "  create  Build missing resources and run VM init/update flow."
+    Write-Host "  update  Re-run create-or-update operations on existing resources."
+    Write-Host "  change  Change VM region and/or VM size."
+    Write-Host "  exec    Run one init/update task or open interactive remote shell."
+    Write-Host "  delete  Purge selected resources from a resource group."
+    Write-Host "  help    Show detailed docs (all commands or one command)."
     Write-Host ""
-    Write-Host "Common options:"
-    Write-Host "  --auto[=true|false]      Auto mode (interactive disabled)."
-    Write-Host "  --perf[=true|false]      Print performance timing logs."
-    Write-Host "  --windows[=true|false]   Force VM OS type to windows."
-    Write-Host "  --linux[=true|false]     Force VM OS type to linux."
+    Write-Host "Global options:"
+    Write-Host "  --auto[=true|false]    Auto mode."
+    Write-Host "  --perf[=true|false]    Print timing metrics."
+    Write-Host "  --windows / --linux    Force VM platform."
+    Write-Host "  --help                 Show this overview or command-specific help."
     Write-Host ""
-    Write-Host "Command options:"
-    Write-Host "  create --to-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
-    Write-Host "  create --from-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
-    Write-Host "  create --single-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
-    Write-Host "  update --to-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
-    Write-Host "  update --from-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
-    Write-Host "  update --single-step=<config|group|network|vm-deploy|vm-init|vm-update|vm-summary>"
-    Write-Host "  change --vm-region=<name> --vm-size=<sku>"
-    Write-Host "  exec --group=<resource-group> --init-task=<NN> | --update-task=<NN>"
-    Write-Host "  delete --target=<group|network|vm|disk> [--group=<resource-group>] [--yes]"
+    Write-Host "Step values for create/update:"
+    Write-Host "  config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
+    Write-Host ""
+    Write-Host "Quick examples:"
+    Write-Host "  az-vm --help"
+    Write-Host "  az-vm create --auto --windows"
+    Write-Host "  az-vm create --from-step=vm-init --linux"
+    Write-Host "  az-vm update --single-step=network --auto"
+    Write-Host "  az-vm change --vm-region=centralindia"
+    Write-Host "  az-vm exec --update-task=01 --group=rg-examplevm-ate1"
+    Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1 --yes"
+    Write-Host ""
+    Write-Host "Detailed docs:"
+    Write-Host "  az-vm help"
+    Write-Host "  az-vm help create"
+    Write-Host "  az-vm help --command=change"
+}
+
+function Show-CoVmCommandHelpDetailed {
+    param(
+        [string]$Topic
+    )
+
+    $validCommands = Get-CoVmValidCommandList
+    $topicText = [string]$Topic
+    $topicName = $topicText.Trim().ToLowerInvariant()
+
+    if ([string]::IsNullOrWhiteSpace($topicName)) {
+        Write-Host "az-vm detailed help"
+        Write-Host "Usage: az-vm <command> [--option] [--option=value]"
+        Write-Host ""
+        Write-Host "Common options:"
+        Write-Host "  --auto[=true|false]"
+        Write-Host "  --perf[=true|false]"
+        Write-Host "  --windows[=true|false]"
+        Write-Host "  --linux[=true|false]"
+        Write-Host "  --help"
+        Write-Host ""
+        Write-Host "Help usage:"
+        Write-Host "  az-vm --help                       # quick overview"
+        Write-Host "  az-vm help                         # full command catalog"
+        Write-Host "  az-vm help create                  # one command details"
+        Write-Host "  az-vm help --command=update        # one command details"
+        Write-Host ""
+        Write-Host "Command reference:"
+        Write-Host "  create  : supports --to-step, --from-step, --single-step"
+        Write-Host "  update  : supports --to-step, --from-step, --single-step"
+        Write-Host "  change  : supports --vm-region, --vm-size"
+        Write-Host "  exec    : supports --group, --init-task, --update-task"
+        Write-Host "  delete  : supports --target, --group, --yes"
+        Write-Host ""
+        Write-Host "Examples:"
+        Write-Host "  az-vm create --auto --windows"
+        Write-Host "  az-vm create --single-step=config --linux"
+        Write-Host "  az-vm update --to-step=vm-init --auto"
+        Write-Host "  az-vm change --vm-region=austriaeast --vm-size=Standard_B2as_v2"
+        Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
+        Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1 --yes"
+        Write-Host ""
+        Write-Host "For per-command docs: az-vm help <create|update|change|exec|delete>"
+        return
+    }
+
+    if ($validCommands -notcontains $topicName) {
+        Throw-FriendlyError `
+            -Detail ("Unknown help topic '{0}'." -f $topicText) `
+            -Code 2 `
+            -Summary "Unknown help topic." `
+            -Hint "Use az-vm help or az-vm help <create|update|change|exec|delete>."
+    }
+
+    switch ($topicName) {
+        'create' {
+            Write-Host "Command: create"
+            Write-Host "Description: create missing resources and continue with VM init/update flow."
+            Write-Host "Usage:"
+            Write-Host "  az-vm create [--auto] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm create --to-step=<step>"
+            Write-Host "  az-vm create --from-step=<step>"
+            Write-Host "  az-vm create --single-step=<step>"
+            Write-Host "  az-vm create --help"
+            Write-Host "Steps: config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
+            Write-Host "Examples:"
+            Write-Host "  az-vm create --auto --windows"
+            Write-Host "  az-vm create --single-step=network --linux"
+            Write-Host "  az-vm create --from-step=vm-deploy --to-step=vm-summary --perf"
+            return
+        }
+        'update' {
+            Write-Host "Command: update"
+            Write-Host "Description: re-run create-or-update operations against existing resources."
+            Write-Host "Usage:"
+            Write-Host "  az-vm update [--auto] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm update --to-step=<step>"
+            Write-Host "  az-vm update --from-step=<step>"
+            Write-Host "  az-vm update --single-step=<step>"
+            Write-Host "  az-vm update --help"
+            Write-Host "Steps: config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
+            Write-Host "Examples:"
+            Write-Host "  az-vm update --auto --windows"
+            Write-Host "  az-vm update --single-step=vm-update --auto --windows"
+            Write-Host "  az-vm update --from-step=group --to-step=vm-init --perf"
+            return
+        }
+        'change' {
+            Write-Host "Command: change"
+            Write-Host "Description: change VM region and/or VM size for an existing deployment."
+            Write-Host "Usage:"
+            Write-Host "  az-vm change [--auto] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm change --vm-region=<azure-region>"
+            Write-Host "  az-vm change --vm-size=<vm-sku>"
+            Write-Host "  az-vm change --vm-region=<region> --vm-size=<sku>"
+            Write-Host "  az-vm change --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm change --vm-region=centralindia"
+            Write-Host "  az-vm change --vm-size=Standard_B2as_v2"
+            Write-Host "  az-vm change --vm-region=austriaeast --vm-size=Standard_B2as_v2 --auto"
+            Write-Host "Notes: region move uses snapshot-based migration flow with rollback safeguards."
+            return
+        }
+        'exec' {
+            Write-Host "Command: exec"
+            Write-Host "Description: execute a single init/update task or open interactive remote shell."
+            Write-Host "Usage:"
+            Write-Host "  az-vm exec [--auto] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm exec --init-task=<NN> [--group=<resource-group>]"
+            Write-Host "  az-vm exec --update-task=<NN> [--group=<resource-group>]"
+            Write-Host "  az-vm exec --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
+            Write-Host "  az-vm exec --update-task=15 --auto --windows"
+            Write-Host "  az-vm exec --auto --linux      # opens interactive remote shell session"
+            return
+        }
+        'delete' {
+            Write-Host "Command: delete"
+            Write-Host "Description: purge selected resources from a resource group."
+            Write-Host "Usage:"
+            Write-Host "  az-vm delete --target=<group|network|vm|disk> [--group=<resource-group>] [--yes]"
+            Write-Host "  az-vm delete --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1 --yes"
+            Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1 --yes"
+            Write-Host "  az-vm delete --target=network --group=rg-examplevm-ate1 --yes"
+            return
+        }
+        'help' {
+            Write-Host "Command: help"
+            Write-Host "Description: print detailed help pages."
+            Write-Host "Usage:"
+            Write-Host "  az-vm help"
+            Write-Host "  az-vm help <command>"
+            Write-Host "  az-vm help --command=<command>"
+            Write-Host "  az-vm --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm help create"
+            Write-Host "  az-vm help --command=change"
+            Write-Host "  az-vm --help"
+            return
+        }
+    }
+}
+
+function Show-CoVmCommandHelp {
+    param(
+        [switch]$Overview,
+        [string]$Topic
+    )
+
+    if ($Overview) {
+        Show-CoVmCommandHelpOverview
+        return
+    }
+
+    Show-CoVmCommandHelpDetailed -Topic $Topic
 }
 
 function Parse-CoVmCliArguments {
@@ -1554,23 +1725,7 @@ function Parse-CoVmCliArguments {
     }
     $remaining += @($RawArgs)
 
-    if ([string]::IsNullOrWhiteSpace($rawCommand)) {
-        Throw-FriendlyError `
-            -Detail "No command was provided." `
-            -Code 2 `
-            -Summary "Command is required." `
-            -Hint "Use one command: create | update | change | exec | delete. Example: az-vm create --auto"
-    }
-
-    $command = $rawCommand.Trim().ToLowerInvariant()
-    $validCommands = @('create','update','change','exec','delete','help')
-    if ($validCommands -notcontains $command) {
-        Throw-FriendlyError `
-            -Detail ("Unknown command '{0}'." -f $rawCommand) `
-            -Code 2 `
-            -Summary "Unknown command." `
-            -Hint "Use one command: create | update | change | exec | delete."
-    }
+    $validCommands = Get-CoVmValidCommandList
 
     $options = @{}
     $positionals = @()
@@ -1615,17 +1770,95 @@ function Parse-CoVmCliArguments {
         $positionals += $text
     }
 
-    if ($positionals.Count -gt 0) {
+    $command = ''
+    if (-not [string]::IsNullOrWhiteSpace($rawCommand)) {
+        $command = $rawCommand.Trim().ToLowerInvariant()
+        if ($validCommands -notcontains $command) {
+            Throw-FriendlyError `
+                -Detail ("Unknown command '{0}'." -f $rawCommand) `
+                -Code 2 `
+                -Summary "Unknown command." `
+                -Hint "Use one command: create | update | change | exec | delete | help."
+        }
+    }
+    elseif ($options.ContainsKey('help')) {
+        $command = 'help'
+    }
+    else {
         Throw-FriendlyError `
-            -Detail ("Unexpected positional argument(s): {0}" -f ($positionals -join ', ')) `
+            -Detail "No command was provided." `
             -Code 2 `
-            -Summary "Unexpected arguments were provided." `
-            -Hint "Use only --option or --option=value syntax after the command."
+            -Summary "Command is required." `
+            -Hint "Use one command: create | update | change | exec | delete | help. Example: az-vm create --auto"
+    }
+
+    $helpTopic = ''
+    $commandOptionText = ''
+    if ($options.ContainsKey('command')) {
+        $commandOptionRaw = $options['command']
+        if ($commandOptionRaw -is [bool]) {
+            Throw-FriendlyError `
+                -Detail "Option '--command' requires a value when help is used." `
+                -Code 2 `
+                -Summary "Help topic value is missing." `
+                -Hint "Use --command=<create|update|change|exec|delete|help>."
+        }
+        $commandOptionText = [string]$commandOptionRaw
+        $commandOptionText = $commandOptionText.Trim().ToLowerInvariant()
+    }
+
+    if ($command -eq 'help') {
+        if ($positionals.Count -gt 1) {
+            Throw-FriendlyError `
+                -Detail ("Too many help topics were provided: {0}" -f ($positionals -join ', ')) `
+                -Code 2 `
+                -Summary "Too many help topic arguments were provided." `
+                -Hint "Use only one help topic. Example: az-vm help create"
+        }
+
+        $positionalTopic = ''
+        if ($positionals.Count -eq 1) {
+            $positionalTopic = [string]$positionals[0]
+            $positionalTopic = $positionalTopic.Trim().ToLowerInvariant()
+        }
+
+        if ((-not [string]::IsNullOrWhiteSpace($commandOptionText)) -and (-not [string]::IsNullOrWhiteSpace($positionalTopic)) -and (-not [string]::Equals($commandOptionText, $positionalTopic, [System.StringComparison]::OrdinalIgnoreCase))) {
+            Throw-FriendlyError `
+                -Detail ("Conflicting help topics were provided: positional='{0}', --command='{1}'." -f $positionalTopic, $commandOptionText) `
+                -Code 2 `
+                -Summary "Help topic conflict was detected." `
+                -Hint "Use only one help topic source."
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace($commandOptionText)) {
+            $helpTopic = $commandOptionText
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace($positionalTopic)) {
+            $helpTopic = $positionalTopic
+        }
+    }
+    else {
+        if ($positionals.Count -gt 0) {
+            Throw-FriendlyError `
+                -Detail ("Unexpected positional argument(s): {0}" -f ($positionals -join ', ')) `
+                -Code 2 `
+                -Summary "Unexpected arguments were provided." `
+                -Hint "Use only --option or --option=value syntax after the command."
+        }
+
+        if ($options.ContainsKey('command')) {
+            Throw-FriendlyError `
+                -Detail "Option '--command' is only supported with help command." `
+                -Code 2 `
+                -Summary "Unsupported option for this command." `
+                -Hint "Use 'az-vm help --command=<name>' for help topic filtering."
+        }
     }
 
     return [pscustomobject]@{
         Command = $command
         Options = $options
+        HelpTopic = $helpTopic
     }
 }
 
@@ -5707,7 +5940,7 @@ function Assert-CoVmCommandOptions {
         [hashtable]$Options
     )
 
-    $allowed = @('auto','perf','windows','linux')
+    $allowed = @('auto','perf','windows','linux','help')
     $legacyStepOptions = @('multi-action','single-action')
     foreach ($legacy in $legacyStepOptions) {
         if (Test-CoVmCliOptionPresent -Options $Options -Name $legacy) {
@@ -5725,7 +5958,7 @@ function Assert-CoVmCommandOptions {
         'change' { $allowed += @('vm-region','vm-size') }
         'exec'   { $allowed += @('group','init-task','update-task') }
         'delete' { $allowed += @('target','group','yes') }
-        'help'   { $allowed += @() }
+        'help'   { $allowed += @('command') }
         default {
             Throw-FriendlyError `
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
@@ -5744,6 +5977,11 @@ function Assert-CoVmCommandOptions {
                 -Summary "Unsupported command option." `
                 -Hint ("Use valid options for '{0}' only." -f $CommandName)
         }
+    }
+
+    $helpRequested = Get-CoVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
+    if ($helpRequested -and $CommandName -ne 'help') {
+        return
     }
 
     if (Test-CoVmCliOptionPresent -Options $Options -Name 'purge') {
@@ -6826,7 +7064,8 @@ function Invoke-CoVmDeleteCommand {
 function Invoke-CoVmCommandDispatcher {
     param(
         [string]$CommandName,
-        [hashtable]$Options
+        [hashtable]$Options,
+        [string]$HelpTopic = ''
     )
 
     Assert-CoVmCommandOptions -CommandName $CommandName -Options $Options
@@ -6846,9 +7085,21 @@ function Invoke-CoVmCommandDispatcher {
 
     $script:ConfigOverrides = @{}
     $script:ActiveCommand = [string]$CommandName
+    $helpRequested = Get-CoVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
+
+    if ($helpRequested -and $CommandName -ne 'help') {
+        Show-CoVmCommandHelp -Topic $CommandName
+        return
+    }
+
     switch ($CommandName) {
         'help' {
-            Show-CoVmCommandHelp
+            if ($helpRequested) {
+                Show-CoVmCommandHelp -Overview
+            }
+            else {
+                Show-CoVmCommandHelp -Topic $HelpTopic
+            }
             return
         }
         'create' {
@@ -6905,7 +7156,7 @@ if ($MyInvocation.InvocationName -eq '.') {
 
 try {
     $parsedCli = Parse-CoVmCliArguments -CommandToken $Command -RawArgs $CliArgs
-    Invoke-CoVmCommandDispatcher -CommandName ([string]$parsedCli.Command) -Options $parsedCli.Options
+    Invoke-CoVmCommandDispatcher -CommandName ([string]$parsedCli.Command) -Options $parsedCli.Options -HelpTopic ([string]$parsedCli.HelpTopic)
 }
 catch {
     $resolvedError = Resolve-CoVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
