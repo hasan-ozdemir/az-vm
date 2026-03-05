@@ -8,6 +8,7 @@ param(
     [string]$TestUser = "",
     [string]$TestPassword = "",
     [int]$TestTimeoutSeconds = 15,
+    [switch]$ConnectionTest,
     [switch]$SkipConnectionTest
 )
 
@@ -193,8 +194,13 @@ if ([string]::IsNullOrWhiteSpace([string]$TestHost)) {
     }
 }
 
+$shouldRunConnectionTest = [bool]$ConnectionTest
 if ($SkipConnectionTest) {
-    Write-Host "Skipping isolated SSH connection test because -SkipConnectionTest was provided." -ForegroundColor Yellow
+    $shouldRunConnectionTest = $false
+}
+
+if (-not $shouldRunConnectionTest) {
+    Write-Host "Isolated SSH connection test is disabled by default. Use -ConnectionTest to run it." -ForegroundColor Yellow
 }
 else {
     $missing = @()

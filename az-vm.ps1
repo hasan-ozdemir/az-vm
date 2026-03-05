@@ -3202,14 +3202,14 @@ function Ensure-CoVmPySshTools {
         }
     }
 
-    $installerPath = Join-Path $RepoRoot "tools\\install-pyssh-tools.ps1"
+    $installerPath = Join-Path $RepoRoot "tools\\install-pyssh-tool.ps1"
     if (-not (Test-Path -LiteralPath $installerPath)) {
         throw "Python SSH tool installer script was not found: $installerPath"
     }
 
     Invoke-TrackedAction -Label ("powershell -File {0}" -f $installerPath) -Action {
         & powershell -NoProfile -ExecutionPolicy Bypass -File $installerPath
-        Assert-LastExitCode "install-pyssh-tools.ps1"
+        Assert-LastExitCode "install-pyssh-tool.ps1"
     } | Out-Null
 
     if (-not (Test-Path -LiteralPath $pySshClientPath)) {
