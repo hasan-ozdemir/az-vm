@@ -3,7 +3,7 @@ Script Filename: az-vm.ps1
 Script Description:
 - Unified Azure VM provisioning flow for Windows and Linux.
 - OS selection: --windows or --linux (or VM_OS_TYPE from .env).
-- Init tasks run via az vm run-command task-by-task.
+- Windows init tasks run once on first VM creation via Custom Script Extension.
 - Update tasks run via persistent pyssh task-by-task.
 #>
 
@@ -14,6 +14,8 @@ param(
     [switch]$Update,
     [Alias('r')]
     [switch]$destructive rebuild,
+    [Alias('p')]
+    [switch]$Perf,
     [switch]$Windows,
     [switch]$Linux
 )
@@ -21,14 +23,106 @@ param(
 $script:AutoMode = [bool]$Auto
 $script:UpdateMode = [bool]$Update
 $script:RenewMode = [bool]$destructive rebuild
+$script:PerfMode = [bool]$Perf
 $script:TranscriptStarted = $false
 $script:HadError = $false
 $script:ExitCode = 0
 $script:ConfigOverrides = @{}
 $script:ExecutionMode = if ($script:RenewMode) { 'destructive rebuild' } elseif ($script:UpdateMode) { 'update' } else { 'default' }
+$script:AzCommandTimeoutSeconds = 1800
+$script:SshTaskTimeoutSeconds = 180
+$script:SshConnectTimeoutSeconds = 30
+$script:AzCliExecutable = $null
 
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
+
+function Get-CoVmAzCliExecutable {
+    if (-not [string]::IsNullOrWhiteSpace([string]$script:AzCliExecutable)) {
+        return [string]$script:AzCliExecutable
+    }
+
+    $azApp = Get-Command az -All -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' } | Select-Object -First 1
+    if ($null -eq $azApp -or [string]::IsNullOrWhiteSpace([string]$azApp.Source)) {
+        throw "Azure CLI executable could not be resolved from PATH."
+    }
+
+    $script:AzCliExecutable = [string]$azApp.Source
+    return [string]$script:AzCliExecutable
+}
+
+function Invoke-CoVmAzCliCommand {
+    param(
+        [string[]]$Arguments
+    )
+
+    $azExecutable = Get-CoVmAzCliExecutable
+    $argValues = @($Arguments | ForEach-Object { [string]$_ })
+    $timeoutSeconds = [int]$script:AzCommandTimeoutSeconds
+    if ($timeoutSeconds -lt 0) { $timeoutSeconds = 0 }
+
+    if ($timeoutSeconds -eq 0) {
+        & $azExecutable @argValues
+        return
+    }
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $azExecutable
+    $psi.Arguments = ($argValues | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+    [void]$proc.Start()
+
+    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+    $stderrTask = $proc.StandardError.ReadToEndAsync()
+    $waitMs = [int][Math]::Min([double][int]::MaxValue, [double]$timeoutSeconds * 1000.0)
+    $completed = $proc.WaitForExit($waitMs)
+    if (-not $completed) {
+        try { $proc.Kill() } catch { }
+        try { [void]$proc.WaitForExit() } catch { }
+        $global:LASTEXITCODE = 124
+        throw ("az command timed out after {0} second(s)." -f $timeoutSeconds)
+    }
+
+    [void]$proc.WaitForExit()
+    $stdoutText = ""
+    $stderrText = ""
+    try { $stdoutText = [string]$stdoutTask.Result } catch { }
+    try { $stderrText = [string]$stderrTask.Result } catch { }
+    $global:LASTEXITCODE = [int]$proc.ExitCode
+
+    if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
+        Write-Host ($stderrText.TrimEnd())
+    }
+
+    if ([string]::IsNullOrWhiteSpace($stdoutText)) {
+        return @()
+    }
+
+    $stdoutLines = @($stdoutText -split "`r?`n" | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    if ($stdoutLines.Count -eq 0) {
+        return @()
+    }
+    if ($stdoutLines.Count -eq 1) {
+        return [string]$stdoutLines[0]
+    }
+
+    return $stdoutLines
+}
+
+function az {
+    $argList = @()
+    foreach ($arg in @($args)) {
+        $argList += [string]$arg
+    }
+
+    return (Invoke-CoVmAzCliCommand -Arguments $argList)
+}
 
 function Get-CoVmPlatformDefaults {
     param(
@@ -195,14 +289,28 @@ function Get-CoVmTaskBlocksFromDirectory {
     $expectedExt = if ($Platform -eq 'windows') { '.ps1' } else { '.sh' }
     $namePattern = '^(?<n>\d{2})-(?<words>[a-z0-9]+(?:-[a-z0-9]+){1,4})(?<ext>\.(ps1|sh))$'
 
-    $files = @(Get-ChildItem -LiteralPath $DirectoryPath -File | Sort-Object Name)
+    $rootPath = (Resolve-Path -LiteralPath $DirectoryPath).Path.TrimEnd('\', '/')
+    $files = @(Get-ChildItem -LiteralPath $DirectoryPath -File -Recurse | Sort-Object FullName)
     if ($files.Count -eq 0) {
-        throw ("No task files were found in {0}." -f $DirectoryPath)
+        return [ordered]@{
+            ActiveTasks = @()
+            DisabledTasks = @()
+        }
     }
 
-    $rows = @()
+    $activeRows = @()
+    $disabledRows = @()
     foreach ($file in $files) {
         $name = [string]$file.Name
+        if ($name.StartsWith('.')) {
+            continue
+        }
+
+        $fileExt = [System.IO.Path]::GetExtension($name)
+        if (-not [string]::Equals($fileExt, $expectedExt, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw ("Task file '{0}' has invalid extension for platform '{1}'. Expected '{2}'." -f $name, $Platform, $expectedExt)
+        }
+
         if (-not ($name -match $namePattern)) {
             throw ("Invalid task filename '{0}'. Expected NN-verb-topic format with 2-5 words." -f $name)
         }
@@ -212,23 +320,56 @@ function Get-CoVmTaskBlocksFromDirectory {
             throw ("Task file '{0}' has invalid extension for platform '{1}'. Expected '{2}'." -f $name, $Platform, $expectedExt)
         }
 
-        $rows += [pscustomobject]@{
+        $relativePath = [string]$file.FullName
+        if ($relativePath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $relativePath.Substring($rootPath.Length).TrimStart('\', '/')
+        }
+        else {
+            $relativePath = [string]$file.Name
+        }
+        $relativePath = $relativePath.Replace('\', '/')
+        $isDisabled = $relativePath.StartsWith('disabled/', [System.StringComparison]::OrdinalIgnoreCase)
+        if ((-not $isDisabled) -and $relativePath.Contains('/')) {
+            throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files and disabled/* are allowed." -f $name, $relativePath)
+        }
+
+        $row = [pscustomobject]@{
             Order = [int]$Matches.n
             Name = [System.IO.Path]::GetFileNameWithoutExtension($name)
             Path = [string]$file.FullName
+            RelativePath = [string]$relativePath
+        }
+
+        if ($isDisabled) {
+            $disabledRows += $row
+        }
+        else {
+            $activeRows += $row
         }
     }
 
-    $taskBlocks = @()
-    foreach ($row in @($rows | Sort-Object Order, Name)) {
+    $activeTasks = @()
+    foreach ($row in @($activeRows | Sort-Object Order, Name)) {
         $content = Get-Content -Path $row.Path -Raw
-        $taskBlocks += [pscustomobject]@{
+        $activeTasks += [pscustomobject]@{
             Name = [string]$row.Name
             Script = [string]$content
+            RelativePath = [string]$row.RelativePath
         }
     }
 
-    return $taskBlocks
+    $disabledTasks = @()
+    foreach ($row in @($disabledRows | Sort-Object Order, Name)) {
+        $disabledTasks += [pscustomobject]@{
+            Name = [string]$row.Name
+            RelativePath = [string]$row.RelativePath
+        }
+    }
+
+    return [ordered]@{
+        ActiveTasks = $activeTasks
+        DisabledTasks = $disabledTasks
+    }
 }
 
 function Get-CoVmTaskTokenReplacements {
@@ -276,86 +417,109 @@ function Resolve-CoVmRuntimeTaskBlocks {
     return @(Apply-CoVmTaskBlockReplacements -TaskBlocks $TemplateTaskBlocks -Replacements $replacements)
 }
 
-function Invoke-CoVmRunCommandTaskBlocks {
+function Invoke-CoVmWindowsInitExtension {
     param(
         [string]$ResourceGroup,
         [string]$VmName,
-        [string]$CommandId,
-        [object[]]$TaskBlocks,
-        [ValidateSet('continue','strict')]
-        [string]$TaskOutcomeMode = 'strict'
+        [object[]]$TaskBlocks
     )
 
     if (-not $TaskBlocks -or @($TaskBlocks).Count -eq 0) {
-        throw 'Run-command task list is empty.'
-    }
-
-    $totalSuccess = 0
-    $totalWarnings = 0
-    $totalErrors = 0
-
-    foreach ($task in @($TaskBlocks)) {
-        $taskName = [string]$task.Name
-        $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$task.Script)
-        $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
-
-        try {
-            Write-Host ("TASK started: {0}" -f $taskName)
-            $taskArgs = Get-CoRunCommandScriptArgs -ScriptText $taskScript -CommandId $CommandId
-            $azArgs = @(
-                'vm', 'run-command', 'invoke',
-                '--resource-group', $ResourceGroup,
-                '--name', $VmName,
-                '--command-id', $CommandId,
-                '--scripts'
-            )
-            $azArgs += $taskArgs
-            $azArgs += @('-o', 'json')
-
-            $json = Invoke-TrackedAction -Label ("az vm run-command invoke (task: {0})" -f $taskName) -Action {
-                $res = az @azArgs
-                Assert-LastExitCode ("az vm run-command invoke ({0})" -f $taskName)
-                $res
-            }
-
-            $message = Get-CoRunCommandResultMessage -TaskName $taskName -RawJson $json -ModeLabel 'task-by-task'
-            if ($taskWatch.IsRunning) { $taskWatch.Stop() }
-            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-            Write-Host 'TASK result: success'
-            Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
-            if (-not [string]::IsNullOrWhiteSpace([string]$message)) {
-                Write-Host ([string]$message)
-            }
-            $totalSuccess++
-        }
-        catch {
-            if ($taskWatch.IsRunning) { $taskWatch.Stop() }
-            $detail = $_.Exception.Message
-            if ($TaskOutcomeMode -eq 'continue') {
-                $totalWarnings++
-                Write-Warning ("TASK warning: {0} => {1}" -f $taskName, $detail)
-                Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                Write-Host 'TASK result: warning'
-                Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
-                continue
-            }
-
-            $totalErrors++
-            Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
-            Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
-            throw
+        return [pscustomobject]@{
+            SuccessCount = 0
+            WarningCount = 0
+            ErrorCount = 0
         }
     }
 
-    Write-Host ("TASK_SUMMARY:success={0};warning={1};error={2}" -f $totalSuccess, $totalWarnings, $totalErrors)
-    if ($TaskOutcomeMode -eq 'strict' -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
-        throw ("Task outcome mode strict blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
+    $builder = New-Object System.Text.StringBuilder
+    [void]$builder.AppendLine('$ErrorActionPreference = "Stop"')
+    [void]$builder.AppendLine('function Invoke-CombinedTaskBlock {')
+    [void]$builder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64)')
+    [void]$builder.AppendLine('    Write-Host "TASK started: $TaskName"')
+    [void]$builder.AppendLine('    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()')
+    [void]$builder.AppendLine('    try {')
+    [void]$builder.AppendLine('        $decodedScript = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ScriptBase64))')
+    [void]$builder.AppendLine('        Invoke-Expression $decodedScript')
+    [void]$builder.AppendLine('        $taskWatch.Stop()')
+    [void]$builder.AppendLine('        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
+    [void]$builder.AppendLine('        Write-Host "TASK result: success"')
+    [void]$builder.AppendLine('    }')
+    [void]$builder.AppendLine('    catch {')
+    [void]$builder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
+    [void]$builder.AppendLine('        Write-Host "TASK result: failure ($TaskName)"')
+    [void]$builder.AppendLine('        throw')
+    [void]$builder.AppendLine('    }')
+    [void]$builder.AppendLine('}')
+
+    foreach ($taskBlock in @($TaskBlocks)) {
+        $taskName = [string]$taskBlock.Name
+        $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
+        $taskNameSafe = $taskName.Replace("'", "''")
+        $taskBytes = [System.Text.Encoding]::UTF8.GetBytes($taskScript)
+        $taskBase64 = [System.Convert]::ToBase64String($taskBytes)
+        [void]$builder.AppendLine(("Invoke-CombinedTaskBlock -TaskName '{0}' -ScriptBase64 '{1}'" -f $taskNameSafe, $taskBase64))
+    }
+
+    $combinedScript = $builder.ToString()
+    $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($combinedScript))
+    $commandToExecute = "powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand $encodedCommand"
+
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'az-vm-extension'
+    if (-not (Test-Path -LiteralPath $tempRoot)) {
+        [void](New-Item -ItemType Directory -Path $tempRoot -Force)
+    }
+
+    $settingsPath = Join-Path $tempRoot ("settings-{0}.json" -f ([System.Guid]::NewGuid().ToString("N")))
+    $protectedPath = Join-Path $tempRoot ("protected-{0}.json" -f ([System.Guid]::NewGuid().ToString("N")))
+
+    try {
+        $settingsJson = (@{
+            timestamp = [int][DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        } | ConvertTo-Json -Compress)
+        $protectedJson = (@{
+            commandToExecute = $commandToExecute
+        } | ConvertTo-Json -Compress)
+
+        Write-TextFileNormalized -Path $settingsPath -Content $settingsJson -Encoding "utf8NoBom" -EnsureTrailingNewline:$true
+        Write-TextFileNormalized -Path $protectedPath -Content $protectedJson -Encoding "utf8NoBom" -EnsureTrailingNewline:$true
+
+        Invoke-TrackedAction -Label "az vm extension set (windows-init-custom-script)" -Action {
+            az vm extension set `
+                --resource-group $ResourceGroup `
+                --vm-name $VmName `
+                --publisher Microsoft.Compute `
+                --name CustomScriptExtension `
+                --version 1.10 `
+                --settings "@$settingsPath" `
+                --protected-settings "@$protectedPath" `
+                -o json | Out-Null
+            Assert-LastExitCode "az vm extension set (CustomScriptExtension)"
+        } | Out-Null
+
+        $provisioningState = az vm extension show `
+            --resource-group $ResourceGroup `
+            --vm-name $VmName `
+            --name CustomScriptExtension `
+            --query provisioningState `
+            -o tsv
+        Assert-LastExitCode "az vm extension show (CustomScriptExtension)"
+        if (-not [string]::Equals([string]$provisioningState, 'Succeeded', [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw ("Custom Script Extension provisioningState was '{0}'." -f [string]$provisioningState)
+        }
+    }
+    finally {
+        foreach ($path in @($settingsPath, $protectedPath)) {
+            if (Test-Path -LiteralPath $path) {
+                Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     return [pscustomobject]@{
-        SuccessCount = $totalSuccess
-        WarningCount = $totalWarnings
-        ErrorCount = $totalErrors
+        SuccessCount = @($TaskBlocks).Count
+        WarningCount = 0
+        ErrorCount = 0
     }
 }
 
@@ -372,6 +536,8 @@ function Invoke-CoVmSshTaskBlocks {
         [ValidateSet('continue','strict')]
         [string]$TaskOutcomeMode = 'continue',
         [int]$SshMaxRetries = 3,
+        [int]$SshTaskTimeoutSeconds = 180,
+        [int]$SshConnectTimeoutSeconds = 30,
         [string]$ConfiguredPlinkPath = '',
         [string]$ConfiguredPscpPath = ''
     )
@@ -381,9 +547,13 @@ function Invoke-CoVmSshTaskBlocks {
     }
 
     $SshMaxRetries = Resolve-CoVmSshRetryCount -RetryText ([string]$SshMaxRetries) -DefaultValue 3
+    if ($SshTaskTimeoutSeconds -lt 30) { $SshTaskTimeoutSeconds = 30 }
+    if ($SshTaskTimeoutSeconds -gt 7200) { $SshTaskTimeoutSeconds = 7200 }
+    if ($SshConnectTimeoutSeconds -lt 5) { $SshConnectTimeoutSeconds = 5 }
+    if ($SshConnectTimeoutSeconds -gt 300) { $SshConnectTimeoutSeconds = 300 }
     $putty = Ensure-CoVmPuttyTools -RepoRoot $RepoRoot -ConfiguredPlinkPath $ConfiguredPlinkPath -ConfiguredPscpPath $ConfiguredPscpPath
 
-    $bootstrap = Initialize-CoVmSshHostKey -PlinkPath ([string]$putty.PlinkPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort
+    $bootstrap = Initialize-CoVmSshHostKey -PlinkPath ([string]$putty.PlinkPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
     if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
         Write-Host ([string]$bootstrap.Output)
     }
@@ -399,8 +569,9 @@ function Invoke-CoVmSshTaskBlocks {
         Write-Host 'Task-by-task mode is enabled: Step 8 tasks are executed one-by-one over SSH.'
         Write-Host 'Persistent SSH task session is enabled: one SSH connection will be reused for Step 8 tasks.' -ForegroundColor DarkCyan
         Write-Host ("Task outcome mode: {0}" -f $TaskOutcomeMode)
+        Write-Host ("SSH task timeout: {0}s | SSH connect timeout: {1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
 
-        $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$putty.PlinkPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds 30 -DefaultTaskTimeoutSeconds 1800
+        $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$putty.PlinkPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
 
         foreach ($task in @($TaskBlocks)) {
             $taskName = [string]$task.Name
@@ -414,7 +585,7 @@ function Invoke-CoVmSshTaskBlocks {
             for ($attempt = 1; $attempt -le $SshMaxRetries; $attempt++) {
                 $taskInvocationError = $null
                 try {
-                    $taskResult = Invoke-CoVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $taskScript -TimeoutSeconds 1800
+                    $taskResult = Invoke-CoVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $taskScript -TimeoutSeconds $SshTaskTimeoutSeconds
                     break
                 }
                 catch {
@@ -422,7 +593,7 @@ function Invoke-CoVmSshTaskBlocks {
                     if ($attempt -lt $SshMaxRetries) {
                         Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
                         Stop-CoVmPersistentSshSession -Session $session
-                        $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$putty.PlinkPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds 30 -DefaultTaskTimeoutSeconds 1800
+                        $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$putty.PlinkPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
                     }
                 }
             }
@@ -496,10 +667,11 @@ function Invoke-AzVmMain {
         Write-Host "script description:
 - A unified Linux/Windows virtual machine deployment flow is executed.
 - OS type is selected by --windows/--linux or VM_OS_TYPE from .env.
-- Init tasks run via az vm run-command task-by-task.
+- Windows init tasks run once on first VM creation via Custom Script Extension.
 - Update tasks run via persistent pyssh task-by-task.
 - SSH (default 444) and RDP (Windows) access are prepared.
 - Run mode: interactive (default), auto (--auto / -a).
+- Performance timing mode: --perf / -p.
 - Default mode: existing resources are kept and skipped; missing resources are created.
 - Update mode: --update / -u (creation commands always run; no delete flow).
 - destructive rebuild mode: explicit destructive rebuild flow / -r (interactive delete confirmation, auto delete in --auto mode, then creation commands always run)."
@@ -579,9 +751,48 @@ function Invoke-AzVmMain {
             }
 
             $sshMaxRetriesText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')
-            $sshMaxRetries = Resolve-CoVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
+            $sshMaxRetries = 1
+            if ($sshMaxRetriesText -match '^\d+$') {
+                $sshMaxRetries = [int]$sshMaxRetriesText
+                if ($sshMaxRetries -lt 1) { $sshMaxRetries = 1 }
+                if ($sshMaxRetries -gt 3) { $sshMaxRetries = 3 }
+            }
+            if ($platform -eq 'windows') {
+                $taskOutcomeMode = 'strict'
+                $sshMaxRetries = 1
+            }
             $configuredPlinkPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PUTTY_PLINK_PATH' -DefaultValue '')
             $configuredPscpPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PUTTY_PSCP_PATH' -DefaultValue '')
+            $sshTaskTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_TASK_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshTaskTimeoutSeconds))
+            $sshTaskTimeoutSeconds = $script:SshTaskTimeoutSeconds
+            if ($sshTaskTimeoutText -match '^\d+$') {
+                $sshTaskTimeoutSeconds = [int]$sshTaskTimeoutText
+            }
+            if ($sshTaskTimeoutSeconds -lt 30) { $sshTaskTimeoutSeconds = 30 }
+            if ($sshTaskTimeoutSeconds -gt 7200) { $sshTaskTimeoutSeconds = 7200 }
+
+            $sshConnectTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_CONNECT_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshConnectTimeoutSeconds))
+            $sshConnectTimeoutSeconds = $script:SshConnectTimeoutSeconds
+            if ($sshConnectTimeoutText -match '^\d+$') {
+                $sshConnectTimeoutSeconds = [int]$sshConnectTimeoutText
+            }
+            if ($sshConnectTimeoutSeconds -lt 5) { $sshConnectTimeoutSeconds = 5 }
+            if ($sshConnectTimeoutSeconds -gt 300) { $sshConnectTimeoutSeconds = 300 }
+
+            $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
+            $azCommandTimeoutSeconds = $script:AzCommandTimeoutSeconds
+            if ($azCommandTimeoutText -match '^\d+$') {
+                $azCommandTimeoutSeconds = [int]$azCommandTimeoutText
+            }
+            if ($azCommandTimeoutSeconds -lt 30) { $azCommandTimeoutSeconds = 30 }
+            if ($azCommandTimeoutSeconds -gt 7200) { $azCommandTimeoutSeconds = 7200 }
+
+            $script:AzCommandTimeoutSeconds = $azCommandTimeoutSeconds
+            $script:SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+            $script:SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+            $step1Context['AzCommandTimeoutSeconds'] = $azCommandTimeoutSeconds
+            $step1Context['SshTaskTimeoutSeconds'] = $sshTaskTimeoutSeconds
+            $step1Context['SshConnectTimeoutSeconds'] = $sshConnectTimeoutSeconds
 
             if ($script:AutoMode) {
                 Show-CoVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $PSScriptRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -RenewMode:$script:RenewMode -IncludeStep8LegacyFlags $false -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
@@ -602,49 +813,100 @@ function Invoke-AzVmMain {
 
         Invoke-Step 'Step 5/9 - VM init task files will be prepared...' {
             Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
-            $initTaskTemplates = @(Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init')
-            $initTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ InitTaskCount = @($initTaskBlocks).Count }
+            $initTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
+            $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
+            $initDisabledTasks = @($initTaskCatalog.DisabledTasks)
+            if (@($initTaskTemplates).Count -gt 0) {
+                $initTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
+            }
+            else {
+                $initTaskBlocks = @()
+            }
+            Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
+                InitTaskCount = @($initTaskBlocks).Count
+                InitDisabledTaskCount = @($initDisabledTasks).Count
+            }
+            if (@($initDisabledTasks).Count -gt 0) {
+                $initDisabledNames = @($initDisabledTasks | ForEach-Object { [string]$_.Name })
+                Write-Host ("Disabled init tasks (ignored): {0}" -f ($initDisabledNames -join ', ')) -ForegroundColor Yellow
+            }
         }
 
         Invoke-Step 'Step 6/9 - VM update task files will be prepared...' {
             Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
-            $updateTaskTemplates = @(Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update')
-            $updateTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ UpdateTaskCount = @($updateTaskBlocks).Count; TaskOutcomeMode = $taskOutcomeMode }
+            $updateTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
+            $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
+            $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
+            if (@($updateTaskTemplates).Count -gt 0) {
+                $updateTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
+            }
+            else {
+                $updateTaskBlocks = @()
+            }
+            Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
+                UpdateTaskCount = @($updateTaskBlocks).Count
+                UpdateDisabledTaskCount = @($updateDisabledTasks).Count
+                TaskOutcomeMode = $taskOutcomeMode
+            }
+            if (@($updateDisabledTasks).Count -gt 0) {
+                $updateDisabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })
+                Write-Host ("Disabled update tasks (ignored): {0}" -f ($updateDisabledNames -join ', ')) -ForegroundColor Yellow
+            }
         }
 
         Invoke-Step 'Step 7/9 - virtual machine will be created...' {
             if ($platform -eq 'windows') {
-                Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                     az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
                 }
             }
             else {
-                Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                     az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
                 }
             }
         }
 
         Invoke-Step 'Step 8/9 - VM init and update tasks will be executed...' {
+            $vmCreatedThisRun = $false
+            if ($step7VmCreateResult -and $step7VmCreateResult.PSObject.Properties.Match('VmCreatedThisRun').Count -gt 0) {
+                $vmCreatedThisRun = [bool]$step7VmCreateResult.VmCreatedThisRun
+            }
+            $shouldRunInitTasks = ($vmCreatedThisRun -or $script:UpdateMode -or $script:RenewMode)
+
+            $initExecutorLabel = 'az-vm-run-command'
             Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
                 Platform = $platform
-                InitExecutor = 'az-vm-run-command'
+                InitExecutor = $initExecutorLabel
                 UpdateExecutor = 'pyssh-persistent'
                 RunCommandId = [string]$platformDefaults.RunCommandId
                 InitTaskCount = @($initTaskBlocks).Count
                 UpdateTaskCount = @($updateTaskBlocks).Count
                 TaskOutcomeMode = $taskOutcomeMode
                 SshMaxRetries = $sshMaxRetries
+                SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+                SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
                 PuttyPlinkPath = $configuredPlinkPath
                 PuttyPscpPath = $configuredPscpPath
+                VmCreatedThisRun = $vmCreatedThisRun
+                ShouldRunInitTasks = $shouldRunInitTasks
             }
 
-            Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell 'powershell' | Out-Null
+            if ($shouldRunInitTasks -and @($initTaskBlocks).Count -gt 0) {
+                $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
+                Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell | Out-Null
+            }
+            elseif (-not $shouldRunInitTasks) {
+                Write-Host 'Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.' -ForegroundColor Yellow
+            }
+            else {
+                Write-Host 'Init task catalog is empty; Step 8 init stage is skipped.' -ForegroundColor Yellow
+            }
 
-            Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
-            Start-Sleep -Seconds 20
+            if ($shouldRunInitTasks) {
+                Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
+                Start-Sleep -Seconds 20
+            }
 
             $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
             $sshHost = [string]$vmRuntimeDetails.VmFqdn
@@ -660,7 +922,12 @@ function Invoke-AzVmMain {
 
             Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{ Step8SshHost = $sshHost; Step8SshUser = $step8SshUser; Step8SshPort = $sshPort }
 
-            Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -ConfiguredPlinkPath $configuredPlinkPath -ConfiguredPscpPath $configuredPscpPath | Out-Null
+            if (@($updateTaskBlocks).Count -eq 0) {
+                Write-Host 'Update task catalog is empty; Step 8 update stage is skipped.' -ForegroundColor Yellow
+            }
+            else {
+                Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPlinkPath $configuredPlinkPath -ConfiguredPscpPath $configuredPscpPath | Out-Null
+            }
         }
 
         Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
@@ -760,7 +1027,12 @@ function Invoke-Step {
     $before = @(Get-Variable)
     if ($script:AutoMode) {
         Write-Host "$prompt (mode: auto)" -ForegroundColor Cyan
+        $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
         . $Action
+        if ($stepWatch.IsRunning) { $stepWatch.Stop() }
+        if ($script:PerfMode) {
+            Write-Host ("perf: step elapsed -> {0} ({1:N3}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+        }
         $after = @(Get-Variable)
         Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
         return
@@ -769,7 +1041,12 @@ function Invoke-Step {
         $response = Read-Host "$prompt (mode: interactive) (yes/no)?"
     } until ($response -match '^[yYnN]$')
     if ($response -match '^[yY]$') {
+        $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
         . $Action
+        if ($stepWatch.IsRunning) { $stepWatch.Stop() }
+        if ($script:PerfMode) {
+            Write-Host ("perf: step elapsed -> {0} ({1:N3}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+        }
         $after = @(Get-Variable)
         Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
     }
@@ -814,6 +1091,9 @@ function Invoke-TrackedAction {
     }
 
     Write-Host ("running: {0}" -f $Label) -ForegroundColor DarkCyan
+    if ($script:PerfMode) {
+        Write-Host ("perf: start -> {0}" -f $Label) -ForegroundColor DarkGray
+    }
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $result = . $Action
@@ -826,6 +1106,9 @@ function Invoke-TrackedAction {
             $watch.Stop()
         }
         Write-Host ("finished: {0} ({1:N1}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
+        if ($script:PerfMode) {
+            Write-Host ("perf: elapsed -> {0} ({1:N3}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+        }
     }
 }
 
@@ -4441,6 +4724,7 @@ function Invoke-CoVmVmCreateStep {
     $hasExistingVm = -not [string]::IsNullOrWhiteSpace([string]$existingVM)
     $shouldDeleteVm = $false
     $shouldCreateVm = $true
+    $vmDeletedInThisRun = $false
     if ($hasExistingVm) {
         Write-Host "VM '$vmName' exists in resource group '$resourceGroup'."
 
@@ -4483,6 +4767,7 @@ function Invoke-CoVmVmCreateStep {
                 Assert-LastExitCode "az vm delete"
             } | Out-Null
             Write-Host "VM '$vmName' was deleted from resource group '$resourceGroup'."
+            $vmDeletedInThisRun = $true
         }
         elseif ($effectiveMode -eq "destructive rebuild") {
             Write-Host "destructive rebuild mode: VM '$vmName' was not deleted by user choice; az vm create will run on existing VM." -ForegroundColor Yellow
@@ -4496,9 +4781,16 @@ function Invoke-CoVmVmCreateStep {
     }
 
     if (-not $shouldCreateVm) {
-        return
+        return [pscustomobject]@{
+            VmExistsBefore = [bool]$hasExistingVm
+            VmDeleted = [bool]$vmDeletedInThisRun
+            VmCreateInvoked = $false
+            VmCreatedThisRun = $false
+            VmId = ""
+        }
     }
 
+    $vmCreatedThisRun = (-not $hasExistingVm) -or $vmDeletedInThisRun
     $vmCreateJson = Invoke-TrackedAction -Label "az vm create --resource-group $resourceGroup --name $vmName" -Action {
         $result = & $CreateVmAction
         if ($LASTEXITCODE -ne 0) {
@@ -4540,6 +4832,14 @@ function Invoke-CoVmVmCreateStep {
 
     Write-Host "Printing az vm create output..."
     Write-Host $vmCreateJson
+
+    return [pscustomobject]@{
+        VmExistsBefore = [bool]$hasExistingVm
+        VmDeleted = [bool]$vmDeletedInThisRun
+        VmCreateInvoked = $true
+        VmCreatedThisRun = [bool]$vmCreatedThisRun
+        VmId = [string]$vmCreateObj.id
+    }
 }
 
 function Get-CoVmVmDetails {
@@ -4618,7 +4918,7 @@ function Resolve-CoVmFriendlyError {
         $code = 50
     }
     elseif ($errorMessage -match "^VM task '(.+)' failed:") {
-        $summary = "A task failed in substep mode."
+        $summary = "A VM task failed."
         $hint = "Review the task name in the error detail and fix the related command."
         $code = 51
     }
@@ -5211,20 +5511,25 @@ function Get-CoRunCommandResultMessage {
     foreach ($entry in $resultEntries) {
         $code = [string]$entry.code
         $message = [string]$entry.message
+        $isFailedCode = ($code -match '(?i)/failed$')
+        $isStdErrCode = ($code -match '(?i)StdErr')
         if (-not [string]::IsNullOrWhiteSpace($message)) {
             $messages += $message.Trim()
         }
 
-        if ($code -match '(?i)/failed$') {
-            $hasError = $true
-        }
-        elseif ($code -match '(?i)StdErr' -and -not [string]::IsNullOrWhiteSpace($message)) {
+        if ($isStdErrCode -and -not [string]::IsNullOrWhiteSpace($message)) {
             if (Test-CoVmBenignRunCommandStdErr -Message $message) {
                 Write-Warning ("Ignoring benign run-command stderr line for task '{0}': {1}" -f $TaskName, $message.Trim())
             }
             elseif ($message -match '(?i)(terminatingerror|exception|failed|not recognized|cannot find|categoryinfo)') {
                 $hasError = $true
             }
+            elseif ($isFailedCode) {
+                $hasError = $true
+            }
+        }
+        elseif ($isFailedCode) {
+            $hasError = $true
         }
     }
 
@@ -5303,69 +5608,12 @@ function Test-CoVmOutputIndicatesRebootRequired {
     return ($MessageText -match '(?i)(reboot required|restart required|pending reboot|press any key to install windows subsystem for linux)')
 }
 
-function Invoke-VmRunCommandScriptFile {
-    param(
-        [string]$ResourceGroup,
-        [string]$VmName,
-        [string]$CommandId,
-        [string]$ScriptFilePath,
-        [string]$ModeLabel
-    )
-
-    if ([string]::IsNullOrWhiteSpace($ScriptFilePath)) {
-        throw "VM run-command script file path is empty."
-    }
-    if (-not (Test-Path -LiteralPath $ScriptFilePath)) {
-        throw "VM run-command script file was not found: $ScriptFilePath"
-    }
-
-    try {
-        $invokeLabel = "az vm run-command invoke (script-file)"
-        $json = Invoke-TrackedAction -Label $invokeLabel -Action {
-            $result = az vm run-command invoke `
-                --resource-group $ResourceGroup `
-                --name $VmName `
-                --command-id $CommandId `
-                --scripts "@$ScriptFilePath" `
-                -o json
-            Assert-LastExitCode "az vm run-command invoke (script-file)"
-            $result
-        }
-
-        $message = Get-CoRunCommandResultMessage -TaskName "script-file" -RawJson $json -ModeLabel $ModeLabel
-        Write-Host "TASK batch run-command completed."
-        if (-not [string]::IsNullOrWhiteSpace($message)) {
-            Write-Host $message
-        }
-
-        $marker = Parse-CoVmStep8Markers -MessageText $message
-        if ($marker.HasSummaryLine) {
-            Write-Host $marker.SummaryLine -ForegroundColor DarkGray
-        }
-
-        return [pscustomobject]@{
-            Message = $message
-            RebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText $message))
-            SuccessCount = [int]$marker.SuccessCount
-            WarningCount = [int]$marker.WarningCount
-            ErrorCount = [int]$marker.ErrorCount
-            RebootCount = [int]$marker.RebootCount
-        }
-    }
-    catch {
-        throw "VM task batch execution failed in $ModeLabel flow: $($_.Exception.Message)"
-    }
-}
-
 function Invoke-VmRunCommandBlocks {
     param(
         [string]$ResourceGroup,
         [string]$VmName,
         [string]$CommandId,
         [object[]]$TaskBlocks,
-        [switch]$SubstepMode,
-        [int]$StartTaskIndex = 0,
-        [switch]$SoftFail,
         [ValidateSet("bash","powershell")]
         [string]$CombinedShell = "powershell"
     )
@@ -5373,91 +5621,7 @@ function Invoke-VmRunCommandBlocks {
     if (-not $TaskBlocks -or $TaskBlocks.Count -eq 0) {
         throw "VM run-command task list is empty."
     }
-    if ($StartTaskIndex -lt 0) {
-        $StartTaskIndex = 0
-    }
-    if ($StartTaskIndex -ge $TaskBlocks.Count) {
-        return [pscustomobject]@{
-            SuccessCount = 0
-            WarningCount = 0
-            ErrorCount = 0
-            RebootRequired = $false
-            NextTaskIndex = [int]$TaskBlocks.Count
-        }
-    }
-
-    if ($SubstepMode) {
-        Write-Host "Substep mode is enabled: Step 8 tasks are executed one-by-one."
-        $successCount = 0
-        $warningCount = 0
-        $errorCount = 0
-        $nextTaskIndex = [int]$StartTaskIndex
-        for ($taskIndex = $StartTaskIndex; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
-            $taskBlock = $TaskBlocks[$taskIndex]
-            $taskName = [string]$taskBlock.Name
-            $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
-            $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
-            try {
-                Write-Host "TASK started: $taskName"
-                $taskArgs = Get-CoRunCommandScriptArgs -ScriptText $taskScript -CommandId $CommandId
-                $taskAzArgs = @(
-                    "vm", "run-command", "invoke",
-                    "--resource-group", $ResourceGroup,
-                    "--name", $VmName,
-                    "--command-id", $CommandId,
-                    "--scripts"
-                )
-                $taskAzArgs += $taskArgs
-                $taskAzArgs += @("-o", "json")
-                $taskInvokeLabel = "az vm run-command invoke (task: $taskName)"
-                $taskJson = Invoke-TrackedAction -Label $taskInvokeLabel -Action {
-                    $invokeResult = az @taskAzArgs
-                    Assert-LastExitCode "az vm run-command invoke ($taskName)"
-                    $invokeResult
-                }
-                $taskMessage = Get-CoRunCommandResultMessage -TaskName $taskName -RawJson $taskJson -ModeLabel "substep-mode"
-                $taskWatch.Stop()
-                Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                Write-Host "TASK result: success"
-                if (-not [string]::IsNullOrWhiteSpace($taskMessage)) {
-                    Write-Host $taskMessage
-                }
-                $successCount++
-                $nextTaskIndex = $taskIndex + 1
-                if (Test-CoVmOutputIndicatesRebootRequired -MessageText $taskMessage) {
-                    return [pscustomobject]@{
-                        SuccessCount = $successCount
-                        WarningCount = $warningCount
-                        ErrorCount = $errorCount
-                        RebootRequired = $true
-                        NextTaskIndex = $nextTaskIndex
-                    }
-                }
-            }
-            catch {
-                if ($taskWatch.IsRunning) { $taskWatch.Stop() }
-                if ($SoftFail) {
-                    $warningCount++
-                    $nextTaskIndex = $taskIndex + 1
-                    Write-Warning ("TASK warning: {0} => {1}" -f $taskName, $_.Exception.Message)
-                    continue
-                }
-
-                Write-Host "TASK result: failure ($taskName)" -ForegroundColor Red
-                throw "VM task '$taskName' failed: $($_.Exception.Message)"
-            }
-        }
-
-        return [pscustomobject]@{
-            SuccessCount = $successCount
-            WarningCount = $warningCount
-            ErrorCount = $errorCount
-            RebootRequired = $false
-            NextTaskIndex = $nextTaskIndex
-        }
-    }
-
-    Write-Host "Substep mode is not enabled: Step 8 tasks will run in a single run-command call."
+    Write-Host "Task-batch mode is enabled: init tasks will run in a single run-command call."
 
     $combinedBuilder = New-Object System.Text.StringBuilder
     if ($CombinedShell -eq "bash") {
@@ -5703,134 +5867,6 @@ function Invoke-CoVmPostStep8RebootAndProbe {
     }
 }
 
-function Invoke-CoVmStep8RunCommand {
-    param(
-        [switch]$SubstepMode,
-        [string]$ResourceGroup,
-        [string]$VmName,
-        [string]$CommandId,
-        [string]$ScriptFilePath,
-        [object[]]$TaskBlocks,
-        [ValidateSet("bash","powershell")]
-        [string]$CombinedShell,
-        [switch]$RebootAfterExecution,
-        [string]$PostRebootProbeScript = "",
-        [string]$PostRebootProbeCommandId = "RunPowerShellScript",
-        [int]$PostRebootProbeMaxAttempts = 3,
-        [int]$PostRebootProbeRetryDelaySeconds = 20,
-        [int]$MaxReboots = 3,
-        [ValidateSet("soft-warning","strict")]
-        [string]$TaskFailurePolicy = "soft-warning"
-    )
-
-    if ($MaxReboots -lt 0) {
-        $MaxReboots = 0
-    }
-    if ($MaxReboots -gt 3) {
-        $MaxReboots = 3
-    }
-
-    $totalSuccess = 0
-    $totalWarnings = 0
-    $totalErrors = 0
-    $rebootCount = 0
-    $hadMidStepReboot = $false
-
-    if (-not $SubstepMode) {
-        Write-Host ("Substep mode is not enabled: Step 8 tasks will run from the VM update script file. Failure policy: {0}" -f $TaskFailurePolicy)
-        while ($true) {
-            $scriptFileResult = Invoke-VmRunCommandScriptFile `
-                -ResourceGroup $ResourceGroup `
-                -VmName $VmName `
-                -CommandId $CommandId `
-                -ScriptFilePath $ScriptFilePath `
-                -ModeLabel "auto-mode update-script-file"
-
-            $totalSuccess = [int]$scriptFileResult.SuccessCount
-            $totalWarnings = [int]$scriptFileResult.WarningCount
-            $totalErrors = [int]$scriptFileResult.ErrorCount
-
-            if (-not $scriptFileResult.RebootRequired) {
-                break
-            }
-
-            if ($rebootCount -ge $MaxReboots) {
-                throw ("Step 8 reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
-            }
-
-            $rebootCount++
-            $hadMidStepReboot = $true
-            Write-Host ("Step 8 requested a VM reboot ({0}/{1}). Resuming after reboot..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-            Invoke-CoVmPostStep8RebootAndProbe `
-                -ResourceGroup $ResourceGroup `
-                -VmName $VmName `
-                -PostRebootProbeScript $PostRebootProbeScript `
-                -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-        }
-    }
-    else {
-        Write-Host ("Substep mode is enabled: Step 8 will execute tasks one-by-one. Failure policy: {0}" -f $TaskFailurePolicy)
-        $nextTaskIndex = 0
-        while ($nextTaskIndex -lt $TaskBlocks.Count) {
-            $blockResult = Invoke-VmRunCommandBlocks `
-                -ResourceGroup $ResourceGroup `
-                -VmName $VmName `
-                -CommandId $CommandId `
-                -TaskBlocks $TaskBlocks `
-                -SubstepMode:$true `
-                -StartTaskIndex $nextTaskIndex `
-                -SoftFail:($TaskFailurePolicy -eq "soft-warning") `
-                -CombinedShell $CombinedShell
-
-            $totalSuccess += [int]$blockResult.SuccessCount
-            $totalWarnings += [int]$blockResult.WarningCount
-            $totalErrors += [int]$blockResult.ErrorCount
-            $nextTaskIndex = [int]$blockResult.NextTaskIndex
-
-            if (-not $blockResult.RebootRequired) {
-                break
-            }
-
-            if ($rebootCount -ge $MaxReboots) {
-                throw ("Step 8 reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
-            }
-
-            $rebootCount++
-            $hadMidStepReboot = $true
-            Write-Host ("Step 8 task flow requested a VM reboot ({0}/{1}). Resuming from task index {2}..." -f $rebootCount, $MaxReboots, $nextTaskIndex) -ForegroundColor Yellow
-            Invoke-CoVmPostStep8RebootAndProbe `
-                -ResourceGroup $ResourceGroup `
-                -VmName $VmName `
-                -PostRebootProbeScript $PostRebootProbeScript `
-                -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-        }
-    }
-
-    Write-Host ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
-
-    if ($TaskFailurePolicy -eq "strict" -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
-        throw ("Step 8 strict failure policy blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
-    }
-
-    if ($RebootAfterExecution) {
-        if ($hadMidStepReboot) {
-            Write-Host "Step 8 already rebooted during task execution; final reboot is skipped." -ForegroundColor DarkGray
-        }
-        else {
-            Invoke-CoVmPostStep8RebootAndProbe `
-                -ResourceGroup $ResourceGroup `
-                -VmName $VmName `
-                -PostRebootProbeScript $PostRebootProbeScript `
-                -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-        }
-    }
-}
 #endregion
 #region Imported:test-ssh
 function Resolve-CoVmSshRetryCount {
@@ -5963,8 +5999,12 @@ function Initialize-CoVmSshHostKey {
         [string]$HostName,
         [string]$UserName,
         [string]$Password,
-        [string]$Port
+        [string]$Port,
+        [int]$ConnectTimeoutSeconds = 30
     )
+
+    if ($ConnectTimeoutSeconds -lt 5) { $ConnectTimeoutSeconds = 5 }
+    if ($ConnectTimeoutSeconds -gt 300) { $ConnectTimeoutSeconds = 300 }
 
     $result = Invoke-CoVmProcessWithRetry `
         -FilePath "python" `
@@ -5975,7 +6015,7 @@ function Initialize-CoVmSshHostKey {
             "--port", [string]$Port,
             "--user", [string]$UserName,
             "--password", [string]$Password,
-            "--timeout", "30",
+            "--timeout", [string]$ConnectTimeoutSeconds,
             "--command", "whoami"
         ) `
         -Label "pyssh connection bootstrap" `
@@ -6203,6 +6243,23 @@ function Write-CoVmPersistentSshProtocolLine {
     $stream.Flush()
 }
 
+function Normalize-CoVmProtocolLine {
+    param(
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ($null -eq $Text) {
+        return $null
+    }
+
+    $value = [string]$Text
+    $value = $value.Replace("`0", "")
+    $value = $value.TrimStart([char]0xFEFF)
+    $value = $value.TrimEnd("`r", "`n")
+    return $value
+}
+
 function Invoke-CoVmPersistentSshTask {
     param(
         [psobject]$Session,
@@ -6268,15 +6325,18 @@ function Invoke-CoVmPersistentSshTask {
             $line = $stdoutTask.Result
             $Session.PendingStdoutTask = $stdoutReader.ReadLineAsync()
             if ($null -ne $line) {
-                [void]$outputLines.Add([string]$line)
-                Write-Host ([string]$line)
-                if (($line -as [string]) -like "CO_VM_SESSION_ERROR:*") {
-                    throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$line)
+                $lineText = [string]$line
+                $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
+                if ($null -eq $normalizedLine) { $normalizedLine = "" }
+                [void]$outputLines.Add([string]$normalizedLine)
+                Write-Host ([string]$normalizedLine)
+                if (($normalizedLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
+                    throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$normalizedLine)
                 }
-                if ($line -match $beginMarkerRegex) {
+                if ($normalizedLine -match $beginMarkerRegex) {
                     continue
                 }
-                if ($line -match $endMarkerRegex) {
+                if ($normalizedLine -match $endMarkerRegex) {
                     $markerTask = [string]$Matches.task
                     if ([string]::Equals($markerTask, [string]$TaskName, [System.StringComparison]::OrdinalIgnoreCase)) {
                         $exitCode = [int]$Matches.code
@@ -6289,8 +6349,11 @@ function Invoke-CoVmPersistentSshTask {
             $line = $stderrTask.Result
             $Session.PendingStderrTask = $stderrReader.ReadLineAsync()
             if ($null -ne $line) {
-                [void]$outputLines.Add([string]$line)
-                Write-Warning ([string]$line)
+                $lineText = [string]$line
+                $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
+                if ($null -eq $normalizedLine) { $normalizedLine = "" }
+                [void]$outputLines.Add([string]$normalizedLine)
+                Write-Warning ([string]$normalizedLine)
             }
         }
 
@@ -6301,16 +6364,18 @@ function Invoke-CoVmPersistentSshTask {
             try { $stderrTail = [string]$stderrReader.ReadToEnd() } catch { }
             if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
                 foreach ($line in ($stdoutTail -split "`r?`n")) {
-                    if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                    [void]$outputLines.Add([string]$line)
-                    Write-Host ([string]$line)
+                    $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
+                    if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
+                    [void]$outputLines.Add([string]$normalizedTailLine)
+                    Write-Host ([string]$normalizedTailLine)
                 }
             }
             if (-not [string]::IsNullOrWhiteSpace($stderrTail)) {
                 foreach ($line in ($stderrTail -split "`r?`n")) {
-                    if ([string]::IsNullOrWhiteSpace($line)) { continue }
-                    [void]$outputLines.Add([string]$line)
-                    Write-Warning ([string]$line)
+                    $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
+                    if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
+                    [void]$outputLines.Add([string]$normalizedTailLine)
+                    Write-Warning ([string]$normalizedTailLine)
                 }
             }
             throw ("Persistent SSH session process exited before task completion (code={0})." -f $proc.ExitCode)
@@ -6359,491 +6424,6 @@ function Stop-CoVmPersistentSshSession {
     }
 }
 
-function Invoke-CoVmStep8OverSsh {
-    param(
-        [ValidateSet("windows","linux")]
-        [string]$Platform,
-        [switch]$SubstepMode,
-        [string]$RepoRoot,
-        [string]$ResourceGroup,
-        [string]$VmName,
-        [string]$SshHost,
-        [string]$SshUser,
-        [string]$SshPassword,
-        [string]$SshPort,
-        [string]$ScriptFilePath,
-        [object[]]$TaskBlocks,
-        [switch]$RebootAfterExecution,
-        [string]$PostRebootProbeScript = "",
-        [string]$PostRebootProbeCommandId = "RunPowerShellScript",
-        [int]$PostRebootProbeMaxAttempts = 3,
-        [int]$PostRebootProbeRetryDelaySeconds = 20,
-        [int]$MaxReboots = 3,
-        [ValidateSet("soft-warning","strict")]
-        [string]$TaskFailurePolicy = "soft-warning",
-        [int]$SshMaxRetries = 3,
-        [string]$ConfiguredPlinkPath = "",
-        [string]$ConfiguredPscpPath = "",
-        [switch]$DisableRebootHandling
-    )
-
-    if ([string]::IsNullOrWhiteSpace($SshHost)) {
-        throw "Step 8 SSH mode requires a VM host/FQDN."
-    }
-    if ([string]::IsNullOrWhiteSpace($SshUser)) {
-        throw "Step 8 SSH mode requires a VM SSH user."
-    }
-    if ([string]::IsNullOrWhiteSpace($SshPassword)) {
-        throw "Step 8 SSH mode requires a VM SSH password."
-    }
-    if ([string]::IsNullOrWhiteSpace($SshPort)) {
-        throw "Step 8 SSH mode requires an SSH port."
-    }
-    if (-not $TaskBlocks -or $TaskBlocks.Count -eq 0) {
-        throw "Step 8 SSH mode requires task blocks."
-    }
-    if (-not $SubstepMode) {
-        if ([string]::IsNullOrWhiteSpace($ScriptFilePath)) {
-            throw "Step 8 SSH combined mode requires ScriptFilePath."
-        }
-        if (-not (Test-Path -LiteralPath $ScriptFilePath)) {
-            throw "Step 8 SSH combined mode script file was not found: $ScriptFilePath"
-        }
-    }
-
-    $SshMaxRetries = Resolve-CoVmSshRetryCount -RetryText ([string]$SshMaxRetries) -DefaultValue 3
-    if ($MaxReboots -lt 0) { $MaxReboots = 0 }
-    if ($MaxReboots -gt 3) { $MaxReboots = 3 }
-    if ($PostRebootProbeMaxAttempts -lt 1) { $PostRebootProbeMaxAttempts = 1 }
-    if ($PostRebootProbeMaxAttempts -gt 3) { $PostRebootProbeMaxAttempts = 3 }
-
-    $putty = Ensure-CoVmPuttyTools `
-        -RepoRoot $RepoRoot `
-        -ConfiguredPlinkPath $ConfiguredPlinkPath `
-        -ConfiguredPscpPath $ConfiguredPscpPath
-
-    $hostKeyBootstrapResult = Initialize-CoVmSshHostKey `
-        -PlinkPath ([string]$putty.PlinkPath) `
-        -HostName $SshHost `
-        -UserName $SshUser `
-        -Password $SshPassword `
-        -Port $SshPort
-    $resolvedHostKey = ""
-    if ($hostKeyBootstrapResult) {
-        $resolvedHostKey = [string]$hostKeyBootstrapResult.HostKey
-    }
-    if (-not [string]::IsNullOrWhiteSpace($resolvedHostKey)) {
-        Write-Host ("Resolved SSH host key for batch transport: {0}" -f $resolvedHostKey) -ForegroundColor DarkGray
-    }
-
-    $totalSuccess = 0
-    $totalWarnings = 0
-    $totalErrors = 0
-    $rebootCount = 0
-    $hadMidStepReboot = $false
-    $tempRoot = $null
-    $persistentSession = $null
-
-    try {
-        Write-Host "SSH mode is enabled for Step 8 execution." -ForegroundColor Yellow
-        Write-Host ("Step 8 failure policy: {0}" -f $TaskFailurePolicy)
-
-        if ($SubstepMode) {
-            Write-Host "Task-by-task mode is enabled: Step 8 tasks are executed one-by-one over SSH."
-            if ($Platform -eq "windows") {
-                Write-Host "Persistent SSH task session is enabled: one SSH connection will be reused for Step 8 substeps." -ForegroundColor DarkCyan
-                $persistentSession = Start-CoVmPersistentSshSession `
-                    -PySshClientPath ([string]$putty.PlinkPath) `
-                    -HostName $SshHost `
-                    -UserName $SshUser `
-                    -Password $SshPassword `
-                    -Port $SshPort `
-                    -Shell "powershell" `
-                    -ConnectTimeoutSeconds 30 `
-                    -DefaultTaskTimeoutSeconds 1800
-
-                for ($taskIndex = 0; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
-                    $taskBlock = $TaskBlocks[$taskIndex]
-                    $taskName = [string]$taskBlock.Name
-                    $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
-
-                    Write-Host ("TASK started: {0}" -f $taskName)
-                    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
-                    $taskResult = $null
-                    $taskInvocationError = $null
-
-                    for ($taskAttempt = 1; $taskAttempt -le $SshMaxRetries; $taskAttempt++) {
-                        try {
-                            $taskResult = Invoke-CoVmPersistentSshTask `
-                                -Session $persistentSession `
-                                -TaskName $taskName `
-                                -TaskScript $taskScript `
-                                -TimeoutSeconds 1800
-                            $taskInvocationError = $null
-                            break
-                        }
-                        catch {
-                            $taskInvocationError = $_
-                            if ($taskAttempt -lt $SshMaxRetries) {
-                                Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $taskAttempt, $SshMaxRetries, $_.Exception.Message)
-                                Stop-CoVmPersistentSshSession -Session $persistentSession
-                                $persistentSession = Start-CoVmPersistentSshSession `
-                                    -PySshClientPath ([string]$putty.PlinkPath) `
-                                    -HostName $SshHost `
-                                    -UserName $SshUser `
-                                    -Password $SshPassword `
-                                    -Port $SshPort `
-                                    -Shell "powershell" `
-                                    -ConnectTimeoutSeconds 30 `
-                                    -DefaultTaskTimeoutSeconds 1800
-                            }
-                        }
-                    }
-
-                    if ($taskWatch.IsRunning) { $taskWatch.Stop() }
-
-                    if ($null -ne $taskInvocationError) {
-                        if ($TaskFailurePolicy -eq "soft-warning") {
-                            $totalWarnings++
-                            Write-Warning ("TASK warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
-                            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                            Write-Host "TASK result: warning"
-                            Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
-                            try {
-                                Stop-CoVmPersistentSshSession -Session $persistentSession
-                            }
-                            catch { }
-                            $persistentSession = Start-CoVmPersistentSshSession `
-                                -PySshClientPath ([string]$putty.PlinkPath) `
-                                -HostName $SshHost `
-                                -UserName $SshUser `
-                                -Password $SshPassword `
-                                -Port $SshPort `
-                                -Shell "powershell" `
-                                -ConnectTimeoutSeconds 30 `
-                                -DefaultTaskTimeoutSeconds 1800
-                            continue
-                        }
-
-                        $totalErrors++
-                        Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
-                        Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
-                        throw ("Step 8 SSH task failed in persistent session: {0} => {1}" -f $taskName, $taskInvocationError.Exception.Message)
-                    }
-
-                    if ([int]$taskResult.ExitCode -eq 0) {
-                        $totalSuccess++
-                        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                        Write-Host "TASK result: success"
-                        Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
-                    }
-                    else {
-                        if ($TaskFailurePolicy -eq "soft-warning") {
-                            $totalWarnings++
-                            Write-Warning ("TASK warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
-                            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                            Write-Host "TASK result: warning"
-                            Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
-                        }
-                        else {
-                            $totalErrors++
-                            Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
-                            Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
-                            throw ("Step 8 SSH task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
-                        }
-                    }
-
-                    if (-not $DisableRebootHandling) {
-                        $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
-                        if (-not $rebootRequired) {
-                            $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
-                                -PlinkPath ([string]$putty.PlinkPath) `
-                                -HostName $SshHost `
-                                -UserName $SshUser `
-                                -Password $SshPassword `
-                                -Port $SshPort `
-                                -HostKey $resolvedHostKey `
-                                -MaxAttempts $SshMaxRetries
-                        }
-
-                        if ($rebootRequired) {
-                            if ($rebootCount -ge $MaxReboots) {
-                                throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
-                            }
-
-                            $rebootCount++
-                            $hadMidStepReboot = $true
-                            Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
-                            Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-
-                            Stop-CoVmPersistentSshSession -Session $persistentSession
-                            $persistentSession = $null
-
-                            Invoke-CoVmPostStep8RebootAndProbe `
-                                -ResourceGroup $ResourceGroup `
-                                -VmName $VmName `
-                                -PostRebootProbeScript $PostRebootProbeScript `
-                                -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-
-                            $persistentSession = Start-CoVmPersistentSshSession `
-                                -PySshClientPath ([string]$putty.PlinkPath) `
-                                -HostName $SshHost `
-                                -UserName $SshUser `
-                                -Password $SshPassword `
-                                -Port $SshPort `
-                                -Shell "powershell" `
-                                -ConnectTimeoutSeconds 30 `
-                                -DefaultTaskTimeoutSeconds 1800
-                        }
-                    }
-                }
-            }
-            else {
-                $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-step8-ssh-" + [guid]::NewGuid().ToString("N"))
-                New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
-
-                for ($taskIndex = 0; $taskIndex -lt $TaskBlocks.Count; $taskIndex++) {
-                    $taskBlock = $TaskBlocks[$taskIndex]
-                    $taskName = [string]$taskBlock.Name
-                    $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
-                    $localTaskName = ("task-{0:D2}.sh" -f ($taskIndex + 1))
-                    $localTaskPath = Join-Path $tempRoot $localTaskName
-                    $writeSettings = Get-CoVmWriteSettingsForPlatform -Platform $Platform
-                    Write-TextFileNormalized `
-                        -Path $localTaskPath `
-                        -Content $taskScript `
-                        -Encoding $writeSettings.Encoding `
-                        -LineEnding $writeSettings.LineEnding `
-                        -EnsureTrailingNewline
-
-                    $remoteTaskPath = ("./{0}" -f $localTaskName)
-                    Copy-CoVmFileToVmOverSsh `
-                        -PscpPath ([string]$putty.PscpPath) `
-                        -HostName $SshHost `
-                        -UserName $SshUser `
-                        -Password $SshPassword `
-                        -Port $SshPort `
-                        -HostKey $resolvedHostKey `
-                        -LocalPath $localTaskPath `
-                        -RemotePath $remoteTaskPath `
-                        -MaxAttempts $SshMaxRetries | Out-Null
-
-                    $remoteCommand = ('bash "{0}"' -f $remoteTaskPath)
-                    Write-Host ("TASK started: {0}" -f $taskName)
-                    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
-                    $taskResult = Invoke-CoVmSshRemoteCommand `
-                        -PlinkPath ([string]$putty.PlinkPath) `
-                        -HostName $SshHost `
-                        -UserName $SshUser `
-                        -Password $SshPassword `
-                        -Port $SshPort `
-                        -HostKey $resolvedHostKey `
-                        -Command $remoteCommand `
-                        -Label ("ssh task: {0}" -f $taskName) `
-                        -MaxAttempts $SshMaxRetries `
-                        -AllowFailure
-                    if ($taskWatch.IsRunning) { $taskWatch.Stop() }
-
-                    if (-not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
-                        Write-Host ([string]$taskResult.Output)
-                    }
-
-                    if ([int]$taskResult.ExitCode -eq 0) {
-                        $totalSuccess++
-                        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                        Write-Host "TASK result: success"
-                        Write-Host ("TASK_STATUS:{0}:success" -f $taskName)
-                    }
-                    else {
-                        if ($TaskFailurePolicy -eq "soft-warning") {
-                            $totalWarnings++
-                            Write-Warning ("TASK warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
-                            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                            Write-Host "TASK result: warning"
-                            Write-Host ("TASK_STATUS:{0}:warning" -f $taskName)
-                        }
-                        else {
-                            $totalErrors++
-                            Write-Host ("TASK result: failure ({0})" -f $taskName) -ForegroundColor Red
-                            Write-Host ("TASK_STATUS:{0}:error" -f $taskName)
-                            throw ("Step 8 SSH task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
-                        }
-                    }
-
-                    if (-not $DisableRebootHandling) {
-                        $rebootRequired = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
-                        if ($rebootRequired) {
-                            if ($rebootCount -ge $MaxReboots) {
-                                throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
-                            }
-
-                            $rebootCount++
-                            $hadMidStepReboot = $true
-                            Write-Host ("CO_VM_REBOOT_REQUIRED:task={0};index={1};rebootCount={2}" -f $taskName, $taskIndex, $rebootCount)
-                            Write-Host ("Step 8 SSH flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-                            Invoke-CoVmPostStep8RebootAndProbe `
-                                -ResourceGroup $ResourceGroup `
-                                -VmName $VmName `
-                                -PostRebootProbeScript $PostRebootProbeScript `
-                                -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                                -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                                -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            Write-Host ("Task-by-task mode is not enabled: Step 8 tasks will run from the VM update script file over SSH. Failure policy: {0}" -f $TaskFailurePolicy)
-            $scriptLeaf = [System.IO.Path]::GetFileName([string]$ScriptFilePath)
-            if ([string]::IsNullOrWhiteSpace($scriptLeaf)) {
-                $scriptLeaf = if ($Platform -eq "windows") { "az-vm-step8-update.ps1" } else { "az-vm-step8-update.sh" }
-            }
-            $remoteScriptPath = ("./{0}" -f $scriptLeaf)
-
-            while ($true) {
-                Copy-CoVmFileToVmOverSsh `
-                    -PscpPath ([string]$putty.PscpPath) `
-                    -HostName $SshHost `
-                    -UserName $SshUser `
-                    -Password $SshPassword `
-                    -Port $SshPort `
-                    -HostKey $resolvedHostKey `
-                    -LocalPath $ScriptFilePath `
-                    -RemotePath $remoteScriptPath `
-                    -MaxAttempts $SshMaxRetries | Out-Null
-
-                if ($Platform -eq "linux") {
-                    Invoke-CoVmSshRemoteCommand `
-                        -PlinkPath ([string]$putty.PlinkPath) `
-                        -HostName $SshHost `
-                        -UserName $SshUser `
-                        -Password $SshPassword `
-                        -Port $SshPort `
-                        -HostKey $resolvedHostKey `
-                        -Command ('chmod +x "{0}"' -f $remoteScriptPath) `
-                        -Label "ssh chmod update script" `
-                        -MaxAttempts $SshMaxRetries | Out-Null
-                }
-
-                $combinedRemoteCommand = if ($Platform -eq "windows") {
-                    ('powershell -NoProfile -ExecutionPolicy Bypass -File "{0}"' -f $remoteScriptPath)
-                }
-                else {
-                    ('bash "{0}"' -f $remoteScriptPath)
-                }
-
-                $combinedResult = Invoke-CoVmSshRemoteCommand `
-                    -PlinkPath ([string]$putty.PlinkPath) `
-                    -HostName $SshHost `
-                    -UserName $SshUser `
-                    -Password $SshPassword `
-                    -Port $SshPort `
-                    -HostKey $resolvedHostKey `
-                    -Command $combinedRemoteCommand `
-                    -Label "ssh step8 update-script-file" `
-                    -MaxAttempts $SshMaxRetries `
-                    -AllowFailure
-
-                if (-not [string]::IsNullOrWhiteSpace([string]$combinedResult.Output)) {
-                    Write-Host ([string]$combinedResult.Output)
-                }
-
-                $marker = Parse-CoVmStep8Markers -MessageText ([string]$combinedResult.Output)
-                if ($marker.HasSummaryLine) {
-                    $totalSuccess = [int]$marker.SuccessCount
-                    $totalWarnings = [int]$marker.WarningCount
-                    $totalErrors = [int]$marker.ErrorCount
-                    Write-Host $marker.SummaryLine -ForegroundColor DarkGray
-                }
-                elseif ([int]$combinedResult.ExitCode -eq 0) {
-                    $totalSuccess = [int]@($TaskBlocks).Count
-                }
-                elseif ($TaskFailurePolicy -eq "soft-warning") {
-                    $totalWarnings = [Math]::Max($totalWarnings, 1)
-                }
-                else {
-                    $totalErrors = [Math]::Max($totalErrors, 1)
-                }
-
-                if ([int]$combinedResult.ExitCode -ne 0) {
-                    if ($TaskFailurePolicy -eq "soft-warning") {
-                        Write-Warning ("Step 8 SSH combined flow exited with code {0}; continuing due soft-warning policy." -f $combinedResult.ExitCode)
-                    }
-                    else {
-                        throw ("Step 8 SSH combined flow failed with exit code {0}." -f $combinedResult.ExitCode)
-                    }
-                }
-
-                if ($DisableRebootHandling) {
-                    break
-                }
-                else {
-                    $rebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$combinedResult.Output)))
-                    if (-not $rebootRequired -and $Platform -eq "windows") {
-                        $rebootRequired = Test-CoVmWindowsRebootPendingOverSsh `
-                            -PlinkPath ([string]$putty.PlinkPath) `
-                            -HostName $SshHost `
-                            -UserName $SshUser `
-                            -Password $SshPassword `
-                            -Port $SshPort `
-                            -HostKey $resolvedHostKey `
-                            -MaxAttempts $SshMaxRetries
-                    }
-
-                    if (-not $rebootRequired) {
-                        break
-                    }
-
-                    if ($rebootCount -ge $MaxReboots) {
-                        throw ("Step 8 SSH reboot-resume cannot continue because reboot limit ({0}) was reached." -f $MaxReboots)
-                    }
-
-                    $rebootCount++
-                    $hadMidStepReboot = $true
-                    Write-Host ("Step 8 SSH combined flow requested a VM reboot ({0}/{1}). Resuming..." -f $rebootCount, $MaxReboots) -ForegroundColor Yellow
-                    Invoke-CoVmPostStep8RebootAndProbe `
-                        -ResourceGroup $ResourceGroup `
-                        -VmName $VmName `
-                        -PostRebootProbeScript $PostRebootProbeScript `
-                        -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                        -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                        -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-                }
-            }
-        }
-
-        Write-Host ("STEP8_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
-        if ($TaskFailurePolicy -eq "strict" -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
-            throw ("Step 8 strict failure policy blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
-        }
-
-        if ($RebootAfterExecution -and -not $DisableRebootHandling) {
-            if ($hadMidStepReboot) {
-                Write-Host "Step 8 already rebooted during SSH task execution; final reboot is skipped." -ForegroundColor DarkGray
-            }
-            else {
-                Invoke-CoVmPostStep8RebootAndProbe `
-                    -ResourceGroup $ResourceGroup `
-                    -VmName $VmName `
-                    -PostRebootProbeScript $PostRebootProbeScript `
-                    -PostRebootProbeCommandId $PostRebootProbeCommandId `
-                    -PostRebootProbeMaxAttempts $PostRebootProbeMaxAttempts `
-                    -PostRebootProbeRetryDelaySeconds $PostRebootProbeRetryDelaySeconds
-            }
-        }
-    }
-    finally {
-        if ($null -ne $persistentSession) {
-            Stop-CoVmPersistentSshSession -Session $persistentSession
-        }
-        if (-not [string]::IsNullOrWhiteSpace([string]$tempRoot) -and (Test-Path -LiteralPath $tempRoot)) {
-            Remove-Item -Path $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
 #endregion
 #region Imported:test-sku
 function Get-PriceHoursFromConfig {

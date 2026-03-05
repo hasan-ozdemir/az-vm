@@ -3,6 +3,7 @@ import argparse
 import json
 import sys
 import time
+import uuid
 from pathlib import Path
 
 
@@ -12,6 +13,62 @@ if VENDOR_DIR.exists():
     sys.path.insert(0, str(VENDOR_DIR))
 
 import paramiko  # type: ignore
+
+
+def configure_stdio() -> None:
+    for stream_name in ("stdout", "stderr"):
+        stream = getattr(sys, stream_name, None)
+        if stream is None:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+
+def write_text(stream, text: str) -> None:
+    value = "" if text is None else str(text)
+    try:
+        stream.write(value)
+        stream.flush()
+        return
+    except Exception:
+        pass
+
+    stream_buffer = getattr(stream, "buffer", None)
+    if stream_buffer is not None:
+        try:
+            stream_buffer.write(value.encode("utf-8", errors="replace"))
+            stream_buffer.flush()
+            return
+        except Exception:
+            pass
+
+    try:
+        fallback = value.encode("ascii", errors="replace").decode("ascii")
+        stream.write(fallback)
+        stream.flush()
+    except Exception:
+        pass
+
+
+def write_stdout(text: str) -> None:
+    write_text(sys.stdout, text)
+
+
+def write_stderr(text: str) -> None:
+    write_text(sys.stderr, text)
+
+
+def sanitize_stream_text(text: str) -> str:
+    if text is None:
+        return ""
+    value = str(text).replace("\x00", "")
+    if value.startswith("\ufeff"):
+        value = value.lstrip("\ufeff")
+    return value
 
 
 def build_client(host: str, port: int, user: str, password: str, timeout: int) -> paramiko.SSHClient:
@@ -37,7 +94,7 @@ def run_exec(args: argparse.Namespace) -> int:
     try:
         transport = client.get_transport()
         if transport is None:
-            sys.stderr.write("SSH transport could not be created.\n")
+            write_stderr("SSH transport could not be created.\n")
             return 2
 
         channel = transport.open_session()
@@ -54,20 +111,18 @@ def run_exec(args: argparse.Namespace) -> int:
             while channel.recv_ready():
                 chunk = channel.recv(65536)
                 stdout_chunks.append(chunk)
-                sys.stdout.write(chunk.decode("utf-8", errors="replace"))
-                sys.stdout.flush()
+                write_stdout(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
             while channel.recv_stderr_ready():
                 chunk = channel.recv_stderr(65536)
                 stderr_chunks.append(chunk)
-                sys.stderr.write(chunk.decode("utf-8", errors="replace"))
-                sys.stderr.flush()
+                write_stderr(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
 
             if channel.exit_status_ready():
                 break
 
             if deadline is not None and time.monotonic() >= deadline:
                 channel.close()
-                sys.stderr.write(f"SSH command timed out after {args.timeout} second(s).\n")
+                write_stderr(f"SSH command timed out after {args.timeout} second(s).\n")
                 return 124
 
             time.sleep(0.2)
@@ -75,13 +130,11 @@ def run_exec(args: argparse.Namespace) -> int:
         while channel.recv_ready():
             chunk = channel.recv(65536)
             stdout_chunks.append(chunk)
-            sys.stdout.write(chunk.decode("utf-8", errors="replace"))
-            sys.stdout.flush()
+            write_stdout(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
         while channel.recv_stderr_ready():
             chunk = channel.recv_stderr(65536)
             stderr_chunks.append(chunk)
-            sys.stderr.write(chunk.decode("utf-8", errors="replace"))
-            sys.stderr.flush()
+            write_stderr(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
 
         out = b"".join(stdout_chunks).decode("utf-8", errors="replace")
         err = b"".join(stderr_chunks).decode("utf-8", errors="replace")
@@ -94,7 +147,7 @@ def run_exec(args: argparse.Namespace) -> int:
 def run_copy(args: argparse.Namespace) -> int:
     local_path = Path(args.local).expanduser().resolve()
     if not local_path.exists():
-        sys.stderr.write(f"Local file was not found: {local_path}\n")
+        write_stderr(f"Local file was not found: {local_path}\n")
         return 2
 
     client = build_client(args.host, args.port, args.user, args.password, args.timeout)
@@ -126,18 +179,36 @@ def run_stdin_task(
     if transport is None or not transport.is_active():
         raise RuntimeError("SSH transport is not active.")
 
+    powershell_mode = command.strip().lower().startswith("powershell")
+    payload = script_text or ""
+    if payload and not payload.endswith("\n"):
+        payload += "\n"
+    remote_script_path = ""
+    command_to_exec = command
+
     channel = transport.open_session()
     try:
-        channel.exec_command(command)
-        stdin_stream = channel.makefile_stdin("wb")
-        try:
-            payload = script_text or ""
-            if payload and not payload.endswith("\n"):
-                payload += "\n"
-            stdin_stream.write(payload.encode("utf-8", errors="replace"))
-            stdin_stream.flush()
-        finally:
-            stdin_stream.close()
+        if powershell_mode:
+            remote_script_path = f"C:/Windows/Temp/co-vm-task-{uuid.uuid4().hex}.ps1"
+            sftp = client.open_sftp()
+            try:
+                with sftp.file(remote_script_path, "wb") as remote_file:
+                    remote_file.write(payload.encode("utf-8", errors="replace"))
+            finally:
+                sftp.close()
+            command_to_exec = (
+                'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass '
+                f'-File "{remote_script_path}"'
+            )
+            channel.exec_command(command_to_exec)
+        else:
+            channel.exec_command(command_to_exec)
+            stdin_stream = channel.makefile_stdin("wb")
+            try:
+                stdin_stream.write(payload.encode("utf-8", errors="replace"))
+                stdin_stream.flush()
+            finally:
+                stdin_stream.close()
 
         deadline = None
         if timeout_seconds > 0:
@@ -147,14 +218,12 @@ def run_stdin_task(
             while channel.recv_ready():
                 chunk = channel.recv(65536)
                 if chunk:
-                    sys.stdout.write(chunk.decode("utf-8", errors="replace"))
-                    sys.stdout.flush()
+                    write_stdout(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
             while channel.recv_stderr_ready():
                 chunk = channel.recv_stderr(65536)
                 if chunk:
                     # Keep stderr visible in the same stream for easier parent-side parsing.
-                    sys.stdout.write("[stderr] " + chunk.decode("utf-8", errors="replace"))
-                    sys.stdout.flush()
+                    write_stdout("[stderr] " + sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
 
             if channel.exit_status_ready():
                 break
@@ -168,17 +237,29 @@ def run_stdin_task(
         while channel.recv_ready():
             chunk = channel.recv(65536)
             if chunk:
-                sys.stdout.write(chunk.decode("utf-8", errors="replace"))
-                sys.stdout.flush()
+                write_stdout(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
         while channel.recv_stderr_ready():
             chunk = channel.recv_stderr(65536)
             if chunk:
-                sys.stdout.write("[stderr] " + chunk.decode("utf-8", errors="replace"))
-                sys.stdout.flush()
+                write_stdout("[stderr] " + sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
 
         return int(channel.recv_exit_status())
     finally:
         channel.close()
+        if powershell_mode and remote_script_path:
+            try:
+                cleanup_channel = transport.open_session()
+                try:
+                    cleanup_command = (
+                        'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass '
+                        f'-Command "Remove-Item -LiteralPath ''{remote_script_path}'' -Force -ErrorAction SilentlyContinue"'
+                    )
+                    cleanup_channel.exec_command(cleanup_command)
+                    cleanup_channel.recv_exit_status()
+                finally:
+                    cleanup_channel.close()
+            except Exception:
+                pass
 
 
 def run_session(args: argparse.Namespace) -> int:
@@ -205,19 +286,16 @@ def run_session(args: argparse.Namespace) -> int:
             try:
                 request = json.loads(line)
             except Exception as exc:
-                sys.stdout.write(f"CO_VM_SESSION_ERROR:invalid-json:{exc}\n")
-                sys.stdout.flush()
+                write_stdout(f"CO_VM_SESSION_ERROR:invalid-json:{exc}\n")
                 continue
 
             action = str(request.get("action", "")).strip().lower()
             if action == "close":
-                sys.stdout.write("CO_VM_SESSION_CLOSED\n")
-                sys.stdout.flush()
+                write_stdout("CO_VM_SESSION_CLOSED\n")
                 return 0
 
             if action != "run":
-                sys.stdout.write(f"CO_VM_SESSION_ERROR:unsupported-action:{action}\n")
-                sys.stdout.flush()
+                write_stdout(f"CO_VM_SESSION_ERROR:unsupported-action:{action}\n")
                 continue
 
             task_name = str(request.get("task", "task")).strip() or "task"
@@ -229,8 +307,7 @@ def run_session(args: argparse.Namespace) -> int:
             if task_timeout < 5:
                 task_timeout = 5
 
-            sys.stdout.write(f"CO_VM_TASK_BEGIN:{task_name}\n")
-            sys.stdout.flush()
+            write_stdout(f"CO_VM_TASK_BEGIN:{task_name}\n")
 
             try:
                 transport = client.get_transport()
@@ -244,12 +321,10 @@ def run_session(args: argparse.Namespace) -> int:
                     timeout_seconds=task_timeout,
                 )
             except Exception as exc:
-                sys.stdout.write(f"[stderr] CO_VM_SESSION_TASK_ERROR:{task_name}:{exc}\n")
-                sys.stdout.flush()
+                write_stdout(f"[stderr] CO_VM_SESSION_TASK_ERROR:{task_name}:{exc}\n")
                 task_exit_code = 1
 
-            sys.stdout.write(f"CO_VM_TASK_END:{task_name}:{task_exit_code}\n")
-            sys.stdout.flush()
+            write_stdout(f"CO_VM_TASK_END:{task_name}:{task_exit_code}\n")
 
         return 0
     finally:
@@ -298,6 +373,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    configure_stdio()
     args = parse_args()
     if args.action == "exec":
         return run_exec(args)
@@ -305,7 +381,7 @@ def main() -> int:
         return run_copy(args)
     if args.action == "session":
         return run_session(args)
-    sys.stderr.write(f"Unsupported action: {args.action}\n")
+    write_stderr(f"Unsupported action: {args.action}\n")
     return 2
 
 

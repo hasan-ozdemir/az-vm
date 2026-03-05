@@ -15,9 +15,15 @@ function Invoke-CommandWithTimeout {
         return [pscustomobject]@{ Success = $false; TimedOut = $true }
     }
 
-    $output = Receive-Job -Job $job
+    $jobReceiveErrors = @()
+    $output = Receive-Job -Job $job -ErrorAction SilentlyContinue -ErrorVariable jobReceiveErrors
     if ($output) {
         $output | ForEach-Object { Write-Host ([string]$_) }
+    }
+    if (@($jobReceiveErrors).Count -gt 0) {
+        foreach ($jobError in @($jobReceiveErrors)) {
+            Write-Warning ([string]$jobError)
+        }
     }
 
     $state = $job.ChildJobs[0].JobStateInfo.State
