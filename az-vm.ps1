@@ -1519,7 +1519,7 @@ function Show-CoVmCommandHelp {
     Write-Host "Commands:"
     Write-Host "  create   Create missing resources. Use --purge to delete first."
     Write-Host "  update   Re-run create-or-update operations on existing resources."
-    Write-Host "  change   Change VM region/size without destructive rebuild; region uses Azure Resource Mover."
+    Write-Host "  change   Change VM region/size; region move uses snapshot-based migration."
     Write-Host "  exec     Execute one VM init/update task."
     Write-Host ""
     Write-Host "Common options:"
@@ -2069,6 +2069,195 @@ function Resolve-ServerTemplate {
     return $Value.Replace("{SERVER_NAME}", $ServerName)
 }
 
+function Get-CoVmRegionCodeMap {
+    return @{
+        'austriaeast' = 'ate1'
+        'austriawest' = 'atw1'
+        'centralindia' = 'inc1'
+        'southindia' = 'ins1'
+        'westindia' = 'inw1'
+        'eastus' = 'use1'
+        'eastus2' = 'use2'
+        'centralus' = 'usc1'
+        'northcentralus' = 'usn1'
+        'southcentralus' = 'uss1'
+        'westus' = 'usw1'
+        'westus2' = 'usw2'
+        'westus3' = 'usw3'
+        'westcentralus' = 'usw4'
+        'canadacentral' = 'cac1'
+        'canadaeast' = 'cae1'
+        'mexicocentral' = 'mxc1'
+        'brazilsouth' = 'brs1'
+        'brazilsoutheast' = 'brs2'
+        'chilecentral' = 'clc1'
+        'northeurope' = 'eun1'
+        'westeurope' = 'euw1'
+        'francecentral' = 'frc1'
+        'francesouth' = 'frs1'
+        'germanywestcentral' = 'gew1'
+        'germanynorth' = 'gen1'
+        'italynorth' = 'itn1'
+        'norwayeast' = 'noe1'
+        'norwaywest' = 'now1'
+        'polandcentral' = 'plc1'
+        'spaincentral' = 'esc1'
+        'swedencentral' = 'sec1'
+        'swedensouth' = 'ses1'
+        'switzerlandnorth' = 'chn1'
+        'switzerlandwest' = 'chw1'
+        'uksouth' = 'gbs1'
+        'ukwest' = 'gbw1'
+        'finlandcentral' = 'fic1'
+        'eastasia' = 'ase1'
+        'southeastasia' = 'ass1'
+        'japaneast' = 'jpe1'
+        'japanwest' = 'jpw1'
+        'koreacentral' = 'krc1'
+        'koreasouth' = 'krs1'
+        'singapore' = 'sgc1'
+        'indonesiacentral' = 'idc1'
+        'malaysiawest' = 'myw1'
+        'newzealandnorth' = 'nzn1'
+        'australiaeast' = 'aue1'
+        'australiasoutheast' = 'aus1'
+        'australiacentral' = 'auc1'
+        'australiacentral2' = 'auc2'
+        'southafricanorth' = 'zan1'
+        'southafricawest' = 'zaw1'
+        'uaenorth' = 'aen1'
+        'uaecentral' = 'aec1'
+        'qatarcentral' = 'qac1'
+        'israelcentral' = 'ilc1'
+        'jioindiacentral' = 'inc2'
+        'jioindiawest' = 'inw2'
+    }
+}
+
+function Get-CoVmRegionCode {
+    param(
+        [string]$Location
+    )
+
+    $normalized = if ($null -eq $Location) { '' } else { [string]$Location.Trim().ToLowerInvariant() }
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        Throw-FriendlyError `
+            -Detail "Region code could not be resolved because AZ_LOCATION is empty." `
+            -Code 22 `
+            -Summary "Region code resolution failed." `
+            -Hint "Set AZ_LOCATION to a valid Azure region."
+    }
+
+    $map = Get-CoVmRegionCodeMap
+    if ($map.ContainsKey($normalized)) {
+        return [string]$map[$normalized]
+    }
+
+    Throw-FriendlyError `
+        -Detail ("No static REGION_CODE mapping exists for region '{0}'." -f $normalized) `
+        -Code 22 `
+        -Summary "Region code resolution failed." `
+        -Hint "Add the region to the built-in REGION_CODE map in az-vm.ps1."
+}
+
+function Resolve-CoVmTemplate {
+    param(
+        [string]$Template,
+        [hashtable]$Tokens
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Template)) {
+        return $Template
+    }
+
+    $result = [string]$Template
+    if ($Tokens) {
+        foreach ($key in @($Tokens.Keys)) {
+            $tokenName = [string]$key
+            $tokenValue = [string]$Tokens[$key]
+            $result = $result.Replace(("{" + $tokenName + "}"), $tokenValue)
+        }
+    }
+    return $result
+}
+
+function Get-CoVmNextNameIndex {
+    param(
+        [string]$ResourceGroup,
+        [string]$NamePrefix
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$NamePrefix)) {
+        return 1
+    }
+
+    $groupExists = az group exists -n $ResourceGroup --only-show-errors
+    if ($LASTEXITCODE -ne 0 -or -not [string]::Equals([string]$groupExists, 'true', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return 1
+    }
+
+    $namesText = az resource list -g $ResourceGroup --query "[].name" -o tsv --only-show-errors
+    if ($LASTEXITCODE -ne 0) {
+        return 1
+    }
+
+    $tokens = @(Convert-CoVmCliTextToTokens -Text $namesText)
+    if ($tokens.Count -eq 0) {
+        return 1
+    }
+
+    $pattern = '^' + [regex]::Escape([string]$NamePrefix) + '(\d+)$'
+    $maxIndex = 0
+    foreach ($token in @($tokens)) {
+        $name = [string]$token
+        $m = [regex]::Match($name, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $m.Success) { continue }
+        $idxText = [string]$m.Groups[1].Value
+        if (-not ($idxText -match '^\d+$')) { continue }
+        $idx = [int]$idxText
+        if ($idx -gt $maxIndex) {
+            $maxIndex = $idx
+        }
+    }
+
+    return ($maxIndex + 1)
+}
+
+function Resolve-CoVmNameFromTemplate {
+    param(
+        [string]$Template,
+        [string]$ResourceType,
+        [string]$ServerName,
+        [string]$RegionCode,
+        [string]$ResourceGroup,
+        [switch]$UseNextIndex
+    )
+
+    $effectiveTemplate = [string]$Template
+    if ([string]::IsNullOrWhiteSpace($effectiveTemplate)) {
+        $effectiveTemplate = "{RESOURCE_TYPE}-{SERVER_NAME}-{REGION_CODE}-n{N}"
+    }
+
+    $baseTokens = @{
+        RESOURCE_TYPE = [string]$ResourceType
+        SERVER_NAME = [string]$ServerName
+        REGION_CODE = [string]$RegionCode
+    }
+
+    $resolved = Resolve-CoVmTemplate -Template $effectiveTemplate -Tokens $baseTokens
+    if ($resolved.IndexOf("{N}", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        return $resolved
+    }
+
+    $index = 1
+    if ($UseNextIndex) {
+        $prefix = $resolved.Replace("{N}", "")
+        $index = Get-CoVmNextNameIndex -ResourceGroup $ResourceGroup -NamePrefix $prefix
+    }
+
+    return $resolved.Replace("{N}", [string]$index)
+}
+
 function Resolve-ConfigPath {
     param(
         [string]$PathValue,
@@ -2405,16 +2594,7 @@ function Invoke-CoVmStep1Common {
 
     Write-Host "Server name '$serverName' will be used." -ForegroundColor Green
 
-    $resourceGroup = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP" -DefaultValue "rg-{SERVER_NAME}") -ServerName $serverName
     $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "austriaeast") -ServerName $serverName
-    $VNET = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "vnet-{SERVER_NAME}") -ServerName $serverName
-    $SUBNET = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME" -DefaultValue "subnet-{SERVER_NAME}") -ServerName $serverName
-    $NSG = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME" -DefaultValue "nsg-{SERVER_NAME}") -ServerName $serverName
-    $nsgRule = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME" -DefaultValue "nsg-rule-{SERVER_NAME}") -ServerName $serverName
-
-    $IP = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME" -DefaultValue "ip-{SERVER_NAME}") -ServerName $serverName
-    $NIC = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME" -DefaultValue "nic-{SERVER_NAME}") -ServerName $serverName
-    $vmName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue "{SERVER_NAME}") -ServerName $serverName
     $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_IMAGE" -DefaultValue $VmImageDefault) -ServerName $serverName
     $vmStorageSku = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -ServerName $serverName
     $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_SIZE" -DefaultValue "Standard_B2as_v2") -ServerName $serverName
@@ -2464,7 +2644,76 @@ function Invoke-CoVmStep1Common {
         Write-Host "Interactive selection -> AZ_LOCATION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
     }
 
-    $vmDiskName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME" -DefaultValue "disk-{SERVER_NAME}") -ServerName $serverName
+    $regionCode = Get-CoVmRegionCode -Location $azLocation
+    $namingProfile = [string](Get-ConfigValue -Config $ConfigMap -Key "NAMING_TEMPLATE_ACTIVE" -DefaultValue "regional_v1")
+    if (-not [string]::Equals([string]$namingProfile, "regional_v1", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("Unsupported naming profile '{0}'." -f $namingProfile) `
+            -Code 2 `
+            -Summary "Only regional naming profile is supported in this version." `
+            -Hint "Set NAMING_TEMPLATE_ACTIVE=regional_v1 in .env."
+    }
+
+    $nameTokens = @{
+        SERVER_NAME = [string]$serverName
+        REGION_CODE = [string]$regionCode
+        N = "1"
+    }
+
+    $resourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($resourceGroupRaw)) {
+        $resourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}")
+    }
+    $resourceGroup = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $resourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($vnetRaw)) {
+        $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $VNET = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $vnetRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($subnetRaw)) {
+        $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $SUBNET = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $subnetRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($nsgRaw)) {
+        $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $NSG = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($nsgRuleRaw)) {
+        $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $nsgRule = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRuleRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($ipRaw)) {
+        $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $IP = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $ipRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($nicRaw)) {
+        $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $NIC = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $nicRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $vmNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($vmNameRaw)) {
+        $vmNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $vmName = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $vmNameRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME" -DefaultValue "")
+    if ([string]::IsNullOrWhiteSpace($vmDiskNameRaw)) {
+        $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
+    }
+    $vmDiskName = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $vmDiskNameRaw -ServerName $serverName) -Tokens $nameTokens
+
     $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_SIZE_GB" -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
     $vmUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_USER" -DefaultValue "manager") -ServerName $serverName
     $vmPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
@@ -2507,6 +2756,8 @@ function Invoke-CoVmStep1Common {
 
     return [ordered]@{
         ServerName = $serverName
+        RegionCode = $regionCode
+        NamingTemplateActive = $namingProfile
         ResourceGroup = $resourceGroup
         AzLocation = $azLocation
         DefaultAzLocation = $defaultAzLocation
@@ -5496,17 +5747,19 @@ function Invoke-CoVmChangeCommand {
     $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
     $context = $runtime.Context
     $envFilePath = [string]$runtime.EnvFilePath
+    $effectiveConfigMap = $runtime.EffectiveConfigMap
     $resourceGroup = [string]$context.ResourceGroup
     $vmName = [string]$context.VmName
 
-    $vmJson = az vm show -g $resourceGroup -n $vmName -o json
+    $vmJson = az vm show -g $resourceGroup -n $vmName -o json --only-show-errors
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmJson)) {
         Throw-FriendlyError `
             -Detail ("VM '{0}' was not found in resource group '{1}'." -f $vmName, $resourceGroup) `
             -Code 62 `
             -Summary "Change command cannot continue because VM does not exist." `
-            -Hint "Run 'az-vm create' first, or check RESOURCE_GROUP/VM_NAME in .env."
+            -Hint "Run 'az-vm create' first, or check active naming values in .env."
     }
+
     $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
     $currentRegion = [string]$vmObject.location
     $currentSize = [string]$vmObject.hardwareProfile.vmSize
@@ -5547,7 +5800,7 @@ function Invoke-CoVmChangeCommand {
             if (-not [string]::IsNullOrWhiteSpace($targetRegion)) {
                 $pickerLocation = $targetRegion
             }
-            $priceHours = Get-PriceHoursFromConfig -Config $runtime.EffectiveConfigMap -DefaultHours 730
+            $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
             $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
             if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
                 Throw-FriendlyError `
@@ -5578,7 +5831,7 @@ function Invoke-CoVmChangeCommand {
         $changeSize = Read-StrictYesNo -PromptText "Do you want to change VM size?"
         if ($changeSize) {
             $pickerLocation = if ([string]::IsNullOrWhiteSpace($targetRegion)) { $currentRegion } else { $targetRegion }
-            $priceHours = Get-PriceHoursFromConfig -Config $runtime.EffectiveConfigMap -DefaultHours 730
+            $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
             $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
             if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
                 Throw-FriendlyError `
@@ -5612,469 +5865,249 @@ function Invoke-CoVmChangeCommand {
         return
     }
 
-    $finalResourceGroup = $resourceGroup
     $regionMoveApplied = $false
+    $activeResourceGroup = $resourceGroup
+    $activeVmName = $vmName
+
     if ($regionChanged) {
-        Write-Host "Applying non-destructive region move with Azure Resource Mover."
-        Write-Host ("Current: region={0}, size={1}" -f $currentRegion, $currentSize)
+        Write-Host "Applying snapshot-based region migration."
+        Write-Host ("Current: region={0}, size={1}, rg={2}" -f $currentRegion, $currentSize, $resourceGroup)
         Write-Host ("Target : region={0}, size={1}" -f $targetRegion, $targetSize)
+
         if (-not $AutoMode) {
-            $approveRegionMove = Confirm-YesNo -PromptText "Continue with Azure Resource Mover region migration?" -DefaultYes $false
+            $approveRegionMove = Confirm-YesNo -PromptText "Continue with snapshot-based region migration?" -DefaultYes $false
             if (-not $approveRegionMove) {
                 Write-Host "Change command canceled by user." -ForegroundColor Yellow
                 return
             }
         }
 
-        $preMovePowerState = az vm get-instance-view --resource-group $resourceGroup --name $vmName --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus | [0]" -o tsv --only-show-errors
-        Assert-LastExitCode "az vm get-instance-view (pre-region-move)"
-        if (-not [string]::Equals([string]$preMovePowerState, "VM running", [System.StringComparison]::OrdinalIgnoreCase)) {
-            Write-Host ("VM power state before Resource Mover is '{0}'. Starting VM for validation..." -f [string]$preMovePowerState) -ForegroundColor Yellow
-            Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-                az vm start -g $resourceGroup -n $vmName -o none
-                Assert-LastExitCode "az vm start (pre-region-move)"
-            } | Out-Null
-            $preMoveRunning = Wait-CoVmVmRunningState -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 6 -DelaySeconds 10
-            if (-not $preMoveRunning) {
-                Throw-FriendlyError `
-                    -Detail ("VM '{0}' did not reach running state before Resource Mover validation." -f $vmName) `
-                    -Code 62 `
-                    -Summary "Region move stopped because VM is not ready for Resource Mover validation." `
-                    -Hint "Start the VM and retry the change command."
-            }
-        }
-
-        $resourceMoverVersion = az extension show --name resource-mover --query version -o tsv --only-show-errors 2>$null
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$resourceMoverVersion)) {
-            Write-Host "Azure CLI extension 'resource-mover' is not installed. Installing now..."
-            Invoke-TrackedAction -Label "az extension add --name resource-mover --upgrade" -Action {
-                az extension add --name resource-mover --upgrade --allow-preview true --yes --only-show-errors -o none
-                Assert-LastExitCode "az extension add resource-mover"
-            } | Out-Null
-        }
-
-        $targetMoveResourceGroup = ("{0}-mr-{1}" -f $resourceGroup, $targetRegion).ToLowerInvariant()
-        $targetMoveResourceGroup = ($targetMoveResourceGroup -replace '[^a-z0-9._()-]', '-')
-        if ($targetMoveResourceGroup.Length -gt 84) { $targetMoveResourceGroup = $targetMoveResourceGroup.Substring(0, 84).Trim('-') }
-        if ([string]::IsNullOrWhiteSpace($targetMoveResourceGroup)) { $targetMoveResourceGroup = "rg-move-target" }
-
-        $targetGroupExists = az group exists -n $targetMoveResourceGroup
-        Assert-LastExitCode "az group exists (target)"
-        if (-not [string]::Equals([string]$targetGroupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
-            Invoke-TrackedAction -Label ("az group create -n {0} -l {1}" -f $targetMoveResourceGroup, $targetRegion) -Action {
-                az group create -n $targetMoveResourceGroup -l $targetRegion -o none --only-show-errors
-                Assert-LastExitCode "az group create (target)"
-            } | Out-Null
-        }
-        else {
-            Write-Host ("Target move resource group '{0}' already exists and will be reused." -f $targetMoveResourceGroup) -ForegroundColor Yellow
-        }
-
-        $safeVmName = ([string]$vmName -replace '[^a-zA-Z0-9-]', '-').ToLowerInvariant()
-        if ($safeVmName.Length -gt 22) { $safeVmName = $safeVmName.Substring(0, 22).Trim('-') }
-        if ([string]::IsNullOrWhiteSpace($safeVmName)) { $safeVmName = 'vm' }
-        $safeRegion = ([string]$targetRegion -replace '[^a-zA-Z0-9-]', '-').ToLowerInvariant()
-        if ($safeRegion.Length -gt 18) { $safeRegion = $safeRegion.Substring(0, 18).Trim('-') }
-        if ([string]::IsNullOrWhiteSpace($safeRegion)) { $safeRegion = 'region' }
-        $moveCollectionPrefix = ("mc-{0}-{1}-" -f $safeVmName, $safeRegion).ToLowerInvariant()
-        $staleCollections = @(
-            Get-CoVmManagedMoveCollections `
-                -ResourceGroup $resourceGroup `
-                -SourceRegion $currentRegion `
-                -TargetRegion $targetRegion `
-                -CollectionPrefix $moveCollectionPrefix
-        )
-        if ($staleCollections.Count -gt 0) {
-            Write-Host ("Found {0} stale move collection(s) from previous region-change attempts." -f $staleCollections.Count) -ForegroundColor Yellow
-            foreach ($staleCollectionName in @($staleCollections)) {
-                Remove-CoVmMoveCollectionArtifacts -ResourceGroup $resourceGroup -CollectionName ([string]$staleCollectionName) -Reason 'stale artifacts from previous region-change attempts'
-            }
-
+        $sourceOsDiskId = [string]$vmObject.storageProfile.osDisk.managedDisk.id
+        if ([string]::IsNullOrWhiteSpace([string]$sourceOsDiskId)) {
             Throw-FriendlyError `
-                -Detail ("Stale move collections were cleaned: {0}" -f ($staleCollections -join ', ')) `
+                -Detail "Source VM OS disk id could not be resolved." `
                 -Code 62 `
-                -Summary "Stale Resource Mover artifacts were cleaned. Migration was not retried automatically." `
-                -Hint "Run the same change command again to start a fresh migration."
+                -Summary "Region move cannot continue." `
+                -Hint "Check VM storage profile and retry."
         }
 
-        $moveCollectionName = ("{0}{1}" -f $moveCollectionPrefix, (Get-Date -Format "yyMMddHHmmss"))
-        $moveCollectionCreated = $false
-        $stageTimeoutSeconds = 1800
-        $stagePollSeconds = 10
-        $stageMaxAttempts = [int][Math]::Ceiling(([double]$stageTimeoutSeconds / [double]$stagePollSeconds))
-        if ($stageMaxAttempts -lt 1) { $stageMaxAttempts = 1 }
+        $dataDisks = @($vmObject.storageProfile.dataDisks)
+        if ($dataDisks.Count -gt 0) {
+            Throw-FriendlyError `
+                -Detail ("Attached data disk count: {0}." -f $dataDisks.Count) `
+                -Code 62 `
+                -Summary "Snapshot region move currently supports OS disk only." `
+                -Hint "Detach/migrate data disks separately, then retry."
+        }
+
+        $sourceDiskJson = az disk show --ids $sourceOsDiskId -o json --only-show-errors
+        Assert-LastExitCode "az disk show (source os disk)"
+        $sourceDisk = ConvertFrom-JsonCompat -InputObject $sourceDiskJson
+        $sourceDiskSku = [string]$sourceDisk.sku.name
+        $sourceOsType = [string]$sourceDisk.osType
+        if ([string]::IsNullOrWhiteSpace([string]$sourceDiskSku)) { $sourceDiskSku = "StandardSSD_LRS" }
+        if ([string]::IsNullOrWhiteSpace([string]$sourceOsType)) { $sourceOsType = "Windows" }
+
+        $targetRegionCode = Get-CoVmRegionCode -Location $targetRegion
+        $nameTokens = @{
+            SERVER_NAME = [string]$context.ServerName
+            REGION_CODE = [string]$targetRegionCode
+        }
+
+        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}")
+        $targetResourceGroup = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $targetResourceGroupTemplate -ServerName ([string]$context.ServerName)) -Tokens $nameTokens
+
+        $targetVmTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetVnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetSubnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetNsgTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetNsgRuleTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SERVER_NAME}-{REGION_CODE}-n{N}")
+
+        $targetVmName = Resolve-CoVmNameFromTemplate -Template $targetVmTemplate -ResourceType 'vm' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetDiskName = Resolve-CoVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetVnetName = Resolve-CoVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetSubnetName = Resolve-CoVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNsgName = Resolve-CoVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNsgRuleName = Resolve-CoVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetIpName = Resolve-CoVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNicName = Resolve-CoVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+
+        Write-Host ("Target naming resolved: rg={0}, vm={1}, disk={2}" -f $targetResourceGroup, $targetVmName, $targetDiskName)
+
+        $targetGroupCreatedInRun = $false
+        $sourceSnapshotName = ''
+        $targetSnapshotName = ''
+        $sourceSnapshotCreated = $false
+        $targetSnapshotCreated = $false
+        $targetVmCreated = $false
+        $targetDiskCreated = $false
+        $targetNetworkAttempted = $false
+
+        $cleanupTarget = {
+            param([string]$Reason)
+            Write-Host ("Region-change cleanup started. Reason: {0}" -f $Reason) -ForegroundColor Yellow
+
+            if ($targetVmCreated) {
+                az vm delete -g $targetResourceGroup -n $targetVmName --yes -o none --only-show-errors 2>$null
+            }
+            if ($targetDiskCreated) {
+                az disk delete -g $targetResourceGroup -n $targetDiskName --yes -o none --only-show-errors 2>$null
+            }
+
+            if ($targetNetworkAttempted) {
+                az network nic delete -g $targetResourceGroup -n $targetNicName --only-show-errors 2>$null
+                az network public-ip delete -g $targetResourceGroup -n $targetIpName --only-show-errors 2>$null
+                az network nsg delete -g $targetResourceGroup -n $targetNsgName --only-show-errors 2>$null
+                az network vnet delete -g $targetResourceGroup -n $targetVnetName --only-show-errors 2>$null
+            }
+
+            if ($targetSnapshotCreated -and -not [string]::IsNullOrWhiteSpace([string]$targetSnapshotName)) {
+                az snapshot delete -g $targetResourceGroup -n $targetSnapshotName --only-show-errors 2>$null
+            }
+            if ($sourceSnapshotCreated -and -not [string]::IsNullOrWhiteSpace([string]$sourceSnapshotName)) {
+                az snapshot delete -g $resourceGroup -n $sourceSnapshotName --only-show-errors 2>$null
+            }
+        }
 
         try {
-        $moveCollectionCreateJson = Invoke-TrackedAction -Label ("az resource-mover move-collection create --name {0}" -f $moveCollectionName) -Action {
-            az resource-mover move-collection create -g $resourceGroup --move-collection-name $moveCollectionName --identity type=SystemAssigned --location $targetRegion --move-type RegionToRegion --source-region $currentRegion --target-region $targetRegion -o json --only-show-errors
-        }
-        Assert-LastExitCode "az resource-mover move-collection create"
-        $moveCollectionCreated = $true
-
-        $moveCollectionCreateObj = ConvertFrom-JsonCompat -InputObject $moveCollectionCreateJson
-        $moveCollectionPrincipalId = [string]$moveCollectionCreateObj.identity.principalId
-        if ([string]::IsNullOrWhiteSpace([string]$moveCollectionPrincipalId)) {
-            Throw-FriendlyError -Detail "Resource Mover move collection principalId could not be resolved." -Code 62 -Summary "Region move cannot continue due missing managed identity metadata." -Hint "Delete stale move collection and retry."
-        }
-
-        $subscriptionId = az account show --query "id" -o tsv --only-show-errors
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$subscriptionId)) {
-            Throw-FriendlyError -Detail "Subscription id could not be read while preparing Resource Mover RBAC." -Code 62 -Summary "Region move cannot continue because required RBAC checks failed." -Hint "Run az account show and verify active subscription."
-        }
-        $sourceScope = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
-        $targetScope = "/subscriptions/$subscriptionId/resourceGroups/$targetMoveResourceGroup"
-        $ensureRole = {
-            param(
-                [string]$RoleName,
-                [string]$Scope
-            )
-
-            $existingRoleId = az role assignment list --assignee-object-id $moveCollectionPrincipalId --scope $Scope --query "[?roleDefinitionName=='$RoleName'].id | [0]" -o tsv --only-show-errors
-            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$existingRoleId)) {
-                return
+            $targetGroupExists = az group exists -n $targetResourceGroup --only-show-errors
+            Assert-LastExitCode "az group exists (target)"
+            if (-not [string]::Equals([string]$targetGroupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+                Invoke-TrackedAction -Label ("az group create -n {0} -l {1}" -f $targetResourceGroup, $targetRegion) -Action {
+                    az group create -n $targetResourceGroup -l $targetRegion -o none --only-show-errors
+                    Assert-LastExitCode "az group create (target)"
+                } | Out-Null
+                $targetGroupCreatedInRun = $true
             }
 
-            Invoke-TrackedAction -Label ("az role assignment create --role {0} --scope {1}" -f $RoleName, $Scope) -Action {
-                az role assignment create --assignee-object-id $moveCollectionPrincipalId --assignee-principal-type ServicePrincipal --role $RoleName --scope $Scope -o none --only-show-errors
-                Assert-LastExitCode ("az role assignment create (" + $RoleName + ")")
+            $stamp = Get-Date -Format "yyMMddHHmmss"
+            $sourceSnapshotName = ("snap-src-{0}-{1}" -f [string]$context.ServerName, $stamp)
+            $targetSnapshotName = ("snap-dst-{0}-{1}" -f [string]$context.ServerName, $stamp)
+
+            Invoke-TrackedAction -Label ("az snapshot create source incremental {0}" -f $sourceSnapshotName) -Action {
+                az snapshot create -g $resourceGroup -n $sourceSnapshotName --source $sourceOsDiskId --location $currentRegion --incremental true --sku Standard_LRS -o none --only-show-errors
+                Assert-LastExitCode "az snapshot create (source)"
             } | Out-Null
-        }
+            $sourceSnapshotCreated = $true
 
-        & $ensureRole -RoleName "Contributor" -Scope $sourceScope
-        & $ensureRole -RoleName "User Access Administrator" -Scope $sourceScope
-        & $ensureRole -RoleName "Contributor" -Scope $targetScope
-        & $ensureRole -RoleName "User Access Administrator" -Scope $targetScope
-        Write-Host "Waiting 20 seconds for Resource Mover RBAC propagation..."
-        Start-Sleep -Seconds 20
+            $sourceSnapshotId = az snapshot show -g $resourceGroup -n $sourceSnapshotName --query "id" -o tsv --only-show-errors
+            Assert-LastExitCode "az snapshot show (source id)"
+            if ([string]::IsNullOrWhiteSpace([string]$sourceSnapshotId)) { throw "Source snapshot id could not be resolved." }
 
-        $vmSourceId = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv --only-show-errors
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmSourceId)) {
-            Throw-FriendlyError -Detail "VM id could not be read before Resource Mover add." -Code 62 -Summary "Region move cannot continue." -Hint "Check VM access and retry."
-        }
-
-        $knownSourceIds = @{}
-        $addMoveResource = {
-            param([string]$SourceId)
-            if ([string]::IsNullOrWhiteSpace([string]$SourceId)) { return }
-            $SourceId = [string]$SourceId
-            $SourceId = $SourceId.Trim()
-            if ([string]::IsNullOrWhiteSpace([string]$SourceId)) { return }
-            $SourceId = [regex]::Replace([string]$SourceId, '[\u0000-\u001F]', '')
-            $SourceId = [regex]::Replace([string]$SourceId, '\s+', '')
-            if ($SourceId -match '(?i)/providers/microsoft\.migrate/' -or $SourceId -match '(?i)/movecollections/' -or $SourceId -match '(?i)/moveresources/') { return }
-            $normalizedSourceId = ''
-            $resourceType = ''
-            $resourceName = ''
-            $settingsData = [ordered]@{}
-
-            if ($SourceId -match '(?i)^(/subscriptions/[^/]+/resourceGroups/([^/]+))$') {
-                $normalizedSourceId = [string]$matches[1]
-                $resourceName = [string]$matches[2]
-                $resourceType = 'resourceGroups'
-                $settingsData.resourceType = 'resourceGroups'
-                $settingsData.targetResourceName = $targetMoveResourceGroup
-            }
-            else {
-                $providerIndex = $SourceId.IndexOf("/providers/", [System.StringComparison]::OrdinalIgnoreCase)
-                if ($providerIndex -lt 0) { return }
-                $prefix = $SourceId.Substring(0, $providerIndex)
-                $tail = $SourceId.Substring($providerIndex + "/providers/".Length)
-                $segments = @($tail -split '/' | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
-                if ($segments.Count -lt 3) { return }
-                $providerNamespace = ([string]$segments[0]).Trim()
-                $resourceTypeName = ([string]$segments[1]).Trim()
-                $resourceName = ([string]$segments[2]).Trim()
-                if ([string]::IsNullOrWhiteSpace($providerNamespace) -or [string]::IsNullOrWhiteSpace($resourceTypeName) -or [string]::IsNullOrWhiteSpace($resourceName)) { return }
-                $normalizedSourceId = ("{0}/providers/{1}/{2}/{3}" -f $prefix, $providerNamespace, $resourceTypeName, $resourceName)
-                $resourceType = ("{0}/{1}" -f $providerNamespace, $resourceTypeName)
-                $resourceTypeMap = @{
-                    "microsoft.compute/virtualmachines" = "Microsoft.Compute/virtualMachines"
-                    "microsoft.compute/disks" = "Microsoft.Compute/disks"
-                    "microsoft.network/networkinterfaces" = "Microsoft.Network/networkInterfaces"
-                    "microsoft.network/publicipaddresses" = "Microsoft.Network/publicIPAddresses"
-                    "microsoft.network/networksecuritygroups" = "Microsoft.Network/networkSecurityGroups"
-                    "microsoft.network/virtualnetworks" = "Microsoft.Network/virtualNetworks"
-                }
-                $resourceTypeKey = $resourceType.ToLowerInvariant()
-                if ($resourceTypeMap.ContainsKey($resourceTypeKey)) {
-                    $resourceType = [string]$resourceTypeMap[$resourceTypeKey]
-                }
-                $settingsData.resourceType = $resourceType
-                $settingsData.targetResourceName = $resourceName
-                $settingsData.targetResourceGroupName = $targetMoveResourceGroup
-            }
-
-            $sourceKey = $normalizedSourceId.Trim().ToLowerInvariant()
-            if ($knownSourceIds.ContainsKey($sourceKey)) { return }
-            $settingsJson = ($settingsData | ConvertTo-Json -Depth 8 -Compress)
-            $sha1 = [System.Security.Cryptography.SHA1]::Create()
-            $hashText = ([System.BitConverter]::ToString($sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes([string]$normalizedSourceId)))).Replace('-', '').ToLowerInvariant().Substring(0, 8)
-            $sha1.Dispose()
-            $safeResourceName = ($resourceName -replace '[^a-zA-Z0-9-]', '-').ToLowerInvariant()
-            if ($safeResourceName.Length -gt 48) { $safeResourceName = $safeResourceName.Substring(0, 48).Trim('-') }
-            if ([string]::IsNullOrWhiteSpace($safeResourceName)) { $safeResourceName = 'resource' }
-            $moveResourceName = ("mr-{0}-{1}" -f $safeResourceName, $hashText)
-            Write-Host ("Resource Mover add input: sourceId='{0}', resourceType='{1}', targetName='{2}'." -f $normalizedSourceId, $resourceType, $resourceName)
-            Invoke-TrackedAction -Label ("az resource-mover move-resource add --name {0}" -f $moveResourceName) -Action {
-                $addOutput = az resource-mover move-resource add -g $resourceGroup --move-collection-name $moveCollectionName --move-resource-name $moveResourceName --source-id $normalizedSourceId --resource-settings $settingsJson -o json --only-show-errors
-                if ($LASTEXITCODE -ne 0) {
-                    $addOutputText = (@($addOutput) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-                    if ($addOutputText -match '(?i)AuthorizationFailed') {
-                        Throw-FriendlyError -Detail $addOutputText -Code 62 -Summary "Resource Mover managed identity permission is missing." -Hint "Ensure move-collection managed identity has Contributor and User Access Administrator roles on both source and target resource groups, then retry."
-                    }
-                    throw ("az resource-mover move-resource add failed with exit code {0}. Output: {1}" -f [int]$LASTEXITCODE, $addOutputText)
-                }
+            Invoke-TrackedAction -Label ("az snapshot create target copy-start {0}" -f $targetSnapshotName) -Action {
+                az snapshot create -g $targetResourceGroup -n $targetSnapshotName --source $sourceSnapshotId --location $targetRegion --incremental true --sku Standard_LRS --copy-start true -o none --only-show-errors
+                Assert-LastExitCode "az snapshot create (target)"
             } | Out-Null
-            $knownSourceIds[$sourceKey] = $true
-        }
+            $targetSnapshotCreated = $true
 
-        $sourceResourceGroupId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
-        try {
-            & $addMoveResource -SourceId $sourceResourceGroupId
-        }
-        catch {
-            Write-Host "Source resource-group move-resource add is not accepted by current service path. Continuing with VM-first dependency flow." -ForegroundColor Yellow
-        }
+            $copyMaxAttempts = 540
+            $copyDelaySeconds = 20
+            for ($copyAttempt = 1; $copyAttempt -le $copyMaxAttempts; $copyAttempt++) {
+                $copyStateJson = az snapshot show -g $targetResourceGroup -n $targetSnapshotName --query "{provisioningState:provisioningState,snapshotAccessState:snapshotAccessState,completionPercent:completionPercent}" -o json --only-show-errors
+                Assert-LastExitCode "az snapshot show (target copy state)"
+                $copyState = ConvertFrom-JsonCompat -InputObject $copyStateJson
+                $prov = [string]$copyState.provisioningState
+                $acc = [string]$copyState.snapshotAccessState
+                $pct = 0.0
+                if ($null -ne $copyState.completionPercent) { $pct = [double]$copyState.completionPercent }
+                Write-Host ("Target snapshot copy {0}/{1}: provisioningState={2}, accessState={3}, completionPercent={4:N1}" -f $copyAttempt, $copyMaxAttempts, $prov, $acc, $pct)
+                if ([string]::Equals($prov, "Succeeded", [System.StringComparison]::OrdinalIgnoreCase) -and [string]::Equals($acc, "Available", [System.StringComparison]::OrdinalIgnoreCase) -and $pct -ge 100.0) { break }
+                if ($copyAttempt -ge $copyMaxAttempts) { throw "Target snapshot copy did not complete in expected time." }
+                Start-Sleep -Seconds $copyDelaySeconds
+            }
 
-        & $addMoveResource -SourceId $vmSourceId
-        Invoke-TrackedAction -Label ("az resource-mover move-collection resolve-dependency --name {0}" -f $moveCollectionName) -Action {
-            az resource-mover move-collection resolve-dependency -g $resourceGroup -n $moveCollectionName -o json --only-show-errors
-            Assert-LastExitCode "az resource-mover move-collection resolve-dependency"
-        } | Out-Null
+            $targetSnapshotId = az snapshot show -g $targetResourceGroup -n $targetSnapshotName --query "id" -o tsv --only-show-errors
+            Assert-LastExitCode "az snapshot show (target id)"
+            if ([string]::IsNullOrWhiteSpace([string]$targetSnapshotId)) { throw "Target snapshot id could not be resolved." }
 
-        for ($depPass = 1; $depPass -le 6; $depPass++) {
-            $unresolvedIdsText = az resource-mover move-collection list-unresolved-dependency -g $resourceGroup -n $moveCollectionName --query "[].id" -o tsv --only-show-errors
-            Assert-LastExitCode "az resource-mover move-collection list-unresolved-dependency"
-            $unresolvedIds = @(Convert-CoVmCliTextToTokens -Text $unresolvedIdsText)
-            if ($unresolvedIds.Count -eq 0) { break }
-            Write-Host ("Resource Mover dependency pass {0}/6: {1} unresolved dependency resource(s)." -f $depPass, $unresolvedIds.Count) -ForegroundColor Yellow
-            foreach ($depId in @($unresolvedIds)) { & $addMoveResource -SourceId ([string]$depId) }
-            Invoke-TrackedAction -Label ("az resource-mover move-collection resolve-dependency --name {0} (pass {1})" -f $moveCollectionName, $depPass) -Action {
-                az resource-mover move-collection resolve-dependency -g $resourceGroup -n $moveCollectionName -o json --only-show-errors
-                Assert-LastExitCode "az resource-mover move-collection resolve-dependency"
+            $targetContext = [ordered]@{
+                ResourceGroup = $targetResourceGroup
+                AzLocation = $targetRegion
+                VNET = $targetVnetName
+                SUBNET = $targetSubnetName
+                NSG = $targetNsgName
+                NsgRule = $targetNsgRuleName
+                IP = $targetIpName
+                NIC = $targetNicName
+                TcpPorts = @($context.TcpPorts)
+                VmName = $targetVmName
+            }
+            Invoke-CoVmNetworkStep -Context $targetContext -ExecutionMode "update"
+            $targetNetworkAttempted = $true
+
+            Invoke-TrackedAction -Label ("az disk create -g {0} -n {1}" -f $targetResourceGroup, $targetDiskName) -Action {
+                $diskArgs = @("disk", "create", "-g", $targetResourceGroup, "-n", $targetDiskName, "--source", $targetSnapshotId, "--location", $targetRegion, "--sku", $sourceDiskSku, "--os-type", $sourceOsType, "-o", "none", "--only-show-errors")
+                az @diskArgs
+                Assert-LastExitCode "az disk create (target)"
             } | Out-Null
-        }
+            $targetDiskCreated = $true
 
-        $remainingUnresolvedText = az resource-mover move-collection list-unresolved-dependency -g $resourceGroup -n $moveCollectionName --query "[].id" -o tsv --only-show-errors
-        Assert-LastExitCode "az resource-mover move-collection list-unresolved-dependency"
-        $remainingUnresolved = @(Convert-CoVmCliTextToTokens -Text $remainingUnresolvedText)
-        if ($remainingUnresolved.Count -gt 0) {
-            Throw-FriendlyError -Detail ("Resource Mover unresolved dependencies remain: {0}" -f ($remainingUnresolved -join ', ')) -Code 62 -Summary "Region move cannot continue because dependency resolution is incomplete." -Hint "Add required dependencies to the move collection and retry."
-        }
-
-        $moveResourceIdsText = az resource-mover move-resource list -g $resourceGroup --move-collection-name $moveCollectionName --query "[].id" -o tsv --only-show-errors
-        Assert-LastExitCode "az resource-mover move-resource list"
-        $moveResourceIds = @((Convert-CoVmCliTextToTokens -Text $moveResourceIdsText) | Select-Object -Unique)
-        if ($moveResourceIds.Count -eq 0) {
-            Throw-FriendlyError -Detail "Move collection has no move-resource entries." -Code 62 -Summary "Region move cannot continue." -Hint "Inspect move collection resources and retry."
-        }
-
-        $getMoveResourceStates = {
-            $stateText = az resource-mover move-resource list -g $resourceGroup --move-collection-name $moveCollectionName --query "[].properties.moveStatus.moveState" -o tsv --only-show-errors
-            Assert-LastExitCode "az resource-mover move-resource list (states)"
-            $states = @(Convert-CoVmCliTextToTokens -Text $stateText)
-            if ($states.Count -eq 0) {
-                Throw-FriendlyError -Detail "Move resource state list is empty." -Code 62 -Summary "Region move state tracking failed." -Hint "Inspect move collection resources and retry."
+            $targetCreateJson = Invoke-TrackedAction -Label ("az vm create -g {0} -n {1} --attach-os-disk" -f $targetResourceGroup, $targetVmName) -Action {
+                $vmCreateArgs = @("vm", "create", "--resource-group", $targetResourceGroup, "--name", $targetVmName, "--attach-os-disk", $targetDiskName, "--os-type", $sourceOsType, "--size", $currentSize, "--admin-username", [string]$context.VmUser, "--admin-password", [string]$context.VmPass, "--authentication-type", "password", "--nics", $targetNicName, "-o", "json", "--only-show-errors")
+                az @vmCreateArgs
             }
-            return @($states)
-        }
+            Assert-LastExitCode "az vm create (target attach-os-disk)"
+            $targetCreateObj = ConvertFrom-JsonCompat -InputObject $targetCreateJson
+            if (-not $targetCreateObj.id) { throw "Target VM creation returned no VM id." }
+            $targetVmCreated = $true
 
-        $getMoveResourceDiagnostics = {
-            $diagJson = az resource-mover move-resource list -g $resourceGroup --move-collection-name $moveCollectionName --query "[].{name:name,state:properties.moveStatus.moveState,errorCode:properties.moveStatus.errors.properties.code,errorMessage:properties.moveStatus.errors.properties.message}" -o json --only-show-errors 2>$null
-            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$diagJson)) {
-                return "diagnostics unavailable"
+            if (-not [string]::Equals([string]$targetSize, [string]$currentSize, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $targetResourceGroup, $targetVmName) -Action {
+                    az vm deallocate -g $targetResourceGroup -n $targetVmName -o none --only-show-errors
+                    Assert-LastExitCode "az vm deallocate (target)"
+                } | Out-Null
+                $targetDeallocated = Wait-CoVmVmPowerState -ResourceGroup $targetResourceGroup -VmName $targetVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+                if (-not $targetDeallocated) { throw "Target VM did not reach deallocated state before resize." }
+
+                Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $targetResourceGroup, $targetVmName, $targetSize) -Action {
+                    az vm resize -g $targetResourceGroup -n $targetVmName --size $targetSize -o none --only-show-errors
+                    Assert-LastExitCode "az vm resize (target)"
+                } | Out-Null
+                $currentSize = $targetSize
             }
 
-            $diagItems = @((ConvertFrom-JsonCompat -InputObject $diagJson))
-            if ($diagItems.Count -eq 0) {
-                return "diagnostics unavailable"
-            }
+            Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $targetResourceGroup, $targetVmName) -Action {
+                az vm start -g $targetResourceGroup -n $targetVmName -o none --only-show-errors
+                Assert-LastExitCode "az vm start (target)"
+            } | Out-Null
+            $targetRunning = Wait-CoVmVmRunningState -ResourceGroup $targetResourceGroup -VmName $targetVmName -MaxAttempts 6 -DelaySeconds 10
+            if (-not $targetRunning) { throw "Target VM did not reach running state after migration." }
 
-            $lines = @()
-            foreach ($item in @($diagItems)) {
-                $n = [string]$item.name
-                $s = [string]$item.state
-                $c = [string]$item.errorCode
-                $m = [string]$item.errorMessage
-                if ([string]::IsNullOrWhiteSpace($c)) { $c = "none" }
-                if ([string]::IsNullOrWhiteSpace($m)) { $m = "none" }
-                $lines += ("{0}: state={1}, errorCode={2}, error={3}" -f $n, $s, $c, $m)
-            }
+            if ($targetSnapshotCreated -and -not [string]::IsNullOrWhiteSpace([string]$targetSnapshotName)) { az snapshot delete -g $targetResourceGroup -n $targetSnapshotName --only-show-errors 2>$null }
+            if ($sourceSnapshotCreated -and -not [string]::IsNullOrWhiteSpace([string]$sourceSnapshotName)) { az snapshot delete -g $resourceGroup -n $sourceSnapshotName --only-show-errors 2>$null }
 
-            return ($lines -join " | ")
-        }
+            $activeResourceGroup = $targetResourceGroup
+            $activeVmName = $targetVmName
+            $resourceGroup = $targetResourceGroup
+            $vmName = $targetVmName
+            $currentRegion = $targetRegion
+            $regionMoveApplied = $true
 
-        $waitMoveCollectionStage = {
-            param(
-                [string]$StageName,
-                [string[]]$PendingStates,
-                [string[]]$TerminalStates
-            )
+            $context.ResourceGroup = $targetResourceGroup
+            $context.AzLocation = $targetRegion
+            $context.RegionCode = $targetRegionCode
+            $context.VmName = $targetVmName
+            $context.VmDiskName = $targetDiskName
+            $context.VNET = $targetVnetName
+            $context.SUBNET = $targetSubnetName
+            $context.NSG = $targetNsgName
+            $context.NsgRule = $targetNsgRuleName
+            $context.IP = $targetIpName
+            $context.NIC = $targetNicName
 
-            $maxAttempts = $stageMaxAttempts
-            $delaySeconds = $stagePollSeconds
-            if ($maxAttempts -lt 1) { $maxAttempts = 1 }
-            if ($delaySeconds -lt 2) { $delaySeconds = 2 }
-            $lastStateSummary = ''
-
-            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
-                $states = @(& $getMoveResourceStates)
-                $failedStates = @($states | Where-Object { [string]$_ -match '(?i)failed$' })
-                if ($failedStates.Count -gt 0) {
-                    $failedSummary = ($failedStates | Select-Object -Unique) -join ', '
-                    Throw-FriendlyError -Detail ("Resource Mover stage '{0}' reported failed move states: {1}" -f $StageName, $failedSummary) -Code 62 -Summary ("Region move failed during '{0}' stage." -f $StageName) -Hint "Inspect move-resource details and retry."
-                }
-
-                $pendingStatesActual = @($states | Where-Object { $PendingStates -icontains ([string]$_) })
-                $unknownStates = @($states | Where-Object { ($PendingStates -inotcontains ([string]$_)) -and ($TerminalStates -inotcontains ([string]$_)) })
-                $stateGroups = @($states | Group-Object | Sort-Object -Property Name | ForEach-Object { "{0}:{1}" -f [string]$_.Name, [int]$_.Count })
-                $stateSummary = if ($stateGroups.Count -gt 0) { $stateGroups -join ', ' } else { 'none' }
-                if (($attempt -eq 1) -or ($stateSummary -ne $lastStateSummary) -or (($attempt % 6) -eq 0) -or ($attempt -eq $maxAttempts)) {
-                    Write-Host ("Resource Mover stage '{0}' status: {1}" -f $StageName, $stateSummary)
-                    $lastStateSummary = $stateSummary
-                }
-
-                if ($pendingStatesActual.Count -eq 0 -and $unknownStates.Count -eq 0) {
-                    return
-                }
-
-                if ($attempt -ge $maxAttempts) {
-                    $diagSummary = & $getMoveResourceDiagnostics
-                    Throw-FriendlyError -Detail ("Resource Mover stage '{0}' timed out after {1} seconds. Last states: {2}. Diagnostics: {3}" -f $StageName, $stageTimeoutSeconds, $stateSummary, $diagSummary) -Code 62 -Summary ("Region move did not finish '{0}' stage in time." -f $StageName) -Hint "Review move-resource diagnostics and retry."
-                }
-
-                Start-Sleep -Seconds $delaySeconds
-            }
-        }
-
-        $invokeMoveCollection = {
-            param(
-                [string]$OperationName,
-                [string]$StageName,
-                [string[]]$PendingStates,
-                [string[]]$TerminalStates
-            )
-
-            $args = @("resource-mover", "move-collection", $OperationName, "-g", $resourceGroup, "-n", $moveCollectionName, "--validate-only", "false", "--input-type", "MoveResourceId", "--move-resources")
-            $args += $moveResourceIds
-            $args += @("--no-wait", "-o", "json", "--only-show-errors")
-
-            $operationSucceeded = $false
-            for ($submitAttempt = 1; $submitAttempt -le 3; $submitAttempt++) {
-                $operationOutput = Invoke-TrackedAction -Label ("az resource-mover move-collection {0} --name {1}" -f $OperationName, $moveCollectionName) -Action {
-                    az @args 2>&1
-                }
-                $exitCode = [int]$LASTEXITCODE
-                $operationText = (@($operationOutput) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
-                if ($exitCode -eq 0) {
-                    $operationSucceeded = $true
-                    break
-                }
-
-                if ($operationText -match '(?i)LockConflict' -and $submitAttempt -lt 3) {
-                    Write-Host ("Resource Mover operation '{0}' is locked by another workflow. Waiting before retry ({1}/3)." -f $OperationName, $submitAttempt) -ForegroundColor Yellow
-                    Start-Sleep -Seconds 20
-                    continue
-                }
-
-                Throw-FriendlyError -Detail ("Resource Mover operation '{0}' failed (attempt {1}/3). Output: {2}" -f $OperationName, $submitAttempt, $operationText) -Code 62 -Summary ("Region move '{0}' operation failed." -f $OperationName) -Hint "Check move-collection workflow state and retry."
-            }
-
-            if (-not $operationSucceeded) {
-                Throw-FriendlyError -Detail ("Resource Mover operation '{0}' failed after 3 attempts." -f $OperationName) -Code 62 -Summary ("Region move '{0}' operation failed." -f $OperationName) -Hint "Check move-collection workflow state and retry."
-            }
-
-            & $waitMoveCollectionStage -StageName $StageName -PendingStates $PendingStates -TerminalStates $TerminalStates
-        }
-
-        & $invokeMoveCollection -OperationName "prepare" -StageName "prepare" -PendingStates @("PreparePending", "PrepareInProgress") -TerminalStates @("MovePending", "MoveInProgress", "CommitPending", "CommitInProgress", "Committed")
-        & $invokeMoveCollection -OperationName "initiate-move" -StageName "initiate-move" -PendingStates @("MovePending", "MoveInProgress") -TerminalStates @("CommitPending", "CommitInProgress", "Committed")
-        & $invokeMoveCollection -OperationName "commit" -StageName "commit" -PendingStates @("CommitPending", "CommitInProgress") -TerminalStates @("Committed")
-
-        $finalResourceGroup = $targetMoveResourceGroup
-        if (-not (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $finalResourceGroup, "-n", $vmName))) {
-            if (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
-                $finalResourceGroup = $resourceGroup
-            }
-            else {
-                Throw-FriendlyError -Detail "VM was not found in source or target resource groups after move commit." -Code 62 -Summary "Region move result is unknown." -Hint "Inspect Resource Mover states and retry."
-            }
-        }
-
-        if (-not [string]::Equals($finalResourceGroup, $resourceGroup, [System.StringComparison]::OrdinalIgnoreCase)) {
-            if (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
-                Write-Host ("Source resource group '{0}' still contains VM '{1}'. Keeping final resource group '{2}'." -f $resourceGroup, $vmName, $finalResourceGroup) -ForegroundColor Yellow
-            }
-            else {
-                $moveBackIds = @()
-                $vmIdAtTarget = az vm show -g $finalResourceGroup -n $vmName --query "id" -o tsv --only-show-errors 2>$null
-                if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$vmIdAtTarget)) { $moveBackIds += [string]$vmIdAtTarget }
-                $diskIdAtTarget = az vm show -g $finalResourceGroup -n $vmName --query "storageProfile.osDisk.managedDisk.id" -o tsv --only-show-errors 2>$null
-                if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$diskIdAtTarget)) { $moveBackIds += [string]$diskIdAtTarget }
-                if (Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $finalResourceGroup, "-n", [string]$context.NIC)) {
-                    $nicIdAtTarget = az network nic show -g $finalResourceGroup -n $context.NIC --query "id" -o tsv --only-show-errors 2>$null
-                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$nicIdAtTarget)) { $moveBackIds += [string]$nicIdAtTarget }
-                }
-                if (Test-CoVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", $finalResourceGroup, "-n", [string]$context.IP)) {
-                    $publicIpIdAtTarget = az network public-ip show -g $finalResourceGroup -n $context.IP --query "id" -o tsv --only-show-errors 2>$null
-                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$publicIpIdAtTarget)) { $moveBackIds += [string]$publicIpIdAtTarget }
-                }
-                if (Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", $finalResourceGroup, "-n", [string]$context.NSG)) {
-                    $nsgIdAtTarget = az network nsg show -g $finalResourceGroup -n $context.NSG --query "id" -o tsv --only-show-errors 2>$null
-                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$nsgIdAtTarget)) { $moveBackIds += [string]$nsgIdAtTarget }
-                }
-                if (Test-CoVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", $finalResourceGroup, "-n", [string]$context.VNET)) {
-                    $vnetIdAtTarget = az network vnet show -g $finalResourceGroup -n $context.VNET --query "id" -o tsv --only-show-errors 2>$null
-                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$vnetIdAtTarget)) { $moveBackIds += [string]$vnetIdAtTarget }
-                }
-                $moveBackIds = @($moveBackIds | Select-Object -Unique)
-                if ($moveBackIds.Count -gt 0) {
-                    try {
-                        Invoke-TrackedAction -Label ("az resource move --destination-group {0} --ids <{1} resources>" -f $resourceGroup, $moveBackIds.Count) -Action {
-                            $moveArgs = @("resource", "move", "--destination-group", $resourceGroup, "--ids")
-                            $moveArgs += $moveBackIds
-                            $moveArgs += @("-o", "none", "--only-show-errors")
-                            az @moveArgs
-                            Assert-LastExitCode "az resource move"
-                        } | Out-Null
-                        if (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
-                            $finalResourceGroup = $resourceGroup
-                        }
-                    }
-                    catch {
-                        Write-Host ("Source resource-group restore failed; continuing with final resource group '{0}'." -f $finalResourceGroup) -ForegroundColor Yellow
-                    }
-                }
-            }
-        }
-
-        $postMoveVmRegion = az vm show -g $finalResourceGroup -n $vmName --query "location" -o tsv --only-show-errors
-        if ($LASTEXITCODE -ne 0 -or -not [string]::Equals([string]$postMoveVmRegion, $targetRegion, [System.StringComparison]::OrdinalIgnoreCase)) {
-            Throw-FriendlyError -Detail ("VM final region '{0}' does not match target region '{1}'." -f [string]$postMoveVmRegion, $targetRegion) -Code 62 -Summary "Region move did not converge to the target region." -Hint "Inspect Resource Mover operation state and retry."
-        }
-        $resourceGroup = $finalResourceGroup
-        $currentSize = [string](az vm show -g $resourceGroup -n $vmName --query "hardwareProfile.vmSize" -o tsv --only-show-errors)
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$currentSize)) {
-            Throw-FriendlyError -Detail "VM size could not be read after region move." -Code 62 -Summary "Post-move validation failed." -Hint "Check VM state in target resource group and retry."
-        }
-        $regionMoveApplied = $true
-        Write-Host ("Region move completed successfully. Active resource group: '{0}'." -f $resourceGroup) -ForegroundColor Green
+            Write-Host ("Region migration completed. Active target -> rg={0}, vm={1}" -f $activeResourceGroup, $activeVmName) -ForegroundColor Green
         }
         catch {
             $innerError = $_
-            if ($moveCollectionCreated -and -not [string]::IsNullOrWhiteSpace([string]$moveCollectionName)) {
-                Remove-CoVmMoveCollectionArtifacts -ResourceGroup $resourceGroup -CollectionName $moveCollectionName -Reason 'region migration failed'
-            }
-
-            if ($innerError.Exception -and $innerError.Exception.Data -and $innerError.Exception.Data.Contains("Summary")) {
-                throw
-            }
-
+            & $cleanupTarget -Reason ([string]$innerError.Exception.Message)
             Throw-FriendlyError `
-                -Detail ("Region migration failed. Move collection '{0}' was cleaned. Error: {1}" -f $moveCollectionName, $innerError.Exception.Message) `
+                -Detail ("Snapshot-based region migration failed. Cleanup completed. Error: {0}" -f $innerError.Exception.Message) `
                 -Code 62 `
-                -Summary "Region move failed and cleanup completed. Migration was not retried automatically." `
-                -Hint "Review the failure details and rerun the same change command after fixing prerequisites."
+                -Summary "Region move failed and target-side artifacts were rolled back." `
+                -Hint "Review failure detail, then retry change command."
         }
     }
 
@@ -6089,20 +6122,21 @@ function Invoke-CoVmChangeCommand {
             }
         }
 
-        Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-            az vm deallocate -g $resourceGroup -n $vmName -o none
+        Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $activeResourceGroup, $activeVmName) -Action {
+            az vm deallocate -g $activeResourceGroup -n $activeVmName -o none --only-show-errors
             Assert-LastExitCode "az vm deallocate"
         } | Out-Null
-        $deallocated = Wait-CoVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+        $deallocated = Wait-CoVmVmPowerState -ResourceGroup $activeResourceGroup -VmName $activeVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
         if (-not $deallocated) {
             Throw-FriendlyError `
-                -Detail ("VM '{0}' did not reach deallocated state in expected time." -f $vmName) `
+                -Detail ("VM '{0}' did not reach deallocated state in expected time." -f $activeVmName) `
                 -Code 62 `
                 -Summary "VM size change stopped because VM deallocation was not confirmed." `
                 -Hint "Check VM power state in Azure and retry the change command."
         }
-        Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $resourceGroup, $vmName, $targetSize) -Action {
-            az vm resize -g $resourceGroup -n $vmName --size $targetSize -o none
+
+        Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $activeResourceGroup, $activeVmName, $targetSize) -Action {
+            az vm resize -g $activeResourceGroup -n $activeVmName --size $targetSize -o none --only-show-errors
             Assert-LastExitCode "az vm resize"
         } | Out-Null
         $currentSize = $targetSize
@@ -6111,12 +6145,12 @@ function Invoke-CoVmChangeCommand {
         Write-Host ("VM size is already '{0}'; resize step is skipped." -f $targetSize) -ForegroundColor Yellow
     }
 
-    Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-        az vm start -g $resourceGroup -n $vmName -o none
+    Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $activeResourceGroup, $activeVmName) -Action {
+        az vm start -g $activeResourceGroup -n $activeVmName -o none --only-show-errors
         Assert-LastExitCode "az vm start"
     } | Out-Null
 
-    $running = Wait-CoVmVmRunningState -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 3 -DelaySeconds 10
+    $running = Wait-CoVmVmRunningState -ResourceGroup $activeResourceGroup -VmName $activeVmName -MaxAttempts 3 -DelaySeconds 10
     if (-not $running) {
         Throw-FriendlyError `
             -Detail "VM did not return to running state after change operation." `
@@ -6127,11 +6161,26 @@ function Invoke-CoVmChangeCommand {
 
     if ($regionMoveApplied) {
         Set-DotEnvValue -Path $envFilePath -Key 'AZ_LOCATION' -Value $targetRegion
+        Set-DotEnvValue -Path $envFilePath -Key 'RESOURCE_GROUP' -Value $activeResourceGroup
+        Set-DotEnvValue -Path $envFilePath -Key 'VM_NAME' -Value ([string]$context.VmName)
+        Set-DotEnvValue -Path $envFilePath -Key 'VM_DISK_NAME' -Value ([string]$context.VmDiskName)
+        Set-DotEnvValue -Path $envFilePath -Key 'VNET_NAME' -Value ([string]$context.VNET)
+        Set-DotEnvValue -Path $envFilePath -Key 'SUBNET_NAME' -Value ([string]$context.SUBNET)
+        Set-DotEnvValue -Path $envFilePath -Key 'NSG_NAME' -Value ([string]$context.NSG)
+        Set-DotEnvValue -Path $envFilePath -Key 'NSG_RULE_NAME' -Value ([string]$context.NsgRule)
+        Set-DotEnvValue -Path $envFilePath -Key 'PUBLIC_IP_NAME' -Value ([string]$context.IP)
+        Set-DotEnvValue -Path $envFilePath -Key 'NIC_NAME' -Value ([string]$context.NIC)
+
         $script:ConfigOverrides['AZ_LOCATION'] = $targetRegion
-        if (-not [string]::Equals([string]$resourceGroup, [string]$context.ResourceGroup, [System.StringComparison]::OrdinalIgnoreCase)) {
-            Set-DotEnvValue -Path $envFilePath -Key 'RESOURCE_GROUP' -Value $resourceGroup
-            $script:ConfigOverrides['RESOURCE_GROUP'] = $resourceGroup
-        }
+        $script:ConfigOverrides['RESOURCE_GROUP'] = $activeResourceGroup
+        $script:ConfigOverrides['VM_NAME'] = [string]$context.VmName
+        $script:ConfigOverrides['VM_DISK_NAME'] = [string]$context.VmDiskName
+        $script:ConfigOverrides['VNET_NAME'] = [string]$context.VNET
+        $script:ConfigOverrides['SUBNET_NAME'] = [string]$context.SUBNET
+        $script:ConfigOverrides['NSG_NAME'] = [string]$context.NSG
+        $script:ConfigOverrides['NSG_RULE_NAME'] = [string]$context.NsgRule
+        $script:ConfigOverrides['PUBLIC_IP_NAME'] = [string]$context.IP
+        $script:ConfigOverrides['NIC_NAME'] = [string]$context.NIC
     }
 
     if ($sizeChangedAfterRegion) {
@@ -6140,7 +6189,7 @@ function Invoke-CoVmChangeCommand {
     }
 
     if ($regionMoveApplied) {
-        Write-Host ("Change completed successfully. Region='{0}', VM size='{1}', resource group='{2}'." -f $targetRegion, $currentSize, $resourceGroup) -ForegroundColor Green
+        Write-Host ("Change completed successfully. Region='{0}', VM size='{1}', active resource group='{2}'." -f $targetRegion, $currentSize, $activeResourceGroup) -ForegroundColor Green
     }
     else {
         Write-Host ("Change completed successfully. VM size is now '{0}'." -f $targetSize) -ForegroundColor Green

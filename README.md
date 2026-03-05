@@ -41,9 +41,8 @@ Set at least:
   - re-run create-or-update operations on existing resources
 - `change`
   - `--vm-size=<sku>`: in-place VM resize
-  - `--vm-region=<region>`: non-destructive region migration via Azure Resource Mover
-  - if stale Resource Mover collections are detected, script cleans them first and exits without auto-retry
-  - Resource Mover stages are polled up to 30 minutes per stage with diagnostic output on timeout
+  - `--vm-region=<region>`: snapshot-based region migration with target-side rollback cleanup
+  - OS disk migration is supported in this flow (attached data disks must be handled separately)
   - supports combined use: region migration first, then size change
 - `exec`
   - run one init or update task directly
@@ -97,8 +96,9 @@ Filename pattern is enforced:
 Use root `.env`.
 
 Generic keys (shared):
-- `SERVER_NAME`, `RESOURCE_GROUP`, `AZ_LOCATION`
-- `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
+- `SERVER_NAME`, `AZ_LOCATION`
+- `NAMING_TEMPLATE_ACTIVE`, `RESOURCE_GROUP_TEMPLATE`
+- `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
 - `VM_NAME`, `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
 - `VM_USER`, `VM_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
 - `SSH_PORT`, `TCP_PORTS`
@@ -114,6 +114,15 @@ Windows execution notes:
 Optional platform fallback keys (used only when generic key is empty):
 - `WIN_*`, `LIN_*`
   - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
+
+Naming notes:
+- Active profile is `regional_v1`.
+- Region code is resolved from Azure location (for example `austriaeast -> ate1`, `centralindia -> inc1`, `westus2 -> usw2`).
+- Recommended template shape:
+  - `RESOURCE_GROUP_TEMPLATE=rg-{SERVER_NAME}-{REGION_CODE}`
+  - `VM_NAME_TEMPLATE=vm-{SERVER_NAME}-{REGION_CODE}-n{N}`
+  - `VM_DISK_NAME_TEMPLATE=disk-{SERVER_NAME}-{REGION_CODE}-n{N}`
+  - `VNET_NAME_TEMPLATE=net-{SERVER_NAME}-{REGION_CODE}-n{N}`
 
 ## Logs
 One transcript file per run:
