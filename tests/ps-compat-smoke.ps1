@@ -71,16 +71,68 @@ Invoke-Test -Name "Platform defaults contract" -Action {
     Assert-True -Condition (-not [bool]$lin.IncludeRdp) -Message "Linux IncludeRdp should be false."
 }
 
+Invoke-Test -Name "Platform fallback config mapping" -Action {
+    $baseConfig = @{
+        VM_IMAGE = ""
+        VM_DISK_SIZE_GB = ""
+        VM_INIT_TASK_DIR = ""
+        VM_UPDATE_TASK_DIR = ""
+        WIN_VM_IMAGE = "win:image:latest"
+        WIN_VM_DISK_SIZE_GB = "128"
+        WIN_VM_INIT_TASK_DIR = "windows/init"
+        WIN_VM_UPDATE_TASK_DIR = "windows/update"
+        LIN_VM_IMAGE = "lin:image:latest"
+        LIN_VM_DISK_SIZE_GB = "40"
+        LIN_VM_INIT_TASK_DIR = "linux/init"
+        LIN_VM_UPDATE_TASK_DIR = "linux/update"
+    }
+
+    $winMap = Resolve-CoVmPlatformConfigMap -ConfigMap $baseConfig -Platform windows
+    $linMap = Resolve-CoVmPlatformConfigMap -ConfigMap $baseConfig -Platform linux
+
+    Assert-True -Condition ([string]$winMap.VM_IMAGE -eq "win:image:latest") -Message "Windows VM_IMAGE fallback mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_DISK_SIZE_GB -eq "128") -Message "Windows VM_DISK_SIZE_GB fallback mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_IMAGE -eq "lin:image:latest") -Message "Linux VM_IMAGE fallback mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_DISK_SIZE_GB -eq "40") -Message "Linux VM_DISK_SIZE_GB fallback mapping failed."
+}
+
 Invoke-Test -Name "Task catalog discovery" -Action {
     $winInit = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\init") -Platform windows -Stage init
     $winUpdate = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\update") -Platform windows -Stage update
     $linInit = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\init") -Platform linux -Stage init
     $linUpdate = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\update") -Platform linux -Stage update
 
-    Assert-True -Condition (@($winInit).Count -ge 1) -Message "Windows init tasks are missing."
-    Assert-True -Condition (@($winUpdate).Count -ge 1) -Message "Windows update tasks are missing."
-    Assert-True -Condition (@($linInit).Count -ge 1) -Message "Linux init tasks are missing."
-    Assert-True -Condition (@($linUpdate).Count -ge 1) -Message "Linux update tasks are missing."
+    Assert-True -Condition (@($winInit.ActiveTasks).Count -ge 1) -Message "Windows init active tasks are missing."
+    Assert-True -Condition (@($winUpdate.ActiveTasks).Count -ge 1) -Message "Windows update active tasks are missing."
+    Assert-True -Condition (@($linInit.ActiveTasks).Count -ge 1) -Message "Linux init active tasks are missing."
+    Assert-True -Condition (@($linUpdate.ActiveTasks).Count -ge 1) -Message "Linux update active tasks are missing."
+}
+
+Invoke-Test -Name "CLI parse help contracts" -Action {
+    $parsedGlobalHelp = Parse-CoVmCliArguments -CommandToken "--help" -RawArgs @()
+    Assert-True -Condition ([string]$parsedGlobalHelp.Command -eq "help") -Message "Global --help should resolve to help command."
+
+    $parsedHelpTopic = Parse-CoVmCliArguments -CommandToken "help" -RawArgs @("create")
+    Assert-True -Condition ([string]$parsedHelpTopic.Command -eq "help") -Message "help command parse failed."
+    Assert-True -Condition ([string]$parsedHelpTopic.HelpTopic -eq "create") -Message "Help topic positional parse failed."
+
+    $parsedCommandHelp = Parse-CoVmCliArguments -CommandToken "create" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedCommandHelp.Command -eq "create") -Message "Command with --help parse failed."
+    Assert-True -Condition ($parsedCommandHelp.Options.ContainsKey("help")) -Message "Command --help option was not captured."
+}
+
+Invoke-Test -Name "CLI option assertions allow command help" -Action {
+    Assert-CoVmCommandOptions -CommandName "create" -Options @{ help = $true }
+    Assert-CoVmCommandOptions -CommandName "update" -Options @{ help = $true }
+    Assert-CoVmCommandOptions -CommandName "change" -Options @{ help = $true }
+    Assert-CoVmCommandOptions -CommandName "exec" -Options @{ help = $true }
+    Assert-CoVmCommandOptions -CommandName "delete" -Options @{ help = $true }
+}
+
+Invoke-Test -Name "Detailed help topic validation" -Action {
+    Show-CoVmCommandHelp -Topic "create"
+    Show-CoVmCommandHelp -Topic ""
+    Show-CoVmCommandHelp -Overview
 }
 
 Invoke-Test -Name "Task token replacement" -Action {

@@ -56,6 +56,17 @@ Set at least:
   - optional scope: `--group=<resource-group>`
   - non-interactive approval: `--yes`
 
+## Help UX
+- `--help`
+  - quick global overview with command list, option summary, and quick examples
+  - works as global flag (`az-vm --help`) and command flag (`az-vm create --help`)
+- `help`
+  - detailed command documentation with richer examples
+  - supports topic filter:
+    - `az-vm help`
+    - `az-vm help create`
+    - `az-vm help --command=change`
+
 ## Run Mode
 - `interactive` (default)
 - `--auto` / `-a`
@@ -148,3 +159,9 @@ At Step 9:
 - Compatibility tests:
   - `tests/ps-compat-smoke.ps1`
   - `tests/run-ps-compat-matrix.ps1`
+  - `tests/run-quality-audit.ps1`
+  - `tests/run-history-replay.ps1`
+
+Audit commands:
+- `powershell -File .\tests\run-quality-audit.ps1`
+- `powershell -File .\tests\run-history-replay.ps1 -Days 2`
