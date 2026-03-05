@@ -38,7 +38,17 @@ function Get-CoVmAzCliExecutable {
         return [string]$script:AzCliExecutable
     }
 
-    $azApp = Get-Command az -All -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' } | Select-Object -First 1
+    $azApps = @(Get-Command az -All -ErrorAction SilentlyContinue | Where-Object { $_.CommandType -eq 'Application' -and -not [string]::IsNullOrWhiteSpace([string]$_.Source) })
+    $azApp = $null
+    if ($azApps.Count -gt 0) {
+        $azApp = @($azApps | Where-Object { -not ([string]$_.Source).ToLowerInvariant().EndsWith('.cmd') -and -not ([string]$_.Source).ToLowerInvariant().EndsWith('.bat') } | Select-Object -First 1)
+        if ($null -eq $azApp -or @($azApp).Count -eq 0) {
+            $azApp = @($azApps | Select-Object -First 1)
+        }
+        if ($azApp -is [System.Array]) {
+            $azApp = [object]$azApp[0]
+        }
+    }
     if ($null -eq $azApp -or [string]::IsNullOrWhiteSpace([string]$azApp.Source)) {
         throw "Azure CLI executable could not be resolved from PATH."
     }
@@ -56,15 +66,31 @@ function Invoke-CoVmAzCliCommand {
     $argValues = @($Arguments | ForEach-Object { [string]$_ })
     $timeoutSeconds = [int]$script:AzCommandTimeoutSeconds
     if ($timeoutSeconds -lt 0) { $timeoutSeconds = 0 }
+    $azExecutableText = [string]$azExecutable
+    $useCmdHost = -not $azExecutableText.ToLowerInvariant().EndsWith('.exe')
+    $cmdHost = if ([string]::IsNullOrWhiteSpace([string]$env:ComSpec)) { 'cmd.exe' } else { [string]$env:ComSpec }
 
     if ($timeoutSeconds -eq 0) {
-        & $azExecutable @argValues
+        if ($useCmdHost) {
+            & $cmdHost /d /c $azExecutableText @argValues
+        }
+        else {
+            & $azExecutableText @argValues
+        }
         return
     }
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $azExecutable
-    $psi.Arguments = ($argValues | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+    if ($useCmdHost) {
+        $psi.FileName = $cmdHost
+        $cmdArgs = @('/d', '/c', $azExecutableText)
+        $cmdArgs += $argValues
+        $psi.Arguments = ($cmdArgs | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+    }
+    else {
+        $psi.FileName = $azExecutableText
+        $psi.Arguments = ($argValues | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+    }
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     $psi.RedirectStandardOutput = $true
@@ -1364,13 +1390,136 @@ function Throw-FriendlyError {
     throw $ex
 }
 
+function Remove-CoVmMoveCollectionArtifacts {
+    param(
+        [string]$ResourceGroup,
+        [string]$CollectionName,
+        [string]$Reason = 'cleanup requested'
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$CollectionName)) {
+        return
+    }
+
+    Write-Host ("Cleanup started for move collection '{0}'. Reason: {1}" -f $CollectionName, $Reason) -ForegroundColor Yellow
+
+    $moveResourceIdsText = az resource-mover move-resource list -g $ResourceGroup --move-collection-name $CollectionName --query "[].id" -o tsv --only-show-errors 2>$null
+    $moveResourceIds = @()
+    if ($LASTEXITCODE -eq 0) {
+        $moveResourceIds = @((Convert-CoVmCliTextToTokens -Text $moveResourceIdsText) | Select-Object -Unique)
+    }
+
+    if ($moveResourceIds.Count -gt 0) {
+        Invoke-TrackedAction -Label ("az resource-mover move-collection discard --name {0}" -f $CollectionName) -Action {
+            $discardArgs = @("resource-mover", "move-collection", "discard", "-g", $ResourceGroup, "-n", $CollectionName, "--validate-only", "false", "--input-type", "MoveResourceId", "--move-resources")
+            $discardArgs += $moveResourceIds
+            $discardArgs += @("-o", "none", "--only-show-errors")
+            az @discardArgs 2>$null
+        } | Out-Null
+        Start-Sleep -Seconds 3
+
+        Invoke-TrackedAction -Label ("az resource-mover move-collection bulk-remove --name {0}" -f $CollectionName) -Action {
+            $bulkRemoveArgs = @("resource-mover", "move-collection", "bulk-remove", "-g", $ResourceGroup, "-n", $CollectionName, "--validate-only", "false", "--input-type", "MoveResourceId", "--move-resources")
+            $bulkRemoveArgs += $moveResourceIds
+            $bulkRemoveArgs += @("-o", "none", "--only-show-errors")
+            az @bulkRemoveArgs 2>$null
+        } | Out-Null
+        Start-Sleep -Seconds 3
+    }
+
+    $moveResourceNamesText = az resource-mover move-resource list -g $ResourceGroup --move-collection-name $CollectionName --query "[].name" -o tsv --only-show-errors 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        $moveResourceNames = @((Convert-CoVmCliTextToTokens -Text $moveResourceNamesText) | Select-Object -Unique)
+        foreach ($moveResourceName in @($moveResourceNames)) {
+            if ([string]::IsNullOrWhiteSpace([string]$moveResourceName)) { continue }
+            Invoke-TrackedAction -Label ("az resource-mover move-resource delete --name {0}" -f $moveResourceName) -Action {
+                az resource-mover move-resource delete -g $ResourceGroup --move-collection-name $CollectionName -n $moveResourceName --yes -o none --only-show-errors 2>$null
+            } | Out-Null
+        }
+    }
+
+    $subscriptionId = az account show --query id -o tsv --only-show-errors 2>$null
+    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$subscriptionId)) {
+        $deleteUri = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Migrate/moveCollections/$CollectionName"
+        Invoke-TrackedAction -Label ("az rest delete move-collection --name {0}" -f $CollectionName) -Action {
+            az rest --method delete --uri $deleteUri --url-parameters api-version=2024-08-01 -o none --only-show-errors 2>$null
+        } | Out-Null
+    }
+    else {
+        Invoke-TrackedAction -Label ("az resource-mover move-collection delete --name {0}" -f $CollectionName) -Action {
+            az resource-mover move-collection delete -g $ResourceGroup -n $CollectionName --yes -o none --only-show-errors 2>$null
+        } | Out-Null
+    }
+
+    az resource-mover move-collection show -g $ResourceGroup -n $CollectionName -o none --only-show-errors 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host ("Cleanup could not fully delete move collection '{0}'. Please remove it manually." -f $CollectionName) -ForegroundColor Yellow
+    }
+    else {
+        Write-Host ("Cleanup completed for move collection '{0}'." -f $CollectionName) -ForegroundColor Green
+    }
+}
+
+function Get-CoVmManagedMoveCollections {
+    param(
+        [string]$ResourceGroup,
+        [string]$SourceRegion,
+        [string]$TargetRegion,
+        [string]$CollectionPrefix
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup)) {
+        return @()
+    }
+
+    $collectionsJson = az resource-mover move-collection list -g $ResourceGroup -o json --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$collectionsJson)) {
+        return @()
+    }
+
+    $collections = @((ConvertFrom-JsonCompat -InputObject $collectionsJson))
+    return @(
+        $collections |
+            Where-Object {
+                [string]::Equals(([string]$_.properties.sourceRegion), $SourceRegion, [System.StringComparison]::OrdinalIgnoreCase) -and
+                [string]::Equals(([string]$_.properties.targetRegion), $TargetRegion, [System.StringComparison]::OrdinalIgnoreCase) -and
+                ([string]$_.name).ToLowerInvariant().StartsWith(([string]$CollectionPrefix).ToLowerInvariant())
+            } |
+            Select-Object -ExpandProperty name -Unique
+    )
+}
+
+function Convert-CoVmCliTextToTokens {
+    param(
+        [object]$Text
+    )
+
+    $parts = @()
+    if ($Text -is [System.Array]) {
+        foreach ($entry in @($Text)) {
+            $parts += [string]$entry
+        }
+    }
+    elseif ($null -ne $Text) {
+        $parts += [string]$Text
+    }
+
+    $joined = ($parts -join "`n")
+    return @(
+        [regex]::Split([string]$joined, '\s+') |
+            ForEach-Object { [string]$_ } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+}
+
 function Show-CoVmCommandHelp {
     Write-Host "Usage: az-vm <command> [--option] [--option=value]"
     Write-Host ""
     Write-Host "Commands:"
     Write-Host "  create   Create missing resources. Use --purge to delete first."
     Write-Host "  update   Re-run create-or-update operations on existing resources."
-    Write-Host "  change   Change VM region and/or VM size."
+    Write-Host "  change   Change VM region/size without destructive rebuild; region uses Azure Resource Mover."
     Write-Host "  exec     Execute one VM init/update task."
     Write-Host ""
     Write-Host "Common options:"
@@ -3902,6 +4051,46 @@ function Ensure-CoVmPySshTools {
     }
 }
 
+function Wait-CoVmVmPowerState {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$DesiredPowerState = "VM running",
+        [int]$MaxAttempts = 3,
+        [int]$DelaySeconds = 10
+    )
+
+    if ([string]::IsNullOrWhiteSpace($DesiredPowerState)) {
+        $DesiredPowerState = "VM running"
+    }
+    if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($MaxAttempts -gt 120) { $MaxAttempts = 120 }
+    if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $powerState = az vm get-instance-view `
+            --resource-group $ResourceGroup `
+            --name $VmName `
+            --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus | [0]" `
+            -o tsv
+        Assert-LastExitCode "az vm get-instance-view (power state)"
+
+        if ([string]::IsNullOrWhiteSpace([string]$powerState)) {
+            Write-Host ("VM power state is empty (attempt {0}/{1})." -f $attempt, $MaxAttempts) -ForegroundColor Yellow
+        }
+        else {
+            Write-Host ("VM power state: {0} (attempt {1}/{2})" -f [string]$powerState, $attempt, $MaxAttempts)
+            if ([string]::Equals([string]$powerState, [string]$DesiredPowerState, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    return $false
+}
+
 function Invoke-CoVmProcessWithRetry {
     param(
         [string]$FilePath,
@@ -5423,13 +5612,478 @@ function Invoke-CoVmChangeCommand {
         return
     }
 
+    $finalResourceGroup = $resourceGroup
+    $regionMoveApplied = $false
     if ($regionChanged) {
-        Write-Host "Region change requires controlled recreate because direct cross-region VM move is not supported in Azure CLI." -ForegroundColor Yellow
+        Write-Host "Applying non-destructive region move with Azure Resource Mover."
         Write-Host ("Current: region={0}, size={1}" -f $currentRegion, $currentSize)
         Write-Host ("Target : region={0}, size={1}" -f $targetRegion, $targetSize)
         if (-not $AutoMode) {
-            $approveRegionRebuild = Confirm-YesNo -PromptText "Continue with recreate flow (best effort to keep resource names)?" -DefaultYes $false
-            if (-not $approveRegionRebuild) {
+            $approveRegionMove = Confirm-YesNo -PromptText "Continue with Azure Resource Mover region migration?" -DefaultYes $false
+            if (-not $approveRegionMove) {
+                Write-Host "Change command canceled by user." -ForegroundColor Yellow
+                return
+            }
+        }
+
+        $preMovePowerState = az vm get-instance-view --resource-group $resourceGroup --name $vmName --query "instanceView.statuses[?starts_with(code, 'PowerState/')].displayStatus | [0]" -o tsv --only-show-errors
+        Assert-LastExitCode "az vm get-instance-view (pre-region-move)"
+        if (-not [string]::Equals([string]$preMovePowerState, "VM running", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host ("VM power state before Resource Mover is '{0}'. Starting VM for validation..." -f [string]$preMovePowerState) -ForegroundColor Yellow
+            Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+                az vm start -g $resourceGroup -n $vmName -o none
+                Assert-LastExitCode "az vm start (pre-region-move)"
+            } | Out-Null
+            $preMoveRunning = Wait-CoVmVmRunningState -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 6 -DelaySeconds 10
+            if (-not $preMoveRunning) {
+                Throw-FriendlyError `
+                    -Detail ("VM '{0}' did not reach running state before Resource Mover validation." -f $vmName) `
+                    -Code 62 `
+                    -Summary "Region move stopped because VM is not ready for Resource Mover validation." `
+                    -Hint "Start the VM and retry the change command."
+            }
+        }
+
+        $resourceMoverVersion = az extension show --name resource-mover --query version -o tsv --only-show-errors 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$resourceMoverVersion)) {
+            Write-Host "Azure CLI extension 'resource-mover' is not installed. Installing now..."
+            Invoke-TrackedAction -Label "az extension add --name resource-mover --upgrade" -Action {
+                az extension add --name resource-mover --upgrade --allow-preview true --yes --only-show-errors -o none
+                Assert-LastExitCode "az extension add resource-mover"
+            } | Out-Null
+        }
+
+        $targetMoveResourceGroup = ("{0}-mr-{1}" -f $resourceGroup, $targetRegion).ToLowerInvariant()
+        $targetMoveResourceGroup = ($targetMoveResourceGroup -replace '[^a-z0-9._()-]', '-')
+        if ($targetMoveResourceGroup.Length -gt 84) { $targetMoveResourceGroup = $targetMoveResourceGroup.Substring(0, 84).Trim('-') }
+        if ([string]::IsNullOrWhiteSpace($targetMoveResourceGroup)) { $targetMoveResourceGroup = "rg-move-target" }
+
+        $targetGroupExists = az group exists -n $targetMoveResourceGroup
+        Assert-LastExitCode "az group exists (target)"
+        if (-not [string]::Equals([string]$targetGroupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+            Invoke-TrackedAction -Label ("az group create -n {0} -l {1}" -f $targetMoveResourceGroup, $targetRegion) -Action {
+                az group create -n $targetMoveResourceGroup -l $targetRegion -o none --only-show-errors
+                Assert-LastExitCode "az group create (target)"
+            } | Out-Null
+        }
+        else {
+            Write-Host ("Target move resource group '{0}' already exists and will be reused." -f $targetMoveResourceGroup) -ForegroundColor Yellow
+        }
+
+        $safeVmName = ([string]$vmName -replace '[^a-zA-Z0-9-]', '-').ToLowerInvariant()
+        if ($safeVmName.Length -gt 22) { $safeVmName = $safeVmName.Substring(0, 22).Trim('-') }
+        if ([string]::IsNullOrWhiteSpace($safeVmName)) { $safeVmName = 'vm' }
+        $safeRegion = ([string]$targetRegion -replace '[^a-zA-Z0-9-]', '-').ToLowerInvariant()
+        if ($safeRegion.Length -gt 18) { $safeRegion = $safeRegion.Substring(0, 18).Trim('-') }
+        if ([string]::IsNullOrWhiteSpace($safeRegion)) { $safeRegion = 'region' }
+        $moveCollectionPrefix = ("mc-{0}-{1}-" -f $safeVmName, $safeRegion).ToLowerInvariant()
+        $staleCollections = @(
+            Get-CoVmManagedMoveCollections `
+                -ResourceGroup $resourceGroup `
+                -SourceRegion $currentRegion `
+                -TargetRegion $targetRegion `
+                -CollectionPrefix $moveCollectionPrefix
+        )
+        if ($staleCollections.Count -gt 0) {
+            Write-Host ("Found {0} stale move collection(s) from previous region-change attempts." -f $staleCollections.Count) -ForegroundColor Yellow
+            foreach ($staleCollectionName in @($staleCollections)) {
+                Remove-CoVmMoveCollectionArtifacts -ResourceGroup $resourceGroup -CollectionName ([string]$staleCollectionName) -Reason 'stale artifacts from previous region-change attempts'
+            }
+
+            Throw-FriendlyError `
+                -Detail ("Stale move collections were cleaned: {0}" -f ($staleCollections -join ', ')) `
+                -Code 62 `
+                -Summary "Stale Resource Mover artifacts were cleaned. Migration was not retried automatically." `
+                -Hint "Run the same change command again to start a fresh migration."
+        }
+
+        $moveCollectionName = ("{0}{1}" -f $moveCollectionPrefix, (Get-Date -Format "yyMMddHHmmss"))
+        $moveCollectionCreated = $false
+        $stageTimeoutSeconds = 1800
+        $stagePollSeconds = 10
+        $stageMaxAttempts = [int][Math]::Ceiling(([double]$stageTimeoutSeconds / [double]$stagePollSeconds))
+        if ($stageMaxAttempts -lt 1) { $stageMaxAttempts = 1 }
+
+        try {
+        $moveCollectionCreateJson = Invoke-TrackedAction -Label ("az resource-mover move-collection create --name {0}" -f $moveCollectionName) -Action {
+            az resource-mover move-collection create -g $resourceGroup --move-collection-name $moveCollectionName --identity type=SystemAssigned --location $targetRegion --move-type RegionToRegion --source-region $currentRegion --target-region $targetRegion -o json --only-show-errors
+        }
+        Assert-LastExitCode "az resource-mover move-collection create"
+        $moveCollectionCreated = $true
+
+        $moveCollectionCreateObj = ConvertFrom-JsonCompat -InputObject $moveCollectionCreateJson
+        $moveCollectionPrincipalId = [string]$moveCollectionCreateObj.identity.principalId
+        if ([string]::IsNullOrWhiteSpace([string]$moveCollectionPrincipalId)) {
+            Throw-FriendlyError -Detail "Resource Mover move collection principalId could not be resolved." -Code 62 -Summary "Region move cannot continue due missing managed identity metadata." -Hint "Delete stale move collection and retry."
+        }
+
+        $subscriptionId = az account show --query "id" -o tsv --only-show-errors
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$subscriptionId)) {
+            Throw-FriendlyError -Detail "Subscription id could not be read while preparing Resource Mover RBAC." -Code 62 -Summary "Region move cannot continue because required RBAC checks failed." -Hint "Run az account show and verify active subscription."
+        }
+        $sourceScope = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
+        $targetScope = "/subscriptions/$subscriptionId/resourceGroups/$targetMoveResourceGroup"
+        $ensureRole = {
+            param(
+                [string]$RoleName,
+                [string]$Scope
+            )
+
+            $existingRoleId = az role assignment list --assignee-object-id $moveCollectionPrincipalId --scope $Scope --query "[?roleDefinitionName=='$RoleName'].id | [0]" -o tsv --only-show-errors
+            if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$existingRoleId)) {
+                return
+            }
+
+            Invoke-TrackedAction -Label ("az role assignment create --role {0} --scope {1}" -f $RoleName, $Scope) -Action {
+                az role assignment create --assignee-object-id $moveCollectionPrincipalId --assignee-principal-type ServicePrincipal --role $RoleName --scope $Scope -o none --only-show-errors
+                Assert-LastExitCode ("az role assignment create (" + $RoleName + ")")
+            } | Out-Null
+        }
+
+        & $ensureRole -RoleName "Contributor" -Scope $sourceScope
+        & $ensureRole -RoleName "User Access Administrator" -Scope $sourceScope
+        & $ensureRole -RoleName "Contributor" -Scope $targetScope
+        & $ensureRole -RoleName "User Access Administrator" -Scope $targetScope
+        Write-Host "Waiting 20 seconds for Resource Mover RBAC propagation..."
+        Start-Sleep -Seconds 20
+
+        $vmSourceId = az vm show -g $resourceGroup -n $vmName --query "id" -o tsv --only-show-errors
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmSourceId)) {
+            Throw-FriendlyError -Detail "VM id could not be read before Resource Mover add." -Code 62 -Summary "Region move cannot continue." -Hint "Check VM access and retry."
+        }
+
+        $knownSourceIds = @{}
+        $addMoveResource = {
+            param([string]$SourceId)
+            if ([string]::IsNullOrWhiteSpace([string]$SourceId)) { return }
+            $SourceId = [string]$SourceId
+            $SourceId = $SourceId.Trim()
+            if ([string]::IsNullOrWhiteSpace([string]$SourceId)) { return }
+            $SourceId = [regex]::Replace([string]$SourceId, '[\u0000-\u001F]', '')
+            $SourceId = [regex]::Replace([string]$SourceId, '\s+', '')
+            if ($SourceId -match '(?i)/providers/microsoft\.migrate/' -or $SourceId -match '(?i)/movecollections/' -or $SourceId -match '(?i)/moveresources/') { return }
+            $normalizedSourceId = ''
+            $resourceType = ''
+            $resourceName = ''
+            $settingsData = [ordered]@{}
+
+            if ($SourceId -match '(?i)^(/subscriptions/[^/]+/resourceGroups/([^/]+))$') {
+                $normalizedSourceId = [string]$matches[1]
+                $resourceName = [string]$matches[2]
+                $resourceType = 'resourceGroups'
+                $settingsData.resourceType = 'resourceGroups'
+                $settingsData.targetResourceName = $targetMoveResourceGroup
+            }
+            else {
+                $providerIndex = $SourceId.IndexOf("/providers/", [System.StringComparison]::OrdinalIgnoreCase)
+                if ($providerIndex -lt 0) { return }
+                $prefix = $SourceId.Substring(0, $providerIndex)
+                $tail = $SourceId.Substring($providerIndex + "/providers/".Length)
+                $segments = @($tail -split '/' | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+                if ($segments.Count -lt 3) { return }
+                $providerNamespace = ([string]$segments[0]).Trim()
+                $resourceTypeName = ([string]$segments[1]).Trim()
+                $resourceName = ([string]$segments[2]).Trim()
+                if ([string]::IsNullOrWhiteSpace($providerNamespace) -or [string]::IsNullOrWhiteSpace($resourceTypeName) -or [string]::IsNullOrWhiteSpace($resourceName)) { return }
+                $normalizedSourceId = ("{0}/providers/{1}/{2}/{3}" -f $prefix, $providerNamespace, $resourceTypeName, $resourceName)
+                $resourceType = ("{0}/{1}" -f $providerNamespace, $resourceTypeName)
+                $resourceTypeMap = @{
+                    "microsoft.compute/virtualmachines" = "Microsoft.Compute/virtualMachines"
+                    "microsoft.compute/disks" = "Microsoft.Compute/disks"
+                    "microsoft.network/networkinterfaces" = "Microsoft.Network/networkInterfaces"
+                    "microsoft.network/publicipaddresses" = "Microsoft.Network/publicIPAddresses"
+                    "microsoft.network/networksecuritygroups" = "Microsoft.Network/networkSecurityGroups"
+                    "microsoft.network/virtualnetworks" = "Microsoft.Network/virtualNetworks"
+                }
+                $resourceTypeKey = $resourceType.ToLowerInvariant()
+                if ($resourceTypeMap.ContainsKey($resourceTypeKey)) {
+                    $resourceType = [string]$resourceTypeMap[$resourceTypeKey]
+                }
+                $settingsData.resourceType = $resourceType
+                $settingsData.targetResourceName = $resourceName
+                $settingsData.targetResourceGroupName = $targetMoveResourceGroup
+            }
+
+            $sourceKey = $normalizedSourceId.Trim().ToLowerInvariant()
+            if ($knownSourceIds.ContainsKey($sourceKey)) { return }
+            $settingsJson = ($settingsData | ConvertTo-Json -Depth 8 -Compress)
+            $sha1 = [System.Security.Cryptography.SHA1]::Create()
+            $hashText = ([System.BitConverter]::ToString($sha1.ComputeHash([System.Text.Encoding]::UTF8.GetBytes([string]$normalizedSourceId)))).Replace('-', '').ToLowerInvariant().Substring(0, 8)
+            $sha1.Dispose()
+            $safeResourceName = ($resourceName -replace '[^a-zA-Z0-9-]', '-').ToLowerInvariant()
+            if ($safeResourceName.Length -gt 48) { $safeResourceName = $safeResourceName.Substring(0, 48).Trim('-') }
+            if ([string]::IsNullOrWhiteSpace($safeResourceName)) { $safeResourceName = 'resource' }
+            $moveResourceName = ("mr-{0}-{1}" -f $safeResourceName, $hashText)
+            Write-Host ("Resource Mover add input: sourceId='{0}', resourceType='{1}', targetName='{2}'." -f $normalizedSourceId, $resourceType, $resourceName)
+            Invoke-TrackedAction -Label ("az resource-mover move-resource add --name {0}" -f $moveResourceName) -Action {
+                $addOutput = az resource-mover move-resource add -g $resourceGroup --move-collection-name $moveCollectionName --move-resource-name $moveResourceName --source-id $normalizedSourceId --resource-settings $settingsJson -o json --only-show-errors
+                if ($LASTEXITCODE -ne 0) {
+                    $addOutputText = (@($addOutput) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+                    if ($addOutputText -match '(?i)AuthorizationFailed') {
+                        Throw-FriendlyError -Detail $addOutputText -Code 62 -Summary "Resource Mover managed identity permission is missing." -Hint "Ensure move-collection managed identity has Contributor and User Access Administrator roles on both source and target resource groups, then retry."
+                    }
+                    throw ("az resource-mover move-resource add failed with exit code {0}. Output: {1}" -f [int]$LASTEXITCODE, $addOutputText)
+                }
+            } | Out-Null
+            $knownSourceIds[$sourceKey] = $true
+        }
+
+        $sourceResourceGroupId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
+        try {
+            & $addMoveResource -SourceId $sourceResourceGroupId
+        }
+        catch {
+            Write-Host "Source resource-group move-resource add is not accepted by current service path. Continuing with VM-first dependency flow." -ForegroundColor Yellow
+        }
+
+        & $addMoveResource -SourceId $vmSourceId
+        Invoke-TrackedAction -Label ("az resource-mover move-collection resolve-dependency --name {0}" -f $moveCollectionName) -Action {
+            az resource-mover move-collection resolve-dependency -g $resourceGroup -n $moveCollectionName -o json --only-show-errors
+            Assert-LastExitCode "az resource-mover move-collection resolve-dependency"
+        } | Out-Null
+
+        for ($depPass = 1; $depPass -le 6; $depPass++) {
+            $unresolvedIdsText = az resource-mover move-collection list-unresolved-dependency -g $resourceGroup -n $moveCollectionName --query "[].id" -o tsv --only-show-errors
+            Assert-LastExitCode "az resource-mover move-collection list-unresolved-dependency"
+            $unresolvedIds = @(Convert-CoVmCliTextToTokens -Text $unresolvedIdsText)
+            if ($unresolvedIds.Count -eq 0) { break }
+            Write-Host ("Resource Mover dependency pass {0}/6: {1} unresolved dependency resource(s)." -f $depPass, $unresolvedIds.Count) -ForegroundColor Yellow
+            foreach ($depId in @($unresolvedIds)) { & $addMoveResource -SourceId ([string]$depId) }
+            Invoke-TrackedAction -Label ("az resource-mover move-collection resolve-dependency --name {0} (pass {1})" -f $moveCollectionName, $depPass) -Action {
+                az resource-mover move-collection resolve-dependency -g $resourceGroup -n $moveCollectionName -o json --only-show-errors
+                Assert-LastExitCode "az resource-mover move-collection resolve-dependency"
+            } | Out-Null
+        }
+
+        $remainingUnresolvedText = az resource-mover move-collection list-unresolved-dependency -g $resourceGroup -n $moveCollectionName --query "[].id" -o tsv --only-show-errors
+        Assert-LastExitCode "az resource-mover move-collection list-unresolved-dependency"
+        $remainingUnresolved = @(Convert-CoVmCliTextToTokens -Text $remainingUnresolvedText)
+        if ($remainingUnresolved.Count -gt 0) {
+            Throw-FriendlyError -Detail ("Resource Mover unresolved dependencies remain: {0}" -f ($remainingUnresolved -join ', ')) -Code 62 -Summary "Region move cannot continue because dependency resolution is incomplete." -Hint "Add required dependencies to the move collection and retry."
+        }
+
+        $moveResourceIdsText = az resource-mover move-resource list -g $resourceGroup --move-collection-name $moveCollectionName --query "[].id" -o tsv --only-show-errors
+        Assert-LastExitCode "az resource-mover move-resource list"
+        $moveResourceIds = @((Convert-CoVmCliTextToTokens -Text $moveResourceIdsText) | Select-Object -Unique)
+        if ($moveResourceIds.Count -eq 0) {
+            Throw-FriendlyError -Detail "Move collection has no move-resource entries." -Code 62 -Summary "Region move cannot continue." -Hint "Inspect move collection resources and retry."
+        }
+
+        $getMoveResourceStates = {
+            $stateText = az resource-mover move-resource list -g $resourceGroup --move-collection-name $moveCollectionName --query "[].properties.moveStatus.moveState" -o tsv --only-show-errors
+            Assert-LastExitCode "az resource-mover move-resource list (states)"
+            $states = @(Convert-CoVmCliTextToTokens -Text $stateText)
+            if ($states.Count -eq 0) {
+                Throw-FriendlyError -Detail "Move resource state list is empty." -Code 62 -Summary "Region move state tracking failed." -Hint "Inspect move collection resources and retry."
+            }
+            return @($states)
+        }
+
+        $getMoveResourceDiagnostics = {
+            $diagJson = az resource-mover move-resource list -g $resourceGroup --move-collection-name $moveCollectionName --query "[].{name:name,state:properties.moveStatus.moveState,errorCode:properties.moveStatus.errors.properties.code,errorMessage:properties.moveStatus.errors.properties.message}" -o json --only-show-errors 2>$null
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$diagJson)) {
+                return "diagnostics unavailable"
+            }
+
+            $diagItems = @((ConvertFrom-JsonCompat -InputObject $diagJson))
+            if ($diagItems.Count -eq 0) {
+                return "diagnostics unavailable"
+            }
+
+            $lines = @()
+            foreach ($item in @($diagItems)) {
+                $n = [string]$item.name
+                $s = [string]$item.state
+                $c = [string]$item.errorCode
+                $m = [string]$item.errorMessage
+                if ([string]::IsNullOrWhiteSpace($c)) { $c = "none" }
+                if ([string]::IsNullOrWhiteSpace($m)) { $m = "none" }
+                $lines += ("{0}: state={1}, errorCode={2}, error={3}" -f $n, $s, $c, $m)
+            }
+
+            return ($lines -join " | ")
+        }
+
+        $waitMoveCollectionStage = {
+            param(
+                [string]$StageName,
+                [string[]]$PendingStates,
+                [string[]]$TerminalStates
+            )
+
+            $maxAttempts = $stageMaxAttempts
+            $delaySeconds = $stagePollSeconds
+            if ($maxAttempts -lt 1) { $maxAttempts = 1 }
+            if ($delaySeconds -lt 2) { $delaySeconds = 2 }
+            $lastStateSummary = ''
+
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                $states = @(& $getMoveResourceStates)
+                $failedStates = @($states | Where-Object { [string]$_ -match '(?i)failed$' })
+                if ($failedStates.Count -gt 0) {
+                    $failedSummary = ($failedStates | Select-Object -Unique) -join ', '
+                    Throw-FriendlyError -Detail ("Resource Mover stage '{0}' reported failed move states: {1}" -f $StageName, $failedSummary) -Code 62 -Summary ("Region move failed during '{0}' stage." -f $StageName) -Hint "Inspect move-resource details and retry."
+                }
+
+                $pendingStatesActual = @($states | Where-Object { $PendingStates -icontains ([string]$_) })
+                $unknownStates = @($states | Where-Object { ($PendingStates -inotcontains ([string]$_)) -and ($TerminalStates -inotcontains ([string]$_)) })
+                $stateGroups = @($states | Group-Object | Sort-Object -Property Name | ForEach-Object { "{0}:{1}" -f [string]$_.Name, [int]$_.Count })
+                $stateSummary = if ($stateGroups.Count -gt 0) { $stateGroups -join ', ' } else { 'none' }
+                if (($attempt -eq 1) -or ($stateSummary -ne $lastStateSummary) -or (($attempt % 6) -eq 0) -or ($attempt -eq $maxAttempts)) {
+                    Write-Host ("Resource Mover stage '{0}' status: {1}" -f $StageName, $stateSummary)
+                    $lastStateSummary = $stateSummary
+                }
+
+                if ($pendingStatesActual.Count -eq 0 -and $unknownStates.Count -eq 0) {
+                    return
+                }
+
+                if ($attempt -ge $maxAttempts) {
+                    $diagSummary = & $getMoveResourceDiagnostics
+                    Throw-FriendlyError -Detail ("Resource Mover stage '{0}' timed out after {1} seconds. Last states: {2}. Diagnostics: {3}" -f $StageName, $stageTimeoutSeconds, $stateSummary, $diagSummary) -Code 62 -Summary ("Region move did not finish '{0}' stage in time." -f $StageName) -Hint "Review move-resource diagnostics and retry."
+                }
+
+                Start-Sleep -Seconds $delaySeconds
+            }
+        }
+
+        $invokeMoveCollection = {
+            param(
+                [string]$OperationName,
+                [string]$StageName,
+                [string[]]$PendingStates,
+                [string[]]$TerminalStates
+            )
+
+            $args = @("resource-mover", "move-collection", $OperationName, "-g", $resourceGroup, "-n", $moveCollectionName, "--validate-only", "false", "--input-type", "MoveResourceId", "--move-resources")
+            $args += $moveResourceIds
+            $args += @("--no-wait", "-o", "json", "--only-show-errors")
+
+            $operationSucceeded = $false
+            for ($submitAttempt = 1; $submitAttempt -le 3; $submitAttempt++) {
+                $operationOutput = Invoke-TrackedAction -Label ("az resource-mover move-collection {0} --name {1}" -f $OperationName, $moveCollectionName) -Action {
+                    az @args 2>&1
+                }
+                $exitCode = [int]$LASTEXITCODE
+                $operationText = (@($operationOutput) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine
+                if ($exitCode -eq 0) {
+                    $operationSucceeded = $true
+                    break
+                }
+
+                if ($operationText -match '(?i)LockConflict' -and $submitAttempt -lt 3) {
+                    Write-Host ("Resource Mover operation '{0}' is locked by another workflow. Waiting before retry ({1}/3)." -f $OperationName, $submitAttempt) -ForegroundColor Yellow
+                    Start-Sleep -Seconds 20
+                    continue
+                }
+
+                Throw-FriendlyError -Detail ("Resource Mover operation '{0}' failed (attempt {1}/3). Output: {2}" -f $OperationName, $submitAttempt, $operationText) -Code 62 -Summary ("Region move '{0}' operation failed." -f $OperationName) -Hint "Check move-collection workflow state and retry."
+            }
+
+            if (-not $operationSucceeded) {
+                Throw-FriendlyError -Detail ("Resource Mover operation '{0}' failed after 3 attempts." -f $OperationName) -Code 62 -Summary ("Region move '{0}' operation failed." -f $OperationName) -Hint "Check move-collection workflow state and retry."
+            }
+
+            & $waitMoveCollectionStage -StageName $StageName -PendingStates $PendingStates -TerminalStates $TerminalStates
+        }
+
+        & $invokeMoveCollection -OperationName "prepare" -StageName "prepare" -PendingStates @("PreparePending", "PrepareInProgress") -TerminalStates @("MovePending", "MoveInProgress", "CommitPending", "CommitInProgress", "Committed")
+        & $invokeMoveCollection -OperationName "initiate-move" -StageName "initiate-move" -PendingStates @("MovePending", "MoveInProgress") -TerminalStates @("CommitPending", "CommitInProgress", "Committed")
+        & $invokeMoveCollection -OperationName "commit" -StageName "commit" -PendingStates @("CommitPending", "CommitInProgress") -TerminalStates @("Committed")
+
+        $finalResourceGroup = $targetMoveResourceGroup
+        if (-not (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $finalResourceGroup, "-n", $vmName))) {
+            if (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
+                $finalResourceGroup = $resourceGroup
+            }
+            else {
+                Throw-FriendlyError -Detail "VM was not found in source or target resource groups after move commit." -Code 62 -Summary "Region move result is unknown." -Hint "Inspect Resource Mover states and retry."
+            }
+        }
+
+        if (-not [string]::Equals($finalResourceGroup, $resourceGroup, [System.StringComparison]::OrdinalIgnoreCase)) {
+            if (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
+                Write-Host ("Source resource group '{0}' still contains VM '{1}'. Keeping final resource group '{2}'." -f $resourceGroup, $vmName, $finalResourceGroup) -ForegroundColor Yellow
+            }
+            else {
+                $moveBackIds = @()
+                $vmIdAtTarget = az vm show -g $finalResourceGroup -n $vmName --query "id" -o tsv --only-show-errors 2>$null
+                if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$vmIdAtTarget)) { $moveBackIds += [string]$vmIdAtTarget }
+                $diskIdAtTarget = az vm show -g $finalResourceGroup -n $vmName --query "storageProfile.osDisk.managedDisk.id" -o tsv --only-show-errors 2>$null
+                if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$diskIdAtTarget)) { $moveBackIds += [string]$diskIdAtTarget }
+                if (Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $finalResourceGroup, "-n", [string]$context.NIC)) {
+                    $nicIdAtTarget = az network nic show -g $finalResourceGroup -n $context.NIC --query "id" -o tsv --only-show-errors 2>$null
+                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$nicIdAtTarget)) { $moveBackIds += [string]$nicIdAtTarget }
+                }
+                if (Test-CoVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", $finalResourceGroup, "-n", [string]$context.IP)) {
+                    $publicIpIdAtTarget = az network public-ip show -g $finalResourceGroup -n $context.IP --query "id" -o tsv --only-show-errors 2>$null
+                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$publicIpIdAtTarget)) { $moveBackIds += [string]$publicIpIdAtTarget }
+                }
+                if (Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", $finalResourceGroup, "-n", [string]$context.NSG)) {
+                    $nsgIdAtTarget = az network nsg show -g $finalResourceGroup -n $context.NSG --query "id" -o tsv --only-show-errors 2>$null
+                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$nsgIdAtTarget)) { $moveBackIds += [string]$nsgIdAtTarget }
+                }
+                if (Test-CoVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", $finalResourceGroup, "-n", [string]$context.VNET)) {
+                    $vnetIdAtTarget = az network vnet show -g $finalResourceGroup -n $context.VNET --query "id" -o tsv --only-show-errors 2>$null
+                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$vnetIdAtTarget)) { $moveBackIds += [string]$vnetIdAtTarget }
+                }
+                $moveBackIds = @($moveBackIds | Select-Object -Unique)
+                if ($moveBackIds.Count -gt 0) {
+                    try {
+                        Invoke-TrackedAction -Label ("az resource move --destination-group {0} --ids <{1} resources>" -f $resourceGroup, $moveBackIds.Count) -Action {
+                            $moveArgs = @("resource", "move", "--destination-group", $resourceGroup, "--ids")
+                            $moveArgs += $moveBackIds
+                            $moveArgs += @("-o", "none", "--only-show-errors")
+                            az @moveArgs
+                            Assert-LastExitCode "az resource move"
+                        } | Out-Null
+                        if (Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
+                            $finalResourceGroup = $resourceGroup
+                        }
+                    }
+                    catch {
+                        Write-Host ("Source resource-group restore failed; continuing with final resource group '{0}'." -f $finalResourceGroup) -ForegroundColor Yellow
+                    }
+                }
+            }
+        }
+
+        $postMoveVmRegion = az vm show -g $finalResourceGroup -n $vmName --query "location" -o tsv --only-show-errors
+        if ($LASTEXITCODE -ne 0 -or -not [string]::Equals([string]$postMoveVmRegion, $targetRegion, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Throw-FriendlyError -Detail ("VM final region '{0}' does not match target region '{1}'." -f [string]$postMoveVmRegion, $targetRegion) -Code 62 -Summary "Region move did not converge to the target region." -Hint "Inspect Resource Mover operation state and retry."
+        }
+        $resourceGroup = $finalResourceGroup
+        $currentSize = [string](az vm show -g $resourceGroup -n $vmName --query "hardwareProfile.vmSize" -o tsv --only-show-errors)
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$currentSize)) {
+            Throw-FriendlyError -Detail "VM size could not be read after region move." -Code 62 -Summary "Post-move validation failed." -Hint "Check VM state in target resource group and retry."
+        }
+        $regionMoveApplied = $true
+        Write-Host ("Region move completed successfully. Active resource group: '{0}'." -f $resourceGroup) -ForegroundColor Green
+        }
+        catch {
+            $innerError = $_
+            if ($moveCollectionCreated -and -not [string]::IsNullOrWhiteSpace([string]$moveCollectionName)) {
+                Remove-CoVmMoveCollectionArtifacts -ResourceGroup $resourceGroup -CollectionName $moveCollectionName -Reason 'region migration failed'
+            }
+
+            if ($innerError.Exception -and $innerError.Exception.Data -and $innerError.Exception.Data.Contains("Summary")) {
+                throw
+            }
+
+            Throw-FriendlyError `
+                -Detail ("Region migration failed. Move collection '{0}' was cleaned. Error: {1}" -f $moveCollectionName, $innerError.Exception.Message) `
+                -Code 62 `
+                -Summary "Region move failed and cleanup completed. Migration was not retried automatically." `
+                -Hint "Review the failure details and rerun the same change command after fixing prerequisites."
+        }
+    }
+
+    $sizeChangedAfterRegion = -not [string]::Equals([string]$currentSize, [string]$targetSize, [System.StringComparison]::OrdinalIgnoreCase)
+    if ($sizeChangedAfterRegion) {
+        Write-Host ("Applying VM size change: {0} -> {1}" -f $currentSize, $targetSize)
+        if (-not $AutoMode -and -not $regionMoveApplied) {
+            $approveResize = Confirm-YesNo -PromptText "Continue with VM size change?" -DefaultYes $false
+            if (-not $approveResize) {
                 Write-Host "Change command canceled by user." -ForegroundColor Yellow
                 return
             }
@@ -5439,50 +6093,24 @@ function Invoke-CoVmChangeCommand {
             az vm deallocate -g $resourceGroup -n $vmName -o none
             Assert-LastExitCode "az vm deallocate"
         } | Out-Null
-        Invoke-TrackedAction -Label ("az vm wait --deallocated -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-            az vm wait --deallocated -g $resourceGroup -n $vmName
-            Assert-LastExitCode "az vm wait --deallocated"
-        } | Out-Null
-
-        Set-DotEnvValue -Path $envFilePath -Key 'AZ_LOCATION' -Value $targetRegion
-        Set-DotEnvValue -Path $envFilePath -Key 'VM_SIZE' -Value $targetSize
-        $script:ConfigOverrides['AZ_LOCATION'] = $targetRegion
-        $script:ConfigOverrides['VM_SIZE'] = $targetSize
-
-        $script:UpdateMode = $false
-        $script:RenewMode = $true
-        $script:ExecutionMode = 'destructive rebuild'
-
-        $isWindowsPlatform = [string]::Equals([string]$runtime.Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)
-        Invoke-AzVmMain `
-            -WindowsFlag:([bool]$isWindowsPlatform) `
-            -LinuxFlag:([bool](-not $isWindowsPlatform)) `
-            -CommandName 'change' `
-            -InitialConfigOverrides @{ AZ_LOCATION = $targetRegion; VM_SIZE = $targetSize }
-        return
-    }
-
-    Write-Host ("Applying VM size change: {0} -> {1}" -f $currentSize, $targetSize)
-    if (-not $AutoMode) {
-        $approveResize = Confirm-YesNo -PromptText "Continue with VM size change?" -DefaultYes $false
-        if (-not $approveResize) {
-            Write-Host "Change command canceled by user." -ForegroundColor Yellow
-            return
+        $deallocated = Wait-CoVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+        if (-not $deallocated) {
+            Throw-FriendlyError `
+                -Detail ("VM '{0}' did not reach deallocated state in expected time." -f $vmName) `
+                -Code 62 `
+                -Summary "VM size change stopped because VM deallocation was not confirmed." `
+                -Hint "Check VM power state in Azure and retry the change command."
         }
+        Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $resourceGroup, $vmName, $targetSize) -Action {
+            az vm resize -g $resourceGroup -n $vmName --size $targetSize -o none
+            Assert-LastExitCode "az vm resize"
+        } | Out-Null
+        $currentSize = $targetSize
+    }
+    else {
+        Write-Host ("VM size is already '{0}'; resize step is skipped." -f $targetSize) -ForegroundColor Yellow
     }
 
-    Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-        az vm deallocate -g $resourceGroup -n $vmName -o none
-        Assert-LastExitCode "az vm deallocate"
-    } | Out-Null
-    Invoke-TrackedAction -Label ("az vm wait --deallocated -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-        az vm wait --deallocated -g $resourceGroup -n $vmName
-        Assert-LastExitCode "az vm wait --deallocated"
-    } | Out-Null
-    Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $resourceGroup, $vmName, $targetSize) -Action {
-        az vm resize -g $resourceGroup -n $vmName --size $targetSize -o none
-        Assert-LastExitCode "az vm resize"
-    } | Out-Null
     Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
         az vm start -g $resourceGroup -n $vmName -o none
         Assert-LastExitCode "az vm start"
@@ -5491,15 +6119,32 @@ function Invoke-CoVmChangeCommand {
     $running = Wait-CoVmVmRunningState -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 3 -DelaySeconds 10
     if (-not $running) {
         Throw-FriendlyError `
-            -Detail "VM did not return to running state after size change." `
+            -Detail "VM did not return to running state after change operation." `
             -Code 62 `
-            -Summary "VM size change completed with unhealthy power state." `
+            -Summary "Change command completed with unhealthy VM power state." `
             -Hint "Check VM power state in Azure Portal and start VM manually if needed."
     }
 
-    Set-DotEnvValue -Path $envFilePath -Key 'VM_SIZE' -Value $targetSize
-    $script:ConfigOverrides['VM_SIZE'] = $targetSize
-    Write-Host ("Change completed successfully. VM size is now '{0}'." -f $targetSize) -ForegroundColor Green
+    if ($regionMoveApplied) {
+        Set-DotEnvValue -Path $envFilePath -Key 'AZ_LOCATION' -Value $targetRegion
+        $script:ConfigOverrides['AZ_LOCATION'] = $targetRegion
+        if (-not [string]::Equals([string]$resourceGroup, [string]$context.ResourceGroup, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Set-DotEnvValue -Path $envFilePath -Key 'RESOURCE_GROUP' -Value $resourceGroup
+            $script:ConfigOverrides['RESOURCE_GROUP'] = $resourceGroup
+        }
+    }
+
+    if ($sizeChangedAfterRegion) {
+        Set-DotEnvValue -Path $envFilePath -Key 'VM_SIZE' -Value $targetSize
+        $script:ConfigOverrides['VM_SIZE'] = $targetSize
+    }
+
+    if ($regionMoveApplied) {
+        Write-Host ("Change completed successfully. Region='{0}', VM size='{1}', resource group='{2}'." -f $targetRegion, $currentSize, $resourceGroup) -ForegroundColor Green
+    }
+    else {
+        Write-Host ("Change completed successfully. VM size is now '{0}'." -f $targetSize) -ForegroundColor Green
+    }
 }
 
 function Invoke-CoVmCommandDispatcher {

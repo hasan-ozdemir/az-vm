@@ -27,21 +27,30 @@ Set at least:
 
 ```powershell
 # interactive
-.\az-vm.cmd --windows
+.\az-vm.cmd create --windows
 
 # unattended
-.\az-vm.cmd --auto --windows
-.\az-vm.cmd --auto --linux
+.\az-vm.cmd create --auto --windows
+.\az-vm.cmd create --auto --linux
 ```
 
-## Run Modes
+## Commands
+- `create`
+  - create missing resources; use `--purge` to delete first
+- `update`
+  - re-run create-or-update operations on existing resources
+- `change`
+  - `--vm-size=<sku>`: in-place VM resize
+  - `--vm-region=<region>`: non-destructive region migration via Azure Resource Mover
+  - if stale Resource Mover collections are detected, script cleans them first and exits without auto-retry
+  - Resource Mover stages are polled up to 30 minutes per stage with diagnostic output on timeout
+  - supports combined use: region migration first, then size change
+- `exec`
+  - run one init or update task directly
+
+## Run Mode
 - `interactive` (default)
 - `--auto` / `-a`
-- `--update` / `-u`
-  - keep existing resources, re-run create-or-update commands
-- `explicit destructive rebuild flow` / `-r`
-  - interactive: ask delete confirmation
-  - auto: delete without prompt, then recreate
 
 ## OS Selection
 - CLI: `--windows` or `--linux`
