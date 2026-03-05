@@ -18,6 +18,7 @@ tmp-logs/
 tools/putty/*.exe
 tools/winscp/*.exe
 tools/pyssh/vendor/
+tools/pyssh/.venv/
 tools/pyssh/__pycache__/
 tools/pyssh/*.pyc
 

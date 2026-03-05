@@ -482,7 +482,7 @@ function Invoke-CoVmSshTaskBlocks {
     if ($SshConnectTimeoutSeconds -gt 300) { $SshConnectTimeoutSeconds = 300 }
     $pySsh = Ensure-CoVmPySshTools -RepoRoot $RepoRoot -ConfiguredPySshClientPath $ConfiguredPySshClientPath
 
-    $bootstrap = Initialize-CoVmSshHostKey -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+    $bootstrap = Initialize-CoVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
     if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
         Write-Host ([string]$bootstrap.Output)
     }
@@ -502,7 +502,7 @@ function Invoke-CoVmSshTaskBlocks {
         Write-Host ("Task outcome mode: {0}" -f $TaskOutcomeMode)
         Write-Host ("SSH task timeout: {0}s | SSH connect timeout: {1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
 
-        $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+        $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
 
         foreach ($task in @($TaskBlocks)) {
             $taskName = [string]$task.Name
@@ -525,7 +525,7 @@ function Invoke-CoVmSshTaskBlocks {
                     if ($attempt -lt $SshMaxRetries) {
                         Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
                         Stop-CoVmPersistentSshSession -Session $session
-                        $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+                        $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
                     }
                 }
             }
@@ -603,12 +603,12 @@ function Invoke-CoVmSshTaskBlocks {
                 Write-Host 'Waiting 25 seconds for SSH service to stabilize after reboot...'
                 Start-Sleep -Seconds 25
 
-                $bootstrap = Initialize-CoVmSshHostKey -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+                $bootstrap = Initialize-CoVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
                 if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
                     Write-Host ([string]$bootstrap.Output)
                 }
 
-                $session = Start-CoVmPersistentSshSession -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+                $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
                 Write-Host ("Persistent SSH task session resumed after reboot triggered by '{0}'." -f $taskName) -ForegroundColor DarkCyan
             }
         }
@@ -3198,9 +3198,19 @@ function Ensure-CoVmPySshTools {
 
     $configuredClientPath = [string]$ConfiguredPySshClientPath
     $pySshClientPath = Resolve-CoVmPySshToolPath -ConfiguredPath $configuredClientPath -RepoRoot $RepoRoot -ToolName "ssh_client.py"
-    if (Test-Path -LiteralPath $pySshClientPath) {
+    $pySshVenvRoot = Join-Path (Join-Path $RepoRoot "tools\pyssh") ".venv"
+    $isWindowsPlatform = ([System.IO.Path]::DirectorySeparatorChar -eq '\')
+    $pySshPythonPath = if ($isWindowsPlatform) {
+        Join-Path $pySshVenvRoot "Scripts\python.exe"
+    }
+    else {
+        Join-Path $pySshVenvRoot "bin/python"
+    }
+
+    if ((Test-Path -LiteralPath $pySshClientPath) -and (Test-Path -LiteralPath $pySshPythonPath)) {
         return [ordered]@{
             ClientPath = $pySshClientPath
+            PythonPath = (Resolve-Path -LiteralPath $pySshPythonPath).Path
         }
     }
 
@@ -3217,9 +3227,13 @@ function Ensure-CoVmPySshTools {
     if (-not (Test-Path -LiteralPath $pySshClientPath)) {
         throw "Python SSH tools could not be initialized. Missing ssh_client.py."
     }
+    if (-not (Test-Path -LiteralPath $pySshPythonPath)) {
+        throw "Python SSH tools could not be initialized. Missing pyssh venv python executable."
+    }
 
     return [ordered]@{
         ClientPath = $pySshClientPath
+        PythonPath = (Resolve-Path -LiteralPath $pySshPythonPath).Path
     }
 }
 
@@ -3267,6 +3281,7 @@ function Invoke-CoVmProcessWithRetry {
 
 function Initialize-CoVmSshHostKey {
     param(
+        [string]$PySshPythonPath,
         [string]$PySshClientPath,
         [string]$HostName,
         [string]$UserName,
@@ -3277,9 +3292,12 @@ function Initialize-CoVmSshHostKey {
 
     if ($ConnectTimeoutSeconds -lt 5) { $ConnectTimeoutSeconds = 5 }
     if ($ConnectTimeoutSeconds -gt 300) { $ConnectTimeoutSeconds = 300 }
+    if ([string]::IsNullOrWhiteSpace([string]$PySshPythonPath) -or -not (Test-Path -LiteralPath $PySshPythonPath)) {
+        throw "Python executable for pyssh was not found."
+    }
 
     $result = Invoke-CoVmProcessWithRetry `
-        -FilePath "python" `
+        -FilePath $PySshPythonPath `
         -Arguments @(
             $PySshClientPath,
             "exec",
@@ -3328,6 +3346,7 @@ function Convert-CoVmProcessArgument {
 
 function Start-CoVmPersistentSshSession {
     param(
+        [string]$PySshPythonPath,
         [string]$PySshClientPath,
         [string]$HostName,
         [string]$UserName,
@@ -3341,6 +3360,9 @@ function Start-CoVmPersistentSshSession {
 
     if ([string]::IsNullOrWhiteSpace($PySshClientPath) -or -not (Test-Path -LiteralPath $PySshClientPath)) {
         throw "Persistent SSH session could not start because pyssh client path is invalid."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$PySshPythonPath) -or -not (Test-Path -LiteralPath $PySshPythonPath)) {
+        throw "Persistent SSH session could not start because pyssh python executable is invalid."
     }
     if ($ConnectTimeoutSeconds -lt 5) { $ConnectTimeoutSeconds = 5 }
     if ($DefaultTaskTimeoutSeconds -lt 5) { $DefaultTaskTimeoutSeconds = 5 }
@@ -3359,7 +3381,7 @@ function Start-CoVmPersistentSshSession {
     $argText = ($argList | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "python"
+    $psi.FileName = [string]$PySshPythonPath
     $psi.Arguments = $argText
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true

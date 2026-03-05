@@ -1,0 +1,2 @@
+# pyssh runtime dependencies
+paramiko==4.0.0
