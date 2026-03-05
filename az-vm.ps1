@@ -5510,7 +5510,8 @@ function Invoke-CoVmCommandDispatcher {
 
     Assert-CoVmCommandOptions -CommandName $CommandName -Options $Options
 
-    $script:AutoMode = Get-CoVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $false
+    $defaultAutoMode = [string]::Equals([string]$CommandName, 'exec', [System.StringComparison]::OrdinalIgnoreCase)
+    $script:AutoMode = Get-CoVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $defaultAutoMode
     $script:PerfMode = Get-CoVmCliOptionBool -Options $Options -Name 'perf' -DefaultValue $false
     $windowsFlag = Get-CoVmCliOptionBool -Options $Options -Name 'windows' -DefaultValue $false
     $linuxFlag = Get-CoVmCliOptionBool -Options $Options -Name 'linux' -DefaultValue $false
