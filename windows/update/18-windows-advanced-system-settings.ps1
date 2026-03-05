@@ -115,7 +115,7 @@ function Apply-ExplorerDesktopProfile {
     Set-RegistryValue -Path $allFoldersShell -Name "Sort" -Value "prop:System.ItemNameDisplay" -Kind String
     Set-RegistryValue -Path $allFoldersShell -Name "SortDirection" -Value 0 -Kind DWord
     Set-RegistryValue -Path $allFoldersShell -Name "GroupView" -Value 0 -Kind DWord         # Group none
-    Set-RegistryValue -Path $allFoldersShell -Name "IconSize" -Value 48 -Kind DWord         # medium fallback
+    Set-RegistryValue -Path $allFoldersShell -Name "IconSize" -Value 48 -Kind DWord         # medium size baseline
 
     $desktopBag = "Registry::$Hive\Software\Microsoft\Windows\Shell\Bags\1\Desktop"
     Set-RegistryValue -Path $desktopBag -Name "IconSize" -Value 48 -Kind DWord

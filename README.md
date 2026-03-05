@@ -4,7 +4,7 @@ Unified Azure VM provisioning toolkit for Windows and Linux with one launcher:
 - `az-vm.cmd`
 - `az-vm.ps1`
 
-It creates/updates Azure resource group + network + VM, runs guest init tasks with Azure Run Command, then runs guest update tasks task-by-task over persistent pyssh.
+It creates/updates Azure resource group + network + VM, runs guest init tasks, then runs guest update tasks task-by-task over persistent pyssh.
 
 ## Quick Start
 
@@ -62,7 +62,8 @@ Selection precedence:
 6. Load and prepare update task files
 7. VM create/update
 8. Guest execution
-   - init tasks: `az vm run-command` task-by-task
+   - Windows init tasks: one-time on first VM creation with Azure Custom Script Extension
+   - Linux init tasks: `az vm run-command` task-batch execution
    - update tasks: pyssh persistent session task-by-task
 9. Print SSH/RDP details
 
@@ -74,12 +75,15 @@ linux/
   update/*.sh
 windows/
   init/*.ps1
+  init/disabled/*.ps1
   update/*.ps1
+  update/disabled/*.ps1
 ```
 
 Filename pattern is enforced:
 - `NN-verb-topic.ext`
 - 2-digit order + 2-5 English words (kebab-case)
+- files under `disabled/` are discovered but ignored for execution
 
 ## Configuration
 Use root `.env`.
@@ -92,7 +96,12 @@ Generic keys (shared):
 - `SSH_PORT`, `TCP_PORTS`
 - `VM_INIT_TASK_DIR`, `VM_UPDATE_TASK_DIR`
 - `TASK_OUTCOME_MODE=continue|strict`
-- `SSH_MAX_RETRIES`, `PUTTY_PLINK_PATH`, `PUTTY_PSCP_PATH`
+- `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
+
+Windows execution notes:
+- Windows Step 8 update flow is forced to strict mode (fail-fast).
+- Windows update task execution uses single-attempt policy (no retry).
+- Windows init runs only when the VM is newly created in the current run.
 
 Optional platform fallback keys (used only when generic key is empty):
 - `WIN_*`, `LIN_*`

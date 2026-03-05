@@ -11,17 +11,19 @@ if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
     if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
         throw "choco upgrade openssh failed with exit code $LASTEXITCODE."
     }
+}
 
-    if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
-        foreach ($installScript in @(
-            "C:\Program Files\OpenSSH-Win64\install-sshd.ps1",
-            "C:\ProgramData\chocolatey\lib\openssh\tools\install-sshd.ps1"
-        )) {
-            if (Test-Path -LiteralPath $installScript) {
-                Write-Host "Running OpenSSH install script: $installScript"
-                & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript
-                break
-            }
+if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
+    $openSshInstallScriptCandidates = @(
+        "C:\Program Files\OpenSSH-Win64\install-sshd.ps1",
+        "C:\Program Files\OpenSSH\install-sshd.ps1"
+    )
+    $installScript = $openSshInstallScriptCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if ($installScript) {
+        Write-Host "Running OpenSSH service installer: $installScript"
+        powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installScript
+        if ($LASTEXITCODE -ne 0) {
+            throw "OpenSSH install-sshd.ps1 failed with exit code $LASTEXITCODE."
         }
     }
 }

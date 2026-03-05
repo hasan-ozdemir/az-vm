@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+# CO_VM_TASK_TIMEOUT_SECONDS=900
 Write-Host "Update task started: git-install-check"
 
 function Refresh-SessionPath {
