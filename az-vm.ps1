@@ -586,7 +586,7 @@ function Invoke-CoVmSshTaskBlocks {
                     Assert-LastExitCode "az vm restart"
                 } | Out-Null
 
-                $running = Wait-CoVmVmRunningState -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 90 -DelaySeconds 10
+                $running = Wait-CoVmVmRunningState -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 3 -DelaySeconds 10
                 if (-not $running) {
                     throw ("VM '{0}' did not return to running state after reboot request from task '{1}'." -f $VmName, $taskName)
                 }
@@ -3086,11 +3086,12 @@ function Wait-CoVmVmRunningState {
     param(
         [string]$ResourceGroup,
         [string]$VmName,
-        [int]$MaxAttempts = 60,
+        [int]$MaxAttempts = 3,
         [int]$DelaySeconds = 10
     )
 
     if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($MaxAttempts -gt 3) { $MaxAttempts = 3 }
     if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
 
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
