@@ -620,7 +620,8 @@ function Invoke-AzVmMain {
         [switch]$LinuxFlag,
         [ValidateSet('create','update','change')]
         [string]$CommandName = 'create',
-        [hashtable]$InitialConfigOverrides = @{}
+        [hashtable]$InitialConfigOverrides = @{},
+        [psobject]$ActionPlan = $null
     )
 
     try {
@@ -643,6 +644,22 @@ function Invoke-AzVmMain {
 - Create mode: keep existing resources by default.
 - Purge mode: delete first, then recreate.
 - Update mode: always run create-or-update commands without delete."
+
+        $effectiveActionPlan = $ActionPlan
+        if ($null -eq $effectiveActionPlan) {
+            $effectiveActionPlan = [pscustomobject]@{
+                Mode = 'full'
+                Target = 'finish'
+                Actions = @(Get-CoVmActionOrder)
+            }
+        }
+
+        $actionMode = [string]$effectiveActionPlan.Mode
+        $actionTarget = [string]$effectiveActionPlan.Target
+        $isPartialActionMode = -not [string]::Equals($actionMode, 'full', [System.StringComparison]::OrdinalIgnoreCase)
+        if ($isPartialActionMode) {
+            Write-Host ("Selected execution mode: {0}-action (target={1})" -f $actionMode, $actionTarget) -ForegroundColor Cyan
+        }
 
         if (-not $script:AutoMode) {
             Read-Host -Prompt 'Press Enter to start...' | Out-Null
@@ -671,6 +688,243 @@ function Invoke-AzVmMain {
 
         Start-Transcript -Path $logPath -Force
         $script:TranscriptStarted = $true
+
+        $runConfigAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'config'
+        $runGroupAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'group'
+        $runNetworkAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'network'
+        $runDeployAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'deploy'
+        $runInitAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'init'
+        $runUpdateAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'update'
+        $runFinishAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'finish'
+
+        if ($isPartialActionMode) {
+            $bootstrapRuntime = Initialize-CoVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+            $step1Context = $bootstrapRuntime.Context
+            $platform = [string]$bootstrapRuntime.Platform
+            $platformDefaults = $bootstrapRuntime.PlatformDefaults
+            $effectiveConfigMap = $bootstrapRuntime.EffectiveConfigMap
+
+            $serverName = [string]$step1Context.ServerName
+            $resourceGroup = [string]$step1Context.ResourceGroup
+            $defaultAzLocation = [string]$step1Context.DefaultAzLocation
+            $VNET = [string]$step1Context.VNET
+            $SUBNET = [string]$step1Context.SUBNET
+            $NSG = [string]$step1Context.NSG
+            $nsgRule = [string]$step1Context.NsgRule
+            $IP = [string]$step1Context.IP
+            $NIC = [string]$step1Context.NIC
+            $vmName = [string]$step1Context.VmName
+            $vmImage = [string]$step1Context.VmImage
+            $vmStorageSku = [string]$step1Context.VmStorageSku
+            $defaultVmSize = [string]$step1Context.DefaultVmSize
+            $azLocation = [string]$step1Context.AzLocation
+            $vmSize = [string]$step1Context.VmSize
+            $vmDiskName = [string]$step1Context.VmDiskName
+            $vmDiskSize = [string]$step1Context.VmDiskSize
+            $vmUser = [string]$step1Context.VmUser
+            $vmPass = [string]$step1Context.VmPass
+            $vmAssistantUser = [string]$step1Context.VmAssistantUser
+            $vmAssistantPass = [string]$step1Context.VmAssistantPass
+            $sshPort = [string]$step1Context.SshPort
+            $tcpPorts = @($step1Context.TcpPorts)
+            $vmInitTaskDir = [string]$step1Context.VmInitTaskDir
+            $vmUpdateTaskDir = [string]$step1Context.VmUpdateTaskDir
+
+            $taskOutcomeMode = [string]$bootstrapRuntime.TaskOutcomeMode
+            $configuredPySshClientPath = [string]$bootstrapRuntime.ConfiguredPySshClientPath
+            $sshTaskTimeoutSeconds = [int]$bootstrapRuntime.SshTaskTimeoutSeconds
+            $sshConnectTimeoutSeconds = [int]$bootstrapRuntime.SshConnectTimeoutSeconds
+
+            $sshMaxRetries = 1
+            if ($platform -ne 'windows') {
+                $sshMaxRetriesText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')
+                $sshMaxRetries = Resolve-CoVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
+            }
+
+            $initTaskBlocks = @()
+            $updateTaskBlocks = @()
+            $step7VmCreateResult = $null
+
+            if ([string]::Equals($actionMode, 'single', [System.StringComparison]::OrdinalIgnoreCase)) {
+                Assert-CoVmSingleActionDependencies -ActionName $actionTarget -Context $step1Context
+            }
+
+            if ($runConfigAction) {
+                Invoke-Step 'Step 1/9 - initial parameters will be configured...' {
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 1/9 - config bootstrap' -Context $step1Context -ExtraValues @{
+                        Platform = $platform
+                        ServerName = $serverName
+                        ResourceGroup = $resourceGroup
+                        AzLocation = $azLocation
+                        VmSize = $vmSize
+                    }
+                }
+                Invoke-Step 'Step 2/9 - region, image, and VM size availability will be checked...' {
+                    Invoke-CoVmPrecheckStep -Context $step1Context
+                }
+            }
+
+            if ($runGroupAction) {
+                Invoke-Step 'Step 3/9 - resource group will be checked...' {
+                    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
+                }
+            }
+
+            if ($runNetworkAction) {
+                Invoke-Step 'Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
+                    Invoke-CoVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
+                }
+            }
+
+            if ($runInitAction) {
+                Invoke-Step 'Step 5/9 - VM init task files will be prepared...' {
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
+                    $initTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
+                    $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
+                    $initDisabledTasks = @($initTaskCatalog.DisabledTasks)
+                    if (@($initTaskTemplates).Count -gt 0) {
+                        $initTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
+                    }
+                    else {
+                        $initTaskBlocks = @()
+                    }
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
+                        InitTaskCount = @($initTaskBlocks).Count
+                        InitDisabledTaskCount = @($initDisabledTasks).Count
+                    }
+                }
+            }
+
+            if ($runUpdateAction) {
+                Invoke-Step 'Step 6/9 - VM update task files will be prepared...' {
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
+                    $updateTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
+                    $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
+                    $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
+                    if (@($updateTaskTemplates).Count -gt 0) {
+                        $updateTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
+                    }
+                    else {
+                        $updateTaskBlocks = @()
+                    }
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
+                        UpdateTaskCount = @($updateTaskBlocks).Count
+                        UpdateDisabledTaskCount = @($updateDisabledTasks).Count
+                        TaskOutcomeMode = $taskOutcomeMode
+                    }
+                }
+            }
+
+            if ($runDeployAction) {
+                Invoke-Step 'Step 7/9 - virtual machine will be created...' {
+                    if ($platform -eq 'windows') {
+                        $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                            az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
+                        }
+                    }
+                    else {
+                        $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                            az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
+                        }
+                    }
+                }
+            }
+
+            if ($runInitAction -or $runUpdateAction) {
+                Invoke-Step 'Step 8/9 - VM init and update tasks will be executed...' {
+                    $vmCreatedThisRun = $false
+                    if ($step7VmCreateResult -and $step7VmCreateResult.PSObject.Properties.Match('VmCreatedThisRun').Count -gt 0) {
+                        $vmCreatedThisRun = [bool]$step7VmCreateResult.VmCreatedThisRun
+                    }
+                    $shouldRunInitTasks = $runInitAction
+
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
+                        Platform = $platform
+                        InitExecutor = 'az-vm-run-command'
+                        UpdateExecutor = 'pyssh-persistent'
+                        RunCommandId = [string]$platformDefaults.RunCommandId
+                        InitTaskCount = @($initTaskBlocks).Count
+                        UpdateTaskCount = @($updateTaskBlocks).Count
+                        TaskOutcomeMode = $taskOutcomeMode
+                        SshMaxRetries = $sshMaxRetries
+                        SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+                        SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+                        PySshClientPath = $configuredPySshClientPath
+                        VmCreatedThisRun = $vmCreatedThisRun
+                        ShouldRunInitTasks = $shouldRunInitTasks
+                    }
+
+                    if ($runInitAction) {
+                        if (@($initTaskBlocks).Count -gt 0) {
+                            $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
+                            Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell | Out-Null
+                        }
+                        else {
+                            Write-Host 'Init task catalog is empty; Step 8 init stage is skipped.' -ForegroundColor Yellow
+                        }
+
+                        Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
+                        Start-Sleep -Seconds 20
+                    }
+
+                    if ($runUpdateAction) {
+                        $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
+                        $sshHost = [string]$vmRuntimeDetails.VmFqdn
+                        if ([string]::IsNullOrWhiteSpace($sshHost)) {
+                            $sshHost = [string]$vmRuntimeDetails.PublicIP
+                        }
+                        if ([string]::IsNullOrWhiteSpace($sshHost)) {
+                            throw 'Step 8 could not resolve VM SSH host (FQDN/Public IP).'
+                        }
+
+                        $step8SshUser = [string]$vmUser
+                        $step8SshPassword = [string]$vmPass
+
+                        if (@($updateTaskBlocks).Count -eq 0) {
+                            Write-Host 'Update task catalog is empty; Step 8 update stage is skipped.' -ForegroundColor Yellow
+                        }
+                        else {
+                            Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                        }
+                    }
+                }
+            }
+
+            if ($runFinishAction) {
+                Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
+                    Show-CoVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
+
+                    if ([bool]$platformDefaults.IncludeRdp) {
+                        $connectionModel = Get-CoVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
+                    }
+                    else {
+                        $connectionModel = Get-CoVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort
+                    }
+
+                    Write-Host 'VM Public IP Address:'
+                    Write-Host ([string]$connectionModel.PublicIP)
+                    Write-Host 'SSH Connection Commands:'
+                    foreach ($sshConnection in @($connectionModel.SshConnections)) {
+                        Write-Host ("- {0}: {1}" -f ([string]$sshConnection.User), ([string]$sshConnection.Command))
+                    }
+
+                    if ([bool]$platformDefaults.IncludeRdp) {
+                        Write-Host 'RDP Connection Commands:'
+                        foreach ($rdpConnection in @($connectionModel.RdpConnections)) {
+                            Write-Host ("- {0}: {1}" -f ([string]$rdpConnection.User), ([string]$rdpConnection.Command))
+                            Write-Host ("  username: {0}" -f ([string]$rdpConnection.Username))
+                        }
+                    }
+                    else {
+                        Write-Host 'RDP note: Linux flow does not configure an RDP service by default.' -ForegroundColor Yellow
+                    }
+                }
+            }
+
+            Write-Host ("Stopped after {0}-action target '{1}'." -f $actionMode, $actionTarget) -ForegroundColor Green
+            Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))
+            return
+        }
 
         Invoke-Step 'Step 1/9 - initial parameters will be configured...' {
             $step1Context = Invoke-CoVmStep1Common `
@@ -1127,6 +1381,10 @@ function Show-CoVmCommandHelp {
     Write-Host ""
     Write-Host "Command options:"
     Write-Host "  create --purge[=true|false]"
+    Write-Host "  create --multi-action=<config|group|network|deploy|init|update|finish>"
+    Write-Host "  create --single-action=<config|group|network|deploy|init|update|finish>"
+    Write-Host "  update --multi-action=<config|group|network|deploy|init|update|finish>"
+    Write-Host "  update --single-action=<config|group|network|deploy|init|update|finish>"
     Write-Host "  change --vm-region=<name> --vm-size=<sku>"
     Write-Host "  exec --init-task=<NN> | --update-task=<NN>"
 }
@@ -1325,6 +1583,118 @@ function Get-CoVmCliOptionText {
     }
 
     return [string]$raw
+}
+
+function Get-CoVmActionOrder {
+    return @('config', 'group', 'network', 'deploy', 'init', 'update', 'finish')
+}
+
+function Resolve-CoVmActionValue {
+    param(
+        [string]$OptionName,
+        [string]$RawValue
+    )
+
+    $text = if ($null -eq $RawValue) { '' } else { [string]$RawValue }
+    $normalized = $text.Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace($normalized)) {
+        Throw-FriendlyError `
+            -Detail ("Option '--{0}' requires a value." -f $OptionName) `
+            -Code 2 `
+            -Summary "Action option value is missing." `
+            -Hint ("Use '--{0}=config|group|network|deploy|init|update|finish'." -f $OptionName)
+    }
+
+    $allowed = Get-CoVmActionOrder
+    if ($allowed -notcontains $normalized) {
+        Throw-FriendlyError `
+            -Detail ("Option '--{0}' received invalid value '{1}'." -f $OptionName, $RawValue) `
+            -Code 2 `
+            -Summary "Invalid action option value." `
+            -Hint ("Valid values: {0}" -f ($allowed -join ', '))
+    }
+
+    return $normalized
+}
+
+function Resolve-CoVmActionPlan {
+    param(
+        [string]$CommandName,
+        [hashtable]$Options
+    )
+
+    $order = Get-CoVmActionOrder
+    $supportsActionOptions = ($CommandName -in @('create', 'update'))
+    $hasMulti = Test-CoVmCliOptionPresent -Options $Options -Name 'multi-action'
+    $hasSingle = Test-CoVmCliOptionPresent -Options $Options -Name 'single-action'
+
+    if (-not $supportsActionOptions -and ($hasMulti -or $hasSingle)) {
+        Throw-FriendlyError `
+            -Detail ("Action options are not supported for command '{0}'." -f $CommandName) `
+            -Code 2 `
+            -Summary "Unsupported command option." `
+            -Hint "Use --multi-action/--single-action only with create or update."
+    }
+
+    if ($hasMulti -and $hasSingle) {
+        Throw-FriendlyError `
+            -Detail "Both --multi-action and --single-action were provided." `
+            -Code 2 `
+            -Summary "Conflicting action options were provided." `
+            -Hint "Use only one of --multi-action or --single-action."
+    }
+
+    if (-not $hasMulti -and -not $hasSingle) {
+        return [pscustomobject]@{
+            Mode = 'full'
+            Target = 'finish'
+            Actions = @($order)
+        }
+    }
+
+    if ($hasMulti) {
+        $target = Resolve-CoVmActionValue -OptionName 'multi-action' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'multi-action'))
+        $targetIndex = [array]::IndexOf($order, $target)
+        if ($targetIndex -lt 0) {
+            throw ("Action target '{0}' could not be mapped." -f $target)
+        }
+
+        $actions = @()
+        for ($i = 0; $i -le $targetIndex; $i++) {
+            $actions += [string]$order[$i]
+        }
+
+        return [pscustomobject]@{
+            Mode = 'multi'
+            Target = $target
+            Actions = @($actions)
+        }
+    }
+
+    $singleTarget = Resolve-CoVmActionValue -OptionName 'single-action' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'single-action'))
+    return [pscustomobject]@{
+        Mode = 'single'
+        Target = $singleTarget
+        Actions = @($singleTarget)
+    }
+}
+
+function Test-CoVmActionIncluded {
+    param(
+        [psobject]$ActionPlan,
+        [string]$ActionName
+    )
+
+    if ($null -eq $ActionPlan) {
+        return $false
+    }
+
+    $name = if ($null -eq $ActionName) { '' } else { [string]$ActionName.Trim().ToLowerInvariant() }
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        return $false
+    }
+
+    return (@($ActionPlan.Actions) -contains $name)
 }
 
 function ConvertFrom-JsonCompat {
@@ -2175,6 +2545,70 @@ function Test-CoVmAzResourceExists {
 
     $null = az @AzArgs --only-show-errors -o none 2>$null
     return ($LASTEXITCODE -eq 0)
+}
+
+function Assert-CoVmSingleActionDependencies {
+    param(
+        [ValidateSet('config','group','network','deploy','init','update','finish')]
+        [string]$ActionName,
+        [hashtable]$Context
+    )
+
+    if ($ActionName -in @('config', 'group')) {
+        return
+    }
+
+    $resourceGroup = [string]$Context.ResourceGroup
+    $vmName = [string]$Context.VmName
+
+    if ($ActionName -eq 'network') {
+        $groupExists = az group exists -n $resourceGroup
+        Assert-LastExitCode "az group exists"
+        $groupExistsBool = [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
+        if (-not $groupExistsBool) {
+            Throw-FriendlyError `
+                -Detail ("single-action '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
+                -Code 63 `
+                -Summary "Action dependency is missing." `
+                -Hint "Run create/update with --multi-action=group first, or use --multi-action=network."
+        }
+        return
+    }
+
+    if ($ActionName -eq 'deploy') {
+        $groupExists = az group exists -n $resourceGroup
+        Assert-LastExitCode "az group exists"
+        $groupExistsBool = [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
+        if (-not $groupExistsBool) {
+            Throw-FriendlyError `
+                -Detail ("single-action '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
+                -Code 63 `
+                -Summary "Action dependency is missing." `
+                -Hint "Run create/update with --multi-action=group first."
+        }
+
+        $nicExists = Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", [string]$Context.NIC)
+        if (-not $nicExists) {
+            Throw-FriendlyError `
+                -Detail ("single-action '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
+                -Code 63 `
+                -Summary "Action dependency is missing." `
+                -Hint "Run create/update with --multi-action=network first."
+        }
+        return
+    }
+
+    if ($ActionName -in @('init', 'update', 'finish')) {
+        $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
+        if (-not $vmExists) {
+            Throw-FriendlyError `
+                -Detail ("single-action '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
+                -Code 63 `
+                -Summary "Action dependency is missing." `
+                -Hint "Run create/update with --multi-action=deploy first."
+        }
+        return
+    }
 }
 
 function Invoke-CoVmNetworkStep {
@@ -4578,8 +5012,8 @@ function Assert-CoVmCommandOptions {
 
     $allowed = @('auto','perf','windows','linux')
     switch ($CommandName) {
-        'create' { $allowed += @('purge') }
-        'update' { $allowed += @() }
+        'create' { $allowed += @('purge', 'multi-action', 'single-action') }
+        'update' { $allowed += @('multi-action', 'single-action') }
         'change' { $allowed += @('vm-region','vm-size') }
         'exec'   { $allowed += @('init-task','update-task') }
         'help'   { $allowed += @() }
@@ -5097,17 +5531,19 @@ function Invoke-CoVmCommandDispatcher {
         }
         'create' {
             $purge = Get-CoVmCliOptionBool -Options $Options -Name 'purge' -DefaultValue $false
+            $actionPlan = Resolve-CoVmActionPlan -CommandName 'create' -Options $Options
             $script:UpdateMode = $false
             $script:RenewMode = [bool]$purge
             $script:ExecutionMode = if ($purge) { 'destructive rebuild' } else { 'default' }
-            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create'
+            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create' -ActionPlan $actionPlan
             return
         }
         'update' {
+            $actionPlan = Resolve-CoVmActionPlan -CommandName 'update' -Options $Options
             $script:UpdateMode = $true
             $script:RenewMode = $false
             $script:ExecutionMode = 'update'
-            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'update'
+            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'update' -ActionPlan $actionPlan
             return
         }
         'change' {
