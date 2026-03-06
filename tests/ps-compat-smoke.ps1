@@ -195,6 +195,24 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
+Invoke-Test -Name "Auto option scope contract" -Action {
+    $invalidAutoCommands = @('config','move','resize','set','exec','show','group','help')
+    foreach ($commandName in $invalidAutoCommands) {
+        $threw = $false
+        try {
+            Assert-AzVmCommandOptions -CommandName $commandName -Options @{ auto = $true }
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("--auto must be rejected for command '{0}'." -f $commandName)
+    }
+
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ auto = $true }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ auto = $true }
+    Assert-AzVmCommandOptions -CommandName 'delete' -Options @{ auto = $true; target = 'vm' }
+}
+
 Invoke-Test -Name "Help --command syntax was removed" -Action {
     $threw = $false
     try {

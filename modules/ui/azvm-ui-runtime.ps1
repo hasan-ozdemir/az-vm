@@ -1257,12 +1257,12 @@ function Assert-AzVmCommandOptions {
     switch ($CommandName) {
         'create' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step') }
         'update' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step','group') }
-        'config' { $allowed = @('auto','perf','windows','linux','help','group') }
+        'config' { $allowed = @('perf','windows','linux','help','group') }
         'group'  { $allowed = @('help','list','select') }
-        'move'   { $allowed = @('auto','perf','help','group','vm','vm-region') }
-        'resize' { $allowed = @('auto','perf','help','group','vm','vm-size') }
-        'set'    { $allowed = @('auto','perf','help','group','vm','hibernation','nested-virtualization') }
-        'exec'   { $allowed = @('auto','perf','windows','linux','help','group','init-task','update-task') }
+        'move'   { $allowed = @('perf','help','group','vm','vm-region') }
+        'resize' { $allowed = @('perf','help','group','vm','vm-size') }
+        'set'    { $allowed = @('perf','help','group','vm','hibernation','nested-virtualization') }
+        'exec'   { $allowed = @('perf','windows','linux','help','group','init-task','update-task') }
         'show'   { $allowed = @('perf','help','group') }
         'delete' { $allowed = @('auto','perf','help','target','group','yes') }
         'help'   { $allowed = @('help') }
@@ -3663,7 +3663,7 @@ function Invoke-AzVmCommandDispatcher {
     Assert-AzVmCommandOptions -CommandName $CommandName -Options $Options
 
     $autoRequested = Get-AzVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $false
-    $script:AutoMode = ($CommandName -in @('create','update','config','move','resize','set','exec','delete')) -and $autoRequested
+    $script:AutoMode = ($CommandName -in @('create','update','delete')) -and $autoRequested
     $script:PerfMode = Get-AzVmCliOptionBool -Options $Options -Name 'perf' -DefaultValue $false
     $windowsFlag = Get-AzVmCliOptionBool -Options $Options -Name 'windows' -DefaultValue $false
     $linuxFlag = Get-AzVmCliOptionBool -Options $Options -Name 'linux' -DefaultValue $false
@@ -3703,7 +3703,7 @@ function Invoke-AzVmCommandDispatcher {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmConfigCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'group' {
