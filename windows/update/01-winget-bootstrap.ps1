@@ -158,10 +158,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "winget --version failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "Running: winget source reset"
-& $wingetExe source reset
+Write-Host "Running: winget source reset --force"
+& $wingetExe source reset --force
 if ($LASTEXITCODE -ne 0) {
-    throw "winget source reset failed with exit code $LASTEXITCODE."
+    throw "winget source reset --force failed with exit code $LASTEXITCODE."
 }
 
 Write-Host "Running: winget source update"
