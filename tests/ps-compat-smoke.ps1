@@ -146,7 +146,9 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "create" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "update" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "config" -Options @{ help = $true }
-    Assert-AzVmCommandOptions -CommandName "change" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "move" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "resize" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "set" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "exec" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }

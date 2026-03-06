@@ -26,12 +26,11 @@ This repository manages unified Azure VM provisioning for Linux and Windows from
 ## Runtime Modes
 - Default mode is `interactive`.
 - Auto mode is `--auto` or `-a`.
-- Update mode is `--update` or `-u`.
-- destructive rebuild mode is `explicit destructive rebuild flow` or `-r`.
 
 ### Mode Semantics
-- `Step 1..9` are top-level orchestration steps.
-- `Step 8` executes guest-side tasks.
+- `Step 1..7` are top-level orchestration steps.
+- `Step 5` executes VM init tasks.
+- `Step 6` executes VM update tasks.
 - Init tasks (Windows + Linux) run once via Azure Run Command in task-batch mode when VM is newly created.
 - Update tasks run via persistent pyssh task-by-task.
 

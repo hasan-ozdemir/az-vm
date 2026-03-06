@@ -45,12 +45,18 @@ Set at least:
   - interactive configuration flow up to resource-group preview
   - runs Step 1 + Step 2 + Step 3 preview and exits without resource mutation
   - writes selected values to `.env` for subsequent `create` runs
-- `change`
-  - no-parameter call starts interactive RG + VM + region + VM size picker flow
-  - `--vm-size=<sku>`: in-place VM resize
-  - `--vm-region=<region>`: snapshot-based region migration with target-side rollback cleanup
-  - OS disk migration is supported in this flow (attached data disks must be handled separately)
-  - supports combined use: region migration first, then size change
+- `move`
+  - move VM to target region (snapshot-based region migration with rollback cleanup)
+  - parameterized usage: `--group=<resource-group> --vm=<vm-name> --vm-region=<region>`
+  - interactive target region picker when `--vm-region=` is empty
+- `resize`
+  - in-place VM size update
+  - parameterized usage: `--group=<resource-group> --vm=<vm-name> --vm-size=<sku>`
+  - interactive VM size picker when `--vm-size=` is empty
+- `set`
+  - apply VM feature flags
+  - supports: `--hibernation=on|off`, `--nested-virtualization=on|off`
+  - parameterized usage: `--group=<resource-group> --vm=<vm-name>`
 - `exec`
   - run one init or update task directly (`--init-task` / `--update-task`)
   - no-parameter call opens interactive persistent pyssh REPL session
@@ -69,11 +75,12 @@ Set at least:
   - supports topic filter:
     - `az-vm help`
     - `az-vm help create`
-    - `az-vm help change`
+    - `az-vm help move`
 
 ## Run Mode
 - `interactive` (default)
 - `--auto` / `-a`
+- `--auto` applies to `create`, `update`, and `delete` commands.
 
 ## OS Selection
 - CLI: `--windows` or `--linux`
@@ -86,17 +93,13 @@ Selection precedence:
 3. interactive prompt
 
 ## Step Flow
-1. Resolve config + VM OS type
-2. Check region/image/VM size/disk compatibility
-3. Resource group handling
-4. Network provisioning (VNet/Subnet/NSG/PublicIP/NIC)
-5. Load and prepare init task files
-6. Load and prepare update task files
-7. VM create/update
-8. Guest execution
-   - Init tasks (Windows + Linux): one-time on first VM creation with `az vm run-command` task-batch execution
-   - update tasks: pyssh persistent session task-by-task
-9. Print SSH/RDP details
+1. `config`: resolve config + VM OS type + compatibility checks
+2. `group`: resource group handling
+3. `network`: VNet/Subnet/NSG/PublicIP/NIC
+4. `vm-deploy`: VM create/update
+5. `vm-init`: guest init tasks via `az vm run-command` (task-batch)
+6. `vm-update`: guest update tasks via persistent pyssh session (task-by-task)
+7. `vm-summary`: print SSH/RDP details
 
 ## Task Catalog Layout
 
@@ -131,7 +134,7 @@ Generic keys (shared):
 - `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
 
 Windows execution notes:
-- Windows Step 8 update flow is forced to strict mode (fail-fast).
+- Windows `vm-update` flow is forced to strict mode (fail-fast).
 - Windows update task execution uses single-attempt policy (no retry).
 - Windows init runs only when the VM is newly created in the current run.
 
@@ -153,7 +156,7 @@ One transcript file per run:
 - `az-vm-log-ddMMMyy-HHmmss.txt`
 
 ## Connection Output
-At Step 9:
+At `vm-summary`:
 - SSH commands for `manager` and `assistant`
 - Windows flow also prints RDP commands for both users
 
