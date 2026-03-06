@@ -49,8 +49,8 @@ def write_text(stream, text: str) -> None:
             pass
 
     try:
-        fallback = value.encode("ascii", errors="replace").decode("ascii")
-        stream.write(fallback)
+        ascii_text = value.encode("ascii", errors="replace").decode("ascii")
+        stream.write(ascii_text)
         stream.flush()
     except Exception:
         pass

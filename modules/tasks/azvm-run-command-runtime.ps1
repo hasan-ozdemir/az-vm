@@ -168,7 +168,7 @@ function Parse-AzVmRunCommandBatchMarkers {
             continue
         }
 
-        if ($trimmed -match '^(?:RUN_COMMAND_SUMMARY|STEP8_SUMMARY):success=(\d+);warning=(\d+);error=(\d+);reboot=(\d+)$') {
+        if ($trimmed -match '^RUN_COMMAND_SUMMARY:success=(\d+);warning=(\d+);error=(\d+);reboot=(\d+)$') {
             $result.SuccessCount = [int]$Matches[1]
             $result.WarningCount = [int]$Matches[2]
             $result.ErrorCount = [int]$Matches[3]

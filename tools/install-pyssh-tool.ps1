@@ -147,14 +147,8 @@ $envMap = Get-DotEnvMap -Path (Join-Path $RepoRoot ".env")
 if ([string]::IsNullOrWhiteSpace([string]$TestUser)) {
     $TestUser = Get-MapValue -Map $envMap -Key "VM_ADMIN_USER" -DefaultValue ""
 }
-if ([string]::IsNullOrWhiteSpace([string]$TestUser)) {
-    $TestUser = Get-MapValue -Map $envMap -Key "VM_USER" -DefaultValue ""
-}
 if ([string]::IsNullOrWhiteSpace([string]$TestPassword)) {
     $TestPassword = Get-MapValue -Map $envMap -Key "VM_ADMIN_PASS" -DefaultValue ""
-}
-if ([string]::IsNullOrWhiteSpace([string]$TestPassword)) {
-    $TestPassword = Get-MapValue -Map $envMap -Key "VM_PASS" -DefaultValue ""
 }
 if ($TestPort -le 0) {
     $sshPortText = Get-MapValue -Map $envMap -Key "ssh_port" -DefaultValue ""
@@ -186,10 +180,10 @@ if ([string]::IsNullOrWhiteSpace([string]$TestHost)) {
         $serverName = Get-MapValue -Map $envMap -Key "SERVER_NAME" -DefaultValue ""
         if ([string]::IsNullOrWhiteSpace([string]$serverName)) {
             if ($vmOsType -eq "linux") {
-                $serverName = Get-MapValue -Map $envMap -Key "LIN_SERVER_NAME" -DefaultValue "otherexamplevm"
+                $serverName = "otherexamplevm"
             }
             else {
-                $serverName = Get-MapValue -Map $envMap -Key "WIN_SERVER_NAME" -DefaultValue "examplevm"
+                $serverName = "examplevm"
             }
         }
 

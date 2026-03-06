@@ -78,18 +78,18 @@ Invoke-Test -Name "Azure location picker resolver contract" -Action {
     )
 
     $entryWithLowercaseName = [pscustomobject]@{ name = "centralindia"; displayName = "Central India" }
-    $resolvedFromLowercase = Resolve-AzVmLocationNameFromEntry -Entry $entryWithLowercaseName -Catalog $catalog -FallbackLocation ""
+    $resolvedFromLowercase = Resolve-AzVmLocationNameFromEntry -Entry $entryWithLowercaseName -Catalog $catalog -DefaultLocation ""
     Assert-True -Condition ([string]::Equals([string]$resolvedFromLowercase, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Lowercase name location resolution failed."
 
     $entryWithOnlyDisplay = [pscustomobject]@{ Name = ""; DisplayName = "Austria East" }
-    $resolvedFromDisplay = Resolve-AzVmLocationNameFromEntry -Entry $entryWithOnlyDisplay -Catalog $catalog -FallbackLocation ""
+    $resolvedFromDisplay = Resolve-AzVmLocationNameFromEntry -Entry $entryWithOnlyDisplay -Catalog $catalog -DefaultLocation ""
     Assert-True -Condition ([string]::Equals([string]$resolvedFromDisplay, "austriaeast", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Display-name location resolution failed."
 
-    $resolvedFromFallback = Resolve-AzVmLocationNameFromEntry -Entry $null -Catalog $catalog -FallbackLocation "centralindia"
-    Assert-True -Condition ([string]::Equals([string]$resolvedFromFallback, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Fallback location resolution failed."
+    $resolvedFromDefault = Resolve-AzVmLocationNameFromEntry -Entry $null -Catalog $catalog -DefaultLocation "centralindia"
+    Assert-True -Condition ([string]::Equals([string]$resolvedFromDefault, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Default location resolution failed."
 }
 
-Invoke-Test -Name "Platform fallback config mapping" -Action {
+Invoke-Test -Name "Platform config precedence mapping" -Action {
     $platformOnlyConfig = @{
         VM_IMAGE = ""
         VM_SIZE = ""
@@ -111,16 +111,16 @@ Invoke-Test -Name "Platform fallback config mapping" -Action {
     $winMap = Resolve-AzVmPlatformConfigMap -ConfigMap $platformOnlyConfig -Platform windows
     $linMap = Resolve-AzVmPlatformConfigMap -ConfigMap $platformOnlyConfig -Platform linux
 
-    Assert-True -Condition ([string]$winMap.VM_IMAGE -eq "win:image:latest") -Message "Windows VM_IMAGE fallback mapping failed."
-    Assert-True -Condition ([string]$winMap.VM_SIZE -eq "Standard_B4as_v2") -Message "Windows VM_SIZE fallback mapping failed."
-    Assert-True -Condition ([string]$winMap.VM_DISK_SIZE_GB -eq "128") -Message "Windows VM_DISK_SIZE_GB fallback mapping failed."
-    Assert-True -Condition ([string]$winMap.VM_INIT_TASK_DIR -eq "windows/init") -Message "Windows VM_INIT_TASK_DIR fallback mapping failed."
-    Assert-True -Condition ([string]$winMap.VM_UPDATE_TASK_DIR -eq "windows/update") -Message "Windows VM_UPDATE_TASK_DIR fallback mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_IMAGE -eq "lin:image:latest") -Message "Linux VM_IMAGE fallback mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_SIZE -eq "Standard_B2as_v2") -Message "Linux VM_SIZE fallback mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_DISK_SIZE_GB -eq "40") -Message "Linux VM_DISK_SIZE_GB fallback mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_INIT_TASK_DIR -eq "linux/init") -Message "Linux VM_INIT_TASK_DIR fallback mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_UPDATE_TASK_DIR -eq "linux/update") -Message "Linux VM_UPDATE_TASK_DIR fallback mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_IMAGE -eq "win:image:latest") -Message "Windows VM_IMAGE platform mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_SIZE -eq "Standard_B4as_v2") -Message "Windows VM_SIZE platform mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_DISK_SIZE_GB -eq "128") -Message "Windows VM_DISK_SIZE_GB platform mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_INIT_TASK_DIR -eq "windows/init") -Message "Windows VM_INIT_TASK_DIR platform mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_UPDATE_TASK_DIR -eq "windows/update") -Message "Windows VM_UPDATE_TASK_DIR platform mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_IMAGE -eq "lin:image:latest") -Message "Linux VM_IMAGE platform mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_SIZE -eq "Standard_B2as_v2") -Message "Linux VM_SIZE platform mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_DISK_SIZE_GB -eq "40") -Message "Linux VM_DISK_SIZE_GB platform mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_INIT_TASK_DIR -eq "linux/init") -Message "Linux VM_INIT_TASK_DIR platform mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_UPDATE_TASK_DIR -eq "linux/update") -Message "Linux VM_UPDATE_TASK_DIR platform mapping failed."
 
     $genericFirstConfig = @{
         VM_IMAGE = "generic:image:latest"

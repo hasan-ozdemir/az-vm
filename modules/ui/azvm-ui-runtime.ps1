@@ -34,13 +34,13 @@ function Get-AzLocationCatalog {
 
     $locations = ConvertFrom-JsonArrayCompat -InputObject $locationsJson
     if (-not $locations -or $locations.Count -eq 0) {
-        $fallbackJson = az account list-locations `
+        $alternateLocationsJson = az account list-locations `
             --only-show-errors `
             --query "[].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
             -o json
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fallbackJson)) {
-            $fallbackLocations = ConvertFrom-JsonArrayCompat -InputObject $fallbackJson
-            $locations = @($fallbackLocations | Where-Object { $_.RegionType -eq "Physical" })
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($alternateLocationsJson)) {
+            $alternateLocations = ConvertFrom-JsonArrayCompat -InputObject $alternateLocationsJson
+            $locations = @($alternateLocations | Where-Object { $_.RegionType -eq "Physical" })
         }
     }
     if (-not $locations -or $locations.Count -eq 0) {
@@ -102,7 +102,7 @@ function Resolve-AzVmLocationNameFromEntry {
     param(
         [object]$Entry,
         [object[]]$Catalog,
-        [string]$FallbackLocation = ''
+        [string]$DefaultLocation = ''
     )
 
     $nameCandidates = @()
@@ -114,8 +114,8 @@ function Resolve-AzVmLocationNameFromEntry {
             [string]$Entry.location
         )
     }
-    if (-not [string]::IsNullOrWhiteSpace([string]$FallbackLocation)) {
-        $nameCandidates += @([string]$FallbackLocation)
+    if (-not [string]::IsNullOrWhiteSpace([string]$DefaultLocation)) {
+        $nameCandidates += @([string]$DefaultLocation)
     }
 
     foreach ($candidateRaw in @($nameCandidates)) {
@@ -195,7 +195,7 @@ function Select-AzLocationInteractive {
     while ($true) {
         $inputValue = Read-Host "Enter region number (default=$defaultIndex)"
         if ([string]::IsNullOrWhiteSpace($inputValue)) {
-            $selectedLocation = Resolve-AzVmLocationNameFromEntry -Entry $locations[$defaultIndex - 1] -Catalog $locations -FallbackLocation $DefaultLocation
+            $selectedLocation = Resolve-AzVmLocationNameFromEntry -Entry $locations[$defaultIndex - 1] -Catalog $locations -DefaultLocation $DefaultLocation
             if (-not [string]::IsNullOrWhiteSpace([string]$selectedLocation)) {
                 return $selectedLocation
             }
@@ -206,7 +206,7 @@ function Select-AzLocationInteractive {
         if ($inputValue -match '^\d+$') {
             $selectedNo = [int]$inputValue
             if ($selectedNo -ge 1 -and $selectedNo -le $locations.Count) {
-                $selectedLocation = Resolve-AzVmLocationNameFromEntry -Entry $locations[$selectedNo - 1] -Catalog $locations -FallbackLocation $DefaultLocation
+                $selectedLocation = Resolve-AzVmLocationNameFromEntry -Entry $locations[$selectedNo - 1] -Catalog $locations -DefaultLocation $DefaultLocation
                 if (-not [string]::IsNullOrWhiteSpace([string]$selectedLocation)) {
                     return $selectedLocation
                 }

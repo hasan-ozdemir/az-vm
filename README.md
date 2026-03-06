@@ -96,7 +96,7 @@ Set at least:
 ## OS Selection
 - CLI: `--windows` or `--linux`
 - `.env`: `VM_OS_TYPE=windows|linux`
-- interactive fallback when unresolved (default choice: windows)
+- interactive selection when unresolved (default choice: windows)
 
 Selection precedence:
 1. CLI flag
@@ -149,13 +149,13 @@ Windows execution notes:
 - Windows update task execution uses single-attempt policy (no retry).
 - Windows init runs only when the VM is newly created in the current run.
 
-Optional platform fallback keys (used only when generic key is empty):
+Optional platform-specific keys (used only when generic key is empty):
 - `WIN_*`, `LIN_*`
   - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_INIT_TASK_DIR`, `WIN_VM_UPDATE_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
 
 Task catalog precedence:
 1. `VM_INIT_TASK_DIR` / `VM_UPDATE_TASK_DIR` (generic override)
-2. `WIN_VM_*` or `LIN_VM_*` task dir keys (platform fallback)
+2. `WIN_VM_*` or `LIN_VM_*` task dir keys (platform-specific values)
 3. built-in defaults (`windows/init`, `windows/update`, `linux/init`, `linux/update`)
 
 Naming notes:

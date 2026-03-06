@@ -234,14 +234,8 @@ function Invoke-AzVmStep1Common {
     $vmDiskName = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vmDiskNameRaw -ServerName $serverName) -Tokens $nameTokens
 
     $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
-    $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_USER" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($vmUserRaw)) {
-        $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_USER" -DefaultValue "manager")
-    }
-    $vmPassRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_PASS" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($vmPassRaw)) {
-        $vmPassRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_PASS" -DefaultValue "<runtime-secret>")
-    }
+    $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_USER" -DefaultValue "manager")
+    $vmPassRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_PASS" -DefaultValue "<runtime-secret>")
     $vmUser = Resolve-ServerTemplate -Value $vmUserRaw -ServerName $serverName
     $vmPass = Resolve-ServerTemplate -Value $vmPassRaw -ServerName $serverName
     $vmAssistantUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -ServerName $serverName

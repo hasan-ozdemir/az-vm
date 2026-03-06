@@ -362,8 +362,11 @@ function Invoke-AzVmMain {
             if ([string]::IsNullOrWhiteSpace($taskOutcomeModeRaw)) { $taskOutcomeModeRaw = 'continue' }
             $taskOutcomeMode = $taskOutcomeModeRaw.Trim().ToLowerInvariant()
             if ($taskOutcomeMode -ne 'continue' -and $taskOutcomeMode -ne 'strict') {
-                Write-Warning ("Invalid TASK_OUTCOME_MODE '{0}'. Falling back to 'continue'." -f $taskOutcomeModeRaw)
-                $taskOutcomeMode = 'continue'
+                Throw-FriendlyError `
+                    -Detail ("Invalid TASK_OUTCOME_MODE '{0}'." -f $taskOutcomeModeRaw) `
+                    -Code 14 `
+                    -Summary "Task outcome mode is invalid." `
+                    -Hint "Set TASK_OUTCOME_MODE=continue or TASK_OUTCOME_MODE=strict."
             }
 
             $sshMaxRetriesText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')

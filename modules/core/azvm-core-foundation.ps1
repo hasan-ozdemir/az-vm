@@ -6,8 +6,8 @@ function Get-AzVmRepoRoot {
         return [string]$script:AzVmRepoRoot
     }
 
-    $fallbackRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-    $script:AzVmRepoRoot = [string]$fallbackRoot
+    $repoRootCandidate = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    $script:AzVmRepoRoot = [string]$repoRootCandidate
     return [string]$script:AzVmRepoRoot
 }
 
@@ -737,8 +737,6 @@ function Get-AzVmTaskTokenReplacements {
     return @{
         VM_ADMIN_USER = [string]$Context.VmUser
         VM_ADMIN_PASS = [string]$Context.VmPass
-        VM_USER = [string]$Context.VmUser
-        VM_PASS = [string]$Context.VmPass
         ASSISTANT_USER = [string]$Context.VmAssistantUser
         ASSISTANT_PASS = [string]$Context.VmAssistantPass
         SSH_PORT = [string]$Context.SshPort
