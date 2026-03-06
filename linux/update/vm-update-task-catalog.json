@@ -1,18 +1,7 @@
 {
-  "schemaVersion": 1,
-  "orderModel": {
-    "middleStart": 50,
-    "tailStart": 101
-  },
-  "pinnedFirst": [
-    "01-packages-update-install",
-    "04-node-sshd-capabilities",
-    "06-health-snapshot"
-  ],
-  "pinnedLast": [],
   "tasks": [
-    { "name": "01-packages-update-install", "order": 1, "enabled": true },
-    { "name": "04-node-sshd-capabilities", "order": 2, "enabled": true },
-    { "name": "06-health-snapshot", "order": 3, "enabled": true }
+    { "name": "01-packages-update-install", "priority": 1, "enabled": true },
+    { "name": "04-node-sshd-capabilities", "priority": 10, "enabled": true },
+    { "name": "06-health-snapshot", "priority": 10, "enabled": true }
   ]
 }

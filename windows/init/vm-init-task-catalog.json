@@ -1,24 +1,10 @@
 {
-  "schemaVersion": 1,
-  "orderModel": {
-    "middleStart": 50,
-    "tailStart": 101
-  },
-  "pinnedFirst": [
-    "01-ensure-local-admin-users",
-    "02-choco-bootstrap",
-    "03-openssh-install-service",
-    "04-sshd-config-port",
-    "05-rdp-configure",
-    "06-firewall-open-ports"
-  ],
-  "pinnedLast": [],
   "tasks": [
-    { "name": "01-ensure-local-admin-users", "order": 1, "enabled": true },
-    { "name": "02-choco-bootstrap", "order": 2, "enabled": true },
-    { "name": "03-openssh-install-service", "order": 3, "enabled": true },
-    { "name": "04-sshd-config-port", "order": 4, "enabled": true },
-    { "name": "05-rdp-configure", "order": 5, "enabled": true },
-    { "name": "06-firewall-open-ports", "order": 6, "enabled": true }
+    { "name": "01-ensure-local-admin-users", "priority": 1, "enabled": true },
+    { "name": "02-choco-bootstrap", "priority": 2, "enabled": true },
+    { "name": "03-openssh-install-service", "priority": 3, "enabled": true },
+    { "name": "04-sshd-config-port", "priority": 4, "enabled": true },
+    { "name": "05-rdp-configure", "priority": 5, "enabled": true },
+    { "name": "06-firewall-open-ports", "priority": 6, "enabled": true }
   ]
 }

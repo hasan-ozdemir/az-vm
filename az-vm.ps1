@@ -417,11 +417,11 @@ function Get-AzVmTaskCatalogPath {
     return (Join-Path $DirectoryPath $catalogName)
 }
 
-function Convert-AzVmTaskCatalogInt {
+function Convert-AzVmTaskCatalogPriority {
     param(
         [AllowNull()]
         [object]$Value,
-        [int]$DefaultValue
+        [int]$DefaultValue = 10
     )
 
     if ($null -eq $Value) {
@@ -467,44 +467,7 @@ function Convert-AzVmTaskCatalogBool {
     return [bool]$DefaultValue
 }
 
-function New-AzVmTaskCatalogModel {
-    param(
-        [ValidateSet('init','update')]
-        [string]$Stage,
-        [string[]]$ActiveTaskNames
-    )
-
-    $taskRows = @()
-    $nextOrder = 50
-    foreach ($name in @($ActiveTaskNames | Sort-Object)) {
-        $taskRows += [ordered]@{
-            name = [string]$name
-            order = [int]$nextOrder
-            enabled = $true
-        }
-        $nextOrder++
-    }
-
-    $defaultPinnedLast = @()
-    if ($Stage -eq 'update') {
-        if (@($ActiveTaskNames | Where-Object { [string]::Equals([string]$_, '27-windows-ux-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
-            $defaultPinnedLast += '27-windows-ux-public-desktop-shortcuts'
-        }
-    }
-
-    return [ordered]@{
-        schemaVersion = 1
-        orderModel = [ordered]@{
-            middleStart = 50
-            tailStart = 101
-        }
-        pinnedFirst = @()
-        pinnedLast = @($defaultPinnedLast)
-        tasks = @($taskRows)
-    }
-}
-
-function Sync-AzVmTaskCatalog {
+function Sync-AzVmTaskCatalogPriority {
     param(
         [string]$DirectoryPath,
         [ValidateSet('init','update')]
@@ -513,15 +476,16 @@ function Sync-AzVmTaskCatalog {
     )
 
     $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
-    $activeTaskNames = @(@($ActiveRows | ForEach-Object { [string]$_.Name }) | Sort-Object -Unique)
-    $originalCatalogText = ''
-    $catalog = $null
+    $activeRowsSortedByPrefix = @($ActiveRows | Sort-Object Order, Name)
+    $activeTaskNames = @(@($activeRowsSortedByPrefix | ForEach-Object { [string]$_.Name }) | Sort-Object -Unique)
 
+    $catalogBeforeText = ''
+    $catalog = $null
     if (Test-Path -LiteralPath $catalogPath) {
-        $originalCatalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
-        if (-not [string]::IsNullOrWhiteSpace([string]$originalCatalogText)) {
+        $catalogBeforeText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
+        if (-not [string]::IsNullOrWhiteSpace([string]$catalogBeforeText)) {
             try {
-                $catalog = ConvertFrom-JsonCompat -InputObject $originalCatalogText
+                $catalog = ConvertFrom-JsonCompat -InputObject $catalogBeforeText
             }
             catch {
                 throw ("Task catalog parse failed for '{0}': {1}" -f $catalogPath, $_.Exception.Message)
@@ -529,178 +493,64 @@ function Sync-AzVmTaskCatalog {
         }
     }
 
+    $existingMap = @{}
     $catalogTasks = @()
     if ($null -ne $catalog -and $catalog.PSObject.Properties.Match('tasks').Count -gt 0) {
         $catalogTasks = @($catalog.tasks)
     }
-
-    if ($null -eq $catalog -or $catalogTasks.Count -eq 0) {
-        $catalog = New-AzVmTaskCatalogModel -Stage $Stage -ActiveTaskNames $activeTaskNames
-        $catalogTasks = @($catalog.tasks)
-    }
-
-    $middleStart = 50
-    $tailStart = 101
-    if ($catalog.PSObject.Properties.Match('orderModel').Count -gt 0 -and $null -ne $catalog.orderModel) {
-        if ($catalog.orderModel.PSObject.Properties.Match('middleStart').Count -gt 0) {
-            $middleStart = Convert-AzVmTaskCatalogInt -Value $catalog.orderModel.middleStart -DefaultValue 50
-        }
-        if ($catalog.orderModel.PSObject.Properties.Match('tailStart').Count -gt 0) {
-            $tailStart = Convert-AzVmTaskCatalogInt -Value $catalog.orderModel.tailStart -DefaultValue 101
-        }
-    }
-    if ($middleStart -lt 10) { $middleStart = 10 }
-    if ($tailStart -le $middleStart) { $tailStart = $middleStart + 51 }
-
-    $activeNameSet = @{}
-    foreach ($name in @($activeTaskNames)) {
-        $activeNameSet[[string]$name] = $true
-    }
-
-    $existingTaskMap = @{}
     foreach ($entry in @($catalogTasks)) {
         if ($null -eq $entry) { continue }
         $entryName = ''
         if ($entry.PSObject.Properties.Match('name').Count -gt 0) {
             $entryName = [string]$entry.name
         }
-        if ([string]::IsNullOrWhiteSpace([string]$entryName)) { continue }
-        $existingTaskMap[$entryName] = [pscustomobject]@{
+        if ([string]::IsNullOrWhiteSpace([string]$entryName)) {
+            continue
+        }
+
+        $existingMap[[string]$entryName] = [pscustomobject]@{
             Name = [string]$entryName
-            Order = (Convert-AzVmTaskCatalogInt -Value $entry.order -DefaultValue -1)
+            Priority = (Convert-AzVmTaskCatalogPriority -Value $entry.priority -DefaultValue 10)
             Enabled = (Convert-AzVmTaskCatalogBool -Value $entry.enabled -DefaultValue $true)
         }
     }
 
-    $existingPinnedFirst = @()
-    if ($catalog.PSObject.Properties.Match('pinnedFirst').Count -gt 0) {
-        $existingPinnedFirst = @($catalog.pinnedFirst | ForEach-Object { [string]$_ })
-    }
-    $existingPinnedLast = @()
-    if ($catalog.PSObject.Properties.Match('pinnedLast').Count -gt 0) {
-        $existingPinnedLast = @($catalog.pinnedLast | ForEach-Object { [string]$_ })
-    }
-
-    if ($Stage -eq 'update') {
-        if (@($activeTaskNames | Where-Object { [string]::Equals([string]$_, '27-windows-ux-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
-            if (@($existingPinnedLast | Where-Object { [string]::Equals([string]$_, '27-windows-ux-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) {
-                $existingPinnedLast += '27-windows-ux-public-desktop-shortcuts'
-            }
-        }
-    }
-
-    $pinnedFirst = @()
-    $pinnedFirstSeen = @{}
-    foreach ($name in @($existingPinnedFirst)) {
-        if ([string]::IsNullOrWhiteSpace([string]$name)) { continue }
-        if (-not $activeNameSet.ContainsKey([string]$name)) { continue }
-        if ($pinnedFirstSeen.ContainsKey([string]$name)) { continue }
-        $pinnedFirstSeen[[string]$name] = $true
-        $pinnedFirst += [string]$name
-    }
-
-    $pinnedLast = @()
-    $pinnedLastSeen = @{}
-    foreach ($name in @($existingPinnedLast)) {
-        if ([string]::IsNullOrWhiteSpace([string]$name)) { continue }
-        if (-not $activeNameSet.ContainsKey([string]$name)) { continue }
-        if ($pinnedFirstSeen.ContainsKey([string]$name)) { continue }
-        if ($pinnedLastSeen.ContainsKey([string]$name)) { continue }
-        $pinnedLastSeen[[string]$name] = $true
-        $pinnedLast += [string]$name
-    }
-
-    $taskStateByName = @{}
+    $activeNameSet = @{}
     foreach ($name in @($activeTaskNames)) {
-        if ($existingTaskMap.ContainsKey([string]$name)) {
-            $state = $existingTaskMap[[string]$name]
-            $taskStateByName[[string]$name] = [pscustomobject]@{
+        $activeNameSet[[string]$name] = $true
+        if (-not $existingMap.ContainsKey([string]$name)) {
+            Write-Warning ("Task catalog update: task '{0}' was missing and is added with priority=10 enabled=true." -f [string]$name)
+            $existingMap[[string]$name] = [pscustomobject]@{
                 Name = [string]$name
-                ExistingOrder = [int]$state.Order
-                Enabled = [bool]$state.Enabled
-            }
-        }
-        else {
-            $taskStateByName[[string]$name] = [pscustomobject]@{
-                Name = [string]$name
-                ExistingOrder = -1
+                Priority = 10
                 Enabled = $true
             }
         }
     }
 
-    $assignedOrder = @{}
-    $nextFirst = 1
-    foreach ($name in @($pinnedFirst)) {
-        $assignedOrder[[string]$name] = [int]$nextFirst
-        $nextFirst++
-    }
-
-    $middleNames = @()
-    foreach ($name in @($activeTaskNames)) {
-        if ($assignedOrder.ContainsKey([string]$name)) { continue }
-        if ($pinnedLastSeen.ContainsKey([string]$name)) { continue }
-        $middleNames += [string]$name
-    }
-
-    $middleRows = @()
-    foreach ($name in @($middleNames)) {
-        $state = $taskStateByName[[string]$name]
-        $existingOrder = [int]$state.ExistingOrder
-        $hasExistingMiddleOrder = ($existingOrder -ge $middleStart -and $existingOrder -lt $tailStart)
-        $middleRows += [pscustomobject]@{
-            Name = [string]$name
-            HasExistingMiddleOrder = [bool]$hasExistingMiddleOrder
-            ExistingOrder = [int]$existingOrder
+    foreach ($name in @($existingMap.Keys)) {
+        if (-not $activeNameSet.ContainsKey([string]$name)) {
+            Write-Warning ("Task catalog update: stale task '{0}' was removed because it does not exist on disk." -f [string]$name)
+            [void]$existingMap.Remove([string]$name)
         }
     }
 
-    $sortedMiddle = @(
-        $middleRows |
-            Sort-Object `
-                @{ Expression = { if ($_.HasExistingMiddleOrder) { 0 } else { 1 } } }, `
-                @{ Expression = { if ($_.HasExistingMiddleOrder) { [int]$_.ExistingOrder } else { [int]::MaxValue } } }, `
-                @{ Expression = { [string]$_.Name } }
-    )
-
-    $nextMiddle = [int]$middleStart
-    foreach ($row in @($sortedMiddle)) {
-        $assignedOrder[[string]$row.Name] = [int]$nextMiddle
-        $nextMiddle++
-    }
-
-    $nextTail = [int]$tailStart
-    foreach ($name in @($pinnedLast)) {
-        $assignedOrder[[string]$name] = [int]$nextTail
-        $nextTail++
-    }
-
-    $finalTaskRows = @()
-    $allTaskNamesSorted = @(
-        $activeTaskNames | Sort-Object `
-            @{ Expression = { if ($assignedOrder.ContainsKey([string]$_)) { [int]$assignedOrder[[string]$_] } else { [int]::MaxValue } } }, `
-            @{ Expression = { [string]$_ } }
-    )
-
-    foreach ($name in @($allTaskNamesSorted)) {
-        $state = $taskStateByName[[string]$name]
-        $orderValue = if ($assignedOrder.ContainsKey([string]$name)) { [int]$assignedOrder[[string]$name] } else { [int]$middleStart }
-        $finalTaskRows += [ordered]@{
-            name = [string]$name
-            order = [int]$orderValue
-            enabled = [bool]$state.Enabled
+    $finalTasks = @()
+    foreach ($row in @($activeRowsSortedByPrefix)) {
+        $taskName = [string]$row.Name
+        if (-not $existingMap.ContainsKey($taskName)) {
+            continue
+        }
+        $taskState = $existingMap[$taskName]
+        $finalTasks += [ordered]@{
+            name = [string]$taskName
+            priority = [int](Convert-AzVmTaskCatalogPriority -Value $taskState.Priority -DefaultValue 10)
+            enabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskState.Enabled -DefaultValue $true)
         }
     }
 
     $finalCatalog = [ordered]@{
-        schemaVersion = 1
-        orderModel = [ordered]@{
-            middleStart = [int]$middleStart
-            tailStart = [int]$tailStart
-        }
-        pinnedFirst = @($pinnedFirst)
-        pinnedLast = @($pinnedLast)
-        tasks = @($finalTaskRows)
+        tasks = @($finalTasks)
     }
 
     $newCatalogText = [string](ConvertTo-Json -InputObject $finalCatalog -Depth 10)
@@ -710,19 +560,21 @@ function Sync-AzVmTaskCatalog {
         return (($Text -replace "`r`n", "`n") -replace "`r", "`n").Trim()
     }
 
-    if (-not (Test-Path -LiteralPath $catalogPath) -or (& $normalize $originalCatalogText) -ne (& $normalize $newCatalogText)) {
+    if (-not (Test-Path -LiteralPath $catalogPath) -or (& $normalize $catalogBeforeText) -ne (& $normalize $newCatalogText)) {
         Write-TextFileNormalized -Path $catalogPath -Content $newCatalogText -Encoding "utf8NoBom" -LineEnding "crlf" -EnsureTrailingNewline
     }
 
-    $orderMap = @{}
-    foreach ($row in @($finalTaskRows)) {
-        $orderMap[[string]$row.name] = [int]$row.order
+    $taskMap = @{}
+    foreach ($row in @($finalTasks)) {
+        $taskMap[[string]$row.name] = [pscustomobject]@{
+            Priority = [int]$row.priority
+            Enabled = [bool]$row.enabled
+        }
     }
 
     return [ordered]@{
         CatalogPath = [string]$catalogPath
-        OrderMap = $orderMap
-        PinnedLast = @($pinnedLast)
+        TaskMap = $taskMap
     }
 }
 
@@ -748,12 +600,6 @@ function Get-AzVmTaskBlocksFromDirectory {
 
     $rootPath = (Resolve-Path -LiteralPath $DirectoryPath).Path.TrimEnd('\', '/')
     $files = @(Get-ChildItem -LiteralPath $DirectoryPath -File -Recurse | Sort-Object FullName)
-    if ($files.Count -eq 0) {
-        return [ordered]@{
-            ActiveTasks = @()
-            DisabledTasks = @()
-        }
-    }
 
     $activeRows = @()
     $disabledRows = @()
@@ -805,22 +651,33 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
     }
 
-    $syncInfo = Sync-AzVmTaskCatalog -DirectoryPath $DirectoryPath -Stage $Stage -ActiveRows $activeRows
-    $orderMap = @{}
-    if ($syncInfo -and $syncInfo.PSObject.Properties.Match('OrderMap').Count -gt 0 -and $null -ne $syncInfo.OrderMap) {
-        $orderMap = $syncInfo.OrderMap
+    $syncInfo = Sync-AzVmTaskCatalogPriority -DirectoryPath $DirectoryPath -Stage $Stage -ActiveRows $activeRows
+    $taskMap = @{}
+    if ($syncInfo -and $syncInfo.PSObject.Properties.Match('TaskMap').Count -gt 0 -and $null -ne $syncInfo.TaskMap) {
+        $taskMap = $syncInfo.TaskMap
     }
 
     $activeTasks = @()
     $sortedActiveRows = @(
         $activeRows | Sort-Object `
-            @{ Expression = { if ($orderMap.ContainsKey([string]$_.Name)) { [int]$orderMap[[string]$_.Name] } else { [int]::MaxValue } } }, `
+            @{ Expression = { if ($taskMap.ContainsKey([string]$_.Name)) { [int]$taskMap[[string]$_.Name].Priority } else { 10 } } }, `
+            @{ Expression = { [int]$_.Order } }, `
             @{ Expression = { [string]$_.Name } }
     )
     foreach ($row in @($sortedActiveRows)) {
+        $taskName = [string]$row.Name
+        $isEnabled = $true
+        if ($taskMap.ContainsKey($taskName)) {
+            $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskMap[$taskName].Enabled -DefaultValue $true)
+        }
+        if (-not $isEnabled) {
+            Write-Host ("Task skipped (disabled in catalog): {0}" -f $taskName) -ForegroundColor DarkYellow
+            continue
+        }
+
         $content = Get-Content -Path $row.Path -Raw
         $activeTasks += [pscustomobject]@{
-            Name = [string]$row.Name
+            Name = $taskName
             Script = [string]$content
             RelativePath = [string]$row.RelativePath
             DirectoryPath = [string](Split-Path -Path $row.Path -Parent)
