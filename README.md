@@ -6,6 +6,17 @@ Unified Azure VM provisioning toolkit for Windows and Linux with one launcher:
 
 It creates/updates Azure resource group + network + VM, runs guest init tasks, then runs guest update tasks task-by-task over persistent pyssh.
 
+## Architecture
+
+`az-vm.ps1` now acts as an entrypoint and loads domain modules from `modules/`:
+- `modules/core/` shared runtime helpers
+- `modules/config/` env/config resolution
+- `modules/azure/` Azure API/CLI resource operations
+- `modules/platform/` guest/OS specific helpers
+- `modules/tasks/` run-command + pyssh task execution
+- `modules/ui/` picker/help/output flows
+- `modules/commands/` orchestration and command handlers
+
 ## Quick Start
 
 ### 1) Prerequisites
