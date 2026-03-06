@@ -171,46 +171,72 @@ function Invoke-AzVmStep1Common {
     }
 
     $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($vnetRaw)) {
+    $vnetExplicit = -not [string]::IsNullOrWhiteSpace([string]$vnetRaw)
+    if (-not $vnetExplicit) {
         $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $VNET = Resolve-AzVmTemplate -Template $vnetRaw -Tokens $nameTokens
+    $VNET = Resolve-AzVmNameFromTemplate -Template $vnetRaw -ResourceType 'net' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
 
     $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($subnetRaw)) {
+    $subnetExplicit = -not [string]::IsNullOrWhiteSpace([string]$subnetRaw)
+    if (-not $subnetExplicit) {
         $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $SUBNET = Resolve-AzVmTemplate -Template $subnetRaw -Tokens $nameTokens
+    $SUBNET = Resolve-AzVmNameFromTemplate -Template $subnetRaw -ResourceType 'subnet' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
 
     $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($nsgRaw)) {
+    $nsgExplicit = -not [string]::IsNullOrWhiteSpace([string]$nsgRaw)
+    if (-not $nsgExplicit) {
         $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $NSG = Resolve-AzVmTemplate -Template $nsgRaw -Tokens $nameTokens
+    $NSG = Resolve-AzVmNameFromTemplate -Template $nsgRaw -ResourceType 'nsg' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
 
     $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($nsgRuleRaw)) {
+    $nsgRuleExplicit = -not [string]::IsNullOrWhiteSpace([string]$nsgRuleRaw)
+    if (-not $nsgRuleExplicit) {
         $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $nsgRule = Resolve-AzVmTemplate -Template $nsgRuleRaw -Tokens $nameTokens
+    $nsgRule = Resolve-AzVmNameFromTemplate -Template $nsgRuleRaw -ResourceType 'nsgrule' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
 
     $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($ipRaw)) {
+    $ipExplicit = -not [string]::IsNullOrWhiteSpace([string]$ipRaw)
+    if (-not $ipExplicit) {
         $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $IP = Resolve-AzVmTemplate -Template $ipRaw -Tokens $nameTokens
+    $IP = Resolve-AzVmNameFromTemplate -Template $ipRaw -ResourceType 'ip' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
 
     $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($nicRaw)) {
+    $nicExplicit = -not [string]::IsNullOrWhiteSpace([string]$nicRaw)
+    if (-not $nicExplicit) {
         $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $NIC = Resolve-AzVmTemplate -Template $nicRaw -Tokens $nameTokens
+    $NIC = Resolve-AzVmNameFromTemplate -Template $nicRaw -ResourceType 'nic' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
 
     $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($vmDiskNameRaw)) {
+    $vmDiskExplicit = -not [string]::IsNullOrWhiteSpace([string]$vmDiskNameRaw)
+    if (-not $vmDiskExplicit) {
         $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $vmDiskName = Resolve-AzVmTemplate -Template $vmDiskNameRaw -Tokens $nameTokens
+    $vmDiskName = Resolve-AzVmNameFromTemplate -Template $vmDiskNameRaw -ResourceType 'disk' -VmName $vmName -RegionCode $regionCode -ResourceGroup $resourceGroup -UseNextIndex
+
+    if ($PersistGeneratedResourceGroup) {
+        $generatedNameMap = [ordered]@{}
+        if (-not $vnetExplicit) { $generatedNameMap["VNET_NAME"] = [string]$VNET }
+        if (-not $subnetExplicit) { $generatedNameMap["SUBNET_NAME"] = [string]$SUBNET }
+        if (-not $nsgExplicit) { $generatedNameMap["NSG_NAME"] = [string]$NSG }
+        if (-not $nsgRuleExplicit) { $generatedNameMap["NSG_RULE_NAME"] = [string]$nsgRule }
+        if (-not $ipExplicit) { $generatedNameMap["PUBLIC_IP_NAME"] = [string]$IP }
+        if (-not $nicExplicit) { $generatedNameMap["NIC_NAME"] = [string]$NIC }
+        if (-not $vmDiskExplicit) { $generatedNameMap["VM_DISK_NAME"] = [string]$vmDiskName }
+
+        foreach ($generatedKey in @($generatedNameMap.Keys)) {
+            $generatedValue = [string]$generatedNameMap[$generatedKey]
+            Set-DotEnvValue -Path $EnvFilePath -Key $generatedKey -Value $generatedValue
+            if ($ConfigOverrides) {
+                $ConfigOverrides[$generatedKey] = $generatedValue
+            }
+        }
+    }
 
     $vmDiskSize = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -Tokens $baseTokens
     $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_USER" -DefaultValue "manager")
@@ -242,7 +268,6 @@ function Invoke-AzVmStep1Common {
 
     return [ordered]@{
         RegionCode = $regionCode
-        NamingTemplateActive = $namingProfile
         ResourceGroup = $resourceGroup
         AzLocation = $azLocation
         DefaultAzLocation = $defaultAzLocation
