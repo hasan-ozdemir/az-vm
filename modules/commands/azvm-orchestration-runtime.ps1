@@ -12,6 +12,7 @@ function Invoke-AzVmStep1Common {
         [string]$ScriptRoot,
         [string]$ServerNameDefault,
         [string]$VmImageDefault,
+        [string]$VmSizeDefault,
         [string]$VmDiskSizeDefault,
         [hashtable]$ConfigOverrides
     )
@@ -58,7 +59,7 @@ function Invoke-AzVmStep1Common {
     $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "") -ServerName $serverName
     $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmImageConfigKey -DefaultValue $VmImageDefault) -ServerName $serverName
     $vmStorageSku = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -ServerName $serverName
-    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmSizeConfigKey -DefaultValue "Standard_B2as_v2") -ServerName $serverName
+    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmSizeConfigKey -DefaultValue $VmSizeDefault) -ServerName $serverName
     $azLocation = $defaultAzLocation
     $vmSize = $defaultVmSize
     $forcedAzLocation = ''

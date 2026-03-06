@@ -69,6 +69,8 @@ Invoke-Test -Name "Platform defaults contract" -Action {
     Assert-True -Condition ([string]$lin.RunCommandId -eq "RunShellScript") -Message "Linux RunCommandId mismatch."
     Assert-True -Condition ([bool]$win.IncludeRdp) -Message "Windows IncludeRdp should be true."
     Assert-True -Condition (-not [bool]$lin.IncludeRdp) -Message "Linux IncludeRdp should be false."
+    Assert-True -Condition ([string]$win.VmSizeDefault -eq "Standard_B4as_v2") -Message "Windows VmSizeDefault mismatch."
+    Assert-True -Condition ([string]$lin.VmSizeDefault -eq "Standard_B2as_v2") -Message "Linux VmSizeDefault mismatch."
 }
 
 Invoke-Test -Name "Azure location picker resolver contract" -Action {
@@ -166,6 +168,32 @@ Invoke-Test -Name "Platform task catalog keys stay platform-specific" -Action {
     Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $winUpdateKey -DefaultValue '') -eq 'windows/update') -Message "Windows update catalog path lookup failed."
     Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $linInitKey -DefaultValue '') -eq 'linux/init') -Message "Linux init catalog path lookup failed."
     Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $linUpdateKey -DefaultValue '') -eq 'linux/update') -Message "Linux update catalog path lookup failed."
+}
+
+Invoke-Test -Name ".env.example runtime contract" -Action {
+    $envExamplePath = Join-Path $RepoRoot '.env.example'
+    Assert-True -Condition (Test-Path -LiteralPath $envExamplePath) -Message ".env.example was not found."
+
+    $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
+    $requiredKeys = @(
+        'VM_OS_TYPE','SERVER_NAME','AZ_LOCATION','NAMING_TEMPLATE_ACTIVE',
+        'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_NAME','VM_DISK_NAME',
+        'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
+        'VM_STORAGE_SKU','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','SSH_PORT',
+        'AZ_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
+        'WIN_VM_IMAGE','WIN_VM_SIZE','WIN_VM_DISK_SIZE_GB','LIN_VM_IMAGE','LIN_VM_SIZE','LIN_VM_DISK_SIZE_GB',
+        'WIN_VM_INIT_TASK_DIR','WIN_VM_UPDATE_TASK_DIR','LIN_VM_INIT_TASK_DIR','LIN_VM_UPDATE_TASK_DIR',
+        'TASK_OUTCOME_MODE','SSH_MAX_RETRIES','PYSSH_CLIENT_PATH','TCP_PORTS'
+    )
+
+    foreach ($requiredKey in $requiredKeys) {
+        Assert-True -Condition ($envExampleKeys -contains $requiredKey) -Message (".env.example is missing required key '{0}'." -f $requiredKey)
+    }
+
+    $legacyInitTaskDirKey = (@('VM','INIT','TASK','DIR') -join '_')
+    $legacyUpdateTaskDirKey = (@('VM','UPDATE','TASK','DIR') -join '_')
+    Assert-True -Condition (-not ($envExampleKeys -contains $legacyInitTaskDirKey)) -Message ".env.example must not contain the legacy generic init task dir key."
+    Assert-True -Condition (-not ($envExampleKeys -contains $legacyUpdateTaskDirKey)) -Message ".env.example must not contain the legacy generic update task dir key."
 }
 
 Invoke-Test -Name "Task catalog discovery" -Action {

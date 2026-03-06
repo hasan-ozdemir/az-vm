@@ -320,6 +320,7 @@ function Invoke-AzVmMain {
                 -ScriptRoot $repoRoot `
                 -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
                 -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
+                -VmSizeDefault ([string]$platformDefaults.VmSizeDefault) `
                 -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
                 -ConfigOverrides $script:ConfigOverrides
 
