@@ -119,18 +119,34 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedCommandHelp = Parse-CoVmCliArguments -CommandToken "create" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedCommandHelp.Command -eq "create") -Message "Command with --help parse failed."
     Assert-True -Condition ($parsedCommandHelp.Options.ContainsKey("help")) -Message "Command --help option was not captured."
+
+    $parsedConfigHelp = Parse-CoVmCliArguments -CommandToken "config" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedConfigHelp.Command -eq "config") -Message "Config command with --help parse failed."
 }
 
 Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-CoVmCommandOptions -CommandName "create" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "update" -Options @{ help = $true }
+    Assert-CoVmCommandOptions -CommandName "config" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "change" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "exec" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
+Invoke-Test -Name "Help --command syntax was removed" -Action {
+    $threw = $false
+    try {
+        Assert-CoVmCommandOptions -CommandName "help" -Options @{ command = "create" }
+    }
+    catch {
+        $threw = $true
+    }
+    Assert-True -Condition $threw -Message "help --command must be rejected."
+}
+
 Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-CoVmCommandHelp -Topic "create"
+    Show-CoVmCommandHelp -Topic "config"
     Show-CoVmCommandHelp -Topic ""
     Show-CoVmCommandHelp -Overview
 }

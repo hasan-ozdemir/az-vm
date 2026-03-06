@@ -41,6 +41,10 @@ Set at least:
 - `update`
   - re-run create-or-update operations on existing resources
   - supports step slicing: `--to-step`, `--from-step`, `--single-step`
+- `config`
+  - interactive configuration flow up to resource-group preview
+  - runs Step 1 + Step 2 + Step 3 preview and exits without resource mutation
+  - writes selected values to `.env` for subsequent `create` runs
 - `change`
   - no-parameter call starts interactive RG + VM + region + VM size picker flow
   - `--vm-size=<sku>`: in-place VM resize
@@ -65,7 +69,7 @@ Set at least:
   - supports topic filter:
     - `az-vm help`
     - `az-vm help create`
-    - `az-vm help --command=change`
+    - `az-vm help change`
 
 ## Run Mode
 - `interactive` (default)

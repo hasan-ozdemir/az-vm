@@ -113,7 +113,9 @@ if (-not $SkipHelpSmoke) {
             @("--help"),
             @("help"),
             @("help","create"),
+            @("help","config"),
             @("create","--help"),
+            @("config","--help"),
             @("delete","--help")
         )
 

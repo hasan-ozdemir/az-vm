@@ -723,7 +723,7 @@ function Invoke-AzVmMain {
         $runFinishAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-summary'
 
         if ($isPartialActionMode) {
-            $bootstrapRuntime = Initialize-CoVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+            $bootstrapRuntime = Initialize-CoVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
             $step1Context = $bootstrapRuntime.Context
             $platform = [string]$bootstrapRuntime.Platform
             $platformDefaults = $bootstrapRuntime.PlatformDefaults
@@ -1513,7 +1513,7 @@ function Convert-CoVmCliTextToTokens {
 }
 
 function Get-CoVmValidCommandList {
-    return @('create', 'update', 'change', 'exec', 'delete', 'help')
+    return @('create', 'update', 'config', 'change', 'exec', 'delete', 'help')
 }
 
 function Show-CoVmCommandHelpOverview {
@@ -1523,6 +1523,7 @@ function Show-CoVmCommandHelpOverview {
     Write-Host "Commands (full details: az-vm help <command>):"
     Write-Host "  create  Build missing resources and run VM init/update flow."
     Write-Host "  update  Re-run create-or-update operations on existing resources."
+    Write-Host "  config  Interactive configuration preview up to resource-group step."
     Write-Host "  change  Change VM region and/or VM size."
     Write-Host "  exec    Run one init/update task or open interactive remote shell."
     Write-Host "  delete  Purge selected resources from a resource group."
@@ -1540,6 +1541,7 @@ function Show-CoVmCommandHelpOverview {
     Write-Host "Quick examples:"
     Write-Host "  az-vm --help"
     Write-Host "  az-vm create --auto --windows"
+    Write-Host "  az-vm config --windows"
     Write-Host "  az-vm create --from-step=vm-init --linux"
     Write-Host "  az-vm update --single-step=network --auto"
     Write-Host "  az-vm change --vm-region=centralindia"
@@ -1549,7 +1551,7 @@ function Show-CoVmCommandHelpOverview {
     Write-Host "Detailed docs:"
     Write-Host "  az-vm help"
     Write-Host "  az-vm help create"
-    Write-Host "  az-vm help --command=change"
+    Write-Host "  az-vm help change"
 }
 
 function Show-CoVmCommandHelpDetailed {
@@ -1576,24 +1578,25 @@ function Show-CoVmCommandHelpDetailed {
         Write-Host "  az-vm --help                       # quick overview"
         Write-Host "  az-vm help                         # full command catalog"
         Write-Host "  az-vm help create                  # one command details"
-        Write-Host "  az-vm help --command=update        # one command details"
         Write-Host ""
         Write-Host "Command reference:"
         Write-Host "  create  : supports --to-step, --from-step, --single-step"
         Write-Host "  update  : supports --to-step, --from-step, --single-step"
+        Write-Host "  config  : interactive config + precheck + resource-group preview"
         Write-Host "  change  : supports --vm-region, --vm-size"
         Write-Host "  exec    : supports --group, --init-task, --update-task"
         Write-Host "  delete  : supports --target, --group, --yes"
         Write-Host ""
         Write-Host "Examples:"
         Write-Host "  az-vm create --auto --windows"
+        Write-Host "  az-vm config --linux"
         Write-Host "  az-vm create --single-step=config --linux"
         Write-Host "  az-vm update --to-step=vm-init --auto"
         Write-Host "  az-vm change --vm-region=austriaeast --vm-size=Standard_B2as_v2"
         Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
         Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1 --yes"
         Write-Host ""
-        Write-Host "For per-command docs: az-vm help <create|update|change|exec|delete>"
+        Write-Host "For per-command docs: az-vm help <create|update|config|change|exec|delete>"
         return
     }
 
@@ -1602,7 +1605,7 @@ function Show-CoVmCommandHelpDetailed {
             -Detail ("Unknown help topic '{0}'." -f $topicText) `
             -Code 2 `
             -Summary "Unknown help topic." `
-            -Hint "Use az-vm help or az-vm help <create|update|change|exec|delete>."
+            -Hint "Use az-vm help or az-vm help <create|update|config|change|exec|delete>."
     }
 
     switch ($topicName) {
@@ -1636,6 +1639,18 @@ function Show-CoVmCommandHelpDetailed {
             Write-Host "  az-vm update --auto --windows"
             Write-Host "  az-vm update --single-step=vm-update --auto --windows"
             Write-Host "  az-vm update --from-step=group --to-step=vm-init --perf"
+            return
+        }
+        'config' {
+            Write-Host "Command: config"
+            Write-Host "Description: interactive configuration flow up to resource-group preview."
+            Write-Host "Usage:"
+            Write-Host "  az-vm config [--windows|--linux] [--perf]"
+            Write-Host "  az-vm config --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm config --windows"
+            Write-Host "  az-vm config --linux --perf"
+            Write-Host "Notes: this command does not create/update/delete Azure resources."
             return
         }
         'change' {
@@ -1686,11 +1701,10 @@ function Show-CoVmCommandHelpDetailed {
             Write-Host "Usage:"
             Write-Host "  az-vm help"
             Write-Host "  az-vm help <command>"
-            Write-Host "  az-vm help --command=<command>"
             Write-Host "  az-vm --help"
             Write-Host "Examples:"
             Write-Host "  az-vm help create"
-            Write-Host "  az-vm help --command=change"
+            Write-Host "  az-vm help config"
             Write-Host "  az-vm --help"
             return
         }
@@ -1778,7 +1792,7 @@ function Parse-CoVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | change | exec | delete | help."
+                -Hint "Use one command: create | update | config | change | exec | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -1789,24 +1803,10 @@ function Parse-CoVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | change | exec | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | config | change | exec | delete | help. Example: az-vm create --auto"
     }
 
     $helpTopic = ''
-    $commandOptionText = ''
-    if ($options.ContainsKey('command')) {
-        $commandOptionRaw = $options['command']
-        if ($commandOptionRaw -is [bool]) {
-            Throw-FriendlyError `
-                -Detail "Option '--command' requires a value when help is used." `
-                -Code 2 `
-                -Summary "Help topic value is missing." `
-                -Hint "Use --command=<create|update|change|exec|delete|help>."
-        }
-        $commandOptionText = [string]$commandOptionRaw
-        $commandOptionText = $commandOptionText.Trim().ToLowerInvariant()
-    }
-
     if ($command -eq 'help') {
         if ($positionals.Count -gt 1) {
             Throw-FriendlyError `
@@ -1822,18 +1822,7 @@ function Parse-CoVmCliArguments {
             $positionalTopic = $positionalTopic.Trim().ToLowerInvariant()
         }
 
-        if ((-not [string]::IsNullOrWhiteSpace($commandOptionText)) -and (-not [string]::IsNullOrWhiteSpace($positionalTopic)) -and (-not [string]::Equals($commandOptionText, $positionalTopic, [System.StringComparison]::OrdinalIgnoreCase))) {
-            Throw-FriendlyError `
-                -Detail ("Conflicting help topics were provided: positional='{0}', --command='{1}'." -f $positionalTopic, $commandOptionText) `
-                -Code 2 `
-                -Summary "Help topic conflict was detected." `
-                -Hint "Use only one help topic source."
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace($commandOptionText)) {
-            $helpTopic = $commandOptionText
-        }
-        elseif (-not [string]::IsNullOrWhiteSpace($positionalTopic)) {
+        if (-not [string]::IsNullOrWhiteSpace($positionalTopic)) {
             $helpTopic = $positionalTopic
         }
     }
@@ -1844,14 +1833,6 @@ function Parse-CoVmCliArguments {
                 -Code 2 `
                 -Summary "Unexpected arguments were provided." `
                 -Hint "Use only --option or --option=value syntax after the command."
-        }
-
-        if ($options.ContainsKey('command')) {
-            Throw-FriendlyError `
-                -Detail "Option '--command' is only supported with help command." `
-                -Code 2 `
-                -Summary "Unsupported option for this command." `
-                -Hint "Use 'az-vm help --command=<name>' for help topic filtering."
         }
     }
 
@@ -5955,16 +5936,17 @@ function Assert-CoVmCommandOptions {
     switch ($CommandName) {
         'create' { $allowed += @('to-step','from-step','single-step') }
         'update' { $allowed += @('to-step','from-step','single-step') }
+        'config' { $allowed += @() }
         'change' { $allowed += @('vm-region','vm-size') }
         'exec'   { $allowed += @('group','init-task','update-task') }
         'delete' { $allowed += @('target','group','yes') }
-        'help'   { $allowed += @('command') }
+        'help'   { $allowed += @() }
         default {
             Throw-FriendlyError `
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | change | exec | delete."
+                -Hint "Use one command: create | update | config | change | exec | delete."
         }
     }
 
@@ -6018,7 +6000,8 @@ function Initialize-CoVmCommandRuntimeContext {
         [switch]$AutoMode,
         [switch]$WindowsFlag,
         [switch]$LinuxFlag,
-        [hashtable]$ConfigMapOverrides = @{}
+        [hashtable]$ConfigMapOverrides = @{},
+        [switch]$UseInteractiveStep1
     )
 
     $envFilePath = Join-Path $PSScriptRoot '.env'
@@ -6035,10 +6018,15 @@ function Initialize-CoVmCommandRuntimeContext {
         $script:ConfigOverrides[$overrideKey] = [string]$ConfigMapOverrides[$key]
     }
 
+    $step1AutoMode = $true
+    if ($UseInteractiveStep1) {
+        $step1AutoMode = [bool]$AutoMode
+    }
+
     $step1Context = Invoke-CoVmStep1Common `
         -ConfigMap $effectiveConfigMap `
         -EnvFilePath $envFilePath `
-        -AutoMode:$true `
+        -AutoMode:$step1AutoMode `
         -ScriptRoot $PSScriptRoot `
         -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
         -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
@@ -6104,6 +6092,189 @@ function Initialize-CoVmCommandRuntimeContext {
         SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
         SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
     }
+}
+
+function Get-CoVmConfigPersistenceMap {
+    param(
+        [string]$Platform,
+        [hashtable]$Context
+    )
+
+    $tcpPortsCsv = (@($Context.TcpPorts) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ','
+    return [ordered]@{
+        VM_OS_TYPE = [string]$Platform
+        SERVER_NAME = [string]$Context.ServerName
+        AZ_LOCATION = [string]$Context.AzLocation
+        VM_SIZE = [string]$Context.VmSize
+        RESOURCE_GROUP = [string]$Context.ResourceGroup
+        VNET_NAME = [string]$Context.VNET
+        SUBNET_NAME = [string]$Context.SUBNET
+        NSG_NAME = [string]$Context.NSG
+        NSG_RULE_NAME = [string]$Context.NsgRule
+        PUBLIC_IP_NAME = [string]$Context.IP
+        NIC_NAME = [string]$Context.NIC
+        VM_NAME = [string]$Context.VmName
+        VM_DISK_NAME = [string]$Context.VmDiskName
+        VM_IMAGE = [string]$Context.VmImage
+        VM_STORAGE_SKU = [string]$Context.VmStorageSku
+        VM_DISK_SIZE_GB = [string]$Context.VmDiskSize
+        SSH_PORT = [string]$Context.SshPort
+        TCP_PORTS = [string]$tcpPortsCsv
+    }
+}
+
+function Save-CoVmConfigToDotEnv {
+    param(
+        [string]$EnvFilePath,
+        [hashtable]$ConfigBefore,
+        [hashtable]$PersistMap
+    )
+
+    $before = @{}
+    if ($ConfigBefore) {
+        foreach ($key in @($ConfigBefore.Keys)) {
+            $before[[string]$key] = [string]$ConfigBefore[$key]
+        }
+    }
+
+    $changes = @()
+    foreach ($key in @($PersistMap.Keys)) {
+        $name = [string]$key
+        if ([string]::IsNullOrWhiteSpace($name)) {
+            continue
+        }
+
+        $newValue = [string]$PersistMap[$name]
+        $oldValue = ''
+        if ($before.ContainsKey($name)) {
+            $oldValue = [string]$before[$name]
+        }
+
+        if ([string]::Equals($oldValue, $newValue, [System.StringComparison]::Ordinal)) {
+            continue
+        }
+
+        Set-DotEnvValue -Path $EnvFilePath -Key $name -Value $newValue
+        $changes += [pscustomobject]@{
+            Key = $name
+            OldValue = $oldValue
+            NewValue = $newValue
+        }
+    }
+
+    return @($changes)
+}
+
+function Show-CoVmKeyValueList {
+    param(
+        [string]$Title,
+        [System.Collections.IDictionary]$Values
+    )
+
+    Write-Host $Title -ForegroundColor Cyan
+    if (-not $Values -or $Values.Count -eq 0) {
+        Write-Host "- (empty)"
+        return
+    }
+
+    foreach ($key in @($Values.Keys | Sort-Object)) {
+        $valueText = ConvertTo-CoVmDisplayValue -Value $Values[$key]
+        Write-Host ("- {0} = {1}" -f [string]$key, [string]$valueText)
+    }
+}
+
+function Invoke-CoVmResourceGroupPreviewStep {
+    param(
+        [hashtable]$Context
+    )
+
+    Show-CoVmStepFirstUseValues `
+        -StepLabel "Step 3/3 - resource group preview" `
+        -Context $Context `
+        -Keys @("ResourceGroup", "AzLocation")
+
+    $resourceGroup = [string]$Context.ResourceGroup
+    $resourceExists = az group exists -n $resourceGroup --only-show-errors
+    Assert-LastExitCode "az group exists (config preview)"
+    $resourceExistsBool = [string]::Equals([string]$resourceExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
+
+    if ($resourceExistsBool) {
+        Write-Host ("Preview: resource group '{0}' exists. Config command will not modify it." -f $resourceGroup) -ForegroundColor Yellow
+    }
+    else {
+        Write-Host ("Preview: resource group '{0}' does not exist. It will be created by create/update commands." -f $resourceGroup) -ForegroundColor Yellow
+    }
+
+    return [pscustomobject]@{
+        ResourceGroup = $resourceGroup
+        Exists = $resourceExistsBool
+    }
+}
+
+function Invoke-CoVmConfigCommand {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    if ($AutoMode) {
+        Throw-FriendlyError `
+            -Detail "Config command supports interactive mode only." `
+            -Code 64 `
+            -Summary "Config command cannot run in auto mode." `
+            -Hint "Run 'az-vm config' without --auto."
+    }
+
+    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $configBefore = Read-DotEnvFile -Path $envFilePath
+    $runtime = $null
+    $context = $null
+    $platform = ''
+
+    Invoke-Step 'Step 1/3 - interactive configuration values will be selected...' {
+        $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
+        $context = $runtime.Context
+        $platform = [string]$runtime.Platform
+    }
+
+    Invoke-Step 'Step 2/3 - region, image, and VM size availability will be checked...' {
+        Invoke-CoVmPrecheckStep -Context $context
+    }
+
+    Invoke-Step 'Step 3/3 - resource group preview will be displayed...' {
+        $null = Invoke-CoVmResourceGroupPreviewStep -Context $context
+    }
+
+    $persistMap = Get-CoVmConfigPersistenceMap -Platform $platform -Context $context
+    $changes = Save-CoVmConfigToDotEnv -EnvFilePath ([string]$runtime.EnvFilePath) -ConfigBefore $configBefore -PersistMap $persistMap
+    $configAfter = Read-DotEnvFile -Path ([string]$runtime.EnvFilePath)
+
+    Write-Host ""
+    Show-CoVmKeyValueList -Title "Existing .env values (before config):" -Values $configBefore
+    Write-Host ""
+    Show-CoVmKeyValueList -Title "Resolved configuration values:" -Values $context
+    Write-Host ""
+    Show-CoVmKeyValueList -Title ".env values after config:" -Values $configAfter
+    Write-Host ""
+    if (@($changes).Count -gt 0) {
+        Write-Host "Saved .env changes:" -ForegroundColor Green
+        foreach ($change in @($changes)) {
+            $oldValue = if ([string]::IsNullOrWhiteSpace([string]$change.OldValue)) { "(empty)" } else { [string]$change.OldValue }
+            $newValue = if ([string]::IsNullOrWhiteSpace([string]$change.NewValue)) { "(empty)" } else { [string]$change.NewValue }
+            Write-Host ("- {0}: {1} -> {2}" -f [string]$change.Key, $oldValue, $newValue)
+        }
+    }
+    else {
+        Write-Host "No .env value changes were needed; current values are already aligned." -ForegroundColor Yellow
+    }
+
+    Write-Host ""
+    Write-Host "Config completed successfully. No Azure resources were created, updated, or deleted." -ForegroundColor Green
+    Write-Host "Next actions:" -ForegroundColor Cyan
+    Write-Host "- az-vm create --auto"
+    Write-Host "- az-vm create --to-step=vm-deploy"
 }
 
 function Resolve-CoVmTaskSelection {
@@ -7102,6 +7273,13 @@ function Invoke-CoVmCommandDispatcher {
             }
             return
         }
+        'config' {
+            $script:UpdateMode = $false
+            $script:RenewMode = $false
+            $script:ExecutionMode = 'default'
+            Invoke-CoVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+            return
+        }
         'create' {
             $actionPlan = Resolve-CoVmActionPlan -CommandName 'create' -Options $Options
             $script:UpdateMode = $false
@@ -7144,7 +7322,7 @@ function Invoke-CoVmCommandDispatcher {
                 -Detail ("Unknown command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | change | exec | delete."
+                -Hint "Use one command: create | update | config | change | exec | delete."
         }
     }
 }
