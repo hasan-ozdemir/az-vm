@@ -5143,7 +5143,7 @@ function Write-RegionSelectionGrid {
     param(
         [object[]]$Locations,
         [int]$DefaultIndex,
-        [int]$Columns = 10
+        [int]$Columns = 9
     )
 
     if (-not $Locations -or $Locations.Count -eq 0) {
@@ -5196,7 +5196,7 @@ function Select-AzLocationInteractive {
 
     Write-Host ""
     Write-Host "Available Azure regions (select by number):" -ForegroundColor Cyan
-    Write-RegionSelectionGrid -Locations $locations -DefaultIndex $defaultIndex -Columns 10
+    Write-RegionSelectionGrid -Locations $locations -DefaultIndex $defaultIndex -Columns 9
 
     while ($true) {
         $inputValue = Read-Host "Enter region number (default=$defaultIndex)"
