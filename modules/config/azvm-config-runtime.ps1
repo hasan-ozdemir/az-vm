@@ -64,20 +64,6 @@ function Get-ConfigValue {
     return $DefaultValue
 }
 
-# Handles Resolve-ServerTemplate.
-function Resolve-ServerTemplate {
-    param(
-        [string]$Value,
-        [string]$ServerName
-    )
-
-    if ([string]::IsNullOrWhiteSpace($Value)) {
-        return $Value
-    }
-
-    return $Value.Replace("{SERVER_NAME}", $ServerName)
-}
-
 # Handles Get-AzVmRegionCodeMap.
 function Get-AzVmRegionCodeMap {
     return @{
@@ -289,18 +275,18 @@ function Get-AzVmNextManagedResourceGroupIndex {
 function Resolve-AzVmResourceGroupNameFromTemplate {
     param(
         [string]$Template,
-        [string]$ServerName,
+        [string]$VmName,
         [string]$RegionCode,
         [switch]$UseNextIndex
     )
 
     $effectiveTemplate = [string]$Template
     if ([string]::IsNullOrWhiteSpace([string]$effectiveTemplate)) {
-        $effectiveTemplate = "rg-{SERVER_NAME}-{REGION_CODE}-g{N}"
+        $effectiveTemplate = "rg-{VM_NAME}-{REGION_CODE}-g{N}"
     }
 
     $tokens = @{
-        SERVER_NAME = [string]$ServerName
+        VM_NAME = [string]$VmName
         REGION_CODE = [string]$RegionCode
         N = "1"
     }
@@ -324,7 +310,7 @@ function Resolve-AzVmNameFromTemplate {
     param(
         [string]$Template,
         [string]$ResourceType,
-        [string]$ServerName,
+        [string]$VmName,
         [string]$RegionCode,
         [string]$ResourceGroup,
         [switch]$UseNextIndex
@@ -332,12 +318,12 @@ function Resolve-AzVmNameFromTemplate {
 
     $effectiveTemplate = [string]$Template
     if ([string]::IsNullOrWhiteSpace($effectiveTemplate)) {
-        $effectiveTemplate = "{RESOURCE_TYPE}-{SERVER_NAME}-{REGION_CODE}-n{N}"
+        $effectiveTemplate = "{RESOURCE_TYPE}-{VM_NAME}-{REGION_CODE}-n{N}"
     }
 
     $baseTokens = @{
         RESOURCE_TYPE = [string]$ResourceType
-        SERVER_NAME = [string]$ServerName
+        VM_NAME = [string]$VmName
         REGION_CODE = [string]$RegionCode
     }
 

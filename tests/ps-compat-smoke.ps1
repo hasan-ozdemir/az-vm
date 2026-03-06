@@ -176,9 +176,9 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','SERVER_NAME','AZ_LOCATION','NAMING_TEMPLATE_ACTIVE',
-        'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_NAME','VM_DISK_NAME',
-        'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
+        'VM_OS_TYPE','VM_NAME','AZ_LOCATION','NAMING_TEMPLATE_ACTIVE',
+        'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
+        'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','SSH_PORT',
         'AZ_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
         'WIN_VM_IMAGE','WIN_VM_SIZE','WIN_VM_DISK_SIZE_GB','LIN_VM_IMAGE','LIN_VM_SIZE','LIN_VM_DISK_SIZE_GB',
@@ -281,7 +281,6 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmAssistantPass = "secret2"
         SshPort = "444"
         TcpPorts = @("444","3389","11434")
-        ServerName = "examplevm"
         ResourceGroup = "rg-examplevm"
         VmName = "examplevm"
         AzLocation = "austriaeast"
@@ -293,14 +292,14 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __SERVER_NAME__ __TCP_PORTS_BASH__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __VM_NAME__ __TCP_PORTS_BASH__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
     $scriptBody = [string]$resolved[0].Script
     Assert-True -Condition ($scriptBody -like "*manager*") -Message "VM user token was not replaced."
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
-    Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "Server name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
 }
 
 Write-Host ""

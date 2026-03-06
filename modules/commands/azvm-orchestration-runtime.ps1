@@ -10,25 +10,25 @@ function Invoke-AzVmStep1Common {
         [switch]$AutoMode,
         [switch]$PersistGeneratedResourceGroup,
         [string]$ScriptRoot,
-        [string]$ServerNameDefault,
+        [string]$VmNameDefault,
         [string]$VmImageDefault,
         [string]$VmSizeDefault,
         [string]$VmDiskSizeDefault,
         [hashtable]$ConfigOverrides
     )
 
-    $serverNameDefaultResolved = Get-ConfigValue -Config $ConfigMap -Key "SERVER_NAME" -DefaultValue $ServerNameDefault
-    $serverName = $serverNameDefaultResolved
+    $vmNameDefaultResolved = Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue $VmNameDefault
+    $vmName = $vmNameDefaultResolved
     do {
         if ($AutoMode) {
-            $userInput = $serverNameDefaultResolved
+            $userInput = $vmNameDefaultResolved
         }
         else {
-            $userInput = Read-Host "Enter server name (default=$serverNameDefaultResolved)"
+            $userInput = Read-Host "Enter VM name (default=$vmNameDefaultResolved)"
         }
 
         if ([string]::IsNullOrWhiteSpace($userInput)) {
-            $userInput = $serverNameDefaultResolved
+            $userInput = $vmNameDefaultResolved
         }
 
         if ($userInput -match '^[a-zA-Z][a-zA-Z0-9\-]{2,15}$') {
@@ -40,26 +40,27 @@ function Invoke-AzVmStep1Common {
         }
     } until ($isValid)
 
-    $serverName = $userInput
+    $vmName = $userInput
     if ($ConfigOverrides) {
-        $ConfigOverrides["SERVER_NAME"] = $serverName
+        $ConfigOverrides["VM_NAME"] = $vmName
     }
     if (-not $AutoMode) {
-        Set-DotEnvValue -Path $EnvFilePath -Key "SERVER_NAME" -Value $serverName
+        Set-DotEnvValue -Path $EnvFilePath -Key "VM_NAME" -Value $vmName
     }
 
-    Write-Host "Server name '$serverName' will be used." -ForegroundColor Green
+    Write-Host "VM name '$vmName' will be used." -ForegroundColor Green
 
     $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_IMAGE"
     $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_SIZE"
     $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_DISK_SIZE_GB"
     $vmInitTaskDirConfigKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'init'
     $vmUpdateTaskDirConfigKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'update'
+    $baseTokens = @{ VM_NAME = [string]$vmName }
 
-    $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "") -ServerName $serverName
-    $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmImageConfigKey -DefaultValue $VmImageDefault) -ServerName $serverName
-    $vmStorageSku = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -ServerName $serverName
-    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmSizeConfigKey -DefaultValue $VmSizeDefault) -ServerName $serverName
+    $defaultAzLocation = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "") -Tokens $baseTokens
+    $vmImage = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmImageConfigKey -DefaultValue $VmImageDefault) -Tokens $baseTokens
+    $vmStorageSku = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -Tokens $baseTokens
+    $defaultVmSize = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmSizeConfigKey -DefaultValue $VmSizeDefault) -Tokens $baseTokens
     $azLocation = $defaultAzLocation
     $vmSize = $defaultVmSize
     $forcedAzLocation = ''
@@ -129,18 +130,17 @@ function Invoke-AzVmStep1Common {
     }
 
     $nameTokens = @{
-        SERVER_NAME = [string]$serverName
+        VM_NAME = [string]$vmName
         REGION_CODE = [string]$regionCode
         N = "1"
     }
 
-    $resourceGroupTemplateRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}-g{N}")
-    $resourceGroupTemplate = Resolve-ServerTemplate -Value $resourceGroupTemplateRaw -ServerName $serverName
+    $resourceGroupTemplate = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{VM_NAME}-{REGION_CODE}-g{N}")
 
     $configuredResourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP" -DefaultValue "")
     $configuredResourceGroup = ''
     if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroupRaw)) {
-        $configuredResourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $configuredResourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
+        $configuredResourceGroup = Resolve-AzVmTemplate -Template $configuredResourceGroupRaw -Tokens $nameTokens
     }
     $resourceGroupForced = ($ConfigOverrides -and $ConfigOverrides.ContainsKey('RESOURCE_GROUP') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['RESOURCE_GROUP']))
 
@@ -164,7 +164,7 @@ function Invoke-AzVmStep1Common {
     if ([string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
         $resourceGroup = Resolve-AzVmResourceGroupNameFromTemplate `
             -Template $resourceGroupTemplate `
-            -ServerName $serverName `
+            -VmName $vmName `
             -RegionCode $regionCode `
             -UseNextIndex
         $resourceGroupGenerated = $true
@@ -180,63 +180,57 @@ function Invoke-AzVmStep1Common {
 
     $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($vnetRaw)) {
-        $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $VNET = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vnetRaw -ServerName $serverName) -Tokens $nameTokens
+    $VNET = Resolve-AzVmTemplate -Template $vnetRaw -Tokens $nameTokens
 
     $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($subnetRaw)) {
-        $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $SUBNET = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $subnetRaw -ServerName $serverName) -Tokens $nameTokens
+    $SUBNET = Resolve-AzVmTemplate -Template $subnetRaw -Tokens $nameTokens
 
     $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($nsgRaw)) {
-        $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $NSG = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRaw -ServerName $serverName) -Tokens $nameTokens
+    $NSG = Resolve-AzVmTemplate -Template $nsgRaw -Tokens $nameTokens
 
     $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($nsgRuleRaw)) {
-        $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $nsgRule = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRuleRaw -ServerName $serverName) -Tokens $nameTokens
+    $nsgRule = Resolve-AzVmTemplate -Template $nsgRuleRaw -Tokens $nameTokens
 
     $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($ipRaw)) {
-        $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $IP = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $ipRaw -ServerName $serverName) -Tokens $nameTokens
+    $IP = Resolve-AzVmTemplate -Template $ipRaw -Tokens $nameTokens
 
     $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($nicRaw)) {
-        $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $NIC = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $nicRaw -ServerName $serverName) -Tokens $nameTokens
-
-    $vmNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($vmNameRaw)) {
-        $vmNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
-    }
-    $vmName = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vmNameRaw -ServerName $serverName) -Tokens $nameTokens
+    $NIC = Resolve-AzVmTemplate -Template $nicRaw -Tokens $nameTokens
 
     $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($vmDiskNameRaw)) {
-        $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{VM_NAME}-{REGION_CODE}-n{N}")
     }
-    $vmDiskName = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vmDiskNameRaw -ServerName $serverName) -Tokens $nameTokens
+    $vmDiskName = Resolve-AzVmTemplate -Template $vmDiskNameRaw -Tokens $nameTokens
 
-    $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
+    $vmDiskSize = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -Tokens $baseTokens
     $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_USER" -DefaultValue "manager")
     $vmPassRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_PASS" -DefaultValue "<runtime-secret>")
-    $vmUser = Resolve-ServerTemplate -Value $vmUserRaw -ServerName $serverName
-    $vmPass = Resolve-ServerTemplate -Value $vmPassRaw -ServerName $serverName
-    $vmAssistantUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -ServerName $serverName
-    $vmAssistantPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
+    $vmUser = Resolve-AzVmTemplate -Template $vmUserRaw -Tokens $baseTokens
+    $vmPass = Resolve-AzVmTemplate -Template $vmPassRaw -Tokens $baseTokens
+    $vmAssistantUser = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -Tokens $baseTokens
+    $vmAssistantPass = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -Tokens $baseTokens
     $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444")
-    $sshPort = Resolve-ServerTemplate -Value $sshPortValue -ServerName $serverName
-    $vmInitTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmInitTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmInitTaskDirDefault))) -ServerName $serverName
-    $vmUpdateTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmUpdateTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmUpdateTaskDirDefault))) -ServerName $serverName
+    $sshPort = Resolve-AzVmTemplate -Template $sshPortValue -Tokens $baseTokens
+    $vmInitTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmInitTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmInitTaskDirDefault))) -Tokens $baseTokens
+    $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmUpdateTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmUpdateTaskDirDefault))) -Tokens $baseTokens
     $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $ScriptRoot
     $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $ScriptRoot
 
@@ -255,7 +249,6 @@ function Invoke-AzVmStep1Common {
     }
 
     return [ordered]@{
-        ServerName = $serverName
         RegionCode = $regionCode
         NamingTemplateActive = $namingProfile
         ResourceGroup = $resourceGroup

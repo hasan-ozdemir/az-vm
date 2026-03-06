@@ -2,9 +2,9 @@ $ErrorActionPreference = "Stop"
 # AZ_VM_TASK_TIMEOUT_SECONDS=1800
 Write-Host "Update task started: windows-ux-public-desktop-shortcuts"
 
-$serverName = "__SERVER_NAME__"
+$vmName = "__VM_NAME__"
 $publicDesktop = "C:\Users\Public\Desktop"
-$chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$serverName https://www.google.com"
+$chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$vmName https://www.google.com"
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"

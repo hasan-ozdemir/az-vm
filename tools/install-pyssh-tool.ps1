@@ -177,19 +177,19 @@ if ([string]::IsNullOrWhiteSpace([string]$TestHost)) {
     }
     else {
         $vmOsType = (Get-MapValue -Map $envMap -Key "VM_OS_TYPE" -DefaultValue "windows").ToLowerInvariant()
-        $serverName = Get-MapValue -Map $envMap -Key "SERVER_NAME" -DefaultValue ""
-        if ([string]::IsNullOrWhiteSpace([string]$serverName)) {
+        $vmName = Get-MapValue -Map $envMap -Key "VM_NAME" -DefaultValue ""
+        if ([string]::IsNullOrWhiteSpace([string]$vmName)) {
             if ($vmOsType -eq "linux") {
-                $serverName = "otherexamplevm"
+                $vmName = "otherexamplevm"
             }
             else {
-                $serverName = "examplevm"
+                $vmName = "examplevm"
             }
         }
 
         $azLocation = Get-MapValue -Map $envMap -Key "AZ_LOCATION" -DefaultValue "austriaeast"
-        if (-not [string]::IsNullOrWhiteSpace([string]$serverName) -and -not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
-            $TestHost = ("{0}.{1}.cloudapp.azure.com" -f $serverName, $azLocation)
+        if (-not [string]::IsNullOrWhiteSpace([string]$vmName) -and -not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
+            $TestHost = ("{0}.{1}.cloudapp.azure.com" -f $vmName, $azLocation)
         }
     }
 }

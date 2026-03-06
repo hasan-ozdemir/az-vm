@@ -926,7 +926,7 @@ function Select-VmSkuInteractive {
 # Handles Get-AzVmResourceGroupsForSelection.
 function Get-AzVmResourceGroupsForSelection {
     param(
-        [string]$ServerName
+        [string]$VmName
     )
 
     $rows = @()
@@ -957,16 +957,16 @@ function Get-AzVmResourceGroupsForSelection {
 
     $filtered = @($names)
 
-    if (-not [string]::IsNullOrWhiteSpace([string]$ServerName)) {
-        $needle = [string]$ServerName.Trim().ToLowerInvariant()
-        $serverMatches = @(
+    if (-not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+        $needle = [string]$VmName.Trim().ToLowerInvariant()
+        $vmMatches = @(
             $filtered | Where-Object {
                 $candidate = ([string]$_).ToLowerInvariant()
                 $candidate.Contains($needle)
             }
         )
-        if ($serverMatches.Count -gt 0) {
-            $filtered = @($serverMatches)
+        if ($vmMatches.Count -gt 0) {
+            $filtered = @($vmMatches)
         }
     }
 
@@ -977,10 +977,10 @@ function Get-AzVmResourceGroupsForSelection {
 function Select-AzVmResourceGroupInteractive {
     param(
         [string]$DefaultResourceGroup,
-        [string]$ServerName
+        [string]$VmName
     )
 
-    $groups = @(Get-AzVmResourceGroupsForSelection -ServerName $ServerName)
+    $groups = @(Get-AzVmResourceGroupsForSelection -VmName $VmName)
     if ($groups.Count -eq 0) {
         Throw-FriendlyError `
             -Detail "No selectable resource group was found." `
@@ -1025,7 +1025,7 @@ function Resolve-AzVmTargetResourceGroup {
         [hashtable]$Options,
         [switch]$AutoMode,
         [string]$DefaultResourceGroup,
-        [string]$ServerName,
+        [string]$VmName,
         [string]$OperationName = 'operation'
     )
 
@@ -1045,7 +1045,7 @@ function Resolve-AzVmTargetResourceGroup {
         }
     }
     else {
-        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $DefaultResourceGroup -ServerName $ServerName
+        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $DefaultResourceGroup -VmName $VmName
     }
 
     $groupExists = az group exists -n $resourceGroup --only-show-errors
@@ -1350,7 +1350,7 @@ function Initialize-AzVmCommandRuntimeContext {
         -AutoMode:$step1AutoMode `
         -PersistGeneratedResourceGroup:$PersistGeneratedResourceGroup `
         -ScriptRoot $repoRoot `
-        -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
+        -VmNameDefault ([string]$platformDefaults.VmNameDefault) `
         -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
         -VmSizeDefault ([string]$platformDefaults.VmSizeDefault) `
         -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
@@ -1422,7 +1422,6 @@ function Get-AzVmConfigPersistenceMap {
 
     $persist = [ordered]@{
         VM_OS_TYPE = [string]$Platform
-        SERVER_NAME = [string]$Context.ServerName
         AZ_LOCATION = [string]$Context.AzLocation
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VNET_NAME = [string]$Context.VNET
@@ -1546,7 +1545,7 @@ function Invoke-AzVmGroupCommand {
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $activeGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
-    $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
+    $vmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
 
     $hasList = Test-AzVmCliOptionPresent -Options $Options -Name 'list'
     $hasSelect = Test-AzVmCliOptionPresent -Options $Options -Name 'select'
@@ -1562,7 +1561,7 @@ function Invoke-AzVmGroupCommand {
         $selectionRaw = [string](Get-AzVmCliOptionText -Options $Options -Name 'select')
         $selectedGroup = ''
         if ([string]::IsNullOrWhiteSpace([string]$selectionRaw)) {
-            $selectedGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $activeGroup -ServerName $serverName
+            $selectedGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $activeGroup -VmName $vmName
         }
         else {
             $selectedGroup = $selectionRaw.Trim()
@@ -1644,12 +1643,12 @@ function Invoke-AzVmConfigCommand {
     $envFilePath = Join-Path $repoRoot '.env'
     $configBefore = Read-DotEnvFile -Path $envFilePath
     $defaultResourceGroup = [string](Get-ConfigValue -Config $configBefore -Key 'RESOURCE_GROUP' -DefaultValue '')
-    $serverName = [string](Get-ConfigValue -Config $configBefore -Key 'SERVER_NAME' -DefaultValue '')
+    $vmName = [string](Get-ConfigValue -Config $configBefore -Key 'VM_NAME' -DefaultValue '')
     $selectedResourceGroup = Resolve-AzVmTargetResourceGroup `
         -Options $Options `
         -AutoMode:$AutoMode `
         -DefaultResourceGroup $defaultResourceGroup `
-        -ServerName $serverName `
+        -VmName $vmName `
         -OperationName 'config'
 
     $runtime = $null
@@ -1819,7 +1818,7 @@ function Invoke-AzVmExecCommand {
         -Options $Options `
         -AutoMode:$AutoMode `
         -DefaultResourceGroup ([string]$context.ResourceGroup) `
-        -ServerName ([string]$context.ServerName) `
+        -VmName ([string]$context.VmName) `
         -OperationName 'exec'
     $context.ResourceGroup = $selectedResourceGroup
 
@@ -2108,7 +2107,7 @@ function Invoke-AzVmSetCommand {
         -Options $Options `
         -AutoMode:$AutoMode `
         -DefaultResourceGroup ([string]$context.ResourceGroup) `
-        -ServerName ([string]$context.ServerName) `
+        -VmName ([string]$context.VmName) `
         -OperationName 'set'
 
     $vmName = [string]$vmOption
@@ -2241,7 +2240,7 @@ function Invoke-AzVmChangeCommand {
         -Options $Options `
         -AutoMode:$AutoMode `
         -DefaultResourceGroup $resourceGroup `
-        -ServerName ([string]$context.ServerName) `
+        -VmName ([string]$context.VmName) `
         -OperationName $OperationLabel
     $context.ResourceGroup = $resourceGroup
 
@@ -2267,7 +2266,7 @@ function Invoke-AzVmChangeCommand {
                 -Hint "Use --vm-region=<region> and/or --vm-size=<sku>."
         }
 
-        $selectedResourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -ServerName ([string]$context.ServerName)
+        $selectedResourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -VmName ([string]$context.VmName)
         $selectedVmName = Select-AzVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName $vmName
 
         if (-not [string]::Equals($selectedResourceGroup, $resourceGroup, [System.StringComparison]::OrdinalIgnoreCase) -or -not [string]::Equals($selectedVmName, $vmName, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -2423,34 +2422,33 @@ function Invoke-AzVmChangeCommand {
 
         $targetRegionCode = Get-AzVmRegionCode -Location $targetRegion
         $nameTokens = @{
-            SERVER_NAME = [string]$context.ServerName
+            VM_NAME = [string]$context.VmName
             REGION_CODE = [string]$targetRegionCode
         }
 
-        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}-g{N}")
+        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{VM_NAME}-{REGION_CODE}-g{N}")
         $targetResourceGroup = Resolve-AzVmResourceGroupNameFromTemplate `
-            -Template (Resolve-ServerTemplate -Value $targetResourceGroupTemplate -ServerName ([string]$context.ServerName)) `
-            -ServerName ([string]$context.ServerName) `
+            -Template $targetResourceGroupTemplate `
+            -VmName ([string]$context.VmName) `
             -RegionCode $targetRegionCode `
             -UseNextIndex
 
-        $targetVmTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetVnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetSubnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetNsgTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetNsgRuleTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SERVER_NAME}-{REGION_CODE}-n{N}")
-        $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SERVER_NAME}-{REGION_CODE}-n{N}")
+        $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetVnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetSubnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetNsgTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetNsgRuleTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{VM_NAME}-{REGION_CODE}-n{N}")
 
-        $targetVmName = Resolve-AzVmNameFromTemplate -Template $targetVmTemplate -ResourceType 'vm' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetDiskName = Resolve-AzVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetVnetName = Resolve-AzVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetSubnetName = Resolve-AzVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNsgName = Resolve-AzVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNsgRuleName = Resolve-AzVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetIpName = Resolve-AzVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNicName = Resolve-AzVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetVmName = [string]$context.VmName
+        $targetDiskName = Resolve-AzVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetVnetName = Resolve-AzVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetSubnetName = Resolve-AzVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNsgName = Resolve-AzVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNsgRuleName = Resolve-AzVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetIpName = Resolve-AzVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNicName = Resolve-AzVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
 
         Write-Host ("Target naming resolved: rg={0}, vm={1}, disk={2}" -f $targetResourceGroup, $targetVmName, $targetDiskName)
 
@@ -2502,8 +2500,8 @@ function Invoke-AzVmChangeCommand {
             Set-AzVmManagedTagOnResourceGroup -ResourceGroup $targetResourceGroup
 
             $stamp = Get-Date -Format "yyMMddHHmmss"
-            $sourceSnapshotName = ("snap-src-{0}-{1}" -f [string]$context.ServerName, $stamp)
-            $targetSnapshotName = ("snap-dst-{0}-{1}" -f [string]$context.ServerName, $stamp)
+            $sourceSnapshotName = ("snap-src-{0}-{1}" -f [string]$context.VmName, $stamp)
+            $targetSnapshotName = ("snap-dst-{0}-{1}" -f [string]$context.VmName, $stamp)
 
             Invoke-TrackedAction -Label ("az snapshot create source incremental {0}" -f $sourceSnapshotName) -Action {
                 az snapshot create -g $resourceGroup -n $sourceSnapshotName --source $sourceOsDiskId --location $currentRegion --incremental true --sku Standard_LRS -o none --only-show-errors
@@ -3433,7 +3431,7 @@ function Invoke-AzVmDeleteCommand {
     $repoRoot = Get-AzVmRepoRoot
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
-    $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
+    $vmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
     $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
     $defaultVmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
     $defaultVmDiskName = [string](Get-ConfigValue -Config $configMap -Key 'VM_DISK_NAME' -DefaultValue '')
@@ -3464,7 +3462,7 @@ function Invoke-AzVmDeleteCommand {
         $resourceGroup = $defaultResourceGroup.Trim()
     }
     else {
-        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -ServerName $serverName
+        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -VmName $vmName
     }
 
     $groupExists = az group exists -n $resourceGroup --only-show-errors
@@ -3734,12 +3732,12 @@ function Invoke-AzVmCommandDispatcher {
                 $envFilePath = Join-Path (Get-AzVmRepoRoot) '.env'
                 $configMap = Read-DotEnvFile -Path $envFilePath
                 $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
-                $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
+                $vmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
                 $targetResourceGroup = Resolve-AzVmTargetResourceGroup `
                     -Options $Options `
                     -AutoMode:$script:AutoMode `
                     -DefaultResourceGroup $defaultResourceGroup `
-                    -ServerName $serverName `
+                    -VmName $vmName `
                     -OperationName 'update'
 
                 Invoke-AzVmMain `

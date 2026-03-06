@@ -91,7 +91,6 @@ function Invoke-AzVmMain {
             $platformDefaults = $bootstrapRuntime.PlatformDefaults
             $effectiveConfigMap = $bootstrapRuntime.EffectiveConfigMap
 
-            $serverName = [string]$step1Context.ServerName
             $resourceGroup = [string]$step1Context.ResourceGroup
             $defaultAzLocation = [string]$step1Context.DefaultAzLocation
             $VNET = [string]$step1Context.VNET
@@ -138,7 +137,7 @@ function Invoke-AzVmMain {
                 Invoke-Step 'Step 1/7 - initial configuration and availability checks will be completed...' {
                     Show-AzVmStepFirstUseValues -StepLabel 'Step 1/7 - config and precheck' -Context $step1Context -ExtraValues @{
                         Platform = $platform
-                        ServerName = $serverName
+                        VmName = $vmName
                         ResourceGroup = $resourceGroup
                         AzLocation = $azLocation
                         VmSize = $vmSize
@@ -318,13 +317,12 @@ function Invoke-AzVmMain {
                 -AutoMode:$script:AutoMode `
                 -PersistGeneratedResourceGroup `
                 -ScriptRoot $repoRoot `
-                -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
+                -VmNameDefault ([string]$platformDefaults.VmNameDefault) `
                 -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
                 -VmSizeDefault ([string]$platformDefaults.VmSizeDefault) `
                 -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
                 -ConfigOverrides $script:ConfigOverrides
 
-            $serverName = [string]$step1Context.ServerName
             $resourceGroup = [string]$step1Context.ResourceGroup
             $defaultAzLocation = [string]$step1Context.DefaultAzLocation
             $VNET = [string]$step1Context.VNET

@@ -237,7 +237,7 @@ function Get-AzVmPlatformDefaults {
         return [ordered]@{
             PlatformLabel = 'windows'
             WindowTitle = 'az vm'
-            ServerNameDefault = 'examplevm'
+            VmNameDefault = 'examplevm'
             VmImageDefault = 'MicrosoftWindowsDesktop:office-365:win11-25h2-avd-m365:latest'
             VmSizeDefault = 'Standard_B4as_v2'
             VmDiskSizeDefault = '128'
@@ -252,7 +252,7 @@ function Get-AzVmPlatformDefaults {
     return [ordered]@{
         PlatformLabel = 'linux'
         WindowTitle = 'az vm'
-        ServerNameDefault = 'otherexamplevm'
+        VmNameDefault = 'otherexamplevm'
         VmImageDefault = 'Canonical:ubuntu-24_04-lts:server:latest'
         VmSizeDefault = 'Standard_B2as_v2'
         VmDiskSizeDefault = '40'
@@ -739,7 +739,6 @@ function Get-AzVmTaskTokenReplacements {
         TCP_PORTS_BASH = [string]$tcpPortsBash
         TCP_PORTS_REGEX = [string]$tcpRegex
         TCP_PORTS_PS_ARRAY = [string]$tcpPortsPsArray
-        SERVER_NAME = [string]$Context.ServerName
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VM_NAME = [string]$Context.VmName
         AZ_LOCATION = [string]$Context.AzLocation
