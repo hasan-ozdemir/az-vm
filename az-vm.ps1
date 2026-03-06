@@ -1857,7 +1857,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "Usage: az-vm <command> [--option] [--option=value]"
     Write-Host ""
     Write-Host "Commands (full details: az-vm help <command>):"
-    Write-Host "  create  Build missing resources and run VM init/update flow."
+    Write-Host "  create  Create a new managed resource group and run VM init/update flow."
     Write-Host "  update  Re-run create-or-update operations on existing resources."
     Write-Host "  config  Config precheck/preview flow for a target resource group."
     Write-Host "  group   List/select managed resource groups for active context."
