@@ -29,6 +29,9 @@ $script:AzCommandTimeoutSeconds = 1800
 $script:SshTaskTimeoutSeconds = 180
 $script:SshConnectTimeoutSeconds = 30
 $script:AzCliExecutable = $null
+$script:RetailPricingCacheByLocation = @{}
+$script:RetailPricingMaxRetries = 4
+$script:RetailPricingPageDelayMs = 120
 
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
@@ -5439,63 +5442,259 @@ function Get-SkuPriceMap {
         return $result
     }
 
-    $targetSkuSet = @{}
+    $catalog = Get-CoVmRetailPricingCatalogForLocation -Location $Location
     foreach ($skuName in $SkuNames) {
-        if (-not [string]::IsNullOrWhiteSpace($skuName)) {
-            $targetSkuSet[$skuName.ToLowerInvariant()] = $true
+        if ([string]::IsNullOrWhiteSpace([string]$skuName)) {
+            continue
         }
-    }
 
-    $baseFilter = "serviceName eq 'Virtual Machines' and armRegionName eq '$Location' and type eq 'Consumption' and unitOfMeasure eq '1 Hour'"
-    $chunkSize = 15
-    for ($i = 0; $i -lt $SkuNames.Count; $i += $chunkSize) {
-        $end = [math]::Min($i + $chunkSize - 1, $SkuNames.Count - 1)
-        $chunk = @($SkuNames[$i..$end])
-        if (-not $chunk -or $chunk.Count -eq 0) { continue }
-
-        $skuOrExpr = ($chunk | ForEach-Object { "armSkuName eq '$($_)'" }) -join " or "
-        $filter = "$baseFilter and ($skuOrExpr)"
-        $nextUri = "https://prices.azure.com/api/retail/prices?`$filter=" + [uri]::EscapeDataString($filter)
-
-        while ($nextUri) {
-            $response = Invoke-RestMethod -Uri $nextUri -Method Get -ErrorAction Stop
-            foreach ($item in (ConvertTo-ObjectArrayCompat -InputObject $response.Items)) {
-                if (-not $item.armSkuName -or $item.unitPrice -eq $null) { continue }
-                $itemSkuName = [string]$item.armSkuName
-                $itemKey = $itemSkuName.ToLowerInvariant()
-                if (-not $targetSkuSet.ContainsKey($itemKey)) { continue }
-
-                if ($item.productName -like "*Cloud Services*") { continue }
-                $priceText = "$($item.productName) $($item.skuName) $($item.meterName) $($item.meterSubCategory)"
-                if ($priceText -match '(?i)\bspot\b' -or $priceText -match '(?i)\blow\s+priority\b') { continue }
-
-                if (-not $result.ContainsKey($itemSkuName)) {
-                    $result[$itemSkuName] = [ordered]@{
-                        LinuxPerHour   = $null
-                        WindowsPerHour = $null
-                        Currency       = $item.currencyCode
-                    }
-                }
-
-                $entry = $result[$itemSkuName]
-                $unitPrice = [double]$item.unitPrice
-                if ($item.productName -like "*Windows*") {
-                    if ($null -eq $entry.WindowsPerHour -or $unitPrice -lt $entry.WindowsPerHour) {
-                        $entry.WindowsPerHour = $unitPrice
-                    }
-                }
-                else {
-                    if ($null -eq $entry.LinuxPerHour -or $unitPrice -lt $entry.LinuxPerHour) {
-                        $entry.LinuxPerHour = $unitPrice
-                    }
-                }
-            }
-
-            $nextUri = $response.NextPageLink
+        $skuKey = ([string]$skuName).ToLowerInvariant()
+        if ($catalog.ContainsKey($skuKey)) {
+            $result[[string]$skuName] = $catalog[$skuKey]
         }
     }
 
     return $result
+}
+
+function Get-CoVmHttpStatusCode {
+    param(
+        [object]$ExceptionObject
+    )
+
+    if ($null -eq $ExceptionObject) {
+        return $null
+    }
+
+    $statusCodeValue = $null
+    $response = $null
+    if ($ExceptionObject.PSObject.Properties.Match('Response').Count -gt 0) {
+        $response = $ExceptionObject.Response
+    }
+
+    if ($null -ne $response -and $response.PSObject.Properties.Match('StatusCode').Count -gt 0 -and $null -ne $response.StatusCode) {
+        try {
+            $statusCodeValue = [int]$response.StatusCode
+        }
+        catch {
+            try {
+                $statusCodeValue = [int]$response.StatusCode.value__
+            }
+            catch {
+                $statusCodeValue = $null
+            }
+        }
+    }
+
+    if ($null -eq $statusCodeValue -and $ExceptionObject.PSObject.Properties.Match('StatusCode').Count -gt 0 -and $null -ne $ExceptionObject.StatusCode) {
+        try {
+            $statusCodeValue = [int]$ExceptionObject.StatusCode
+        }
+        catch {
+            try {
+                $statusCodeValue = [int]$ExceptionObject.StatusCode.value__
+            }
+            catch {
+                $statusCodeValue = $null
+            }
+        }
+    }
+
+    return $statusCodeValue
+}
+
+function Get-CoVmHttpRetryAfterSeconds {
+    param(
+        [object]$ExceptionObject
+    )
+
+    if ($null -eq $ExceptionObject) {
+        return $null
+    }
+
+    $response = $null
+    if ($ExceptionObject.PSObject.Properties.Match('Response').Count -gt 0) {
+        $response = $ExceptionObject.Response
+    }
+
+    if ($null -eq $response) {
+        return $null
+    }
+
+    $headers = $null
+    if ($response.PSObject.Properties.Match('Headers').Count -gt 0) {
+        $headers = $response.Headers
+    }
+    if ($null -eq $headers) {
+        return $null
+    }
+
+    $retryAfterRaw = $null
+    try {
+        $retryAfterRaw = $headers['Retry-After']
+    }
+    catch {
+        $retryAfterRaw = $null
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$retryAfterRaw)) {
+        try {
+            $retryAfterValues = $headers.GetValues('Retry-After')
+            if ($retryAfterValues -and $retryAfterValues.Count -gt 0) {
+                $retryAfterRaw = [string]$retryAfterValues[0]
+            }
+        }
+        catch {
+            $retryAfterRaw = $null
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$retryAfterRaw) -and $headers.PSObject.Properties.Match('RetryAfter').Count -gt 0 -and $null -ne $headers.RetryAfter) {
+        $retryAfterObject = $headers.RetryAfter
+        if ($retryAfterObject.PSObject.Properties.Match('Delta').Count -gt 0 -and $null -ne $retryAfterObject.Delta) {
+            try {
+                return [int][math]::Ceiling([double]$retryAfterObject.Delta.TotalSeconds)
+            }
+            catch {}
+        }
+        if ($retryAfterObject.PSObject.Properties.Match('Date').Count -gt 0 -and $null -ne $retryAfterObject.Date) {
+            try {
+                $seconds = [int][math]::Ceiling(([datetimeoffset]$retryAfterObject.Date - [datetimeoffset]::UtcNow).TotalSeconds)
+                if ($seconds -gt 0) {
+                    return $seconds
+                }
+            }
+            catch {}
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$retryAfterRaw)) {
+        return $null
+    }
+
+    $numeric = 0
+    if ([int]::TryParse(([string]$retryAfterRaw).Trim(), [ref]$numeric)) {
+        if ($numeric -gt 0) {
+            return $numeric
+        }
+        return $null
+    }
+
+    $retryAfterDate = [datetime]::MinValue
+    if ([datetime]::TryParse([string]$retryAfterRaw, [ref]$retryAfterDate)) {
+        $deltaSeconds = [int][math]::Ceiling(($retryAfterDate.ToUniversalTime() - [datetime]::UtcNow).TotalSeconds)
+        if ($deltaSeconds -gt 0) {
+            return $deltaSeconds
+        }
+    }
+
+    return $null
+}
+
+function Invoke-CoVmRetailPricingRequest {
+    param(
+        [string]$Uri
+    )
+
+    $maxRetries = [math]::Max([int]$script:RetailPricingMaxRetries, 0)
+    for ($retry = 0; $true; $retry++) {
+        try {
+            return Invoke-RestMethod -Uri $Uri -Method Get -ErrorAction Stop
+        }
+        catch {
+            $statusCode = Get-CoVmHttpStatusCode -ExceptionObject $_.Exception
+            $isRetryable = $false
+            if ($null -ne $statusCode) {
+                $retryableCodes = @(429, 500, 502, 503, 504)
+                if ($retryableCodes -contains ([int]$statusCode)) {
+                    $isRetryable = $true
+                }
+            }
+
+            if (-not $isRetryable -or $retry -ge $maxRetries) {
+                throw
+            }
+
+            $retryAfterSeconds = Get-CoVmHttpRetryAfterSeconds -ExceptionObject $_.Exception
+            if ($null -eq $retryAfterSeconds -or $retryAfterSeconds -le 0) {
+                $retryAfterSeconds = [int][math]::Min([math]::Pow(2, ($retry + 1)), 30)
+            }
+            if ($retryAfterSeconds -lt 1) {
+                $retryAfterSeconds = 1
+            }
+
+            Write-Host ("Retail Pricing API returned HTTP {0}. Retrying in {1}s ({2}/{3})..." -f $statusCode, $retryAfterSeconds, ($retry + 1), $maxRetries) -ForegroundColor Yellow
+            Start-Sleep -Seconds $retryAfterSeconds
+        }
+    }
+}
+
+function Get-CoVmRetailPricingCatalogForLocation {
+    param(
+        [string]$Location
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Location)) {
+        return @{}
+    }
+
+    $locationKey = ([string]$Location).Trim().ToLowerInvariant()
+    if ($script:RetailPricingCacheByLocation.ContainsKey($locationKey)) {
+        return $script:RetailPricingCacheByLocation[$locationKey]
+    }
+
+    $catalog = @{}
+    $baseFilter = "serviceName eq 'Virtual Machines' and armRegionName eq '$Location' and type eq 'Consumption' and unitOfMeasure eq '1 Hour'"
+    $nextUri = "https://prices.azure.com/api/retail/prices?`$filter=" + [uri]::EscapeDataString($baseFilter) + "&`$top=1000"
+
+    while ($nextUri) {
+        $response = Invoke-CoVmRetailPricingRequest -Uri $nextUri
+        foreach ($item in (ConvertTo-ObjectArrayCompat -InputObject $response.Items)) {
+            if (-not $item.armSkuName -or $item.unitPrice -eq $null) {
+                continue
+            }
+
+            if ($item.productName -like "*Cloud Services*") {
+                continue
+            }
+            $priceText = "$($item.productName) $($item.skuName) $($item.meterName) $($item.meterSubCategory)"
+            if ($priceText -match '(?i)\bspot\b' -or $priceText -match '(?i)\blow\s+priority\b') {
+                continue
+            }
+
+            $catalogKey = ([string]$item.armSkuName).ToLowerInvariant()
+            if (-not $catalog.ContainsKey($catalogKey)) {
+                $catalog[$catalogKey] = [ordered]@{
+                    LinuxPerHour   = $null
+                    WindowsPerHour = $null
+                    Currency       = $item.currencyCode
+                }
+            }
+
+            $entry = $catalog[$catalogKey]
+            $unitPrice = [double]$item.unitPrice
+            if ($item.productName -like "*Windows*") {
+                if ($null -eq $entry.WindowsPerHour -or $unitPrice -lt $entry.WindowsPerHour) {
+                    $entry.WindowsPerHour = $unitPrice
+                }
+            }
+            else {
+                if ($null -eq $entry.LinuxPerHour -or $unitPrice -lt $entry.LinuxPerHour) {
+                    $entry.LinuxPerHour = $unitPrice
+                }
+            }
+        }
+
+        $nextUri = [string]$response.NextPageLink
+        if ([string]::IsNullOrWhiteSpace($nextUri)) {
+            $nextUri = $null
+        }
+        elseif ([int]$script:RetailPricingPageDelayMs -gt 0) {
+            Start-Sleep -Milliseconds ([int]$script:RetailPricingPageDelayMs)
+        }
+    }
+
+    $script:RetailPricingCacheByLocation[$locationKey] = $catalog
+    return $catalog
 }
 
 function Convert-HourlyPriceToMonthlyText {
