@@ -128,8 +128,8 @@ if ($dockerAlreadyInstalled) {
     Write-Host "Docker Desktop is already installed. Winget install step is skipped."
 }
 else {
-    Write-Host "Running: winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-    & $wingetExe install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+    Write-Host "Running: winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+    & $wingetExe install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
     if ($LASTEXITCODE -ne 0) {
         throw "winget install Docker.DockerDesktop failed with exit code $LASTEXITCODE."
     }
