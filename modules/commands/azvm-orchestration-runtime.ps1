@@ -1,5 +1,18 @@
 # Imported runtime region: test-orchestration.
 
+# Handles Test-AzVmVmNameFormat.
+function Test-AzVmVmNameFormat {
+    param(
+        [string]$VmName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$VmName)) {
+        return $false
+    }
+
+    return ([string]$VmName -match '^[a-zA-Z][a-zA-Z0-9\-]{2,15}$')
+}
+
 # Handles Invoke-AzVmStep1Common.
 function Invoke-AzVmStep1Common {
     param(
@@ -31,11 +44,19 @@ function Invoke-AzVmStep1Common {
             $userInput = $vmNameDefaultResolved
         }
 
-        if ($userInput -match '^[a-zA-Z][a-zA-Z0-9\-]{2,15}$') {
+        if (Test-AzVmVmNameFormat -VmName $userInput) {
             $isValid = $true
         }
         else {
-            Write-Host "Invalid VM name. Try again." -ForegroundColor Red
+            if ($AutoMode) {
+                Throw-FriendlyError `
+                    -Detail ("VM name '{0}' is invalid." -f [string]$userInput) `
+                    -Code 2 `
+                    -Summary "VM name format is invalid." `
+                    -Hint "Use 3-16 characters, start with a letter, then continue with letters, numbers, or hyphen."
+            }
+
+            Write-Host "Invalid VM name. Use 3-16 characters, start with a letter, then continue with letters, numbers, or hyphen." -ForegroundColor Red
             $isValid = $false
         }
     } until ($isValid)
@@ -83,6 +104,13 @@ function Invoke-AzVmStep1Common {
         $vmSize = [string]$forcedVmSize
     }
 
+    if (-not [string]::IsNullOrWhiteSpace([string]$defaultAzLocation)) {
+        $defaultAzLocation = ([string]$defaultAzLocation).Trim().ToLowerInvariant()
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
+        $azLocation = ([string]$azLocation).Trim().ToLowerInvariant()
+    }
+
     $shouldPromptLocationAndSku = (-not $AutoMode) -and -not ($hasForcedAzLocation -or $hasForcedVmSize)
     if ($shouldPromptLocationAndSku) {
         $priceHours = Get-PriceHoursFromConfig -Config $ConfigMap -DefaultHours 730
@@ -119,6 +147,7 @@ function Invoke-AzVmStep1Common {
             -Hint "Set AZ_LOCATION in .env or select a region interactively."
     }
 
+    Assert-LocationExists -Location $azLocation
     $regionCode = Get-AzVmRegionCode -Location $azLocation
 
     $nameTokens = @{
@@ -169,6 +198,8 @@ function Invoke-AzVmStep1Common {
             $ConfigOverrides["RESOURCE_GROUP"] = $resourceGroup
         }
     }
+
+    Assert-AzVmVmNameConflictFree -VmName $vmName -TargetResourceGroup $resourceGroup
 
     $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "")
     $vnetExplicit = -not [string]::IsNullOrWhiteSpace([string]$vnetRaw)
@@ -293,6 +324,63 @@ function Invoke-AzVmStep1Common {
         VmInitTaskDir = $vmInitTaskDir
         VmUpdateTaskDir = $vmUpdateTaskDir
     }
+}
+
+# Handles Assert-AzVmVmNameConflictFree.
+function Assert-AzVmVmNameConflictFree {
+    param(
+        [string]$VmName,
+        [string]$TargetResourceGroup
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$VmName)) {
+        Throw-FriendlyError `
+            -Detail "VM name is empty." `
+            -Code 2 `
+            -Summary "VM name validation failed." `
+            -Hint "Provide a valid VM_NAME before continuing."
+    }
+
+    $vmMatchesJson = az resource list --resource-type "Microsoft.Compute/virtualMachines" --query "[?name=='$VmName'].{name:name,resourceGroup:resourceGroup,id:id}" -o json --only-show-errors
+    if ($LASTEXITCODE -ne 0) {
+        Throw-FriendlyError `
+            -Detail "az resource list failed while checking VM name uniqueness." `
+            -Code 62 `
+            -Summary "VM name uniqueness check could not be completed." `
+            -Hint "Check Azure login status and subscription access."
+    }
+
+    $vmMatches = @(
+        ConvertFrom-JsonArrayCompat -InputObject $vmMatchesJson |
+            Where-Object { $_ -ne $null }
+    )
+    if (@($vmMatches).Count -eq 0) {
+        return
+    }
+
+    $otherGroupMatches = @(
+        @($vmMatches) | Where-Object {
+            $candidateGroup = [string]$_.resourceGroup
+            -not [string]::Equals($candidateGroup, [string]$TargetResourceGroup, [System.StringComparison]::OrdinalIgnoreCase)
+        }
+    )
+    if (@($otherGroupMatches).Count -eq 0) {
+        return
+    }
+
+    $conflictGroups = @(
+        @($otherGroupMatches) |
+            ForEach-Object { [string]$_.resourceGroup } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+    $conflictGroupText = if (@($conflictGroups).Count -gt 0) { $conflictGroups -join ", " } else { "(unknown resource group)" }
+
+    Throw-FriendlyError `
+        -Detail ("VM name '{0}' already exists in resource group(s): {1}." -f [string]$VmName, [string]$conflictGroupText) `
+        -Code 62 `
+        -Summary "VM name must be unique before provisioning continues." `
+        -Hint "Choose another VM_NAME or target the existing resource group that already owns this VM name."
 }
 
 # Handles Invoke-AzVmPrecheckStep.

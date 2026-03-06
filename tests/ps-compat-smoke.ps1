@@ -91,6 +91,14 @@ Invoke-Test -Name "Azure location picker resolver contract" -Action {
     Assert-True -Condition ([string]::Equals([string]$resolvedFromDefault, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Default location resolution failed."
 }
 
+Invoke-Test -Name "VM name format contract" -Action {
+    Assert-True -Condition (Test-AzVmVmNameFormat -VmName "examplevm") -Message "Expected valid VM name to pass."
+    Assert-True -Condition (Test-AzVmVmNameFormat -VmName "otherexamplevm-1") -Message "Expected valid VM name with hyphen to pass."
+    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "1examplevm")) -Message "VM name starting with digit should fail."
+    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "ab")) -Message "Too-short VM name should fail."
+    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "examplevm_name")) -Message "VM name with underscore should fail."
+}
+
 Invoke-Test -Name "Platform config precedence mapping" -Action {
     $legacyInitTaskDirKey = (@('VM','INIT','TASK','DIR') -join '_')
     $legacyUpdateTaskDirKey = (@('VM','UPDATE','TASK','DIR') -join '_')
