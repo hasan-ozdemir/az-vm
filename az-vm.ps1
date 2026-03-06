@@ -872,158 +872,155 @@ function Invoke-AzVmMain {
                 $sshMaxRetries = Resolve-AzVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
             }
 
-            $initTaskBlocks = @()
-            $updateTaskBlocks = @()
-            $step7VmCreateResult = $null
+            $vmExistsAtRunStart = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
 
             if ([string]::Equals($actionMode, 'single', [System.StringComparison]::OrdinalIgnoreCase)) {
                 Assert-AzVmSingleActionDependencies -ActionName $actionTarget -Context $step1Context
             }
 
             if ($runConfigAction) {
-                Invoke-Step 'Step 1/9 - initial parameters will be configured...' {
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 1/9 - config bootstrap' -Context $step1Context -ExtraValues @{
+                Invoke-Step 'Step 1/7 - initial configuration and availability checks will be completed...' {
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 1/7 - config and precheck' -Context $step1Context -ExtraValues @{
                         Platform = $platform
                         ServerName = $serverName
                         ResourceGroup = $resourceGroup
                         AzLocation = $azLocation
                         VmSize = $vmSize
                     }
-                }
-                Invoke-Step 'Step 2/9 - region, image, and VM size availability will be checked...' {
                     Invoke-AzVmPrecheckStep -Context $step1Context
                 }
             }
 
             if ($runGroupAction) {
-                Invoke-Step 'Step 3/9 - resource group will be checked...' {
+                Invoke-Step 'Step 2/7 - resource group will be checked...' {
                     Invoke-AzVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
                 }
             }
 
             if ($runNetworkAction) {
-                Invoke-Step 'Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
+                Invoke-Step 'Step 3/7 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
                     Invoke-AzVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
                 }
             }
 
+            if ($runDeployAction) {
+                Invoke-Step 'Step 4/7 - virtual machine will be created...' {
+                    if ($platform -eq 'windows') {
+                        $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                            az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
+                        }
+                    }
+                    else {
+                        $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                            az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
+                        }
+                    }
+                }
+            }
+
             if ($runInitAction) {
-                Invoke-Step 'Step 5/9 - VM init task files will be prepared...' {
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
+                Invoke-Step 'Step 5/7 - VM init tasks will be executed via Azure Run Command...' {
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 5/7 - vm-init task catalog' -Context $step1Context -ExtraValues @{
+                        Platform = $platform
+                        VmInitTaskDir = $vmInitTaskDir
+                        RunCommandId = [string]$platformDefaults.RunCommandId
+                        VmExistsAtRunStart = $vmExistsAtRunStart
+                    }
+
                     $initTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
                     $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
                     $initDisabledTasks = @($initTaskCatalog.DisabledTasks)
-                    if (@($initTaskTemplates).Count -gt 0) {
-                        $initTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
+                    $initTaskBlocks = if (@($initTaskTemplates).Count -gt 0) {
+                        @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
                     }
                     else {
-                        $initTaskBlocks = @()
+                        @()
                     }
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
+
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 5/7 - vm-init task catalog' -Context $step1Context -ExtraValues @{
                         InitTaskCount = @($initTaskBlocks).Count
                         InitDisabledTaskCount = @($initDisabledTasks).Count
+                    }
+                    if (@($initDisabledTasks).Count -gt 0) {
+                        $initDisabledNames = @($initDisabledTasks | ForEach-Object { [string]$_.Name })
+                        Write-Host ("Disabled init tasks (ignored): {0}" -f ($initDisabledNames -join ', ')) -ForegroundColor Yellow
+                    }
+
+                    if (@($initTaskBlocks).Count -eq 0) {
+                        Write-Host 'Init task catalog is empty; Step 5 vm-init stage is skipped.' -ForegroundColor Yellow
+                    }
+                    else {
+                        $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
+                        Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell | Out-Null
+                    }
+
+                    if ($runUpdateAction -and @($initTaskBlocks).Count -gt 0) {
+                        Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
+                        Start-Sleep -Seconds 20
                     }
                 }
             }
 
             if ($runUpdateAction) {
-                Invoke-Step 'Step 6/9 - VM update task files will be prepared...' {
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
-                    $updateTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
-                    $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
-                    $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
-                    if (@($updateTaskTemplates).Count -gt 0) {
-                        $updateTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
-                    }
-                    else {
-                        $updateTaskBlocks = @()
-                    }
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
-                        UpdateTaskCount = @($updateTaskBlocks).Count
-                        UpdateDisabledTaskCount = @($updateDisabledTasks).Count
-                        TaskOutcomeMode = $taskOutcomeMode
-                    }
-                }
-            }
-
-            if ($runDeployAction) {
-                Invoke-Step 'Step 7/9 - virtual machine will be created...' {
-                    if ($platform -eq 'windows') {
-                        $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
-                            az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                        }
-                    }
-                    else {
-                        $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
-                            az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                        }
-                    }
-                }
-            }
-
-            if ($runInitAction -or $runUpdateAction) {
-                Invoke-Step 'Step 8/9 - VM init and update tasks will be executed...' {
-                    $vmCreatedThisRun = $false
-                    if ($step7VmCreateResult -and $step7VmCreateResult.PSObject.Properties.Match('VmCreatedThisRun').Count -gt 0) {
-                        $vmCreatedThisRun = [bool]$step7VmCreateResult.VmCreatedThisRun
-                    }
-                    $shouldRunInitTasks = $runInitAction
-
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
+                Invoke-Step 'Step 6/7 - VM update tasks will be executed via persistent SSH...' {
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/7 - vm-update task catalog' -Context $step1Context -ExtraValues @{
                         Platform = $platform
-                        InitExecutor = 'az-vm-run-command'
-                        UpdateExecutor = 'pyssh-persistent'
-                        RunCommandId = [string]$platformDefaults.RunCommandId
-                        InitTaskCount = @($initTaskBlocks).Count
-                        UpdateTaskCount = @($updateTaskBlocks).Count
+                        VmUpdateTaskDir = $vmUpdateTaskDir
                         TaskOutcomeMode = $taskOutcomeMode
                         SshMaxRetries = $sshMaxRetries
                         SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
                         SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
                         PySshClientPath = $configuredPySshClientPath
-                        VmCreatedThisRun = $vmCreatedThisRun
-                        ShouldRunInitTasks = $shouldRunInitTasks
                     }
 
-                    if ($runInitAction) {
-                        if (@($initTaskBlocks).Count -gt 0) {
-                            $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-                            Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell | Out-Null
-                        }
-                        else {
-                            Write-Host 'Init task catalog is empty; Step 8 init stage is skipped.' -ForegroundColor Yellow
-                        }
-
-                        Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
-                        Start-Sleep -Seconds 20
+                    $updateTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
+                    $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
+                    $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
+                    $updateTaskBlocks = if (@($updateTaskTemplates).Count -gt 0) {
+                        @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
+                    }
+                    else {
+                        @()
                     }
 
-                    if ($runUpdateAction) {
-                        $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
-                        $sshHost = [string]$vmRuntimeDetails.VmFqdn
-                        if ([string]::IsNullOrWhiteSpace($sshHost)) {
-                            $sshHost = [string]$vmRuntimeDetails.PublicIP
-                        }
-                        if ([string]::IsNullOrWhiteSpace($sshHost)) {
-                            throw 'Step 8 could not resolve VM SSH host (FQDN/Public IP).'
-                        }
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/7 - vm-update task catalog' -Context $step1Context -ExtraValues @{
+                        UpdateTaskCount = @($updateTaskBlocks).Count
+                        UpdateDisabledTaskCount = @($updateDisabledTasks).Count
+                    }
+                    if (@($updateDisabledTasks).Count -gt 0) {
+                        $updateDisabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })
+                        Write-Host ("Disabled update tasks (ignored): {0}" -f ($updateDisabledNames -join ', ')) -ForegroundColor Yellow
+                    }
 
-                        $step8SshUser = [string]$vmUser
-                        $step8SshPassword = [string]$vmPass
+                    $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
+                    $sshHost = [string]$vmRuntimeDetails.VmFqdn
+                    if ([string]::IsNullOrWhiteSpace($sshHost)) {
+                        $sshHost = [string]$vmRuntimeDetails.PublicIP
+                    }
+                    if ([string]::IsNullOrWhiteSpace($sshHost)) {
+                        throw 'Step 6 could not resolve VM SSH host (FQDN/Public IP).'
+                    }
 
-                        if (@($updateTaskBlocks).Count -eq 0) {
-                            Write-Host 'Update task catalog is empty; Step 8 update stage is skipped.' -ForegroundColor Yellow
-                        }
-                        else {
-                            Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
-                        }
+                    $step6SshUser = [string]$vmUser
+                    $step6SshPassword = [string]$vmPass
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/7 - vm-update execution' -Context $step1Context -ExtraValues @{
+                        Step6SshHost = $sshHost
+                        Step6SshUser = $step6SshUser
+                        Step6SshPort = $sshPort
+                    }
+
+                    if (@($updateTaskBlocks).Count -eq 0) {
+                        Write-Host 'Update task catalog is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
+                    }
+                    else {
+                        Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step6SshUser -SshPassword $step6SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
                     }
                 }
             }
 
             if ($runFinishAction) {
-                Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
+                Invoke-Step 'Step 7/7 - VM connection details will be printed...' {
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 7/7 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
 
                     if ([bool]$platformDefaults.IncludeRdp) {
                         $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
@@ -1052,12 +1049,12 @@ function Invoke-AzVmMain {
                 }
             }
 
-            Write-Host ("Stopped after {0}-action target '{1}'." -f $actionMode, $actionTarget) -ForegroundColor Green
+            Write-Host ("Stopped after {0}-step target '{1}'." -f $actionMode, $actionTarget) -ForegroundColor Green
             Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))
             return
         }
 
-        Invoke-Step 'Step 1/9 - initial parameters will be configured...' {
+        Invoke-Step 'Step 1/7 - initial configuration and availability checks will be completed...' {
             $step1Context = Invoke-AzVmStep1Common `
                 -ConfigMap $effectiveConfigMap `
                 -EnvFilePath $envFilePath `
@@ -1157,98 +1154,64 @@ function Invoke-AzVmMain {
             if ($script:AutoMode) {
                 Show-AzVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $PSScriptRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -RenewMode:$script:RenewMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
             }
-        }
 
-        Invoke-Step 'Step 2/9 - region, image, and VM size availability will be checked...' {
             Invoke-AzVmPrecheckStep -Context $step1Context
         }
 
-        Invoke-Step 'Step 3/9 - resource group will be checked...' {
+        Invoke-Step 'Step 2/7 - resource group will be checked...' {
             Invoke-AzVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
         }
 
-        Invoke-Step 'Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
+        Invoke-Step 'Step 3/7 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
             Invoke-AzVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
         }
 
-        Invoke-Step 'Step 5/9 - VM init task files will be prepared...' {
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
+        $vmExistsAtRunStart = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
+
+        Invoke-Step 'Step 4/7 - virtual machine will be created...' {
+            if ($platform -eq 'windows') {
+                $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                    az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
+                }
+            }
+            else {
+                $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                    az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
+                }
+            }
+        }
+
+        Invoke-Step 'Step 5/7 - VM init tasks will be executed via Azure Run Command...' {
+            $vmCreatedThisRun = -not [bool]$vmExistsAtRunStart
+            if ($step4VmCreateResult -and $step4VmCreateResult.PSObject.Properties.Match('VmCreatedThisRun').Count -gt 0) {
+                $vmCreatedThisRun = [bool]$step4VmCreateResult.VmCreatedThisRun
+            }
+            $shouldRunInitTasks = ($vmCreatedThisRun -or $script:UpdateMode -or $script:RenewMode)
+
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 5/7 - vm-init task catalog' -Context $step1Context -ExtraValues @{
+                Platform = $platform
+                VmInitTaskDir = $vmInitTaskDir
+                RunCommandId = [string]$platformDefaults.RunCommandId
+                VmExistsAtRunStart = $vmExistsAtRunStart
+                VmCreatedThisRun = $vmCreatedThisRun
+                ShouldRunInitTasks = $shouldRunInitTasks
+            }
             $initTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
             $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
             $initDisabledTasks = @($initTaskCatalog.DisabledTasks)
-            if (@($initTaskTemplates).Count -gt 0) {
-                $initTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
+            $initTaskBlocks = if (@($initTaskTemplates).Count -gt 0) {
+                @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
             }
             else {
-                $initTaskBlocks = @()
+                @()
             }
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 5/7 - vm-init task catalog' -Context $step1Context -ExtraValues @{
                 InitTaskCount = @($initTaskBlocks).Count
                 InitDisabledTaskCount = @($initDisabledTasks).Count
             }
             if (@($initDisabledTasks).Count -gt 0) {
                 $initDisabledNames = @($initDisabledTasks | ForEach-Object { [string]$_.Name })
                 Write-Host ("Disabled init tasks (ignored): {0}" -f ($initDisabledNames -join ', ')) -ForegroundColor Yellow
-            }
-        }
-
-        Invoke-Step 'Step 6/9 - VM update task files will be prepared...' {
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
-            $updateTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
-            $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
-            $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
-            if (@($updateTaskTemplates).Count -gt 0) {
-                $updateTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
-            }
-            else {
-                $updateTaskBlocks = @()
-            }
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
-                UpdateTaskCount = @($updateTaskBlocks).Count
-                UpdateDisabledTaskCount = @($updateDisabledTasks).Count
-                TaskOutcomeMode = $taskOutcomeMode
-            }
-            if (@($updateDisabledTasks).Count -gt 0) {
-                $updateDisabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })
-                Write-Host ("Disabled update tasks (ignored): {0}" -f ($updateDisabledNames -join ', ')) -ForegroundColor Yellow
-            }
-        }
-
-        Invoke-Step 'Step 7/9 - virtual machine will be created...' {
-            if ($platform -eq 'windows') {
-                $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
-                    az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                }
-            }
-            else {
-                $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
-                    az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                }
-            }
-        }
-
-        Invoke-Step 'Step 8/9 - VM init and update tasks will be executed...' {
-            $vmCreatedThisRun = $false
-            if ($step7VmCreateResult -and $step7VmCreateResult.PSObject.Properties.Match('VmCreatedThisRun').Count -gt 0) {
-                $vmCreatedThisRun = [bool]$step7VmCreateResult.VmCreatedThisRun
-            }
-            $shouldRunInitTasks = ($vmCreatedThisRun -or $script:UpdateMode -or $script:RenewMode)
-
-            $initExecutorLabel = 'az-vm-run-command'
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
-                Platform = $platform
-                InitExecutor = $initExecutorLabel
-                UpdateExecutor = 'pyssh-persistent'
-                RunCommandId = [string]$platformDefaults.RunCommandId
-                InitTaskCount = @($initTaskBlocks).Count
-                UpdateTaskCount = @($updateTaskBlocks).Count
-                TaskOutcomeMode = $taskOutcomeMode
-                SshMaxRetries = $sshMaxRetries
-                SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
-                SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
-                PySshClientPath = $configuredPySshClientPath
-                VmCreatedThisRun = $vmCreatedThisRun
-                ShouldRunInitTasks = $shouldRunInitTasks
             }
 
             if ($shouldRunInitTasks -and @($initTaskBlocks).Count -gt 0) {
@@ -1259,12 +1222,41 @@ function Invoke-AzVmMain {
                 Write-Host 'Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.' -ForegroundColor Yellow
             }
             else {
-                Write-Host 'Init task catalog is empty; Step 8 init stage is skipped.' -ForegroundColor Yellow
+                Write-Host 'Init task catalog is empty; Step 5 vm-init stage is skipped.' -ForegroundColor Yellow
             }
 
-            if ($shouldRunInitTasks) {
+            if ($shouldRunInitTasks -and @($initTaskBlocks).Count -gt 0) {
                 Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
                 Start-Sleep -Seconds 20
+            }
+        }
+
+        Invoke-Step 'Step 6/7 - VM update tasks will be executed via persistent SSH...' {
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/7 - vm-update task catalog' -Context $step1Context -ExtraValues @{
+                Platform = $platform
+                VmUpdateTaskDir = $vmUpdateTaskDir
+                TaskOutcomeMode = $taskOutcomeMode
+                SshMaxRetries = $sshMaxRetries
+                SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+                SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+                PySshClientPath = $configuredPySshClientPath
+            }
+            $updateTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
+            $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
+            $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
+            $updateTaskBlocks = if (@($updateTaskTemplates).Count -gt 0) {
+                @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
+            }
+            else {
+                @()
+            }
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/7 - vm-update task catalog' -Context $step1Context -ExtraValues @{
+                UpdateTaskCount = @($updateTaskBlocks).Count
+                UpdateDisabledTaskCount = @($updateDisabledTasks).Count
+            }
+            if (@($updateDisabledTasks).Count -gt 0) {
+                $updateDisabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })
+                Write-Host ("Disabled update tasks (ignored): {0}" -f ($updateDisabledNames -join ', ')) -ForegroundColor Yellow
             }
 
             $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
@@ -1273,24 +1265,23 @@ function Invoke-AzVmMain {
                 $sshHost = [string]$vmRuntimeDetails.PublicIP
             }
             if ([string]::IsNullOrWhiteSpace($sshHost)) {
-                throw 'Step 8 could not resolve VM SSH host (FQDN/Public IP).'
+                throw 'Step 6 could not resolve VM SSH host (FQDN/Public IP).'
             }
 
-            $step8SshUser = [string]$vmUser
-            $step8SshPassword = [string]$vmPass
-
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{ Step8SshHost = $sshHost; Step8SshUser = $step8SshUser; Step8SshPort = $sshPort }
+            $step6SshUser = [string]$vmUser
+            $step6SshPassword = [string]$vmPass
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/7 - vm-update execution' -Context $step1Context -ExtraValues @{ Step6SshHost = $sshHost; Step6SshUser = $step6SshUser; Step6SshPort = $sshPort }
 
             if (@($updateTaskBlocks).Count -eq 0) {
-                Write-Host 'Update task catalog is empty; Step 8 update stage is skipped.' -ForegroundColor Yellow
+                Write-Host 'Update task catalog is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
             }
             else {
-                Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step6SshUser -SshPassword $step6SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
             }
         }
 
-        Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
-            Show-AzVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
+        Invoke-Step 'Step 7/7 - VM connection details will be printed...' {
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 7/7 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
 
             if ([bool]$platformDefaults.IncludeRdp) {
                 $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
@@ -3174,7 +3165,7 @@ function Invoke-AzVmPrecheckStep {
     )
 
     Show-AzVmStepFirstUseValues `
-        -StepLabel "Step 2/9 - resource availability precheck" `
+        -StepLabel "Step 1/7 - resource availability precheck" `
         -Context $Context `
         -Keys @("AzLocation", "VmImage", "VmSize", "VmDiskSize")
 
@@ -3196,7 +3187,7 @@ function Invoke-AzVmResourceGroupStep {
     $resourceGroup = [string]$Context.ResourceGroup
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     Show-AzVmStepFirstUseValues `
-        -StepLabel "Step 3/9 - resource group check" `
+        -StepLabel "Step 2/7 - resource group check" `
         -Context $Context `
         -Keys @("ResourceGroup") `
         -ExtraValues @{
@@ -3419,7 +3410,7 @@ function Assert-AzVmSingleActionDependencies {
             Throw-FriendlyError `
                 -Detail ("single-step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
                 -Code 63 `
-                -Summary "Action dependency is missing." `
+                -Summary "Step dependency is missing." `
                 -Hint "Run create/update with --single-step=group first, or run with --to-step=network."
         }
         return
@@ -3433,7 +3424,7 @@ function Assert-AzVmSingleActionDependencies {
             Throw-FriendlyError `
                 -Detail ("single-step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
                 -Code 63 `
-                -Summary "Action dependency is missing." `
+                -Summary "Step dependency is missing." `
                 -Hint "Run create/update with --single-step=group first."
         }
 
@@ -3442,7 +3433,7 @@ function Assert-AzVmSingleActionDependencies {
             Throw-FriendlyError `
                 -Detail ("single-step '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
                 -Code 63 `
-                -Summary "Action dependency is missing." `
+                -Summary "Step dependency is missing." `
                 -Hint "Run create/update with --single-step=network first."
         }
         return
@@ -3454,7 +3445,7 @@ function Assert-AzVmSingleActionDependencies {
             Throw-FriendlyError `
                 -Detail ("single-step '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
                 -Code 63 `
-                -Summary "Action dependency is missing." `
+                -Summary "Step dependency is missing." `
                 -Hint "Run create/update with --single-step=vm-deploy first."
         }
         return
@@ -3471,7 +3462,7 @@ function Invoke-AzVmNetworkStep {
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     $alwaysCreate = ($effectiveMode -in @("legacy","update","destructive rebuild"))
     Show-AzVmStepFirstUseValues `
-        -StepLabel "Step 4/9 - network provisioning" `
+        -StepLabel "Step 3/7 - network provisioning" `
         -Context $Context `
         -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "NIC", "TcpPorts") `
         -ExtraValues @{
@@ -3599,7 +3590,7 @@ function Invoke-AzVmVmCreateStep {
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     $vmName = [string]$Context.VmName
     Show-AzVmStepFirstUseValues `
-        -StepLabel "Step 7/9 - VM create" `
+        -StepLabel "Step 4/7 - VM create" `
         -Context $Context `
         -Keys @("ResourceGroup", "VmName", "VmImage", "VmSize", "VmStorageSku", "VmDiskName", "VmDiskSize", "VmUser", "VmPass", "VmAssistantUser", "VmAssistantPass", "NIC") `
         -ExtraValues @{
@@ -3739,7 +3730,7 @@ function Get-AzVmVmDetails {
     )
 
     Show-AzVmStepFirstUseValues `
-        -StepLabel "Step 9/9 - VM details" `
+        -StepLabel "VM details lookup" `
         -Context $Context `
         -Keys @("ResourceGroup", "VmName", "AzLocation", "SshPort")
 
