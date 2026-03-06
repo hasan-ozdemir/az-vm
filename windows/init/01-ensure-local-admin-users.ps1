@@ -1,8 +1,8 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Init task started: ensure-local-admin-users"
 
-$vmUser = "__VM_USER__"
-$vmPass = "__VM_PASS__"
+$vmUser = "__VM_ADMIN_USER__"
+$vmPass = "__VM_ADMIN_PASS__"
 $assistantUser = "__ASSISTANT_USER__"
 $assistantPass = "__ASSISTANT_PASS__"
 

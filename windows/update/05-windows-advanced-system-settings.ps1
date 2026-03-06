@@ -91,7 +91,7 @@ public static class VolumeControl {
 
 function Resolve-Hives {
     $targets = @([pscustomobject]@{ Label = "CurrentUser"; Hive = "HKCU" })
-    foreach ($userName in @("__VM_USER__", "__ASSISTANT_USER__")) {
+    foreach ($userName in @("__VM_ADMIN_USER__", "__ASSISTANT_USER__")) {
         if ([string]::IsNullOrWhiteSpace([string]$userName)) { continue }
         try {
             $sid = [string](Get-LocalUser -Name $userName -ErrorAction Stop).SID.Value

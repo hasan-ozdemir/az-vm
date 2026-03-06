@@ -254,7 +254,7 @@ $windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCand
 )
 $vsCodeExe = Resolve-CommandPath -CommandName "code.exe" -FallbackCandidates @(
     "C:\Program Files\Microsoft VS Code\Code.exe",
-    "C:\Users\__VM_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+    "C:\Users\__VM_ADMIN_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe",
     "C:\Users\__ASSISTANT_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe"
 )
 

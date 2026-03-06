@@ -735,6 +735,8 @@ function Get-AzVmTaskTokenReplacements {
     $tcpPortsPsArray = $tcpPorts -join ','
 
     return @{
+        VM_ADMIN_USER = [string]$Context.VmUser
+        VM_ADMIN_PASS = [string]$Context.VmPass
         VM_USER = [string]$Context.VmUser
         VM_PASS = [string]$Context.VmPass
         ASSISTANT_USER = [string]$Context.VmAssistantUser

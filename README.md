@@ -32,7 +32,7 @@ Copy-Item .env.example .env
 
 Set at least:
 - `VM_OS_TYPE=windows` or `VM_OS_TYPE=linux` (required in `--auto` mode)
-- `VM_PASS` (strong password)
+- `VM_ADMIN_PASS` (strong password)
 
 ### 3) Run
 
@@ -138,7 +138,7 @@ Generic keys (shared):
 - `NAMING_TEMPLATE_ACTIVE`, `RESOURCE_GROUP_TEMPLATE`
 - `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
 - `VM_NAME`, `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
-- `VM_USER`, `VM_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
+- `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
 - `SSH_PORT`, `TCP_PORTS`
 - `VM_INIT_TASK_DIR`, `VM_UPDATE_TASK_DIR`
 - `TASK_OUTCOME_MODE=continue|strict`

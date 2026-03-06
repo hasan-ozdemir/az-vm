@@ -145,7 +145,13 @@ if (-not (Test-Path -LiteralPath $clientPath)) {
 
 $envMap = Get-DotEnvMap -Path (Join-Path $RepoRoot ".env")
 if ([string]::IsNullOrWhiteSpace([string]$TestUser)) {
+    $TestUser = Get-MapValue -Map $envMap -Key "VM_ADMIN_USER" -DefaultValue ""
+}
+if ([string]::IsNullOrWhiteSpace([string]$TestUser)) {
     $TestUser = Get-MapValue -Map $envMap -Key "VM_USER" -DefaultValue ""
+}
+if ([string]::IsNullOrWhiteSpace([string]$TestPassword)) {
+    $TestPassword = Get-MapValue -Map $envMap -Key "VM_ADMIN_PASS" -DefaultValue ""
 }
 if ([string]::IsNullOrWhiteSpace([string]$TestPassword)) {
     $TestPassword = Get-MapValue -Map $envMap -Key "VM_PASS" -DefaultValue ""

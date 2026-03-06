@@ -163,7 +163,7 @@ else {
     throw "Docker Desktop executable not found at expected path."
 }
 
-foreach ($localUser in @("__VM_USER__", "__ASSISTANT_USER__")) {
+foreach ($localUser in @("__VM_ADMIN_USER__", "__ASSISTANT_USER__")) {
     if (-not (Get-LocalGroup -Name "docker-users" -ErrorAction SilentlyContinue)) {
         New-LocalGroup -Name "docker-users" -Description "Docker Desktop Users" -ErrorAction Stop
     }

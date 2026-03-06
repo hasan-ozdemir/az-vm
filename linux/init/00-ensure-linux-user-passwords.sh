@@ -1,6 +1,6 @@
 set -euo pipefail
-VM_USER="__VM_USER__"
-VM_PASS="__VM_PASS__"
+VM_USER="__VM_ADMIN_USER__"
+VM_PASS="__VM_ADMIN_PASS__"
 ASSISTANT_USER="__ASSISTANT_USER__"
 ASSISTANT_PASS="__ASSISTANT_PASS__"
 if ! id -u "${VM_USER}" >/dev/null 2>&1; then

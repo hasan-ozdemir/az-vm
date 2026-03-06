@@ -40,7 +40,7 @@ function Resolve-CodeExecutable {
 
     foreach ($candidate in @(
         "C:\Program Files\Microsoft VS Code\Code.exe",
-        "C:\Users\__VM_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe",
+        "C:\Users\__VM_ADMIN_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe",
         "C:\Users\__ASSISTANT_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe"
     )) {
         if (Test-Path -LiteralPath $candidate) {

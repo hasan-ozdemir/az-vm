@@ -252,7 +252,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_USER__ __SSH_PORT__ __SERVER_NAME__ __TCP_PORTS_BASH__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __SERVER_NAME__ __TCP_PORTS_BASH__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context

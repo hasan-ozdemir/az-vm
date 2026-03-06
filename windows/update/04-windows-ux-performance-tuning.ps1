@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: windows-ux-performance-tuning"
 
-$managerUser = "__VM_USER__"
+$managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $targetUsers = @($managerUser, $assistantUser)
 $notepadPath = Join-Path $env:WINDIR "System32\notepad.exe"
