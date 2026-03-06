@@ -3204,6 +3204,74 @@ function Test-CoVmAzResourceExists {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Test-CoVmResourceGroupExists {
+    param(
+        [string]$ResourceGroup
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup)) {
+        return $false
+    }
+
+    $existsRaw = az group exists -n ([string]$ResourceGroup) --only-show-errors
+    Assert-LastExitCode "az group exists"
+    return [string]::Equals([string]$existsRaw, "true", [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Test-CoVmAzResourceExistsByType {
+    param(
+        [string]$ResourceGroup,
+        [string]$ResourceType,
+        [string]$ResourceName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$ResourceType) -or [string]::IsNullOrWhiteSpace([string]$ResourceName)) {
+        return $false
+    }
+
+    $namesJson = az resource list -g ([string]$ResourceGroup) --resource-type ([string]$ResourceType) --query "[].name" -o json --only-show-errors
+    Assert-LastExitCode ("az resource list ({0})" -f [string]$ResourceType)
+    $names = @(
+        ConvertFrom-JsonArrayCompat -InputObject $namesJson |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+    foreach ($name in $names) {
+        if ([string]::Equals([string]$name, [string]$ResourceName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-CoVmNsgRuleExists {
+    param(
+        [string]$ResourceGroup,
+        [string]$NsgName,
+        [string]$RuleName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$NsgName) -or [string]::IsNullOrWhiteSpace([string]$RuleName)) {
+        return $false
+    }
+
+    $namesJson = az network nsg rule list -g ([string]$ResourceGroup) --nsg-name ([string]$NsgName) --query "[].name" -o json --only-show-errors
+    Assert-LastExitCode "az network nsg rule list"
+    $names = @(
+        ConvertFrom-JsonArrayCompat -InputObject $namesJson |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+    foreach ($name in $names) {
+        if ([string]::Equals([string]$name, [string]$RuleName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Assert-CoVmSingleActionDependencies {
     param(
         [ValidateSet('config','group','network','vm-deploy','vm-init','vm-update','vm-summary')]
@@ -3285,9 +3353,16 @@ function Invoke-CoVmNetworkStep {
             NetworkExecutionMode = $effectiveMode
         }
 
+    $resourceGroupName = [string]$Context.ResourceGroup
+    $groupExistsBeforeNetwork = Test-CoVmResourceGroupExists -ResourceGroup $resourceGroupName
+    if (-not $groupExistsBeforeNetwork) {
+        Write-Host ("Resource group '{0}' was not found before network step; it will be created now." -f $resourceGroupName) -ForegroundColor Yellow
+        Ensure-CoVmResourceGroupReady -Context $Context
+    }
+
     $createVnet = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createVnet = -not (Test-CoVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.VNET))
+        $createVnet = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/virtualNetworks" -ResourceName ([string]$Context.VNET))
         if (-not $createVnet) {
             Write-Host ("Default mode: VNet '{0}' exists; create command is skipped." -f [string]$Context.VNET) -ForegroundColor Yellow
         }
@@ -3302,7 +3377,7 @@ function Invoke-CoVmNetworkStep {
 
     $createNsg = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createNsg = -not (Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.NSG))
+        $createNsg = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/networkSecurityGroups" -ResourceName ([string]$Context.NSG))
         if (-not $createNsg) {
             Write-Host ("Default mode: NSG '{0}' exists; create command is skipped." -f [string]$Context.NSG) -ForegroundColor Yellow
         }
@@ -3318,7 +3393,7 @@ function Invoke-CoVmNetworkStep {
     $ports = @($Context.TcpPorts)
     $createNsgRule = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createNsgRule = -not (Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "rule", "show", "-g", [string]$Context.ResourceGroup, "--nsg-name", [string]$Context.NSG, "--name", [string]$Context.NsgRule))
+        $createNsgRule = -not (Test-CoVmNsgRuleExists -ResourceGroup ([string]$Context.ResourceGroup) -NsgName ([string]$Context.NSG) -RuleName ([string]$Context.NsgRule))
         if (-not $createNsgRule) {
             Write-Host ("Default mode: NSG rule '{0}' exists; create command is skipped." -f [string]$Context.NsgRule) -ForegroundColor Yellow
         }
@@ -3349,7 +3424,7 @@ function Invoke-CoVmNetworkStep {
 
     $createPublicIp = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createPublicIp = -not (Test-CoVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.IP))
+        $createPublicIp = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/publicIPAddresses" -ResourceName ([string]$Context.IP))
         if (-not $createPublicIp) {
             Write-Host ("Default mode: public IP '{0}' exists; create command is skipped." -f [string]$Context.IP) -ForegroundColor Yellow
         }
@@ -3364,7 +3439,7 @@ function Invoke-CoVmNetworkStep {
 
     $createNic = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createNic = -not (Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", [string]$Context.ResourceGroup, "-n", [string]$Context.NIC))
+        $createNic = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/networkInterfaces" -ResourceName ([string]$Context.NIC))
         if (-not $createNic) {
             Write-Host ("Default mode: NIC '{0}' exists; create command is skipped." -f [string]$Context.NIC) -ForegroundColor Yellow
         }
