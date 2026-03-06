@@ -2867,6 +2867,13 @@ function Invoke-CoVmStep1Common {
         $regionBackToken = Get-CoVmSkuPickerRegionBackToken
         while ($true) {
             $azLocation = Select-AzLocationInteractive -DefaultLocation $azLocation
+            if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
+                Write-Host "Selected Azure region resolved to empty value. Falling back to configured default region." -ForegroundColor Yellow
+                $azLocation = [string]$defaultAzLocation
+                if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
+                    $azLocation = "austriaeast"
+                }
+            }
             $vmSizeSelection = Select-VmSkuInteractive -Location $azLocation -DefaultVmSize $defaultVmSize -PriceHours $priceHours
             if ([string]::Equals([string]$vmSizeSelection, [string]$regionBackToken, [System.StringComparison]::Ordinal)) {
                 continue
@@ -2883,6 +2890,15 @@ function Invoke-CoVmStep1Common {
         Set-DotEnvValue -Path $EnvFilePath -Key "AZ_LOCATION" -Value $azLocation
         Set-DotEnvValue -Path $EnvFilePath -Key "VM_SIZE" -Value $vmSize
         Write-Host "Interactive selection -> AZ_LOCATION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
+        $fallbackLocation = [string]$defaultAzLocation
+        if ([string]::IsNullOrWhiteSpace([string]$fallbackLocation)) {
+            $fallbackLocation = "austriaeast"
+        }
+        Write-Host ("AZ_LOCATION resolved to empty value; fallback region '{0}' will be used." -f $fallbackLocation) -ForegroundColor Yellow
+        $azLocation = $fallbackLocation
     }
 
     $regionCode = Get-CoVmRegionCode -Location $azLocation
@@ -5183,6 +5199,81 @@ function Write-RegionSelectionGrid {
 
 }
 
+function Resolve-CoVmLocationNameFromEntry {
+    param(
+        [object]$Entry,
+        [object[]]$Catalog,
+        [string]$FallbackLocation = ''
+    )
+
+    $nameCandidates = @()
+    if ($null -ne $Entry) {
+        $nameCandidates += @(
+            [string]$Entry.Name,
+            [string]$Entry.name,
+            [string]$Entry.Location,
+            [string]$Entry.location
+        )
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$FallbackLocation)) {
+        $nameCandidates += @([string]$FallbackLocation)
+    }
+
+    foreach ($candidateRaw in @($nameCandidates)) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidateRaw)) {
+            continue
+        }
+
+        $candidate = ([string]$candidateRaw).Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        if ($Catalog -and @($Catalog).Count -gt 0) {
+            $matched = @($Catalog | Where-Object {
+                [string]::Equals(([string]$_.Name), $candidate, [System.StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals(([string]$_.name), $candidate, [System.StringComparison]::OrdinalIgnoreCase)
+            } | Select-Object -First 1)
+            if ($matched.Count -gt 0) {
+                $matchedName = [string]$matched[0].Name
+                if ([string]::IsNullOrWhiteSpace([string]$matchedName)) {
+                    $matchedName = [string]$matched[0].name
+                }
+                if (-not [string]::IsNullOrWhiteSpace([string]$matchedName)) {
+                    return $matchedName.Trim().ToLowerInvariant()
+                }
+            }
+        }
+        else {
+            return $candidate
+        }
+    }
+
+    if ($null -ne $Entry) {
+        $displayName = [string]$Entry.DisplayName
+        if ([string]::IsNullOrWhiteSpace([string]$displayName)) {
+            $displayName = [string]$Entry.displayName
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$displayName) -and $Catalog) {
+            $matchByDisplay = @($Catalog | Where-Object {
+                [string]::Equals(([string]$_.DisplayName), $displayName, [System.StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals(([string]$_.displayName), $displayName, [System.StringComparison]::OrdinalIgnoreCase)
+            } | Select-Object -First 1)
+            if ($matchByDisplay.Count -gt 0) {
+                $matchName = [string]$matchByDisplay[0].Name
+                if ([string]::IsNullOrWhiteSpace([string]$matchName)) {
+                    $matchName = [string]$matchByDisplay[0].name
+                }
+                if (-not [string]::IsNullOrWhiteSpace([string]$matchName)) {
+                    return $matchName.Trim().ToLowerInvariant()
+                }
+            }
+        }
+    }
+
+    return ''
+}
+
 function Select-AzLocationInteractive {
     param(
         [string]$DefaultLocation
@@ -5204,13 +5295,23 @@ function Select-AzLocationInteractive {
     while ($true) {
         $inputValue = Read-Host "Enter region number (default=$defaultIndex)"
         if ([string]::IsNullOrWhiteSpace($inputValue)) {
-            return $locations[$defaultIndex - 1].Name
+            $selectedLocation = Resolve-CoVmLocationNameFromEntry -Entry $locations[$defaultIndex - 1] -Catalog $locations -FallbackLocation $DefaultLocation
+            if (-not [string]::IsNullOrWhiteSpace([string]$selectedLocation)) {
+                return $selectedLocation
+            }
+            Write-Host "Default region resolution returned empty value. Please select a region number explicitly." -ForegroundColor Yellow
+            continue
         }
 
         if ($inputValue -match '^\d+$') {
             $selectedNo = [int]$inputValue
             if ($selectedNo -ge 1 -and $selectedNo -le $locations.Count) {
-                return $locations[$selectedNo - 1].Name
+                $selectedLocation = Resolve-CoVmLocationNameFromEntry -Entry $locations[$selectedNo - 1] -Catalog $locations -FallbackLocation $DefaultLocation
+                if (-not [string]::IsNullOrWhiteSpace([string]$selectedLocation)) {
+                    return $selectedLocation
+                }
+                Write-Host "Selected region could not be resolved. Please choose another region number." -ForegroundColor Yellow
+                continue
             }
         }
 

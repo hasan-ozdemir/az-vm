@@ -71,6 +71,24 @@ Invoke-Test -Name "Platform defaults contract" -Action {
     Assert-True -Condition (-not [bool]$lin.IncludeRdp) -Message "Linux IncludeRdp should be false."
 }
 
+Invoke-Test -Name "Azure location picker resolver contract" -Action {
+    $catalog = @(
+        [pscustomobject]@{ Name = "austriaeast"; DisplayName = "Austria East" },
+        [pscustomobject]@{ Name = "centralindia"; DisplayName = "Central India" }
+    )
+
+    $entryWithLowercaseName = [pscustomobject]@{ name = "centralindia"; displayName = "Central India" }
+    $resolvedFromLowercase = Resolve-CoVmLocationNameFromEntry -Entry $entryWithLowercaseName -Catalog $catalog -FallbackLocation ""
+    Assert-True -Condition ([string]::Equals([string]$resolvedFromLowercase, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Lowercase name location resolution failed."
+
+    $entryWithOnlyDisplay = [pscustomobject]@{ Name = ""; DisplayName = "Austria East" }
+    $resolvedFromDisplay = Resolve-CoVmLocationNameFromEntry -Entry $entryWithOnlyDisplay -Catalog $catalog -FallbackLocation ""
+    Assert-True -Condition ([string]::Equals([string]$resolvedFromDisplay, "austriaeast", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Display-name location resolution failed."
+
+    $resolvedFromFallback = Resolve-CoVmLocationNameFromEntry -Entry $null -Catalog $catalog -FallbackLocation "centralindia"
+    Assert-True -Condition ([string]::Equals([string]$resolvedFromFallback, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Fallback location resolution failed."
+}
+
 Invoke-Test -Name "Platform fallback config mapping" -Action {
     $baseConfig = @{
         VM_IMAGE = ""
