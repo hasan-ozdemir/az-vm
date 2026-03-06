@@ -32,9 +32,43 @@ $script:AzCliExecutable = $null
 $script:RetailPricingCacheByLocation = @{}
 $script:RetailPricingMaxRetries = 4
 $script:RetailPricingPageDelayMs = 120
+$script:PerfSuppressAzTimingDepth = 0
 
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
+
+function Convert-CoVmPerfSecondsText {
+    param(
+        [double]$Seconds
+    )
+
+    if ($Seconds -lt 0) {
+        $Seconds = 0
+    }
+
+    return ("{0:N1} seconds" -f [double]$Seconds)
+}
+
+function Write-CoVmPerfTiming {
+    param(
+        [string]$Category,
+        [string]$Label,
+        [double]$Seconds
+    )
+
+    if (-not $script:PerfMode) {
+        return
+    }
+
+    $categoryText = if ([string]::IsNullOrWhiteSpace([string]$Category)) { "metric" } else { ([string]$Category).Trim() }
+    $labelText = if ([string]::IsNullOrWhiteSpace([string]$Label)) { "operation" } else { ([string]$Label).Trim() }
+    if ($labelText.Length -gt 240) {
+        $labelText = $labelText.Substring(0, 237) + "..."
+    }
+
+    $durationText = Convert-CoVmPerfSecondsText -Seconds $Seconds
+    Write-Host ("perf: {0} -> {1} ({2})" -f $categoryText, $labelText, $durationText) -ForegroundColor DarkGray
+}
 
 function Get-CoVmAzCliExecutable {
     if (-not [string]::IsNullOrWhiteSpace([string]$script:AzCliExecutable)) {
@@ -65,79 +99,97 @@ function Invoke-CoVmAzCliCommand {
         [string[]]$Arguments
     )
 
-    $azExecutable = Get-CoVmAzCliExecutable
     $argValues = @($Arguments | ForEach-Object { [string]$_ })
-    $timeoutSeconds = [int]$script:AzCommandTimeoutSeconds
-    if ($timeoutSeconds -lt 0) { $timeoutSeconds = 0 }
-    $azExecutableText = [string]$azExecutable
-    $useCmdHost = -not $azExecutableText.ToLowerInvariant().EndsWith('.exe')
-    $cmdHost = if ([string]::IsNullOrWhiteSpace([string]$env:ComSpec)) { 'cmd.exe' } else { [string]$env:ComSpec }
+    $perfWatch = $null
+    $perfLabel = ''
+    $shouldEmitPerf = $script:PerfMode -and ([int]$script:PerfSuppressAzTimingDepth -le 0)
+    if ($shouldEmitPerf) {
+        $perfLabel = "az " + ($argValues -join " ")
+        $perfWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    }
 
-    if ($timeoutSeconds -eq 0) {
+    try {
+        $azExecutable = Get-CoVmAzCliExecutable
+        $timeoutSeconds = [int]$script:AzCommandTimeoutSeconds
+        if ($timeoutSeconds -lt 0) { $timeoutSeconds = 0 }
+        $azExecutableText = [string]$azExecutable
+        $useCmdHost = -not $azExecutableText.ToLowerInvariant().EndsWith('.exe')
+        $cmdHost = if ([string]::IsNullOrWhiteSpace([string]$env:ComSpec)) { 'cmd.exe' } else { [string]$env:ComSpec }
+
+        if ($timeoutSeconds -eq 0) {
+            if ($useCmdHost) {
+                & $cmdHost /d /c $azExecutableText @argValues
+            }
+            else {
+                & $azExecutableText @argValues
+            }
+            return
+        }
+
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
         if ($useCmdHost) {
-            & $cmdHost /d /c $azExecutableText @argValues
+            $psi.FileName = $cmdHost
+            $cmdArgs = @('/d', '/c', $azExecutableText)
+            $cmdArgs += $argValues
+            $psi.Arguments = ($cmdArgs | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
         }
         else {
-            & $azExecutableText @argValues
+            $psi.FileName = $azExecutableText
+            $psi.Arguments = ($argValues | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
         }
-        return
-    }
+        $psi.UseShellExecute = $false
+        $psi.CreateNoWindow = $true
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
 
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    if ($useCmdHost) {
-        $psi.FileName = $cmdHost
-        $cmdArgs = @('/d', '/c', $azExecutableText)
-        $cmdArgs += $argValues
-        $psi.Arguments = ($cmdArgs | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
-    }
-    else {
-        $psi.FileName = $azExecutableText
-        $psi.Arguments = ($argValues | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
-    }
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
+        $proc = New-Object System.Diagnostics.Process
+        $proc.StartInfo = $psi
+        [void]$proc.Start()
 
-    $proc = New-Object System.Diagnostics.Process
-    $proc.StartInfo = $psi
-    [void]$proc.Start()
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        $waitMs = [int][Math]::Min([double][int]::MaxValue, [double]$timeoutSeconds * 1000.0)
+        $completed = $proc.WaitForExit($waitMs)
+        if (-not $completed) {
+            try { $proc.Kill() } catch { }
+            try { [void]$proc.WaitForExit() } catch { }
+            $global:LASTEXITCODE = 124
+            throw ("az command timed out after {0} second(s)." -f $timeoutSeconds)
+        }
 
-    $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
-    $stderrTask = $proc.StandardError.ReadToEndAsync()
-    $waitMs = [int][Math]::Min([double][int]::MaxValue, [double]$timeoutSeconds * 1000.0)
-    $completed = $proc.WaitForExit($waitMs)
-    if (-not $completed) {
-        try { $proc.Kill() } catch { }
-        try { [void]$proc.WaitForExit() } catch { }
-        $global:LASTEXITCODE = 124
-        throw ("az command timed out after {0} second(s)." -f $timeoutSeconds)
+        [void]$proc.WaitForExit()
+        $stdoutText = ""
+        $stderrText = ""
+        try { $stdoutText = [string]$stdoutTask.Result } catch { }
+        try { $stderrText = [string]$stderrTask.Result } catch { }
+        $global:LASTEXITCODE = [int]$proc.ExitCode
+
+        if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
+            Write-Host ($stderrText.TrimEnd())
+        }
+
+        if ([string]::IsNullOrWhiteSpace($stdoutText)) {
+            return @()
+        }
+
+        $stdoutLines = @($stdoutText -split "`r?`n" | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($stdoutLines.Count -eq 0) {
+            return @()
+        }
+        if ($stdoutLines.Count -eq 1) {
+            return [string]$stdoutLines[0]
+        }
+
+        return $stdoutLines
     }
-
-    [void]$proc.WaitForExit()
-    $stdoutText = ""
-    $stderrText = ""
-    try { $stdoutText = [string]$stdoutTask.Result } catch { }
-    try { $stderrText = [string]$stderrTask.Result } catch { }
-    $global:LASTEXITCODE = [int]$proc.ExitCode
-
-    if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
-        Write-Host ($stderrText.TrimEnd())
+    finally {
+        if ($null -ne $perfWatch -and $perfWatch.IsRunning) {
+            $perfWatch.Stop()
+        }
+        if ($null -ne $perfWatch -and $shouldEmitPerf) {
+            Write-CoVmPerfTiming -Category "az" -Label $perfLabel -Seconds $perfWatch.Elapsed.TotalSeconds
+        }
     }
-
-    if ([string]::IsNullOrWhiteSpace($stdoutText)) {
-        return @()
-    }
-
-    $stdoutLines = @($stdoutText -split "`r?`n" | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
-    if ($stdoutLines.Count -eq 0) {
-        return @()
-    }
-    if ($stdoutLines.Count -eq 1) {
-        return [string]$stdoutLines[0]
-    }
-
-    return $stdoutLines
 }
 
 function az {
@@ -147,6 +199,51 @@ function az {
     }
 
     return (Invoke-CoVmAzCliCommand -Arguments $argList)
+}
+
+function Invoke-CoVmHttpRestMethod {
+    param(
+        [ValidateSet("Get","Post","Put","Delete","Patch","Head","Options")]
+        [string]$Method = "Get",
+        [string]$Uri,
+        [hashtable]$Headers,
+        [AllowNull()]
+        [object]$Body,
+        [string]$PerfLabel = "http request"
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Uri)) {
+        throw "HTTP request URI is required."
+    }
+
+    $watch = $null
+    if ($script:PerfMode) {
+        $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    }
+
+    try {
+        $invokeParams = @{
+            Method = [string]$Method
+            Uri = [string]$Uri
+            ErrorAction = 'Stop'
+        }
+        if ($null -ne $Headers) {
+            $invokeParams['Headers'] = $Headers
+        }
+        if ($PSBoundParameters.ContainsKey('Body')) {
+            $invokeParams['Body'] = $Body
+        }
+
+        return Invoke-RestMethod @invokeParams
+    }
+    finally {
+        if ($null -ne $watch -and $watch.IsRunning) {
+            $watch.Stop()
+        }
+        if ($null -ne $watch) {
+            Write-CoVmPerfTiming -Category "http" -Label $PerfLabel -Seconds $watch.Elapsed.TotalSeconds
+        }
+    }
 }
 
 function Get-CoVmPlatformDefaults {
@@ -490,6 +587,8 @@ function Invoke-CoVmSshTaskBlocks {
         [object[]]$TaskBlocks,
         [ValidateSet('continue','strict')]
         [string]$TaskOutcomeMode = 'continue',
+        [ValidateSet('vm-update-task','exec-task')]
+        [string]$PerfTaskCategory = 'vm-update-task',
         [int]$SshMaxRetries = 3,
         [int]$SshTaskTimeoutSeconds = 180,
         [int]$SshConnectTimeoutSeconds = 30,
@@ -555,6 +654,10 @@ function Invoke-CoVmSshTaskBlocks {
             }
 
             if ($taskWatch.IsRunning) { $taskWatch.Stop() }
+            $taskElapsedSeconds = $taskWatch.Elapsed.TotalSeconds
+            if ($script:PerfMode) {
+                Write-CoVmPerfTiming -Category $PerfTaskCategory -Label $taskName -Seconds $taskElapsedSeconds
+            }
 
             if ($null -ne $taskInvocationError) {
                 if ($TaskOutcomeMode -eq 'continue') {
@@ -571,13 +674,13 @@ function Invoke-CoVmSshTaskBlocks {
 
             if ([int]$taskResult.ExitCode -eq 0) {
                 $totalSuccess++
-                Write-Host ("Task completed: {0} ({1:N1}s) - success" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                Write-Host ("Task completed: {0} ({1:N1}s) - success" -f $taskName, $taskElapsedSeconds)
             }
             else {
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
                     Write-Warning ("Task warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
-                    Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                    Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskElapsedSeconds)
                 }
                 else {
                     $totalErrors++
@@ -1287,7 +1390,7 @@ function Invoke-Step {
         . $Action
         if ($stepWatch.IsRunning) { $stepWatch.Stop() }
         if ($script:PerfMode) {
-            Write-Host ("perf: step elapsed -> {0} ({1:N3}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+            Write-CoVmPerfTiming -Category "step" -Label ("{0} [mode:auto]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
         }
         $after = @(Get-Variable)
         Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
@@ -1301,7 +1404,7 @@ function Invoke-Step {
         . $Action
         if ($stepWatch.IsRunning) { $stepWatch.Stop() }
         if ($script:PerfMode) {
-            Write-Host ("perf: step elapsed -> {0} ({1:N3}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+            Write-CoVmPerfTiming -Category "step" -Label ("{0} [mode:interactive]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
         }
         $after = @(Get-Variable)
         Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
@@ -1346,11 +1449,12 @@ function Invoke-TrackedAction {
         $Label = "action"
     }
 
+    $isAzLabel = ([string]$Label).TrimStart().ToLowerInvariant().StartsWith("az ")
     Write-Host ("running: {0}" -f $Label) -ForegroundColor DarkCyan
-    if ($script:PerfMode) {
-        Write-Host ("perf: start -> {0}" -f $Label) -ForegroundColor DarkGray
-    }
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
+    if ($isAzLabel) {
+        $script:PerfSuppressAzTimingDepth = [int]$script:PerfSuppressAzTimingDepth + 1
+    }
     try {
         $result = . $Action
         if ($null -ne $result) {
@@ -1358,12 +1462,16 @@ function Invoke-TrackedAction {
         }
     }
     finally {
+        if ($isAzLabel) {
+            $script:PerfSuppressAzTimingDepth = [Math]::Max(0, ([int]$script:PerfSuppressAzTimingDepth - 1))
+        }
         if ($watch.IsRunning) {
             $watch.Stop()
         }
         Write-Host ("finished: {0} ({1:N1}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
         if ($script:PerfMode) {
-            Write-Host ("perf: elapsed -> {0} ({1:N3}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkGray
+            $category = if ($isAzLabel) { "az" } else { "action" }
+            Write-CoVmPerfTiming -Category $category -Label $Label -Seconds $watch.Elapsed.TotalSeconds
         }
     }
 }
@@ -4351,6 +4459,31 @@ function Test-CoVmOutputIndicatesRebootRequired {
     return ($MessageText -match '(?i)(reboot required|restart required|pending reboot|press any key to install windows subsystem for linux)')
 }
 
+function Get-CoVmTaskDurationsFromMessageText {
+    param(
+        [string]$MessageText
+    )
+
+    $durations = @()
+    if ([string]::IsNullOrWhiteSpace([string]$MessageText)) {
+        return @()
+    }
+
+    foreach ($lineRaw in @($MessageText -split "`r?`n")) {
+        $line = [string]$lineRaw
+        if ($line -match '^TASK completed:\s*(.+?)\s*\(([0-9]+(?:\.[0-9]+)?)s\)\s*$') {
+            $taskName = [string]$Matches[1]
+            $seconds = [double]$Matches[2]
+            $durations += [pscustomobject]@{
+                Name = $taskName
+                Seconds = $seconds
+            }
+        }
+    }
+
+    return @($durations)
+}
+
 function Invoke-VmRunCommandBlocks {
     param(
         [string]$ResourceGroup,
@@ -4358,7 +4491,9 @@ function Invoke-VmRunCommandBlocks {
         [string]$CommandId,
         [object[]]$TaskBlocks,
         [ValidateSet("bash","powershell")]
-        [string]$CombinedShell = "powershell"
+        [string]$CombinedShell = "powershell",
+        [ValidateSet("vm-init-task","exec-task")]
+        [string]$PerfTaskCategory = "vm-init-task"
     )
 
     if (-not $TaskBlocks -or $TaskBlocks.Count -eq 0) {
@@ -4456,12 +4591,19 @@ function Invoke-VmRunCommandBlocks {
         }
 
         $marker = Parse-CoVmStep8Markers -MessageText $combinedMessage
+        $taskDurations = @(Get-CoVmTaskDurationsFromMessageText -MessageText $combinedMessage)
+        if ($script:PerfMode -and $taskDurations.Count -gt 0) {
+            foreach ($taskDuration in $taskDurations) {
+                Write-CoVmPerfTiming -Category $PerfTaskCategory -Label ([string]$taskDuration.Name) -Seconds ([double]$taskDuration.Seconds)
+            }
+        }
         return [pscustomobject]@{
             SuccessCount = [int]$marker.SuccessCount
             WarningCount = [int]$marker.WarningCount
             ErrorCount = [int]$marker.ErrorCount
             RebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText $combinedMessage))
             NextTaskIndex = [int]$TaskBlocks.Count
+            TaskDurations = @($taskDurations)
         }
     }
     catch {
@@ -5138,6 +5280,7 @@ function Invoke-CoVmPersistentSshTask {
     return [pscustomobject]@{
         ExitCode = [int]$exitCode
         Output = ($outputLines -join "`n")
+        DurationSeconds = [double]$taskWatch.Elapsed.TotalSeconds
     }
 }
 
@@ -5560,7 +5703,11 @@ function Get-SkuAvailabilityMap {
     $url = "https://management.azure.com/subscriptions/$subscriptionId/providers/Microsoft.Compute/skus?api-version=2023-07-01&`$filter=$filter"
 
     try {
-        $response = Invoke-RestMethod -Method Get -Uri $url -Headers @{ Authorization = "Bearer $accessToken" } -ErrorAction Stop
+        $response = Invoke-CoVmHttpRestMethod `
+            -Method Get `
+            -Uri $url `
+            -Headers @{ Authorization = "Bearer $accessToken" } `
+            -PerfLabel ("http compute skus list (location={0})" -f [string]$Location)
     }
     catch {
         Throw-FriendlyError `
@@ -5774,7 +5921,7 @@ function Invoke-CoVmRetailPricingRequest {
     $maxRetries = [math]::Max([int]$script:RetailPricingMaxRetries, 0)
     for ($retry = 0; $true; $retry++) {
         try {
-            return Invoke-RestMethod -Uri $Uri -Method Get -ErrorAction Stop
+            return Invoke-CoVmHttpRestMethod -Method Get -Uri $Uri -PerfLabel "http retail pricing api"
         }
         catch {
             $statusCode = Get-CoVmHttpStatusCode -ExceptionObject $_.Exception
@@ -6824,7 +6971,7 @@ function Invoke-CoVmExecCommand {
             $requested = Get-CoVmCliOptionText -Options $Options -Name 'init-task'
             $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell | Out-Null
+            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -PerfTaskCategory "exec-task" | Out-Null
             Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
             return
         }
@@ -6854,6 +7001,7 @@ function Invoke-CoVmExecCommand {
             -VmName ([string]$context.VmName) `
             -TaskBlocks @($selectedTask) `
             -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) `
+            -PerfTaskCategory 'exec-task' `
             -SshMaxRetries 1 `
             -SshTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds) `
             -SshConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
@@ -6949,6 +7097,13 @@ function Invoke-CoVmExecCommand {
 
             $taskName = ("repl-{0:D4}" -f $commandIndex)
             $taskResult = Invoke-CoVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $commandText -TimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
+            if ($script:PerfMode) {
+                $taskSeconds = 0.0
+                if ($taskResult -and $taskResult.PSObject.Properties.Match('DurationSeconds').Count -gt 0) {
+                    $taskSeconds = [double]$taskResult.DurationSeconds
+                }
+                Write-CoVmPerfTiming -Category "exec-task" -Label ("repl command #{0}: {1}" -f $commandIndex, $commandText) -Seconds $taskSeconds
+            }
             if ([int]$taskResult.ExitCode -ne 0) {
                 Write-Warning ("Remote command exit code: {0}" -f [int]$taskResult.ExitCode)
             }
@@ -7686,71 +7841,86 @@ function Invoke-CoVmCommandDispatcher {
     $script:ActiveCommand = [string]$CommandName
     $helpRequested = Get-CoVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
 
-    if ($helpRequested -and $CommandName -ne 'help') {
-        Show-CoVmCommandHelp -Topic $CommandName
-        return
+    $commandPerfWatch = $null
+    if ($script:PerfMode) {
+        $commandPerfWatch = [System.Diagnostics.Stopwatch]::StartNew()
     }
+    try {
+        if ($helpRequested -and $CommandName -ne 'help') {
+            Show-CoVmCommandHelp -Topic $CommandName
+            return
+        }
 
-    switch ($CommandName) {
-        'help' {
-            if ($helpRequested) {
-                Show-CoVmCommandHelp -Overview
+        switch ($CommandName) {
+            'help' {
+                if ($helpRequested) {
+                    Show-CoVmCommandHelp -Overview
+                }
+                else {
+                    Show-CoVmCommandHelp -Topic $HelpTopic
+                }
+                return
             }
-            else {
-                Show-CoVmCommandHelp -Topic $HelpTopic
+            'config' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-CoVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                return
             }
-            return
+            'create' {
+                $actionPlan = Resolve-CoVmActionPlan -CommandName 'create' -Options $Options
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create' -ActionPlan $actionPlan
+                return
+            }
+            'update' {
+                $actionPlan = Resolve-CoVmActionPlan -CommandName 'update' -Options $Options
+                $script:UpdateMode = $true
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'update'
+                Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'update' -ActionPlan $actionPlan
+                return
+            }
+            'change' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-CoVmChangeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                return
+            }
+            'exec' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-CoVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                return
+            }
+            'delete' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-CoVmDeleteCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                return
+            }
+            default {
+                Throw-FriendlyError `
+                    -Detail ("Unknown command '{0}'." -f $CommandName) `
+                    -Code 2 `
+                    -Summary "Unknown command." `
+                    -Hint "Use one command: create | update | config | change | exec | delete."
+            }
         }
-        'config' {
-            $script:UpdateMode = $false
-            $script:RenewMode = $false
-            $script:ExecutionMode = 'default'
-            Invoke-CoVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
-            return
-        }
-        'create' {
-            $actionPlan = Resolve-CoVmActionPlan -CommandName 'create' -Options $Options
-            $script:UpdateMode = $false
-            $script:RenewMode = $false
-            $script:ExecutionMode = 'default'
-            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create' -ActionPlan $actionPlan
-            return
-        }
-        'update' {
-            $actionPlan = Resolve-CoVmActionPlan -CommandName 'update' -Options $Options
-            $script:UpdateMode = $true
-            $script:RenewMode = $false
-            $script:ExecutionMode = 'update'
-            Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'update' -ActionPlan $actionPlan
-            return
-        }
-        'change' {
-            $script:UpdateMode = $false
-            $script:RenewMode = $false
-            $script:ExecutionMode = 'default'
-            Invoke-CoVmChangeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
-            return
-        }
-        'exec' {
-            $script:UpdateMode = $false
-            $script:RenewMode = $false
-            $script:ExecutionMode = 'default'
-            Invoke-CoVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
-            return
-        }
-        'delete' {
-            $script:UpdateMode = $false
-            $script:RenewMode = $false
-            $script:ExecutionMode = 'default'
-            Invoke-CoVmDeleteCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
-            return
-        }
-        default {
-            Throw-FriendlyError `
-                -Detail ("Unknown command '{0}'." -f $CommandName) `
-                -Code 2 `
-                -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | change | exec | delete."
+    }
+    finally {
+        if ($script:PerfMode -and $null -ne $commandPerfWatch) {
+            if ($commandPerfWatch.IsRunning) {
+                $commandPerfWatch.Stop()
+            }
+
+            Write-CoVmPerfTiming -Category "command" -Label ([string]$CommandName) -Seconds $commandPerfWatch.Elapsed.TotalSeconds
         }
     }
 }
