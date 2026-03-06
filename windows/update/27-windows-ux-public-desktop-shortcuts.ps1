@@ -331,7 +331,7 @@ Invoke-ShortcutAction -Name "i9windscribe" -Action {
         New-DesktopShortcutFromAppId -Name "i9windscribe" -AppId $windscribeAppId
     }
 }
-Invoke-ShortcutAction -Name "i6vscode" -Action { New-DesktopShortcut -Name "i6vscode" -TargetPath $vsCodeExe }
+Invoke-ShortcutAction -Name "v5vscode" -Action { New-DesktopShortcut -Name "v5vscode" -TargetPath $vsCodeExe }
 
 Write-Host "windows-ux-public-desktop-shortcuts-completed"
 Write-Host "Update task completed: windows-ux-public-desktop-shortcuts"
