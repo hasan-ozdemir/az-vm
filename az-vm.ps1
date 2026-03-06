@@ -1624,7 +1624,7 @@ function Convert-CoVmCliTextToTokens {
 }
 
 function Get-CoVmValidCommandList {
-    return @('create', 'update', 'config', 'change', 'exec', 'delete', 'help')
+    return @('create', 'update', 'config', 'change', 'exec', 'show', 'delete', 'help')
 }
 
 function Show-CoVmCommandHelpOverview {
@@ -1637,6 +1637,7 @@ function Show-CoVmCommandHelpOverview {
     Write-Host "  config  Interactive configuration preview up to resource-group step."
     Write-Host "  change  Change VM region and/or VM size."
     Write-Host "  exec    Run one init/update task or open interactive remote shell."
+    Write-Host "  show    Print system and configuration dump for resource groups and VMs."
     Write-Host "  delete  Purge selected resources from a resource group."
     Write-Host "  help    Show detailed docs (all commands or one command)."
     Write-Host ""
@@ -1657,6 +1658,7 @@ function Show-CoVmCommandHelpOverview {
     Write-Host "  az-vm update --single-step=network --auto"
     Write-Host "  az-vm change --vm-region=centralindia"
     Write-Host "  az-vm exec --update-task=01 --group=rg-examplevm-ate1"
+    Write-Host "  az-vm show --group=rg-examplevm-ate1"
     Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1 --yes"
     Write-Host ""
     Write-Host "Detailed docs:"
@@ -1696,6 +1698,7 @@ function Show-CoVmCommandHelpDetailed {
         Write-Host "  config  : interactive config + precheck + resource-group preview"
         Write-Host "  change  : supports --vm-region, --vm-size"
         Write-Host "  exec    : supports --group, --init-task, --update-task"
+        Write-Host "  show    : supports --group"
         Write-Host "  delete  : supports --target, --group, --yes"
         Write-Host ""
         Write-Host "Examples:"
@@ -1705,9 +1708,10 @@ function Show-CoVmCommandHelpDetailed {
         Write-Host "  az-vm update --to-step=vm-init --auto"
         Write-Host "  az-vm change --vm-region=austriaeast --vm-size=Standard_B2as_v2"
         Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
+        Write-Host "  az-vm show --group=rg-examplevm-ate1"
         Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1 --yes"
         Write-Host ""
-        Write-Host "For per-command docs: az-vm help <create|update|config|change|exec|delete>"
+        Write-Host "For per-command docs: az-vm help <create|update|config|change|exec|show|delete>"
         return
     }
 
@@ -1716,7 +1720,7 @@ function Show-CoVmCommandHelpDetailed {
             -Detail ("Unknown help topic '{0}'." -f $topicText) `
             -Code 2 `
             -Summary "Unknown help topic." `
-            -Hint "Use az-vm help or az-vm help <create|update|config|change|exec|delete>."
+            -Hint "Use az-vm help or az-vm help <create|update|config|change|exec|show|delete>."
     }
 
     switch ($topicName) {
@@ -1792,6 +1796,19 @@ function Show-CoVmCommandHelpDetailed {
             Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
             Write-Host "  az-vm exec --update-task=15 --auto --windows"
             Write-Host "  az-vm exec --auto --linux      # opens interactive remote shell session"
+            return
+        }
+        'show' {
+            Write-Host "Command: show"
+            Write-Host "Description: print a full system and configuration dump for app resource groups and VMs."
+            Write-Host "Usage:"
+            Write-Host "  az-vm show [--auto] [--perf]"
+            Write-Host "  az-vm show --group=<resource-group>"
+            Write-Host "  az-vm show --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm show"
+            Write-Host "  az-vm show --group=rg-examplevm-ate1"
+            Write-Host "  az-vm show --perf"
             return
         }
         'delete' {
@@ -1903,7 +1920,7 @@ function Parse-CoVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | change | exec | delete | help."
+                -Hint "Use one command: create | update | config | change | exec | show | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -1914,7 +1931,7 @@ function Parse-CoVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | config | change | exec | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | config | change | exec | show | delete | help. Example: az-vm create --auto"
     }
 
     $helpTopic = ''
@@ -6483,6 +6500,7 @@ function Assert-CoVmCommandOptions {
         'config' { $allowed += @() }
         'change' { $allowed += @('vm-region','vm-size') }
         'exec'   { $allowed += @('group','init-task','update-task') }
+        'show'   { $allowed += @('group') }
         'delete' { $allowed += @('target','group','yes') }
         'help'   { $allowed += @() }
         default {
@@ -6490,7 +6508,7 @@ function Assert-CoVmCommandOptions {
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | change | exec | delete."
+                -Hint "Use one command: create | update | config | change | exec | show | delete."
         }
     }
 
@@ -7590,6 +7608,397 @@ function Invoke-CoVmChangeCommand {
     }
 }
 
+function Invoke-CoVmAzJsonOrNull {
+    param(
+        [string[]]$AzArgs,
+        [string]$Context,
+        [switch]$SuppressError
+    )
+
+    $output = az @AzArgs
+    if ($LASTEXITCODE -ne 0) {
+        if ($SuppressError) {
+            return $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$Context)) {
+            throw ("Azure command failed with exit code {0}." -f $LASTEXITCODE)
+        }
+        throw ("{0} failed with exit code {1}." -f $Context, $LASTEXITCODE)
+    }
+
+    if ($null -eq $output -or [string]::IsNullOrWhiteSpace([string]$output)) {
+        return $null
+    }
+
+    try {
+        return ConvertFrom-JsonCompat -InputObject $output
+    }
+    catch {
+        if ($SuppressError) {
+            return $null
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$Context)) {
+            throw "Azure command returned an unparseable JSON payload."
+        }
+        throw ("{0} returned an unparseable JSON payload." -f $Context)
+    }
+}
+
+function Get-CoVmResourceTypeCountMap {
+    param(
+        [object[]]$Resources
+    )
+
+    $counter = @{}
+    foreach ($resource in @($Resources)) {
+        if ($null -eq $resource) {
+            continue
+        }
+
+        $typeName = [string]$resource.type
+        if ([string]::IsNullOrWhiteSpace([string]$typeName)) {
+            $typeName = "(unknown)"
+        }
+
+        if (-not $counter.ContainsKey($typeName)) {
+            $counter[$typeName] = 0
+        }
+        $counter[$typeName] = [int]$counter[$typeName] + 1
+    }
+
+    $ordered = [ordered]@{}
+    foreach ($key in @($counter.Keys | Sort-Object)) {
+        $ordered[[string]$key] = [int]$counter[$key]
+    }
+
+    return $ordered
+}
+
+function Get-CoVmVmInventoryDump {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName
+    )
+
+    $vmFull = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "show", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm show" -SuppressError
+    if ($null -eq $vmFull) {
+        return [ordered]@{
+            Name = [string]$VmName
+            ResourceGroup = [string]$ResourceGroup
+            Error = "VM metadata could not be loaded."
+        }
+    }
+
+    $vmDetailed = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "show", "-d", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm show -d" -SuppressError
+    $vmInstanceView = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "get-instance-view", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm get-instance-view" -SuppressError
+
+    $location = [string]$vmFull.location
+    $vmSize = [string]$vmFull.hardwareProfile.vmSize
+    $osType = [string]$vmFull.storageProfile.osDisk.osType
+    $powerState = [string]$vmDetailed.powerState
+    if ([string]::IsNullOrWhiteSpace([string]$powerState) -and $vmInstanceView) {
+        foreach ($status in @(ConvertTo-ObjectArrayCompat -InputObject $vmInstanceView.statuses)) {
+            $statusCode = [string]$status.code
+            if ($statusCode.StartsWith("PowerState/", [System.StringComparison]::OrdinalIgnoreCase)) {
+                $powerState = [string]$status.displayStatus
+                if ([string]::IsNullOrWhiteSpace([string]$powerState)) {
+                    $powerState = $statusCode
+                }
+                break
+            }
+        }
+    }
+
+    $osDiskName = [string]$vmFull.storageProfile.osDisk.name
+    $dataDiskNames = @(
+        ConvertTo-ObjectArrayCompat -InputObject $vmFull.storageProfile.dataDisks |
+            ForEach-Object { [string]$_.name } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+
+    $diskDetails = @()
+    foreach ($diskName in @(@($osDiskName) + @($dataDiskNames) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
+        $diskObj = Invoke-CoVmAzJsonOrNull -AzArgs @("disk", "show", "-g", $ResourceGroup, "-n", [string]$diskName, "-o", "json", "--only-show-errors") -Context "az disk show" -SuppressError
+        if ($null -ne $diskObj) {
+            $diskDetails += $diskObj
+        }
+    }
+
+    $nicIds = @(
+        ConvertTo-ObjectArrayCompat -InputObject $vmFull.networkProfile.networkInterfaces |
+            ForEach-Object { [string]$_.id } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Select-Object -Unique
+    )
+
+    $nicDetails = @()
+    $publicIpIdSet = New-Object System.Collections.Generic.HashSet[string]
+    foreach ($nicId in @($nicIds)) {
+        $nicObj = Invoke-CoVmAzJsonOrNull -AzArgs @("network", "nic", "show", "--ids", [string]$nicId, "-o", "json", "--only-show-errors") -Context "az network nic show" -SuppressError
+        if ($null -eq $nicObj) {
+            continue
+        }
+
+        $nicDetails += $nicObj
+        foreach ($ipCfg in @(ConvertTo-ObjectArrayCompat -InputObject $nicObj.ipConfigurations)) {
+            $publicIpId = [string]$ipCfg.publicIpAddress.id
+            if (-not [string]::IsNullOrWhiteSpace([string]$publicIpId)) {
+                [void]$publicIpIdSet.Add($publicIpId)
+            }
+        }
+    }
+
+    $publicIpDetails = @()
+    foreach ($publicIpId in @($publicIpIdSet.ToArray() | Sort-Object)) {
+        $publicIpObj = Invoke-CoVmAzJsonOrNull -AzArgs @("network", "public-ip", "show", "--ids", [string]$publicIpId, "-o", "json", "--only-show-errors") -Context "az network public-ip show" -SuppressError
+        if ($null -ne $publicIpObj) {
+            $publicIpDetails += $publicIpObj
+        }
+    }
+
+    $skuEntry = $null
+    if (-not [string]::IsNullOrWhiteSpace([string]$location) -and -not [string]::IsNullOrWhiteSpace([string]$vmSize)) {
+        $skuRaw = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "list-skus", "--location", $location, "--resource-type", "virtualMachines", "--size", $vmSize, "--all", "-o", "json", "--only-show-errors") -Context "az vm list-skus" -SuppressError
+        $skuRows = @(ConvertTo-ObjectArrayCompat -InputObject $skuRaw)
+        if ($skuRows.Count -gt 0) {
+            $exact = @($skuRows | Where-Object { [string]::Equals([string]$_.name, [string]$vmSize, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+            if ($exact -and @($exact).Count -gt 0) {
+                $skuEntry = $exact[0]
+            }
+            else {
+                $skuEntry = $skuRows[0]
+            }
+        }
+    }
+
+    $skuCapabilities = @()
+    if ($skuEntry -and $skuEntry.capabilities) {
+        $skuCapabilities = @(ConvertTo-ObjectArrayCompat -InputObject $skuEntry.capabilities)
+    }
+
+    $focusedCapabilities = @(
+        $skuCapabilities | Where-Object {
+            $capName = [string]$_.name
+            if ([string]::IsNullOrWhiteSpace([string]$capName)) {
+                return $false
+            }
+
+            $capLower = $capName.ToLowerInvariant()
+            return (
+                $capLower.Contains("nested") -or
+                $capLower.Contains("hibern") -or
+                $capLower.Contains("hyperv") -or
+                $capLower.Contains("trusted") -or
+                $capLower.Contains("encryption")
+            )
+        }
+    )
+
+    $featureFlags = [ordered]@{
+        HibernationEnabled = $vmFull.additionalCapabilities.hibernationEnabled
+        NestedVirtualizationCapabilities = @(
+            $focusedCapabilities |
+                Where-Object { ([string]$_.name).ToLowerInvariant().Contains("nested") }
+        )
+    }
+
+    return [ordered]@{
+        Name = [string]$VmName
+        ResourceGroup = [string]$ResourceGroup
+        Location = [string]$location
+        VmSize = [string]$vmSize
+        OsType = [string]$osType
+        PowerState = [string]$powerState
+        ProvisioningState = [string]$vmDetailed.provisioningState
+        PublicIps = [string]$vmDetailed.publicIps
+        PrivateIps = [string]$vmDetailed.privateIps
+        Fqdns = [string]$vmDetailed.fqdns
+        Identity = $vmFull.identity
+        AdditionalCapabilities = $vmFull.additionalCapabilities
+        FeatureFlags = $featureFlags
+        SkuName = if ($skuEntry) { [string]$skuEntry.name } else { [string]$vmSize }
+        SkuTier = if ($skuEntry) { [string]$skuEntry.tier } else { "" }
+        SkuFamily = if ($skuEntry) { [string]$skuEntry.family } else { "" }
+        SkuCapabilities = @($skuCapabilities)
+        FocusedCapabilities = @($focusedCapabilities)
+        OsDiskName = [string]$osDiskName
+        DataDiskNames = @($dataDiskNames)
+        Disks = @($diskDetails)
+        NicIds = @($nicIds)
+        Nics = @($nicDetails)
+        PublicIpResources = @($publicIpDetails)
+        VmShowDetails = $vmDetailed
+        InstanceView = $vmInstanceView
+        VmProperties = $vmFull
+    }
+}
+
+function Get-CoVmResourceGroupInventoryDump {
+    param(
+        [string]$ResourceGroup
+    )
+
+    $groupObj = Invoke-CoVmAzJsonOrNull -AzArgs @("group", "show", "-n", $ResourceGroup, "-o", "json", "--only-show-errors") -Context "az group show" -SuppressError
+    if ($null -eq $groupObj) {
+        return [ordered]@{
+            Name = [string]$ResourceGroup
+            Exists = $false
+            ResourceCount = 0
+            ResourceTypeCounts = [ordered]@{}
+            VmCount = 0
+            Vms = @()
+            Resources = @()
+        }
+    }
+
+    $resourcesRaw = Invoke-CoVmAzJsonOrNull -AzArgs @("resource", "list", "-g", $ResourceGroup, "-o", "json", "--only-show-errors") -Context "az resource list" -SuppressError
+    $resources = @(ConvertTo-ObjectArrayCompat -InputObject $resourcesRaw)
+    $resourceTypeCounts = Get-CoVmResourceTypeCountMap -Resources $resources
+
+    $vmNameRows = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "list", "-g", $ResourceGroup, "--query", "[].name", "-o", "json", "--only-show-errors") -Context "az vm list" -SuppressError
+    $vmNames = @(
+        ConvertFrom-JsonArrayCompat -InputObject $vmNameRows |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+
+    $vmDumps = @()
+    foreach ($vmName in @($vmNames)) {
+        $vmDumps += (Get-CoVmVmInventoryDump -ResourceGroup $ResourceGroup -VmName [string]$vmName)
+    }
+
+    return [ordered]@{
+        Name = [string]$groupObj.name
+        Exists = $true
+        Id = [string]$groupObj.id
+        Location = [string]$groupObj.location
+        ManagedBy = [string]$groupObj.managedBy
+        ProvisioningState = [string]$groupObj.properties.provisioningState
+        Tags = $groupObj.tags
+        ResourceCount = @($resources).Count
+        ResourceTypeCounts = $resourceTypeCounts
+        VmCount = @($vmDumps).Count
+        Vms = @($vmDumps)
+        Resources = @($resources)
+    }
+}
+
+function Invoke-CoVmShowCommand {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $accountSnapshot = Get-CoVmAzAccountSnapshot
+
+    $targetGroupValue = [string](Get-CoVmCliOptionText -Options $Options -Name 'group')
+    $targetGroup = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$targetGroupValue)) {
+        $targetGroup = $targetGroupValue.Trim()
+    }
+
+    $allGroupRows = Invoke-CoVmAzJsonOrNull -AzArgs @("group", "list", "-o", "json", "--only-show-errors") -Context "az group list"
+    $allGroups = @(
+        ConvertFrom-JsonArrayCompat -InputObject $allGroupRows |
+            ForEach-Object { [string]$_.name } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+
+    $selectedGroups = @()
+    if (-not [string]::IsNullOrWhiteSpace([string]$targetGroup)) {
+        $selectedGroups = @($targetGroup)
+    }
+    else {
+        $appGroups = @($allGroups | Where-Object { ([string]$_).StartsWith("rg-", [System.StringComparison]::OrdinalIgnoreCase) })
+        if ($appGroups.Count -gt 0) {
+            $selectedGroups = @($appGroups)
+        }
+        else {
+            $selectedGroups = @($allGroups)
+        }
+    }
+
+    if (@($selectedGroups).Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail "No resource groups were found for show command." `
+            -Code 64 `
+            -Summary "Show command cannot continue because no resource groups were found." `
+            -Hint "Run az login, verify subscription, and create resources first."
+    }
+
+    $platformRequest = ''
+    if ($WindowsFlag) {
+        $platformRequest = 'windows'
+    }
+    elseif ($LinuxFlag) {
+        $platformRequest = 'linux'
+    }
+
+    $groupDumps = @()
+    foreach ($resourceGroup in @($selectedGroups)) {
+        $groupDumps += (Get-CoVmResourceGroupInventoryDump -ResourceGroup [string]$resourceGroup)
+    }
+
+    $totalVmCount = 0
+    $runningVmCount = 0
+    foreach ($groupDump in @($groupDumps)) {
+        $groupVmCount = @($groupDump.Vms).Count
+        $totalVmCount += [int]$groupVmCount
+        foreach ($vmDump in @($groupDump.Vms)) {
+            $powerStateText = [string]$vmDump.PowerState
+            if (-not [string]::IsNullOrWhiteSpace([string]$powerStateText) -and $powerStateText.ToLowerInvariant().Contains("running")) {
+                $runningVmCount += 1
+            }
+        }
+    }
+
+    $configOrdered = [ordered]@{}
+    foreach ($key in @($configMap.Keys | Sort-Object)) {
+        $configOrdered[[string]$key] = [string]$configMap[$key]
+    }
+
+    $overridesOrdered = [ordered]@{}
+    foreach ($key in @($script:ConfigOverrides.Keys | Sort-Object)) {
+        $overridesOrdered[[string]$key] = [string]$script:ConfigOverrides[$key]
+    }
+
+    $dump = [ordered]@{
+        GeneratedAtUtc = (Get-Date).ToUniversalTime().ToString("o")
+        Command = "show"
+        Mode = if ($AutoMode) { "auto" } else { "interactive" }
+        RequestedPlatform = [string]$platformRequest
+        EnvFilePath = [string]$envFilePath
+        AzureAccount = $accountSnapshot
+        Config = [ordered]@{
+            DotEnvValues = $configOrdered
+            RuntimeOverrides = $overridesOrdered
+        }
+        Selection = [ordered]@{
+            TargetGroup = [string]$targetGroup
+            IncludedResourceGroups = @($selectedGroups)
+        }
+        Summary = [ordered]@{
+            ResourceGroupCount = @($groupDumps).Count
+            TotalVmCount = [int]$totalVmCount
+            RunningVmCount = [int]$runningVmCount
+        }
+        ResourceGroups = @($groupDumps)
+    }
+
+    $dumpJson = $dump | ConvertTo-Json -Depth 100
+    Write-Host ""
+    Write-Host "System and configuration dump (JSON):" -ForegroundColor Cyan
+    Write-Host $dumpJson
+}
+
 function Invoke-CoVmDeleteCommand {
     param(
         [hashtable]$Options,
@@ -7898,6 +8307,13 @@ function Invoke-CoVmCommandDispatcher {
                 Invoke-CoVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
+            'show' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-CoVmShowCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                return
+            }
             'delete' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
@@ -7910,7 +8326,7 @@ function Invoke-CoVmCommandDispatcher {
                     -Detail ("Unknown command '{0}'." -f $CommandName) `
                     -Code 2 `
                     -Summary "Unknown command." `
-                    -Hint "Use one command: create | update | config | change | exec | delete."
+                    -Hint "Use one command: create | update | config | change | exec | show | delete."
             }
         }
     }

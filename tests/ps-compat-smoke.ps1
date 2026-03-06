@@ -148,6 +148,7 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-CoVmCommandOptions -CommandName "config" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "change" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "exec" -Options @{ help = $true }
+    Assert-CoVmCommandOptions -CommandName "show" -Options @{ help = $true }
     Assert-CoVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
@@ -165,6 +166,7 @@ Invoke-Test -Name "Help --command syntax was removed" -Action {
 Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-CoVmCommandHelp -Topic "create"
     Show-CoVmCommandHelp -Topic "config"
+    Show-CoVmCommandHelp -Topic "show"
     Show-CoVmCommandHelp -Topic ""
     Show-CoVmCommandHelp -Overview
 }
