@@ -1,33 +1,149 @@
 {
   "tasks": [
-    { "name": "01-winget-bootstrap", "priority": 1, "enabled": true },
-    { "name": "02-private-local-task", "priority": 2, "enabled": true },
-    { "name": "03-chrome-install-check", "priority": 3, "enabled": true },
-    { "name": "04-windows-ux-performance-tuning", "priority": 4, "enabled": true },
-    { "name": "05-windows-advanced-system-settings", "priority": 5, "enabled": true },
-    { "name": "06-git-install-check", "priority": 10, "enabled": true },
-    { "name": "07-python-install-check", "priority": 10, "enabled": true },
-    { "name": "08-node-install-check", "priority": 10, "enabled": true },
-    { "name": "09-install-ollama", "priority": 10, "enabled": true },
-    { "name": "10-install-sysinternals", "priority": 10, "enabled": true },
-    { "name": "11-install-powershell-core", "priority": 10, "enabled": true },
-    { "name": "12-install-io-unlocker", "priority": 10, "enabled": true },
-    { "name": "13-install-gh", "priority": 10, "enabled": true },
-    { "name": "14-install-ffmpeg", "priority": 10, "enabled": true },
-    { "name": "15-install-7zip", "priority": 10, "enabled": true },
-    { "name": "16-install-azure-cli", "priority": 10, "enabled": true },
-    { "name": "17-wsl2-install-update", "priority": 10, "enabled": true },
-    { "name": "18-docker-desktop-install-and-configure", "priority": 10, "enabled": true },
-    { "name": "19-health-snapshot", "priority": 10, "enabled": true },
-    { "name": "20-private-local-task", "priority": 10, "enabled": true },
-    { "name": "21-install-whatsapp", "priority": 10, "enabled": true },
-    { "name": "22-install-anydesk", "priority": 10, "enabled": true },
-    { "name": "23-install-windscribe", "priority": 10, "enabled": true },
-    { "name": "24-install-microsoft-teams", "priority": 10, "enabled": true },
-    { "name": "25-install-microsoft-vscode", "priority": 10, "enabled": true },
-    { "name": "26-install-global-npm-packages", "priority": 10, "enabled": true },
-    { "name": "28-install-microsoft-azd", "priority": 10, "enabled": true },
-    { "name": "51-local-diagnostic", "priority": 10, "enabled": true },
-    { "name": "27-windows-ux-public-desktop-shortcuts", "priority": 11, "enabled": true }
+    {
+      "name": "01-winget-bootstrap",
+      "priority": 1,
+      "enabled": true
+    },
+    {
+      "name": "02-private-local-task",
+      "priority": 2,
+      "enabled": true
+    },
+    {
+      "name": "03-chrome-install-check",
+      "priority": 3,
+      "enabled": true
+    },
+    {
+      "name": "04-windows-ux-performance-tuning",
+      "priority": 4,
+      "enabled": true
+    },
+    {
+      "name": "05-windows-advanced-system-settings",
+      "priority": 5,
+      "enabled": true
+    },
+    {
+      "name": "06-git-install-check",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "07-python-install-check",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "08-node-install-check",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "09-install-ollama",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "10-install-sysinternals",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "11-install-powershell-core",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "12-install-io-unlocker",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "13-install-gh",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "14-install-ffmpeg",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "15-install-7zip",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "16-install-azure-cli",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "17-wsl2-install-update",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "18-docker-desktop-install-and-configure",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "19-health-snapshot",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "20-private-local-task",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "21-install-whatsapp",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "22-install-anydesk",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "23-install-windscribe",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "24-install-microsoft-teams",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "25-install-microsoft-vscode",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "26-install-global-npm-packages",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "27-windows-ux-public-desktop-shortcuts",
+      "priority": 11,
+      "enabled": true
+    },
+    {
+      "name": "28-install-microsoft-azd",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "51-local-diagnostic",
+      "priority": 10,
+      "enabled": true
+    }
   ]
 }

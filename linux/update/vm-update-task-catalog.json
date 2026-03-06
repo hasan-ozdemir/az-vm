@@ -1,7 +1,19 @@
 {
   "tasks": [
-    { "name": "01-packages-update-install", "priority": 1, "enabled": true },
-    { "name": "04-node-sshd-capabilities", "priority": 10, "enabled": true },
-    { "name": "06-health-snapshot", "priority": 10, "enabled": true }
+    {
+      "name": "01-packages-update-install",
+      "priority": 1,
+      "enabled": true
+    },
+    {
+      "name": "04-node-sshd-capabilities",
+      "priority": 10,
+      "enabled": true
+    },
+    {
+      "name": "06-health-snapshot",
+      "priority": 10,
+      "enabled": true
+    }
   ]
 }
