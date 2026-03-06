@@ -160,7 +160,8 @@ Task catalog selection:
 Naming notes:
 - Active profile is `regional_v1`.
 - Region code is resolved from Azure location (for example `austriaeast -> ate1`, `centralindia -> inc1`, `westus2 -> usw2`).
-- `VM_NAME` is the primary naming seed and the actual Azure VM name.
+- `VM_NAME` is the actual Azure VM name and the primary source for derived resource names.
+- If a specific resource name override is empty, the related template resolves from `VM_NAME`.
 - Recommended template shape:
   - `RESOURCE_GROUP_TEMPLATE=rg-{VM_NAME}-{REGION_CODE}-g{N}`
   - `VM_DISK_NAME_TEMPLATE=disk-{VM_NAME}-{REGION_CODE}-n{N}`

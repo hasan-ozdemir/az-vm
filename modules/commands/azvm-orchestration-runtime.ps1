@@ -24,7 +24,7 @@ function Invoke-AzVmStep1Common {
             $userInput = $vmNameDefaultResolved
         }
         else {
-            $userInput = Read-Host "Enter VM name (default=$vmNameDefaultResolved)"
+            $userInput = Read-Host "Enter VM name (actual Azure VM name; default=$vmNameDefaultResolved)"
         }
 
         if ([string]::IsNullOrWhiteSpace($userInput)) {
@@ -48,7 +48,7 @@ function Invoke-AzVmStep1Common {
         Set-DotEnvValue -Path $EnvFilePath -Key "VM_NAME" -Value $vmName
     }
 
-    Write-Host "VM name '$vmName' will be used." -ForegroundColor Green
+    Write-Host "VM name '$vmName' will be used for the Azure VM and default resource naming." -ForegroundColor Green
 
     $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_IMAGE"
     $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_SIZE"

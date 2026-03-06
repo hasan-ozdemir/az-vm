@@ -1167,7 +1167,7 @@ function Resolve-AzVmTargetVmName {
             -Detail ("Auto mode could not resolve one VM in resource group '{0}'." -f $ResourceGroup) `
             -Code 65 `
             -Summary ("{0} command cannot resolve target VM in auto mode." -f $OperationName) `
-            -Hint "Set VM_NAME in .env, provide command-specific VM parameter, or use interactive mode."
+            -Hint "Set VM_NAME in .env to the exact Azure VM name, provide a command-specific VM parameter, or use interactive mode."
     }
 
     return (Select-AzVmVmInteractive -ResourceGroup $ResourceGroup -DefaultVmName $DefaultVmName)
@@ -3528,7 +3528,7 @@ function Invoke-AzVmDeleteCommand {
                     -Detail ("Auto mode could not resolve a unique VM in resource group '{0}'." -f $resourceGroup) `
                     -Code 66 `
                     -Summary "Delete command needs an explicit VM in auto mode." `
-                    -Hint "Set VM_NAME in .env to one VM in the selected group."
+                    -Hint "Set VM_NAME in .env to the exact Azure VM name in the selected group."
             }
         }
     }
