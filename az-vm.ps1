@@ -6554,11 +6554,42 @@ function Invoke-CoVmConfigCommand {
     $runtime = $null
     $context = $null
     $platform = ''
+    $step1Result = $null
 
-    Invoke-Step 'Step 1/3 - interactive configuration values will be selected...' {
-        $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
-        $context = $runtime.Context
-        $platform = [string]$runtime.Platform
+    $step1Result = Invoke-Step 'Step 1/3 - interactive configuration values will be selected...' {
+        $runtimeLocal = Initialize-CoVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
+        [pscustomobject]@{
+            Runtime = $runtimeLocal
+            Context = $runtimeLocal.Context
+            Platform = [string]$runtimeLocal.Platform
+        }
+    }
+    if ($null -eq $step1Result -or @($step1Result).Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail "Interactive configuration step did not produce runtime context." `
+            -Code 64 `
+            -Summary "Config command could not continue after step 1." `
+            -Hint "Rerun 'az-vm config' and complete step 1."
+    }
+    if ($step1Result -is [System.Array]) {
+        $step1Result = $step1Result[-1]
+    }
+    $runtime = $step1Result.Runtime
+    $context = $step1Result.Context
+    $platform = [string]$step1Result.Platform
+    if ($null -eq $context) {
+        Throw-FriendlyError `
+            -Detail "Step 1 returned an empty context object." `
+            -Code 64 `
+            -Summary "Config command could not continue after step 1." `
+            -Hint "Rerun 'az-vm config' and verify interactive selections."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$context.AzLocation)) {
+        Throw-FriendlyError `
+            -Detail "Step 1 returned empty AZ_LOCATION in context." `
+            -Code 64 `
+            -Summary "Config command could not continue because region was not captured." `
+            -Hint "Select a valid region in step 1 and retry."
     }
 
     Invoke-Step 'Step 2/3 - region, image, and VM size availability will be checked...' {
