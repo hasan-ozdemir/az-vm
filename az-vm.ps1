@@ -283,6 +283,18 @@ function Get-AzVmPlatformDefaults {
     }
 }
 
+function Get-AzVmPlatformVmConfigKey {
+    param(
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
+        [ValidateSet('VM_IMAGE','VM_SIZE','VM_DISK_SIZE_GB')]
+        [string]$BaseKey
+    )
+
+    $prefix = if ($Platform -eq 'windows') { 'WIN_' } else { 'LIN_' }
+    return ($prefix + $BaseKey)
+}
+
 function Resolve-AzVmPlatformConfigMap {
     param(
         [hashtable]$ConfigMap,
@@ -297,26 +309,17 @@ function Resolve-AzVmPlatformConfigMap {
         }
     }
 
-    $prefix = if ($Platform -eq 'windows') { 'WIN_' } else { 'LIN_' }
-    foreach ($key in @($resolved.Keys)) {
-        $keyText = [string]$key
-        if (-not $keyText.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    foreach ($baseKey in @('VM_IMAGE','VM_SIZE','VM_DISK_SIZE_GB')) {
+        $platformKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
+        $platformValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$platformKey) -DefaultValue '')
+        if ([string]::IsNullOrWhiteSpace([string]$platformValue)) {
+            if ($resolved.ContainsKey([string]$baseKey)) {
+                $resolved.Remove([string]$baseKey)
+            }
             continue
         }
 
-        $genericKey = $keyText.Substring($prefix.Length)
-        if ([string]::IsNullOrWhiteSpace($genericKey)) {
-            continue
-        }
-
-        $genericValue = ''
-        if ($resolved.ContainsKey($genericKey)) {
-            $genericValue = [string]$resolved[$genericKey]
-        }
-
-        if ([string]::IsNullOrWhiteSpace($genericValue)) {
-            $resolved[$genericKey] = [string]$resolved[$keyText]
-        }
+        $resolved[[string]$baseKey] = [string]$platformValue
     }
 
     $resolved['VM_OS_TYPE'] = $Platform
@@ -1058,7 +1061,7 @@ function Invoke-AzVmMain {
         $runFinishAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-summary'
 
         if ($isPartialActionMode) {
-            $bootstrapRuntime = Initialize-AzVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
+            $bootstrapRuntime = Initialize-AzVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1 -PersistGeneratedResourceGroup
             $step1Context = $bootstrapRuntime.Context
             $platform = [string]$bootstrapRuntime.Platform
             $platformDefaults = $bootstrapRuntime.PlatformDefaults
@@ -1287,7 +1290,9 @@ function Invoke-AzVmMain {
             $step1Context = Invoke-AzVmStep1Common `
                 -ConfigMap $effectiveConfigMap `
                 -EnvFilePath $envFilePath `
+                -Platform $platform `
                 -AutoMode:$script:AutoMode `
+                -PersistGeneratedResourceGroup `
                 -ScriptRoot $PSScriptRoot `
                 -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
                 -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
@@ -1878,12 +1883,12 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm config"
     Write-Host "  az-vm create --from-step=vm-init --linux"
     Write-Host "  az-vm update --single-step=network --auto"
-    Write-Host "  az-vm move --vm-region=centralindia --group=rg-examplevm-ate1 --vm=examplevm"
-    Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=rg-examplevm-ate1 --vm=examplevm"
-    Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=rg-examplevm-ate1 --vm=examplevm"
-    Write-Host "  az-vm exec --update-task=01 --group=rg-examplevm-ate1"
-    Write-Host "  az-vm show --group=rg-examplevm-ate1"
-    Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1 --yes"
+    Write-Host "  az-vm move --vm-region=centralindia --group=rg-examplevm-ate1-g1 --vm=examplevm"
+    Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=rg-examplevm-ate1-g1 --vm=examplevm"
+    Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=rg-examplevm-ate1-g1 --vm=examplevm"
+    Write-Host "  az-vm exec --update-task=01 --group=rg-examplevm-ate1-g1"
+    Write-Host "  az-vm show --group=rg-examplevm-ate1-g1"
+    Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1-g1 --yes"
     Write-Host ""
     Write-Host "Detailed docs:"
     Write-Host "  az-vm help"
@@ -1932,12 +1937,12 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm config"
         Write-Host "  az-vm create --single-step=config --linux"
         Write-Host "  az-vm update --to-step=vm-init --auto"
-        Write-Host "  az-vm move --vm-region=austriaeast --group=rg-examplevm-ate1 --vm=examplevm"
-        Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=rg-examplevm-ate1 --vm=examplevm"
-        Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=rg-examplevm-ate1 --vm=examplevm"
-        Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
-        Write-Host "  az-vm show --group=rg-examplevm-ate1"
-        Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1 --yes"
+        Write-Host "  az-vm move --vm-region=austriaeast --group=rg-examplevm-ate1-g1 --vm=examplevm"
+        Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=rg-examplevm-ate1-g1 --vm=examplevm"
+        Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=rg-examplevm-ate1-g1 --vm=examplevm"
+        Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1-g1"
+        Write-Host "  az-vm show --group=rg-examplevm-ate1-g1"
+        Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1-g1 --yes"
         Write-Host ""
         Write-Host "For per-command docs: az-vm help <create|update|config|move|resize|set|exec|show|delete>"
         return
@@ -2003,8 +2008,8 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm move --group=<resource-group> --vm=<vm-name> --vm-region="
             Write-Host "  az-vm move --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm move --group=rg-examplevm-ate1 --vm=examplevm --vm-region=centralindia"
-            Write-Host "  az-vm move --group=rg-examplevm-ate1 --vm=examplevm --vm-region="
+            Write-Host "  az-vm move --group=rg-examplevm-ate1-g1 --vm=examplevm --vm-region=centralindia"
+            Write-Host "  az-vm move --group=rg-examplevm-ate1-g1 --vm=examplevm --vm-region="
             Write-Host "Notes: region move uses snapshot-based migration flow with rollback safeguards."
             return
         }
@@ -2016,8 +2021,8 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm resize --group=<resource-group> --vm=<vm-name> --vm-size="
             Write-Host "  az-vm resize --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm resize --group=rg-examplevm-ate1 --vm=examplevm --vm-size=Standard_B2as_v2"
-            Write-Host "  az-vm resize --group=rg-examplevm-ate1 --vm=examplevm --vm-size="
+            Write-Host "  az-vm resize --group=rg-examplevm-ate1-g1 --vm=examplevm --vm-size=Standard_B2as_v2"
+            Write-Host "  az-vm resize --group=rg-examplevm-ate1-g1 --vm=examplevm --vm-size="
             return
         }
         'set' {
@@ -2029,8 +2034,8 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm set --group=<resource-group> --vm=<vm-name> --hibernation=on|off --nested-virtualization=on|off"
             Write-Host "  az-vm set --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm set --group=rg-examplevm-ate1 --vm=examplevm --hibernation=off"
-            Write-Host "  az-vm set --group=rg-examplevm-ate1 --vm=examplevm --nested-virtualization=off"
+            Write-Host "  az-vm set --group=rg-examplevm-ate1-g1 --vm=examplevm --hibernation=off"
+            Write-Host "  az-vm set --group=rg-examplevm-ate1-g1 --vm=examplevm --nested-virtualization=off"
             return
         }
         'exec' {
@@ -2042,7 +2047,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm exec --update-task=<NN> [--group=<resource-group>]"
             Write-Host "  az-vm exec --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1"
+            Write-Host "  az-vm exec --init-task=01 --group=rg-examplevm-ate1-g1"
             Write-Host "  az-vm exec --update-task=15 --windows"
             Write-Host "  az-vm exec --linux      # opens interactive remote shell session"
             return
@@ -2056,7 +2061,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm show --help"
             Write-Host "Examples:"
             Write-Host "  az-vm show"
-            Write-Host "  az-vm show --group=rg-examplevm-ate1"
+            Write-Host "  az-vm show --group=rg-examplevm-ate1-g1"
             Write-Host "  az-vm show --perf"
             return
         }
@@ -2067,9 +2072,9 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm delete --target=<group|network|vm|disk> [--group=<resource-group>] [--yes]"
             Write-Host "  az-vm delete --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1 --yes"
-            Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1 --yes"
-            Write-Host "  az-vm delete --target=network --group=rg-examplevm-ate1 --yes"
+            Write-Host "  az-vm delete --target=group --group=rg-examplevm-ate1-g1 --yes"
+            Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1-g1 --yes"
+            Write-Host "  az-vm delete --target=network --group=rg-examplevm-ate1-g1 --yes"
             return
         }
         'help' {
@@ -2838,6 +2843,87 @@ function Get-AzVmNextNameIndex {
     return ($maxIndex + 1)
 }
 
+function Get-AzVmNextManagedResourceGroupIndex {
+    param(
+        [string]$NamePrefix
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$NamePrefix)) {
+        return 1
+    }
+
+    $rows = @()
+    try {
+        $rows = @(Get-AzVmManagedResourceGroupRows)
+    }
+    catch {
+        Throw-FriendlyError `
+            -Detail ("Managed resource groups could not be listed while resolving name prefix '{0}'." -f [string]$NamePrefix) `
+            -Code 22 `
+            -Summary "Resource group naming could not be resolved." `
+            -Hint "Run az login and verify access to list tagged resource groups."
+    }
+
+    $pattern = '^' + [regex]::Escape([string]$NamePrefix) + '(\d+)$'
+    $maxIndex = 0
+    foreach ($row in @($rows)) {
+        $name = [string]$row.name
+        if ([string]::IsNullOrWhiteSpace([string]$name)) {
+            continue
+        }
+
+        $m = [regex]::Match($name, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $m.Success) {
+            continue
+        }
+
+        $idxText = [string]$m.Groups[1].Value
+        if (-not ($idxText -match '^\d+$')) {
+            continue
+        }
+
+        $idx = [int]$idxText
+        if ($idx -gt $maxIndex) {
+            $maxIndex = $idx
+        }
+    }
+
+    return ($maxIndex + 1)
+}
+
+function Resolve-AzVmResourceGroupNameFromTemplate {
+    param(
+        [string]$Template,
+        [string]$ServerName,
+        [string]$RegionCode,
+        [switch]$UseNextIndex
+    )
+
+    $effectiveTemplate = [string]$Template
+    if ([string]::IsNullOrWhiteSpace([string]$effectiveTemplate)) {
+        $effectiveTemplate = "rg-{SERVER_NAME}-{REGION_CODE}-g{N}"
+    }
+
+    $tokens = @{
+        SERVER_NAME = [string]$ServerName
+        REGION_CODE = [string]$RegionCode
+        N = "1"
+    }
+
+    $resolved = Resolve-AzVmTemplate -Template $effectiveTemplate -Tokens $tokens
+    if ($resolved.IndexOf("{N}", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        return $resolved
+    }
+
+    $index = 1
+    if ($UseNextIndex) {
+        $prefix = $resolved.Replace("{N}", "")
+        $index = Get-AzVmNextManagedResourceGroupIndex -NamePrefix $prefix
+    }
+
+    return $resolved.Replace("{N}", [string]$index)
+}
+
 function Resolve-AzVmNameFromTemplate {
     param(
         [string]$Template,
@@ -3041,7 +3127,7 @@ function Assert-VmOsDiskSizeCompatible {
             -Detail "Invalid VM disk size '$VmDiskSizeGb'." `
             -Code 25 `
             -Summary "Configured OS disk size is invalid." `
-            -Hint "Set VM_DISK_SIZE_GB to a positive integer."
+            -Hint "Set WIN_VM_DISK_SIZE_GB or LIN_VM_DISK_SIZE_GB to a positive integer."
     }
 
     $requestedDiskSize = [int]$VmDiskSizeGb
@@ -3081,7 +3167,7 @@ function Assert-VmOsDiskSizeCompatible {
             -Detail "Configured OS disk size '$requestedDiskSize GB' is smaller than image minimum '$minimumDiskSize GB'." `
             -Code 25 `
             -Summary "Configured OS disk size is incompatible with the selected image." `
-            -Hint "Set VM_DISK_SIZE_GB to at least $minimumDiskSize for image '$ImageUrn'."
+            -Hint "Set WIN_VM_DISK_SIZE_GB or LIN_VM_DISK_SIZE_GB to at least $minimumDiskSize for image '$ImageUrn'."
     }
 }
 #endregion
@@ -3158,7 +3244,10 @@ function Invoke-AzVmStep1Common {
     param(
         [hashtable]$ConfigMap,
         [string]$EnvFilePath,
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
         [switch]$AutoMode,
+        [switch]$PersistGeneratedResourceGroup,
         [string]$ScriptRoot,
         [string]$ServerNameDefault,
         [string]$VmImageDefault,
@@ -3209,10 +3298,14 @@ function Invoke-AzVmStep1Common {
 
     Write-Host "Server name '$serverName' will be used." -ForegroundColor Green
 
-    $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "austriaeast") -ServerName $serverName
-    $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_IMAGE" -DefaultValue $VmImageDefault) -ServerName $serverName
+    $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_IMAGE"
+    $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_SIZE"
+    $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_DISK_SIZE_GB"
+
+    $defaultAzLocation = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "") -ServerName $serverName
+    $vmImage = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmImageConfigKey -DefaultValue $VmImageDefault) -ServerName $serverName
     $vmStorageSku = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -ServerName $serverName
-    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_SIZE" -DefaultValue "Standard_B2as_v2") -ServerName $serverName
+    $defaultVmSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmSizeConfigKey -DefaultValue "Standard_B2as_v2") -ServerName $serverName
     $azLocation = $defaultAzLocation
     $vmSize = $defaultVmSize
     $forcedAzLocation = ''
@@ -3242,11 +3335,8 @@ function Invoke-AzVmStep1Common {
         while ($true) {
             $azLocation = Select-AzLocationInteractive -DefaultLocation $azLocation
             if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
-                Write-Host "Selected Azure region resolved to empty value. Falling back to configured default region." -ForegroundColor Yellow
-                $azLocation = [string]$defaultAzLocation
-                if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
-                    $azLocation = "austriaeast"
-                }
+                Write-Host "Selected Azure region is empty. Please select a valid region." -ForegroundColor Yellow
+                continue
             }
             $vmSizeSelection = Select-VmSkuInteractive -Location $azLocation -DefaultVmSize $defaultVmSize -PriceHours $priceHours
             if ([string]::Equals([string]$vmSizeSelection, [string]$regionBackToken, [System.StringComparison]::Ordinal)) {
@@ -3262,17 +3352,16 @@ function Invoke-AzVmStep1Common {
         }
 
         Set-DotEnvValue -Path $EnvFilePath -Key "AZ_LOCATION" -Value $azLocation
-        Set-DotEnvValue -Path $EnvFilePath -Key "VM_SIZE" -Value $vmSize
+        Set-DotEnvValue -Path $EnvFilePath -Key $vmSizeConfigKey -Value $vmSize
         Write-Host "Interactive selection -> AZ_LOCATION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
     }
 
     if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
-        $fallbackLocation = [string]$defaultAzLocation
-        if ([string]::IsNullOrWhiteSpace([string]$fallbackLocation)) {
-            $fallbackLocation = "austriaeast"
-        }
-        Write-Host ("AZ_LOCATION resolved to empty value; fallback region '{0}' will be used." -f $fallbackLocation) -ForegroundColor Yellow
-        $azLocation = $fallbackLocation
+        Throw-FriendlyError `
+            -Detail "AZ_LOCATION is empty. Region selection is required before resource group creation." `
+            -Code 22 `
+            -Summary "Azure region is required." `
+            -Hint "Set AZ_LOCATION in .env or select a region interactively."
     }
 
     $regionCode = Get-AzVmRegionCode -Location $azLocation
@@ -3291,11 +3380,44 @@ function Invoke-AzVmStep1Common {
         N = "1"
     }
 
-    $resourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($resourceGroupRaw)) {
-        $resourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}")
+    $resourceGroupTemplateRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}-g{N}")
+    $resourceGroupTemplate = Resolve-ServerTemplate -Value $resourceGroupTemplateRaw -ServerName $serverName
+
+    $configuredResourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP" -DefaultValue "")
+    $configuredResourceGroup = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroupRaw)) {
+        $configuredResourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $configuredResourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
     }
-    $resourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $resourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
+
+    $resourceGroup = ''
+    $resourceGroupGenerated = $false
+    if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup)) {
+        $configuredExists = Test-AzVmResourceGroupExists -ResourceGroup $configuredResourceGroup
+        if ($configuredExists) {
+            $resourceGroup = [string]$configuredResourceGroup
+            Write-Host ("Resource group '{0}' exists and will be used." -f $resourceGroup) -ForegroundColor Green
+        }
+        else {
+            Write-Host ("Configured resource group '{0}' does not exist. A new resource group name will be generated." -f $configuredResourceGroup) -ForegroundColor Yellow
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
+        $resourceGroup = Resolve-AzVmResourceGroupNameFromTemplate `
+            -Template $resourceGroupTemplate `
+            -ServerName $serverName `
+            -RegionCode $regionCode `
+            -UseNextIndex
+        $resourceGroupGenerated = $true
+        Write-Host ("Generated resource group name: {0}" -f [string]$resourceGroup) -ForegroundColor Cyan
+    }
+
+    if ($resourceGroupGenerated -and $PersistGeneratedResourceGroup) {
+        Set-DotEnvValue -Path $EnvFilePath -Key "RESOURCE_GROUP" -Value $resourceGroup
+        if ($ConfigOverrides) {
+            $ConfigOverrides["RESOURCE_GROUP"] = $resourceGroup
+        }
+    }
 
     $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($vnetRaw)) {
@@ -3345,15 +3467,12 @@ function Invoke-AzVmStep1Common {
     }
     $vmDiskName = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vmDiskNameRaw -ServerName $serverName) -Tokens $nameTokens
 
-    $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_SIZE_GB" -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
+    $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
     $vmUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_USER" -DefaultValue "manager") -ServerName $serverName
     $vmPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
     $vmAssistantUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -ServerName $serverName
     $vmAssistantPass = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -ServerName $serverName
-    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "ssh_port" -DefaultValue "")
-    if ([string]::IsNullOrWhiteSpace($sshPortValue)) {
-        $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444")
-    }
+    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444")
     $sshPort = Resolve-ServerTemplate -Value $sshPortValue -ServerName $serverName
 
     $vmCloudInitScriptFile = $null
@@ -3443,11 +3562,20 @@ function Invoke-AzVmResourceGroupStep {
     )
 
     $resourceGroup = [string]$Context.ResourceGroup
+    $azLocation = [string]$Context.AzLocation
+    if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
+        Throw-FriendlyError `
+            -Detail "AZ_LOCATION is empty. Resource group creation cannot continue without a region." `
+            -Code 22 `
+            -Summary "Azure region is required before resource group creation." `
+            -Hint "Set AZ_LOCATION in .env or complete interactive region selection."
+    }
+
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "default" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     Show-AzVmStepFirstUseValues `
         -StepLabel "Step 2/7 - resource group check" `
         -Context $Context `
-        -Keys @("ResourceGroup") `
+        -Keys @("ResourceGroup", "AzLocation") `
         -ExtraValues @{
             ResourceExecutionMode = $effectiveMode
         }
@@ -6933,7 +7061,8 @@ function Initialize-AzVmCommandRuntimeContext {
         [switch]$WindowsFlag,
         [switch]$LinuxFlag,
         [hashtable]$ConfigMapOverrides = @{},
-        [switch]$UseInteractiveStep1
+        [switch]$UseInteractiveStep1,
+        [switch]$PersistGeneratedResourceGroup
     )
 
     $envFilePath = Join-Path $PSScriptRoot '.env'
@@ -6958,7 +7087,9 @@ function Initialize-AzVmCommandRuntimeContext {
     $step1Context = Invoke-AzVmStep1Common `
         -ConfigMap $effectiveConfigMap `
         -EnvFilePath $envFilePath `
+        -Platform $platform `
         -AutoMode:$step1AutoMode `
+        -PersistGeneratedResourceGroup:$PersistGeneratedResourceGroup `
         -ScriptRoot $PSScriptRoot `
         -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
         -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
@@ -7033,11 +7164,14 @@ function Get-AzVmConfigPersistenceMap {
     )
 
     $tcpPortsCsv = (@($Context.TcpPorts) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ','
-    return [ordered]@{
+    $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_IMAGE"
+    $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_SIZE"
+    $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_DISK_SIZE_GB"
+
+    $persist = [ordered]@{
         VM_OS_TYPE = [string]$Platform
         SERVER_NAME = [string]$Context.ServerName
         AZ_LOCATION = [string]$Context.AzLocation
-        VM_SIZE = [string]$Context.VmSize
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VNET_NAME = [string]$Context.VNET
         SUBNET_NAME = [string]$Context.SUBNET
@@ -7047,12 +7181,16 @@ function Get-AzVmConfigPersistenceMap {
         NIC_NAME = [string]$Context.NIC
         VM_NAME = [string]$Context.VmName
         VM_DISK_NAME = [string]$Context.VmDiskName
-        VM_IMAGE = [string]$Context.VmImage
         VM_STORAGE_SKU = [string]$Context.VmStorageSku
-        VM_DISK_SIZE_GB = [string]$Context.VmDiskSize
         SSH_PORT = [string]$Context.SshPort
         TCP_PORTS = [string]$tcpPortsCsv
     }
+
+    $persist[$vmImageConfigKey] = [string]$Context.VmImage
+    $persist[$vmSizeConfigKey] = [string]$Context.VmSize
+    $persist[$vmDiskSizeConfigKey] = [string]$Context.VmDiskSize
+
+    return $persist
 }
 
 function Save-AzVmConfigToDotEnv {
@@ -7167,7 +7305,7 @@ function Invoke-AzVmConfigCommand {
     $step1Result = $null
 
     $step1Result = Invoke-Step 'Step 1/3 - interactive configuration values will be selected...' {
-        $runtimeLocal = Initialize-AzVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
+        $runtimeLocal = Initialize-AzVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1 -PersistGeneratedResourceGroup
         [pscustomobject]@{
             Runtime = $runtimeLocal
             Context = $runtimeLocal.Context
@@ -7730,8 +7868,10 @@ function Invoke-AzVmChangeCommand {
 
     $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
     $context = $runtime.Context
+    $platform = [string]$runtime.Platform
     $envFilePath = [string]$runtime.EnvFilePath
     $effectiveConfigMap = $runtime.EffectiveConfigMap
+    $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey "VM_SIZE"
     $resourceGroup = [string]$context.ResourceGroup
     $vmName = [string]$context.VmName
     $groupWasProvided = -not [string]::IsNullOrWhiteSpace([string]$groupOptionValue)
@@ -7926,8 +8066,12 @@ function Invoke-AzVmChangeCommand {
             REGION_CODE = [string]$targetRegionCode
         }
 
-        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}")
-        $targetResourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $targetResourceGroupTemplate -ServerName ([string]$context.ServerName)) -Tokens $nameTokens
+        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}-g{N}")
+        $targetResourceGroup = Resolve-AzVmResourceGroupNameFromTemplate `
+            -Template (Resolve-ServerTemplate -Value $targetResourceGroupTemplate -ServerName ([string]$context.ServerName)) `
+            -ServerName ([string]$context.ServerName) `
+            -RegionCode $targetRegionCode `
+            -UseNextIndex
 
         $targetVmTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
         $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
@@ -8197,8 +8341,8 @@ function Invoke-AzVmChangeCommand {
     }
 
     if ($sizeChangedAfterRegion) {
-        Set-DotEnvValue -Path $envFilePath -Key 'VM_SIZE' -Value $targetSize
-        $script:ConfigOverrides['VM_SIZE'] = $targetSize
+        Set-DotEnvValue -Path $envFilePath -Key $vmSizeConfigKey -Value $targetSize
+        $script:ConfigOverrides[$vmSizeConfigKey] = $targetSize
     }
 
     if ($regionMoveApplied) {
