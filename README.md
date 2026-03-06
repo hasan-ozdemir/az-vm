@@ -140,7 +140,6 @@ Generic keys (shared):
 - `VM_NAME`, `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
 - `SSH_PORT`, `TCP_PORTS`
-- `VM_INIT_TASK_DIR`, `VM_UPDATE_TASK_DIR`
 - `TASK_OUTCOME_MODE=continue|strict`
 - `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
 
@@ -153,9 +152,9 @@ Optional platform-specific keys (used only when generic key is empty):
 - `WIN_*`, `LIN_*`
   - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_INIT_TASK_DIR`, `WIN_VM_UPDATE_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
 
-Task catalog precedence:
-1. `VM_INIT_TASK_DIR` / `VM_UPDATE_TASK_DIR` (generic override)
-2. `WIN_VM_*` or `LIN_VM_*` task dir keys (platform-specific values)
+Task catalog selection:
+1. `WIN_VM_INIT_TASK_DIR` / `WIN_VM_UPDATE_TASK_DIR` for Windows
+2. `LIN_VM_INIT_TASK_DIR` / `LIN_VM_UPDATE_TASK_DIR` for Linux
 3. built-in defaults (`windows/init`, `windows/update`, `linux/init`, `linux/update`)
 
 Naming notes:

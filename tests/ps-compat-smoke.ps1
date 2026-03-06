@@ -90,22 +90,18 @@ Invoke-Test -Name "Azure location picker resolver contract" -Action {
 }
 
 Invoke-Test -Name "Platform config precedence mapping" -Action {
+    $legacyInitTaskDirKey = (@('VM','INIT','TASK','DIR') -join '_')
+    $legacyUpdateTaskDirKey = (@('VM','UPDATE','TASK','DIR') -join '_')
     $platformOnlyConfig = @{
         VM_IMAGE = ""
         VM_SIZE = ""
         VM_DISK_SIZE_GB = ""
-        VM_INIT_TASK_DIR = ""
-        VM_UPDATE_TASK_DIR = ""
         WIN_VM_IMAGE = "win:image:latest"
         WIN_VM_SIZE = "Standard_B4as_v2"
         WIN_VM_DISK_SIZE_GB = "128"
-        WIN_VM_INIT_TASK_DIR = "windows/init"
-        WIN_VM_UPDATE_TASK_DIR = "windows/update"
         LIN_VM_IMAGE = "lin:image:latest"
         LIN_VM_SIZE = "Standard_B2as_v2"
         LIN_VM_DISK_SIZE_GB = "40"
-        LIN_VM_INIT_TASK_DIR = "linux/init"
-        LIN_VM_UPDATE_TASK_DIR = "linux/update"
     }
 
     $winMap = Resolve-AzVmPlatformConfigMap -ConfigMap $platformOnlyConfig -Platform windows
@@ -114,30 +110,24 @@ Invoke-Test -Name "Platform config precedence mapping" -Action {
     Assert-True -Condition ([string]$winMap.VM_IMAGE -eq "win:image:latest") -Message "Windows VM_IMAGE platform mapping failed."
     Assert-True -Condition ([string]$winMap.VM_SIZE -eq "Standard_B4as_v2") -Message "Windows VM_SIZE platform mapping failed."
     Assert-True -Condition ([string]$winMap.VM_DISK_SIZE_GB -eq "128") -Message "Windows VM_DISK_SIZE_GB platform mapping failed."
-    Assert-True -Condition ([string]$winMap.VM_INIT_TASK_DIR -eq "windows/init") -Message "Windows VM_INIT_TASK_DIR platform mapping failed."
-    Assert-True -Condition ([string]$winMap.VM_UPDATE_TASK_DIR -eq "windows/update") -Message "Windows VM_UPDATE_TASK_DIR platform mapping failed."
     Assert-True -Condition ([string]$linMap.VM_IMAGE -eq "lin:image:latest") -Message "Linux VM_IMAGE platform mapping failed."
     Assert-True -Condition ([string]$linMap.VM_SIZE -eq "Standard_B2as_v2") -Message "Linux VM_SIZE platform mapping failed."
     Assert-True -Condition ([string]$linMap.VM_DISK_SIZE_GB -eq "40") -Message "Linux VM_DISK_SIZE_GB platform mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_INIT_TASK_DIR -eq "linux/init") -Message "Linux VM_INIT_TASK_DIR platform mapping failed."
-    Assert-True -Condition ([string]$linMap.VM_UPDATE_TASK_DIR -eq "linux/update") -Message "Linux VM_UPDATE_TASK_DIR platform mapping failed."
+    Assert-True -Condition (-not $winMap.ContainsKey($legacyInitTaskDirKey)) -Message "Legacy init task dir key should not be synthesized for windows."
+    Assert-True -Condition (-not $winMap.ContainsKey($legacyUpdateTaskDirKey)) -Message "Legacy update task dir key should not be synthesized for windows."
+    Assert-True -Condition (-not $linMap.ContainsKey($legacyInitTaskDirKey)) -Message "Legacy init task dir key should not be synthesized for linux."
+    Assert-True -Condition (-not $linMap.ContainsKey($legacyUpdateTaskDirKey)) -Message "Legacy update task dir key should not be synthesized for linux."
 
     $genericFirstConfig = @{
         VM_IMAGE = "generic:image:latest"
         VM_SIZE = "Standard_D2as_v5"
         VM_DISK_SIZE_GB = "256"
-        VM_INIT_TASK_DIR = "shared/init"
-        VM_UPDATE_TASK_DIR = "shared/update"
         WIN_VM_IMAGE = "win:image:latest"
         WIN_VM_SIZE = "Standard_B4as_v2"
         WIN_VM_DISK_SIZE_GB = "128"
-        WIN_VM_INIT_TASK_DIR = "windows/init"
-        WIN_VM_UPDATE_TASK_DIR = "windows/update"
         LIN_VM_IMAGE = "lin:image:latest"
         LIN_VM_SIZE = "Standard_B2as_v2"
         LIN_VM_DISK_SIZE_GB = "40"
-        LIN_VM_INIT_TASK_DIR = "linux/init"
-        LIN_VM_UPDATE_TASK_DIR = "linux/update"
     }
 
     $genericWinMap = Resolve-AzVmPlatformConfigMap -ConfigMap $genericFirstConfig -Platform windows
@@ -146,13 +136,36 @@ Invoke-Test -Name "Platform config precedence mapping" -Action {
     Assert-True -Condition ([string]$genericWinMap.VM_IMAGE -eq "generic:image:latest") -Message "Generic-first VM_IMAGE mapping failed on windows."
     Assert-True -Condition ([string]$genericWinMap.VM_SIZE -eq "Standard_D2as_v5") -Message "Generic-first VM_SIZE mapping failed on windows."
     Assert-True -Condition ([string]$genericWinMap.VM_DISK_SIZE_GB -eq "256") -Message "Generic-first VM_DISK_SIZE_GB mapping failed on windows."
-    Assert-True -Condition ([string]$genericWinMap.VM_INIT_TASK_DIR -eq "shared/init") -Message "Generic-first VM_INIT_TASK_DIR mapping failed on windows."
-    Assert-True -Condition ([string]$genericWinMap.VM_UPDATE_TASK_DIR -eq "shared/update") -Message "Generic-first VM_UPDATE_TASK_DIR mapping failed on windows."
     Assert-True -Condition ([string]$genericLinMap.VM_IMAGE -eq "generic:image:latest") -Message "Generic-first VM_IMAGE mapping failed on linux."
     Assert-True -Condition ([string]$genericLinMap.VM_SIZE -eq "Standard_D2as_v5") -Message "Generic-first VM_SIZE mapping failed on linux."
     Assert-True -Condition ([string]$genericLinMap.VM_DISK_SIZE_GB -eq "256") -Message "Generic-first VM_DISK_SIZE_GB mapping failed on linux."
-    Assert-True -Condition ([string]$genericLinMap.VM_INIT_TASK_DIR -eq "shared/init") -Message "Generic-first VM_INIT_TASK_DIR mapping failed on linux."
-    Assert-True -Condition ([string]$genericLinMap.VM_UPDATE_TASK_DIR -eq "shared/update") -Message "Generic-first VM_UPDATE_TASK_DIR mapping failed on linux."
+    Assert-True -Condition (-not $genericWinMap.ContainsKey($legacyInitTaskDirKey)) -Message "Legacy init task dir key should remain unused on windows."
+    Assert-True -Condition (-not $genericWinMap.ContainsKey($legacyUpdateTaskDirKey)) -Message "Legacy update task dir key should remain unused on windows."
+    Assert-True -Condition (-not $genericLinMap.ContainsKey($legacyInitTaskDirKey)) -Message "Legacy init task dir key should remain unused on linux."
+    Assert-True -Condition (-not $genericLinMap.ContainsKey($legacyUpdateTaskDirKey)) -Message "Legacy update task dir key should remain unused on linux."
+}
+
+Invoke-Test -Name "Platform task catalog keys stay platform-specific" -Action {
+    $config = @{
+        WIN_VM_INIT_TASK_DIR = "windows/init"
+        WIN_VM_UPDATE_TASK_DIR = "windows/update"
+        LIN_VM_INIT_TASK_DIR = "linux/init"
+        LIN_VM_UPDATE_TASK_DIR = "linux/update"
+    }
+
+    $winInitKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform windows -Stage 'init'
+    $winUpdateKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform windows -Stage 'update'
+    $linInitKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform linux -Stage 'init'
+    $linUpdateKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform linux -Stage 'update'
+
+    Assert-True -Condition ([string]$winInitKey -eq 'WIN_VM_INIT_TASK_DIR') -Message "Windows init catalog key mapping failed."
+    Assert-True -Condition ([string]$winUpdateKey -eq 'WIN_VM_UPDATE_TASK_DIR') -Message "Windows update catalog key mapping failed."
+    Assert-True -Condition ([string]$linInitKey -eq 'LIN_VM_INIT_TASK_DIR') -Message "Linux init catalog key mapping failed."
+    Assert-True -Condition ([string]$linUpdateKey -eq 'LIN_VM_UPDATE_TASK_DIR') -Message "Linux update catalog key mapping failed."
+    Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $winInitKey -DefaultValue '') -eq 'windows/init') -Message "Windows init catalog path lookup failed."
+    Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $winUpdateKey -DefaultValue '') -eq 'windows/update') -Message "Windows update catalog path lookup failed."
+    Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $linInitKey -DefaultValue '') -eq 'linux/init') -Message "Linux init catalog path lookup failed."
+    Assert-True -Condition ([string](Get-ConfigValue -Config $config -Key $linUpdateKey -DefaultValue '') -eq 'linux/update') -Message "Linux update catalog path lookup failed."
 }
 
 Invoke-Test -Name "Task catalog discovery" -Action {

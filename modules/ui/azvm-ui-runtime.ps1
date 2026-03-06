@@ -1353,17 +1353,8 @@ function Initialize-AzVmCommandRuntimeContext {
         -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
         -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
         -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
-        -VmUpdateConfigKey 'VM_UPDATE_TASK_DIR' `
-        -VmUpdateDefault ([string]$platformDefaults.VmUpdateTaskDirDefault) `
         -ConfigOverrides $script:ConfigOverrides
 
-    $serverName = [string]$step1Context.ServerName
-    $vmInitTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_INIT_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault)) -ServerName $serverName
-    $vmUpdateTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_UPDATE_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault)) -ServerName $serverName
-    $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $repoRoot
-    $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $repoRoot
-    $step1Context['VmInitTaskDir'] = $vmInitTaskDir
-    $step1Context['VmUpdateTaskDir'] = $vmUpdateTaskDir
     $step1Context['VmOsType'] = $platform
 
     $taskOutcomeModeRaw = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'TASK_OUTCOME_MODE' -DefaultValue 'continue')

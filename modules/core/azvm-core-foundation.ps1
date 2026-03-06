@@ -275,17 +275,28 @@ function Get-AzVmPlatformVmConfigKey {
     return ($prefix + $BaseKey)
 }
 
-# Handles Get-AzVmPlatformTaskDirConfigKey.
-function Get-AzVmPlatformTaskDirConfigKey {
+# Handles Get-AzVmPlatformTaskCatalogConfigKey.
+function Get-AzVmPlatformTaskCatalogConfigKey {
     param(
         [ValidateSet('windows','linux')]
         [string]$Platform,
-        [ValidateSet('VM_INIT_TASK_DIR','VM_UPDATE_TASK_DIR')]
-        [string]$BaseKey
+        [ValidateSet('init','update')]
+        [string]$Stage
     )
 
-    $prefix = if ($Platform -eq 'windows') { 'WIN_' } else { 'LIN_' }
-    return ($prefix + $BaseKey)
+    if ($Platform -eq 'windows') {
+        if ($Stage -eq 'init') {
+            return 'WIN_VM_INIT_TASK_DIR'
+        }
+
+        return 'WIN_VM_UPDATE_TASK_DIR'
+    }
+
+    if ($Stage -eq 'init') {
+        return 'LIN_VM_INIT_TASK_DIR'
+    }
+
+    return 'LIN_VM_UPDATE_TASK_DIR'
 }
 
 # Handles Resolve-AzVmPlatformConfigMap.
@@ -305,23 +316,6 @@ function Resolve-AzVmPlatformConfigMap {
 
     foreach ($baseKey in @('VM_IMAGE','VM_SIZE','VM_DISK_SIZE_GB')) {
         $platformKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
-        $genericValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$baseKey) -DefaultValue '')
-        $platformValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$platformKey) -DefaultValue '')
-        if (-not [string]::IsNullOrWhiteSpace([string]$genericValue)) {
-            $resolved[[string]$baseKey] = [string]$genericValue
-            continue
-        }
-        if (-not [string]::IsNullOrWhiteSpace([string]$platformValue)) {
-            $resolved[[string]$baseKey] = [string]$platformValue
-            continue
-        }
-        if ($resolved.ContainsKey([string]$baseKey)) {
-            $resolved.Remove([string]$baseKey)
-        }
-    }
-
-    foreach ($baseKey in @('VM_INIT_TASK_DIR','VM_UPDATE_TASK_DIR')) {
-        $platformKey = Get-AzVmPlatformTaskDirConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
         $genericValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$baseKey) -DefaultValue '')
         $platformValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$platformKey) -DefaultValue '')
         if (-not [string]::IsNullOrWhiteSpace([string]$genericValue)) {
