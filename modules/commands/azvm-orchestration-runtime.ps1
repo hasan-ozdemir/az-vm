@@ -120,14 +120,6 @@ function Invoke-AzVmStep1Common {
     }
 
     $regionCode = Get-AzVmRegionCode -Location $azLocation
-    $namingProfile = [string](Get-ConfigValue -Config $ConfigMap -Key "NAMING_TEMPLATE_ACTIVE" -DefaultValue "regional_v1")
-    if (-not [string]::Equals([string]$namingProfile, "regional_v1", [System.StringComparison]::OrdinalIgnoreCase)) {
-        Throw-FriendlyError `
-            -Detail ("Unsupported naming profile '{0}'." -f $namingProfile) `
-            -Code 2 `
-            -Summary "Only regional naming profile is supported in this version." `
-            -Hint "Set NAMING_TEMPLATE_ACTIVE=regional_v1 in .env."
-    }
 
     $nameTokens = @{
         VM_NAME = [string]$vmName

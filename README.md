@@ -135,7 +135,7 @@ Use root `.env`.
 
 Generic keys (shared):
 - `VM_NAME`, `AZ_LOCATION`
-- `NAMING_TEMPLATE_ACTIVE`, `RESOURCE_GROUP_TEMPLATE`
+- `RESOURCE_GROUP_TEMPLATE`
 - `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
 - `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
@@ -158,7 +158,6 @@ Task catalog selection:
 3. built-in defaults (`windows/init`, `windows/update`, `linux/init`, `linux/update`)
 
 Naming notes:
-- Active profile is `regional_v1`.
 - Region code is resolved from Azure location (for example `austriaeast -> ate1`, `centralindia -> inc1`, `westus2 -> usw2`).
 - `VM_NAME` is the actual Azure VM name and the primary source for derived resource names.
 - If a specific resource name override is empty, the related template resolves from `VM_NAME`.

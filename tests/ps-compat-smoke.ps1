@@ -176,7 +176,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','VM_NAME','AZ_LOCATION','NAMING_TEMPLATE_ACTIVE',
+        'VM_OS_TYPE','VM_NAME','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','SSH_PORT',
