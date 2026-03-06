@@ -162,7 +162,7 @@ Naming notes:
 - Active profile is `regional_v1`.
 - Region code is resolved from Azure location (for example `austriaeast -> ate1`, `centralindia -> inc1`, `westus2 -> usw2`).
 - Recommended template shape:
-  - `RESOURCE_GROUP_TEMPLATE=rg-{SERVER_NAME}-{REGION_CODE}`
+  - `RESOURCE_GROUP_TEMPLATE=rg-{SERVER_NAME}-{REGION_CODE}-g{N}`
   - `VM_NAME_TEMPLATE=vm-{SERVER_NAME}-{REGION_CODE}-n{N}`
   - `VM_DISK_NAME_TEMPLATE=disk-{SERVER_NAME}-{REGION_CODE}-n{N}`
   - `VNET_NAME_TEMPLATE=net-{SERVER_NAME}-{REGION_CODE}-n{N}`

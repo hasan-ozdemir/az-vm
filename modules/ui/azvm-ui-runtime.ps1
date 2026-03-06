@@ -1323,7 +1323,8 @@ function Initialize-AzVmCommandRuntimeContext {
         [switch]$PersistGeneratedResourceGroup
     )
 
-    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
@@ -1348,7 +1349,7 @@ function Initialize-AzVmCommandRuntimeContext {
         -Platform $platform `
         -AutoMode:$step1AutoMode `
         -PersistGeneratedResourceGroup:$PersistGeneratedResourceGroup `
-        -ScriptRoot $PSScriptRoot `
+        -ScriptRoot $repoRoot `
         -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
         -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
         -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
@@ -1359,8 +1360,8 @@ function Initialize-AzVmCommandRuntimeContext {
     $serverName = [string]$step1Context.ServerName
     $vmInitTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_INIT_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault)) -ServerName $serverName
     $vmUpdateTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_UPDATE_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault)) -ServerName $serverName
-    $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $PSScriptRoot
-    $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $PSScriptRoot
+    $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $repoRoot
+    $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $repoRoot
     $step1Context['VmInitTaskDir'] = $vmInitTaskDir
     $step1Context['VmUpdateTaskDir'] = $vmUpdateTaskDir
     $step1Context['VmOsType'] = $platform
@@ -1549,7 +1550,8 @@ function Invoke-AzVmGroupCommand {
         [hashtable]$Options
     )
 
-    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $activeGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
     $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
@@ -1646,7 +1648,8 @@ function Invoke-AzVmConfigCommand {
         [switch]$LinuxFlag
     )
 
-    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
     $configBefore = Read-DotEnvFile -Path $envFilePath
     $defaultResourceGroup = [string](Get-ConfigValue -Config $configBefore -Key 'RESOURCE_GROUP' -DefaultValue '')
     $serverName = [string](Get-ConfigValue -Config $configBefore -Key 'SERVER_NAME' -DefaultValue '')
@@ -1870,7 +1873,7 @@ function Invoke-AzVmExecCommand {
 
         Invoke-AzVmSshTaskBlocks `
             -Platform $platform `
-            -RepoRoot $PSScriptRoot `
+            -RepoRoot (Get-AzVmRepoRoot) `
             -SshHost $sshHost `
             -SshUser ([string]$context.VmUser) `
             -SshPassword ([string]$context.VmPass) `
@@ -1913,7 +1916,7 @@ function Invoke-AzVmExecCommand {
     $replPlatform = if ([string]::Equals($osType, 'Linux', [System.StringComparison]::OrdinalIgnoreCase)) { 'linux' } else { 'windows' }
     $shell = if ($replPlatform -eq 'linux') { 'bash' } else { 'powershell' }
 
-    $pySsh = Ensure-AzVmPySshTools -RepoRoot $PSScriptRoot -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
+    $pySsh = Ensure-AzVmPySshTools -RepoRoot (Get-AzVmRepoRoot) -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
     $bootstrap = Initialize-AzVmSshHostKey `
         -PySshPythonPath ([string]$pySsh.PythonPath) `
         -PySshClientPath ([string]$pySsh.ClientPath) `
@@ -3318,7 +3321,8 @@ function Invoke-AzVmShowCommand {
         [switch]$LinuxFlag
     )
 
-    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $accountSnapshot = Get-AzVmAzAccountSnapshot
 
@@ -3434,7 +3438,8 @@ function Invoke-AzVmDeleteCommand {
         [switch]$LinuxFlag
     )
 
-    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
     $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
@@ -3734,7 +3739,7 @@ function Invoke-AzVmCommandDispatcher {
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'update'
 
-                $envFilePath = Join-Path $PSScriptRoot '.env'
+                $envFilePath = Join-Path (Get-AzVmRepoRoot) '.env'
                 $configMap = Read-DotEnvFile -Path $envFilePath
                 $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
                 $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')

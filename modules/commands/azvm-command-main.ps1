@@ -15,6 +15,7 @@ function Invoke-AzVmMain {
         $script:HadError = $false
         $script:ExitCode = 0
         $script:TranscriptStarted = $false
+        $repoRoot = Get-AzVmRepoRoot
         chcp 65001 | Out-Null
         $Host.UI.RawUI.WindowTitle = 'az vm'
 
@@ -51,7 +52,7 @@ function Invoke-AzVmMain {
             Read-Host -Prompt 'Press Enter to start...' | Out-Null
         }
 
-        $envFilePath = Join-Path $PSScriptRoot '.env'
+        $envFilePath = Join-Path $repoRoot '.env'
         $configMap = Read-DotEnvFile -Path $envFilePath
 
         $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
@@ -70,7 +71,7 @@ function Invoke-AzVmMain {
         }
 
         $logTimestamp = (Get-Date).ToString('ddMMMyy-HHmmss', [System.Globalization.CultureInfo]::InvariantCulture).ToLowerInvariant()
-        $logPath = Join-Path $PSScriptRoot ("az-vm-log-{0}.txt" -f $logTimestamp)
+        $logPath = Join-Path $repoRoot ("az-vm-log-{0}.txt" -f $logTimestamp)
 
         Start-Transcript -Path $logPath -Force
         $script:TranscriptStarted = $true
@@ -268,7 +269,7 @@ function Invoke-AzVmMain {
                         Write-Host 'Update task catalog is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
                     }
                     else {
-                        Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step6SshUser -SshPassword $step6SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                        Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser $step6SshUser -SshPassword $step6SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
                     }
                 }
             }
@@ -316,7 +317,7 @@ function Invoke-AzVmMain {
                 -Platform $platform `
                 -AutoMode:$script:AutoMode `
                 -PersistGeneratedResourceGroup `
-                -ScriptRoot $PSScriptRoot `
+                -ScriptRoot $repoRoot `
                 -ServerNameDefault ([string]$platformDefaults.ServerNameDefault) `
                 -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
                 -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
@@ -350,8 +351,8 @@ function Invoke-AzVmMain {
 
             $vmInitTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_INIT_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault)) -ServerName $serverName
             $vmUpdateTaskDirName = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_UPDATE_TASK_DIR' -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault)) -ServerName $serverName
-            $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $PSScriptRoot
-            $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $PSScriptRoot
+            $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $repoRoot
+            $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $repoRoot
 
             $step1Context['VmInitTaskDir'] = $vmInitTaskDir
             $step1Context['VmUpdateTaskDir'] = $vmUpdateTaskDir
@@ -409,7 +410,7 @@ function Invoke-AzVmMain {
             $step1Context['SshConnectTimeoutSeconds'] = $sshConnectTimeoutSeconds
 
             if ($script:AutoMode) {
-                Show-AzVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $PSScriptRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -RenewMode:$script:RenewMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
+                Show-AzVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $repoRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -RenewMode:$script:RenewMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
             }
 
             Invoke-AzVmPrecheckStep -Context $step1Context
@@ -533,7 +534,7 @@ function Invoke-AzVmMain {
                 Write-Host 'Update task catalog is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
             }
             else {
-                Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step6SshUser -SshPassword $step6SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser $step6SshUser -SshPassword $step6SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
             }
         }
 

@@ -1,7 +1,7 @@
 # Imported runtime region: test-runcommand.
 
-# Handles Resolve-CoRunCommandScriptText.
-function Resolve-CoRunCommandScriptText {
+# Handles Resolve-AzVmRunCommandScriptText.
+function Resolve-AzVmRunCommandScriptText {
     param(
         [string]$ScriptText
     )
@@ -21,8 +21,8 @@ function Resolve-CoRunCommandScriptText {
     return $ScriptText
 }
 
-# Handles Get-CoRunCommandScriptArgs.
-function Get-CoRunCommandScriptArgs {
+# Handles Get-AzVmRunCommandScriptArgs.
+function Get-AzVmRunCommandScriptArgs {
     param(
         [string]$ScriptText,
         [string]$CommandId
@@ -76,8 +76,8 @@ function Test-AzVmBenignRunCommandStdErr {
     return $false
 }
 
-# Handles Get-CoRunCommandResultMessage.
-function Get-CoRunCommandResultMessage {
+# Handles Get-AzVmRunCommandResultMessage.
+function Get-AzVmRunCommandResultMessage {
     param(
         [string]$TaskName,
         [object]$RawJson,
@@ -135,8 +135,8 @@ function Get-CoRunCommandResultMessage {
     return ($messages -join "`n")
 }
 
-# Handles Parse-AzVmStep8Markers.
-function Parse-AzVmStep8Markers {
+# Handles Parse-AzVmRunCommandBatchMarkers.
+function Parse-AzVmRunCommandBatchMarkers {
     param(
         [string]$MessageText
     )
@@ -168,7 +168,7 @@ function Parse-AzVmStep8Markers {
             continue
         }
 
-        if ($trimmed -match '^STEP8_SUMMARY:success=(\d+);warning=(\d+);error=(\d+);reboot=(\d+)$') {
+        if ($trimmed -match '^(?:RUN_COMMAND_SUMMARY|STEP8_SUMMARY):success=(\d+);warning=(\d+);error=(\d+);reboot=(\d+)$') {
             $result.SuccessCount = [int]$Matches[1]
             $result.WarningCount = [int]$Matches[2]
             $result.ErrorCount = [int]$Matches[3]
@@ -297,7 +297,7 @@ function Invoke-VmRunCommandBlocks {
 
     foreach ($taskBlock in $TaskBlocks) {
         $taskName = [string]$taskBlock.Name
-        $taskScript = Resolve-CoRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
+        $taskScript = Resolve-AzVmRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
         if ($CombinedShell -eq "bash") {
             $taskNameBytes = [System.Text.Encoding]::UTF8.GetBytes($taskName)
             $taskNameBase64 = [System.Convert]::ToBase64String($taskNameBytes)
@@ -315,7 +315,7 @@ function Invoke-VmRunCommandBlocks {
 
     $combinedScript = $combinedBuilder.ToString()
     try {
-        $combinedArgs = Get-CoRunCommandScriptArgs -ScriptText $combinedScript -CommandId $CommandId
+        $combinedArgs = Get-AzVmRunCommandScriptArgs -ScriptText $combinedScript -CommandId $CommandId
         $combinedAzArgs = @(
             "vm", "run-command", "invoke",
             "--resource-group", $ResourceGroup,
@@ -331,13 +331,13 @@ function Invoke-VmRunCommandBlocks {
             Assert-LastExitCode "az vm run-command invoke (task-batch-combined)"
             $invokeResult
         }
-        $combinedMessage = Get-CoRunCommandResultMessage -TaskName "combined-task-batch" -RawJson $combinedJson -ModeLabel "auto-mode"
+        $combinedMessage = Get-AzVmRunCommandResultMessage -TaskName "combined-task-batch" -RawJson $combinedJson -ModeLabel "auto-mode"
         Write-Host "TASK batch run-command completed."
         if (-not [string]::IsNullOrWhiteSpace($combinedMessage)) {
             Write-Host $combinedMessage
         }
 
-        $marker = Parse-AzVmStep8Markers -MessageText $combinedMessage
+        $marker = Parse-AzVmRunCommandBatchMarkers -MessageText $combinedMessage
         $taskDurations = @(Get-AzVmTaskDurationsFromMessageText -MessageText $combinedMessage)
         if ($script:PerfMode -and $taskDurations.Count -gt 0) {
             foreach ($taskDuration in $taskDurations) {

@@ -35,6 +35,7 @@ $script:RetailPricingPageDelayMs = 120
 $script:PerfSuppressAzTimingDepth = 0
 $script:ManagedByTagKey = 'managed-by'
 $script:ManagedByTagValue = 'az-vm'
+$script:AzVmRepoRoot = $PSScriptRoot
 
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'

@@ -1,5 +1,16 @@
 # Core foundation utilities and shared helpers.
 
+# Handles Get-AzVmRepoRoot.
+function Get-AzVmRepoRoot {
+    if (-not [string]::IsNullOrWhiteSpace([string]$script:AzVmRepoRoot) -and (Test-Path -LiteralPath ([string]$script:AzVmRepoRoot))) {
+        return [string]$script:AzVmRepoRoot
+    }
+
+    $fallbackRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    $script:AzVmRepoRoot = [string]$fallbackRoot
+    return [string]$script:AzVmRepoRoot
+}
+
 # Handles Convert-AzVmPerfSecondsText.
 function Convert-AzVmPerfSecondsText {
     param(
