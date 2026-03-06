@@ -140,7 +140,12 @@ Windows execution notes:
 
 Optional platform fallback keys (used only when generic key is empty):
 - `WIN_*`, `LIN_*`
-  - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
+  - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_INIT_TASK_DIR`, `WIN_VM_UPDATE_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
+
+Task catalog precedence:
+1. `VM_INIT_TASK_DIR` / `VM_UPDATE_TASK_DIR` (generic override)
+2. `WIN_VM_*` or `LIN_VM_*` task dir keys (platform fallback)
+3. built-in defaults (`windows/init`, `windows/update`, `linux/init`, `linux/update`)
 
 Naming notes:
 - Active profile is `regional_v1`.

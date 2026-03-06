@@ -295,6 +295,18 @@ function Get-AzVmPlatformVmConfigKey {
     return ($prefix + $BaseKey)
 }
 
+function Get-AzVmPlatformTaskDirConfigKey {
+    param(
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
+        [ValidateSet('VM_INIT_TASK_DIR','VM_UPDATE_TASK_DIR')]
+        [string]$BaseKey
+    )
+
+    $prefix = if ($Platform -eq 'windows') { 'WIN_' } else { 'LIN_' }
+    return ($prefix + $BaseKey)
+}
+
 function Resolve-AzVmPlatformConfigMap {
     param(
         [hashtable]$ConfigMap,
@@ -311,15 +323,36 @@ function Resolve-AzVmPlatformConfigMap {
 
     foreach ($baseKey in @('VM_IMAGE','VM_SIZE','VM_DISK_SIZE_GB')) {
         $platformKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
+        $genericValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$baseKey) -DefaultValue '')
         $platformValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$platformKey) -DefaultValue '')
-        if ([string]::IsNullOrWhiteSpace([string]$platformValue)) {
-            if ($resolved.ContainsKey([string]$baseKey)) {
-                $resolved.Remove([string]$baseKey)
-            }
+        if (-not [string]::IsNullOrWhiteSpace([string]$genericValue)) {
+            $resolved[[string]$baseKey] = [string]$genericValue
             continue
         }
+        if (-not [string]::IsNullOrWhiteSpace([string]$platformValue)) {
+            $resolved[[string]$baseKey] = [string]$platformValue
+            continue
+        }
+        if ($resolved.ContainsKey([string]$baseKey)) {
+            $resolved.Remove([string]$baseKey)
+        }
+    }
 
-        $resolved[[string]$baseKey] = [string]$platformValue
+    foreach ($baseKey in @('VM_INIT_TASK_DIR','VM_UPDATE_TASK_DIR')) {
+        $platformKey = Get-AzVmPlatformTaskDirConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
+        $genericValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$baseKey) -DefaultValue '')
+        $platformValue = [string](Get-ConfigValue -Config $resolved -Key ([string]$platformKey) -DefaultValue '')
+        if (-not [string]::IsNullOrWhiteSpace([string]$genericValue)) {
+            $resolved[[string]$baseKey] = [string]$genericValue
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$platformValue)) {
+            $resolved[[string]$baseKey] = [string]$platformValue
+            continue
+        }
+        if ($resolved.ContainsKey([string]$baseKey)) {
+            $resolved.Remove([string]$baseKey)
+        }
     }
 
     $resolved['VM_OS_TYPE'] = $Platform

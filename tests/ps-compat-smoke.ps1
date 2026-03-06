@@ -90,28 +90,69 @@ Invoke-Test -Name "Azure location picker resolver contract" -Action {
 }
 
 Invoke-Test -Name "Platform fallback config mapping" -Action {
-    $baseConfig = @{
+    $platformOnlyConfig = @{
         VM_IMAGE = ""
+        VM_SIZE = ""
         VM_DISK_SIZE_GB = ""
         VM_INIT_TASK_DIR = ""
         VM_UPDATE_TASK_DIR = ""
         WIN_VM_IMAGE = "win:image:latest"
+        WIN_VM_SIZE = "Standard_B4as_v2"
         WIN_VM_DISK_SIZE_GB = "128"
         WIN_VM_INIT_TASK_DIR = "windows/init"
         WIN_VM_UPDATE_TASK_DIR = "windows/update"
         LIN_VM_IMAGE = "lin:image:latest"
+        LIN_VM_SIZE = "Standard_B2as_v2"
         LIN_VM_DISK_SIZE_GB = "40"
         LIN_VM_INIT_TASK_DIR = "linux/init"
         LIN_VM_UPDATE_TASK_DIR = "linux/update"
     }
 
-    $winMap = Resolve-AzVmPlatformConfigMap -ConfigMap $baseConfig -Platform windows
-    $linMap = Resolve-AzVmPlatformConfigMap -ConfigMap $baseConfig -Platform linux
+    $winMap = Resolve-AzVmPlatformConfigMap -ConfigMap $platformOnlyConfig -Platform windows
+    $linMap = Resolve-AzVmPlatformConfigMap -ConfigMap $platformOnlyConfig -Platform linux
 
     Assert-True -Condition ([string]$winMap.VM_IMAGE -eq "win:image:latest") -Message "Windows VM_IMAGE fallback mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_SIZE -eq "Standard_B4as_v2") -Message "Windows VM_SIZE fallback mapping failed."
     Assert-True -Condition ([string]$winMap.VM_DISK_SIZE_GB -eq "128") -Message "Windows VM_DISK_SIZE_GB fallback mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_INIT_TASK_DIR -eq "windows/init") -Message "Windows VM_INIT_TASK_DIR fallback mapping failed."
+    Assert-True -Condition ([string]$winMap.VM_UPDATE_TASK_DIR -eq "windows/update") -Message "Windows VM_UPDATE_TASK_DIR fallback mapping failed."
     Assert-True -Condition ([string]$linMap.VM_IMAGE -eq "lin:image:latest") -Message "Linux VM_IMAGE fallback mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_SIZE -eq "Standard_B2as_v2") -Message "Linux VM_SIZE fallback mapping failed."
     Assert-True -Condition ([string]$linMap.VM_DISK_SIZE_GB -eq "40") -Message "Linux VM_DISK_SIZE_GB fallback mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_INIT_TASK_DIR -eq "linux/init") -Message "Linux VM_INIT_TASK_DIR fallback mapping failed."
+    Assert-True -Condition ([string]$linMap.VM_UPDATE_TASK_DIR -eq "linux/update") -Message "Linux VM_UPDATE_TASK_DIR fallback mapping failed."
+
+    $genericFirstConfig = @{
+        VM_IMAGE = "generic:image:latest"
+        VM_SIZE = "Standard_D2as_v5"
+        VM_DISK_SIZE_GB = "256"
+        VM_INIT_TASK_DIR = "shared/init"
+        VM_UPDATE_TASK_DIR = "shared/update"
+        WIN_VM_IMAGE = "win:image:latest"
+        WIN_VM_SIZE = "Standard_B4as_v2"
+        WIN_VM_DISK_SIZE_GB = "128"
+        WIN_VM_INIT_TASK_DIR = "windows/init"
+        WIN_VM_UPDATE_TASK_DIR = "windows/update"
+        LIN_VM_IMAGE = "lin:image:latest"
+        LIN_VM_SIZE = "Standard_B2as_v2"
+        LIN_VM_DISK_SIZE_GB = "40"
+        LIN_VM_INIT_TASK_DIR = "linux/init"
+        LIN_VM_UPDATE_TASK_DIR = "linux/update"
+    }
+
+    $genericWinMap = Resolve-AzVmPlatformConfigMap -ConfigMap $genericFirstConfig -Platform windows
+    $genericLinMap = Resolve-AzVmPlatformConfigMap -ConfigMap $genericFirstConfig -Platform linux
+
+    Assert-True -Condition ([string]$genericWinMap.VM_IMAGE -eq "generic:image:latest") -Message "Generic-first VM_IMAGE mapping failed on windows."
+    Assert-True -Condition ([string]$genericWinMap.VM_SIZE -eq "Standard_D2as_v5") -Message "Generic-first VM_SIZE mapping failed on windows."
+    Assert-True -Condition ([string]$genericWinMap.VM_DISK_SIZE_GB -eq "256") -Message "Generic-first VM_DISK_SIZE_GB mapping failed on windows."
+    Assert-True -Condition ([string]$genericWinMap.VM_INIT_TASK_DIR -eq "shared/init") -Message "Generic-first VM_INIT_TASK_DIR mapping failed on windows."
+    Assert-True -Condition ([string]$genericWinMap.VM_UPDATE_TASK_DIR -eq "shared/update") -Message "Generic-first VM_UPDATE_TASK_DIR mapping failed on windows."
+    Assert-True -Condition ([string]$genericLinMap.VM_IMAGE -eq "generic:image:latest") -Message "Generic-first VM_IMAGE mapping failed on linux."
+    Assert-True -Condition ([string]$genericLinMap.VM_SIZE -eq "Standard_D2as_v5") -Message "Generic-first VM_SIZE mapping failed on linux."
+    Assert-True -Condition ([string]$genericLinMap.VM_DISK_SIZE_GB -eq "256") -Message "Generic-first VM_DISK_SIZE_GB mapping failed on linux."
+    Assert-True -Condition ([string]$genericLinMap.VM_INIT_TASK_DIR -eq "shared/init") -Message "Generic-first VM_INIT_TASK_DIR mapping failed on linux."
+    Assert-True -Condition ([string]$genericLinMap.VM_UPDATE_TASK_DIR -eq "shared/update") -Message "Generic-first VM_UPDATE_TASK_DIR mapping failed on linux."
 }
 
 Invoke-Test -Name "Task catalog discovery" -Action {
