@@ -1,9 +1,6 @@
 $ErrorActionPreference = "Stop"
 # AZ_VM_TASK_TIMEOUT_SECONDS=1800
-Write-Host "Update task started: chrome-install-and-shortcut"
-
-$serverName = "__SERVER_NAME__"
-$chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$serverName https://www.google.com"
+Write-Host "Update task started: chrome-install-check"
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
@@ -58,27 +55,6 @@ function Resolve-ChromeExecutable {
     return ""
 }
 
-function Set-ChromeShortcut {
-    param(
-        [string]$ShortcutPath,
-        [string]$ChromeExe,
-        [string]$Args
-    )
-
-    $shortcutDir = Split-Path -Path $ShortcutPath -Parent
-    if (-not (Test-Path -LiteralPath $shortcutDir)) {
-        New-Item -Path $shortcutDir -ItemType Directory -Force | Out-Null
-    }
-
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($ShortcutPath)
-    $shortcut.TargetPath = $ChromeExe
-    $shortcut.Arguments = $Args
-    $shortcut.WorkingDirectory = (Split-Path -Path $ChromeExe -Parent)
-    $shortcut.IconLocation = "$ChromeExe,0"
-    $shortcut.Save()
-}
-
 Refresh-SessionPath
 
 $chocoExe = Resolve-ChocoExecutable
@@ -101,16 +77,6 @@ if ([string]::IsNullOrWhiteSpace([string]$chromeExe)) {
     throw "Google Chrome executable path was not detected after installation."
 }
 
-$shortcutTargets = @(
-    "C:\Users\Public\Desktop\Google Chrome.lnk",
-    "C:\Users\__VM_USER__\Desktop\Google Chrome.lnk",
-    "C:\Users\__ASSISTANT_USER__\Desktop\Google Chrome.lnk"
-)
-
-foreach ($shortcutPath in @($shortcutTargets)) {
-    Set-ChromeShortcut -ShortcutPath $shortcutPath -ChromeExe $chromeExe -Args $chromeArgs
-    Write-Host "Chrome shortcut configured: $shortcutPath"
-}
-
-Write-Host "chrome-install-and-shortcut-completed"
-Write-Host "Update task completed: chrome-install-and-shortcut"
+Write-Host "Chrome executable: $chromeExe"
+Write-Host "chrome-install-check-completed"
+Write-Host "Update task completed: chrome-install-check"

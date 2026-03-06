@@ -393,6 +393,339 @@ function Resolve-AzVmPlatformSelection {
     return $selected
 }
 
+function Get-AzVmTaskCatalogFileName {
+    param(
+        [ValidateSet('init','update')]
+        [string]$Stage
+    )
+
+    if ($Stage -eq 'init') {
+        return 'vm-init-task-catalog.json'
+    }
+
+    return 'vm-update-task-catalog.json'
+}
+
+function Get-AzVmTaskCatalogPath {
+    param(
+        [string]$DirectoryPath,
+        [ValidateSet('init','update')]
+        [string]$Stage
+    )
+
+    $catalogName = Get-AzVmTaskCatalogFileName -Stage $Stage
+    return (Join-Path $DirectoryPath $catalogName)
+}
+
+function Convert-AzVmTaskCatalogInt {
+    param(
+        [AllowNull()]
+        [object]$Value,
+        [int]$DefaultValue
+    )
+
+    if ($null -eq $Value) {
+        return [int]$DefaultValue
+    }
+
+    try {
+        return [int]$Value
+    }
+    catch {
+        return [int]$DefaultValue
+    }
+}
+
+function Convert-AzVmTaskCatalogBool {
+    param(
+        [AllowNull()]
+        [object]$Value,
+        [bool]$DefaultValue = $true
+    )
+
+    if ($null -eq $Value) {
+        return [bool]$DefaultValue
+    }
+
+    if ($Value -is [bool]) {
+        return [bool]$Value
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) {
+        return [bool]$DefaultValue
+    }
+
+    $normalized = $text.Trim().ToLowerInvariant()
+    if ($normalized -in @('1', 'true', 'yes', 'y', 'on')) {
+        return $true
+    }
+    if ($normalized -in @('0', 'false', 'no', 'n', 'off')) {
+        return $false
+    }
+
+    return [bool]$DefaultValue
+}
+
+function New-AzVmTaskCatalogModel {
+    param(
+        [ValidateSet('init','update')]
+        [string]$Stage,
+        [string[]]$ActiveTaskNames
+    )
+
+    $taskRows = @()
+    $nextOrder = 50
+    foreach ($name in @($ActiveTaskNames | Sort-Object)) {
+        $taskRows += [ordered]@{
+            name = [string]$name
+            order = [int]$nextOrder
+            enabled = $true
+        }
+        $nextOrder++
+    }
+
+    $defaultPinnedLast = @()
+    if ($Stage -eq 'update') {
+        if (@($ActiveTaskNames | Where-Object { [string]::Equals([string]$_, '27-windows-ux-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            $defaultPinnedLast += '27-windows-ux-public-desktop-shortcuts'
+        }
+    }
+
+    return [ordered]@{
+        schemaVersion = 1
+        orderModel = [ordered]@{
+            middleStart = 50
+            tailStart = 101
+        }
+        pinnedFirst = @()
+        pinnedLast = @($defaultPinnedLast)
+        tasks = @($taskRows)
+    }
+}
+
+function Sync-AzVmTaskCatalog {
+    param(
+        [string]$DirectoryPath,
+        [ValidateSet('init','update')]
+        [string]$Stage,
+        [object[]]$ActiveRows
+    )
+
+    $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
+    $activeTaskNames = @(@($ActiveRows | ForEach-Object { [string]$_.Name }) | Sort-Object -Unique)
+    $originalCatalogText = ''
+    $catalog = $null
+
+    if (Test-Path -LiteralPath $catalogPath) {
+        $originalCatalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
+        if (-not [string]::IsNullOrWhiteSpace([string]$originalCatalogText)) {
+            try {
+                $catalog = ConvertFrom-JsonCompat -InputObject $originalCatalogText
+            }
+            catch {
+                throw ("Task catalog parse failed for '{0}': {1}" -f $catalogPath, $_.Exception.Message)
+            }
+        }
+    }
+
+    $catalogTasks = @()
+    if ($null -ne $catalog -and $catalog.PSObject.Properties.Match('tasks').Count -gt 0) {
+        $catalogTasks = @($catalog.tasks)
+    }
+
+    if ($null -eq $catalog -or $catalogTasks.Count -eq 0) {
+        $catalog = New-AzVmTaskCatalogModel -Stage $Stage -ActiveTaskNames $activeTaskNames
+        $catalogTasks = @($catalog.tasks)
+    }
+
+    $middleStart = 50
+    $tailStart = 101
+    if ($catalog.PSObject.Properties.Match('orderModel').Count -gt 0 -and $null -ne $catalog.orderModel) {
+        if ($catalog.orderModel.PSObject.Properties.Match('middleStart').Count -gt 0) {
+            $middleStart = Convert-AzVmTaskCatalogInt -Value $catalog.orderModel.middleStart -DefaultValue 50
+        }
+        if ($catalog.orderModel.PSObject.Properties.Match('tailStart').Count -gt 0) {
+            $tailStart = Convert-AzVmTaskCatalogInt -Value $catalog.orderModel.tailStart -DefaultValue 101
+        }
+    }
+    if ($middleStart -lt 10) { $middleStart = 10 }
+    if ($tailStart -le $middleStart) { $tailStart = $middleStart + 51 }
+
+    $activeNameSet = @{}
+    foreach ($name in @($activeTaskNames)) {
+        $activeNameSet[[string]$name] = $true
+    }
+
+    $existingTaskMap = @{}
+    foreach ($entry in @($catalogTasks)) {
+        if ($null -eq $entry) { continue }
+        $entryName = ''
+        if ($entry.PSObject.Properties.Match('name').Count -gt 0) {
+            $entryName = [string]$entry.name
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$entryName)) { continue }
+        $existingTaskMap[$entryName] = [pscustomobject]@{
+            Name = [string]$entryName
+            Order = (Convert-AzVmTaskCatalogInt -Value $entry.order -DefaultValue -1)
+            Enabled = (Convert-AzVmTaskCatalogBool -Value $entry.enabled -DefaultValue $true)
+        }
+    }
+
+    $existingPinnedFirst = @()
+    if ($catalog.PSObject.Properties.Match('pinnedFirst').Count -gt 0) {
+        $existingPinnedFirst = @($catalog.pinnedFirst | ForEach-Object { [string]$_ })
+    }
+    $existingPinnedLast = @()
+    if ($catalog.PSObject.Properties.Match('pinnedLast').Count -gt 0) {
+        $existingPinnedLast = @($catalog.pinnedLast | ForEach-Object { [string]$_ })
+    }
+
+    if ($Stage -eq 'update') {
+        if (@($activeTaskNames | Where-Object { [string]::Equals([string]$_, '27-windows-ux-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+            if (@($existingPinnedLast | Where-Object { [string]::Equals([string]$_, '27-windows-ux-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) }).Count -eq 0) {
+                $existingPinnedLast += '27-windows-ux-public-desktop-shortcuts'
+            }
+        }
+    }
+
+    $pinnedFirst = @()
+    $pinnedFirstSeen = @{}
+    foreach ($name in @($existingPinnedFirst)) {
+        if ([string]::IsNullOrWhiteSpace([string]$name)) { continue }
+        if (-not $activeNameSet.ContainsKey([string]$name)) { continue }
+        if ($pinnedFirstSeen.ContainsKey([string]$name)) { continue }
+        $pinnedFirstSeen[[string]$name] = $true
+        $pinnedFirst += [string]$name
+    }
+
+    $pinnedLast = @()
+    $pinnedLastSeen = @{}
+    foreach ($name in @($existingPinnedLast)) {
+        if ([string]::IsNullOrWhiteSpace([string]$name)) { continue }
+        if (-not $activeNameSet.ContainsKey([string]$name)) { continue }
+        if ($pinnedFirstSeen.ContainsKey([string]$name)) { continue }
+        if ($pinnedLastSeen.ContainsKey([string]$name)) { continue }
+        $pinnedLastSeen[[string]$name] = $true
+        $pinnedLast += [string]$name
+    }
+
+    $taskStateByName = @{}
+    foreach ($name in @($activeTaskNames)) {
+        if ($existingTaskMap.ContainsKey([string]$name)) {
+            $state = $existingTaskMap[[string]$name]
+            $taskStateByName[[string]$name] = [pscustomobject]@{
+                Name = [string]$name
+                ExistingOrder = [int]$state.Order
+                Enabled = [bool]$state.Enabled
+            }
+        }
+        else {
+            $taskStateByName[[string]$name] = [pscustomobject]@{
+                Name = [string]$name
+                ExistingOrder = -1
+                Enabled = $true
+            }
+        }
+    }
+
+    $assignedOrder = @{}
+    $nextFirst = 1
+    foreach ($name in @($pinnedFirst)) {
+        $assignedOrder[[string]$name] = [int]$nextFirst
+        $nextFirst++
+    }
+
+    $middleNames = @()
+    foreach ($name in @($activeTaskNames)) {
+        if ($assignedOrder.ContainsKey([string]$name)) { continue }
+        if ($pinnedLastSeen.ContainsKey([string]$name)) { continue }
+        $middleNames += [string]$name
+    }
+
+    $middleRows = @()
+    foreach ($name in @($middleNames)) {
+        $state = $taskStateByName[[string]$name]
+        $existingOrder = [int]$state.ExistingOrder
+        $hasExistingMiddleOrder = ($existingOrder -ge $middleStart -and $existingOrder -lt $tailStart)
+        $middleRows += [pscustomobject]@{
+            Name = [string]$name
+            HasExistingMiddleOrder = [bool]$hasExistingMiddleOrder
+            ExistingOrder = [int]$existingOrder
+        }
+    }
+
+    $sortedMiddle = @(
+        $middleRows |
+            Sort-Object `
+                @{ Expression = { if ($_.HasExistingMiddleOrder) { 0 } else { 1 } } }, `
+                @{ Expression = { if ($_.HasExistingMiddleOrder) { [int]$_.ExistingOrder } else { [int]::MaxValue } } }, `
+                @{ Expression = { [string]$_.Name } }
+    )
+
+    $nextMiddle = [int]$middleStart
+    foreach ($row in @($sortedMiddle)) {
+        $assignedOrder[[string]$row.Name] = [int]$nextMiddle
+        $nextMiddle++
+    }
+
+    $nextTail = [int]$tailStart
+    foreach ($name in @($pinnedLast)) {
+        $assignedOrder[[string]$name] = [int]$nextTail
+        $nextTail++
+    }
+
+    $finalTaskRows = @()
+    $allTaskNamesSorted = @(
+        $activeTaskNames | Sort-Object `
+            @{ Expression = { if ($assignedOrder.ContainsKey([string]$_)) { [int]$assignedOrder[[string]$_] } else { [int]::MaxValue } } }, `
+            @{ Expression = { [string]$_ } }
+    )
+
+    foreach ($name in @($allTaskNamesSorted)) {
+        $state = $taskStateByName[[string]$name]
+        $orderValue = if ($assignedOrder.ContainsKey([string]$name)) { [int]$assignedOrder[[string]$name] } else { [int]$middleStart }
+        $finalTaskRows += [ordered]@{
+            name = [string]$name
+            order = [int]$orderValue
+            enabled = [bool]$state.Enabled
+        }
+    }
+
+    $finalCatalog = [ordered]@{
+        schemaVersion = 1
+        orderModel = [ordered]@{
+            middleStart = [int]$middleStart
+            tailStart = [int]$tailStart
+        }
+        pinnedFirst = @($pinnedFirst)
+        pinnedLast = @($pinnedLast)
+        tasks = @($finalTaskRows)
+    }
+
+    $newCatalogText = [string](ConvertTo-Json -InputObject $finalCatalog -Depth 10)
+    $normalize = {
+        param([string]$Text)
+        if ($null -eq $Text) { return '' }
+        return (($Text -replace "`r`n", "`n") -replace "`r", "`n").Trim()
+    }
+
+    if (-not (Test-Path -LiteralPath $catalogPath) -or (& $normalize $originalCatalogText) -ne (& $normalize $newCatalogText)) {
+        Write-TextFileNormalized -Path $catalogPath -Content $newCatalogText -Encoding "utf8NoBom" -LineEnding "crlf" -EnsureTrailingNewline
+    }
+
+    $orderMap = @{}
+    foreach ($row in @($finalTaskRows)) {
+        $orderMap[[string]$row.name] = [int]$row.order
+    }
+
+    return [ordered]@{
+        CatalogPath = [string]$catalogPath
+        OrderMap = $orderMap
+        PinnedLast = @($pinnedLast)
+    }
+}
+
 function Get-AzVmTaskBlocksFromDirectory {
     param(
         [string]$DirectoryPath,
@@ -472,8 +805,19 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
     }
 
+    $syncInfo = Sync-AzVmTaskCatalog -DirectoryPath $DirectoryPath -Stage $Stage -ActiveRows $activeRows
+    $orderMap = @{}
+    if ($syncInfo -and $syncInfo.PSObject.Properties.Match('OrderMap').Count -gt 0 -and $null -ne $syncInfo.OrderMap) {
+        $orderMap = $syncInfo.OrderMap
+    }
+
     $activeTasks = @()
-    foreach ($row in @($activeRows | Sort-Object Order, Name)) {
+    $sortedActiveRows = @(
+        $activeRows | Sort-Object `
+            @{ Expression = { if ($orderMap.ContainsKey([string]$_.Name)) { [int]$orderMap[[string]$_.Name] } else { [int]::MaxValue } } }, `
+            @{ Expression = { [string]$_.Name } }
+    )
+    foreach ($row in @($sortedActiveRows)) {
         $content = Get-Content -Path $row.Path -Raw
         $activeTasks += [pscustomobject]@{
             Name = [string]$row.Name
@@ -7255,54 +7599,41 @@ function Invoke-AzVmExecCommand {
         Write-Host ([string]$bootstrap.Output)
     }
 
-    $session = $null
-    try {
-        $session = Start-AzVmPersistentSshSession `
-            -PySshPythonPath ([string]$pySsh.PythonPath) `
-            -PySshClientPath ([string]$pySsh.ClientPath) `
-            -HostName $sshHost `
-            -UserName ([string]$context.VmUser) `
-            -Password ([string]$context.VmPass) `
-            -Port ([string]$context.SshPort) `
-            -Shell $shell `
-            -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
-            -DefaultTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
+    Write-Host ("Interactive exec shell connected: {0}@{1}:{2} ({3})" -f [string]$context.VmUser, $sshHost, [string]$context.SshPort, $shell) -ForegroundColor Green
+    Write-Host "Type 'exit' in the remote shell to close the session." -ForegroundColor Cyan
 
-        Write-Host ("Interactive exec REPL connected: {0}@{1}:{2} ({3})" -f [string]$context.VmUser, $sshHost, [string]$context.SshPort, $shell) -ForegroundColor Green
-        Write-Host "Type commands and press Enter. Type 'exit' to close REPL." -ForegroundColor Cyan
-
-        $commandIndex = 1
-        while ($true) {
-            $prompt = ("ssh:{0}> " -f $selectedVmName)
-            $rawCommand = Read-Host $prompt
-            if ($null -eq $rawCommand) { $rawCommand = '' }
-            $commandText = $rawCommand.Trim()
-            if ([string]::IsNullOrWhiteSpace($commandText)) {
-                continue
-            }
-            if ([string]::Equals($commandText, 'exit', [System.StringComparison]::OrdinalIgnoreCase)) {
-                break
-            }
-
-            $taskName = ("repl-{0:D4}" -f $commandIndex)
-            $taskResult = Invoke-AzVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $commandText -TimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
-            if ($script:PerfMode) {
-                $taskSeconds = 0.0
-                if ($taskResult -and $taskResult.PSObject.Properties.Match('DurationSeconds').Count -gt 0) {
-                    $taskSeconds = [double]$taskResult.DurationSeconds
-                }
-                Write-AzVmPerfTiming -Category "exec-task" -Label ("repl command #{0}: {1}" -f $commandIndex, $commandText) -Seconds $taskSeconds
-            }
-            if ([int]$taskResult.ExitCode -ne 0) {
-                Write-Warning ("Remote command exit code: {0}" -f [int]$taskResult.ExitCode)
-            }
-            $commandIndex++
-        }
+    $shellWatch = $null
+    if ($script:PerfMode) {
+        $shellWatch = [System.Diagnostics.Stopwatch]::StartNew()
     }
-    finally {
-        if ($null -ne $session) {
-            Stop-AzVmPersistentSshSession -Session $session
-        }
+
+    $shellArgs = @(
+        [string]$pySsh.ClientPath,
+        "shell",
+        "--host", [string]$sshHost,
+        "--port", [string]$context.SshPort,
+        "--user", [string]$context.VmUser,
+        "--password", [string]$context.VmPass,
+        "--timeout", [string]$runtime.SshConnectTimeoutSeconds,
+        "--reconnect-retries", "3",
+        "--keepalive-seconds", "15",
+        "--shell", [string]$shell
+    )
+
+    & ([string]$pySsh.PythonPath) @shellArgs
+    $shellExitCode = [int]$LASTEXITCODE
+
+    if ($null -ne $shellWatch -and $shellWatch.IsRunning) {
+        $shellWatch.Stop()
+        Write-AzVmPerfTiming -Category "exec-task" -Label "interactive shell session" -Seconds $shellWatch.Elapsed.TotalSeconds
+    }
+
+    if ($shellExitCode -ne 0) {
+        Throw-FriendlyError `
+            -Detail ("Interactive exec shell ended with exit code {0}." -f $shellExitCode) `
+            -Code 61 `
+            -Summary "Interactive exec shell failed." `
+            -Hint "Review remote shell output and retry. Ensure SSH service remains available on the VM."
     }
 
     Write-Host "Exec REPL session closed." -ForegroundColor Green

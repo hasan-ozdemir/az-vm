@@ -53,6 +53,38 @@ function Resolve-TargetHives {
     return @($targets | Select-Object -Unique HiveNative,Label)
 }
 
+function Clear-DesktopEntries {
+    param(
+        [string]$UserName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$UserName)) {
+        return
+    }
+
+    $desktopPath = Join-Path ("C:\Users\" + $UserName) "Desktop"
+    if (-not (Test-Path -LiteralPath $desktopPath)) {
+        Write-Warning "desktop-cleanup-skip: $UserName desktop path was not found."
+        return
+    }
+
+    Get-ChildItem -LiteralPath $desktopPath -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ($_.PSIsContainer) {
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+            }
+            else {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+            }
+        }
+        catch {
+            Write-Warning ("desktop-cleanup-failed: {0} => {1}" -f $_.FullName, $_.Exception.Message)
+        }
+    }
+
+    Write-Host "desktop-cleanup-ok: $UserName"
+}
+
 function Apply-ExplorerUxToHive {
     param([string]$HiveNative, [string]$Label)
 
@@ -127,6 +159,12 @@ Invoke-Tweak -Name "explorer-ux-for-target-hives" -Action {
     $targets = Resolve-TargetHives
     foreach ($target in @($targets)) {
         Apply-ExplorerUxToHive -HiveNative ([string]$target.HiveNative) -Label ([string]$target.Label)
+    }
+}
+
+Invoke-Tweak -Name "desktop-cleanup-for-manager-and-assistant" -Action {
+    foreach ($targetUser in @($targetUsers | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })) {
+        Clear-DesktopEntries -UserName ([string]$targetUser)
     }
 }
 

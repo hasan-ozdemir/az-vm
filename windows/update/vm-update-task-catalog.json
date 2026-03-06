@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "orderModel": {
+    "middleStart": 50,
+    "tailStart": 101
+  },
+  "pinnedFirst": [
+    "01-winget-bootstrap",
+    "02-private-local-task",
+    "03-chrome-install-check",
+    "04-windows-ux-performance-tuning",
+    "05-windows-advanced-system-settings"
+  ],
+  "pinnedLast": [
+    "27-windows-ux-public-desktop-shortcuts"
+  ],
+  "tasks": [
+    { "name": "01-winget-bootstrap", "order": 1, "enabled": true },
+    { "name": "02-private-local-task", "order": 2, "enabled": true },
+    { "name": "03-chrome-install-check", "order": 3, "enabled": true },
+    { "name": "04-windows-ux-performance-tuning", "order": 4, "enabled": true },
+    { "name": "05-windows-advanced-system-settings", "order": 5, "enabled": true },
+    { "name": "06-git-install-check", "order": 50, "enabled": true },
+    { "name": "07-python-install-check", "order": 51, "enabled": true },
+    { "name": "08-node-install-check", "order": 52, "enabled": true },
+    { "name": "09-install-ollama", "order": 53, "enabled": true },
+    { "name": "10-install-sysinternals", "order": 54, "enabled": true },
+    { "name": "11-install-powershell-core", "order": 55, "enabled": true },
+    { "name": "12-install-io-unlocker", "order": 56, "enabled": true },
+    { "name": "13-install-gh", "order": 57, "enabled": true },
+    { "name": "14-install-ffmpeg", "order": 58, "enabled": true },
+    { "name": "15-install-7zip", "order": 59, "enabled": true },
+    { "name": "16-install-azure-cli", "order": 60, "enabled": true },
+    { "name": "17-wsl2-install-update", "order": 61, "enabled": true },
+    { "name": "18-docker-desktop-install-and-configure", "order": 62, "enabled": true },
+    { "name": "19-health-snapshot", "order": 63, "enabled": true },
+    { "name": "20-private-local-task", "order": 64, "enabled": true },
+    { "name": "21-install-whatsapp", "order": 65, "enabled": true },
+    { "name": "22-install-anydesk", "order": 66, "enabled": true },
+    { "name": "23-install-windscribe", "order": 67, "enabled": true },
+    { "name": "24-install-microsoft-teams", "order": 68, "enabled": true },
+    { "name": "25-install-microsoft-vscode", "order": 69, "enabled": true },
+    { "name": "26-install-global-npm-packages", "order": 70, "enabled": true },
+    { "name": "28-install-microsoft-azd", "order": 71, "enabled": true },
+    { "name": "51-local-diagnostic", "order": 95, "enabled": true },
+    { "name": "27-windows-ux-public-desktop-shortcuts", "order": 101, "enabled": true }
+  ]
+}
+

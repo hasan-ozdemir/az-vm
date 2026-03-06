@@ -4,6 +4,7 @@ import json
 import sys
 import time
 import uuid
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -208,6 +209,104 @@ def run_copy(args: argparse.Namespace) -> int:
             sftp.put(str(local_path), args.remote)
         finally:
             sftp.close()
+        return 0
+    finally:
+        client.close()
+
+
+def run_shell(args: argparse.Namespace) -> int:
+    client = build_client(
+        args.host,
+        args.port,
+        args.user,
+        args.password,
+        args.timeout,
+        args.keepalive_seconds,
+    )
+    try:
+        transport = client.get_transport()
+        if transport is None or not transport.is_active():
+            write_stderr("SSH transport could not be created.\n")
+            return 2
+
+        channel = transport.open_session()
+        try:
+            channel.get_pty(term="xterm", width=160, height=48)
+        except Exception:
+            # Some SSH servers may reject PTY resize details; continue with defaults.
+            channel.get_pty()
+        channel.invoke_shell()
+
+        selected_shell = str(getattr(args, "shell", "") or "").strip().lower()
+        initial_command = ""
+        if selected_shell == "powershell":
+            initial_command = "powershell -NoProfile -NoLogo"
+        elif selected_shell == "cmd":
+            initial_command = "cmd"
+        elif selected_shell == "bash":
+            initial_command = "bash"
+        if initial_command:
+            channel.send(initial_command + "\n")
+
+        stop_event = threading.Event()
+        stdin_error = {"value": None}
+
+        def _stdin_pump() -> None:
+            try:
+                while not stop_event.is_set():
+                    line = sys.stdin.readline()
+                    if line == "":
+                        break
+                    if channel.closed:
+                        break
+                    channel.send(line)
+            except Exception as exc:  # pragma: no cover - defensive runtime protection
+                stdin_error["value"] = exc
+            finally:
+                try:
+                    channel.shutdown_write()
+                except Exception:
+                    pass
+
+        stdin_thread = threading.Thread(target=_stdin_pump, daemon=True)
+        stdin_thread.start()
+
+        while True:
+            had_output = False
+            while channel.recv_ready():
+                chunk = channel.recv(65536)
+                if chunk:
+                    write_stdout(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
+                    had_output = True
+
+            while channel.recv_stderr_ready():
+                chunk = channel.recv_stderr(65536)
+                if chunk:
+                    write_stderr(sanitize_stream_text(chunk.decode("utf-8", errors="replace")))
+                    had_output = True
+
+            if channel.closed:
+                break
+            if channel.exit_status_ready():
+                break
+            if stop_event.is_set():
+                break
+
+            if not had_output:
+                time.sleep(0.05)
+
+        stop_event.set()
+        try:
+            stdin_thread.join(timeout=0.5)
+        except Exception:
+            pass
+
+        if stdin_error["value"] is not None:
+            write_stderr(f"stdin forwarding failed: {stdin_error['value']}\n")
+            return 1
+
+        if channel.exit_status_ready():
+            return int(channel.recv_exit_status())
         return 0
     finally:
         client.close()
@@ -431,6 +530,15 @@ def parse_args() -> argparse.Namespace:
     copy_parser.add_argument("--local", required=True, help="Local file path")
     copy_parser.add_argument("--remote", required=True, help="Remote file path")
 
+    shell_parser = subparsers.add_parser("shell", help="Open an interactive remote shell over SSH")
+    add_common(shell_parser)
+    shell_parser.add_argument(
+        "--shell",
+        choices=("powershell", "cmd", "bash"),
+        default="",
+        help="Optional initial shell command to run after connection",
+    )
+
     session_parser = subparsers.add_parser(
         "session",
         help="Open one persistent SSH connection and execute task scripts from stdin",
@@ -459,6 +567,8 @@ def main() -> int:
         return run_exec(args)
     if args.action == "copy":
         return run_copy(args)
+    if args.action == "shell":
+        return run_shell(args)
     if args.action == "session":
         return run_session(args)
     write_stderr(f"Unsupported action: {args.action}\n")

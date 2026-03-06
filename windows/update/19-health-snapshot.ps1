@@ -115,14 +115,34 @@ else {
     Write-Host "ollama command not found"
 }
 
-Write-Host "CHROME SHORTCUT STATUS:"
-$chromeShortcutCandidates = @(
-    "C:\Users\Public\Desktop\Google Chrome.lnk",
-    "C:\Users\__VM_USER__\Desktop\Google Chrome.lnk",
-    "C:\Users\__ASSISTANT_USER__\Desktop\Google Chrome.lnk"
+Write-Host "PUBLIC DESKTOP SHORTCUT STATUS:"
+$publicShortcutNames = @(
+    "i0internet",
+    "c0cmd",
+    "i7whatsapp",
+    "local-only-shortcut",
+    "a7docker desktop",
+    "o0outlook",
+    "o1teams",
+    "o2word",
+    "o3excel",
+    "o4power point",
+    "o5onenote",
+    "t0-git bash",
+    "t1-python cli",
+    "t2-nodejs cli",
+    "t3-ollama app",
+    "t4-pwsh",
+    "t5-ps",
+    "t6-azure cli",
+    "t7-wsl",
+    "t8-docker cli",
+    "U7Network and Sharing"
 )
+$publicDesktop = "C:\Users\Public\Desktop"
 $wsh = New-Object -ComObject WScript.Shell
-foreach ($shortcutPath in @($chromeShortcutCandidates)) {
+foreach ($shortcutName in @($publicShortcutNames)) {
+    $shortcutPath = Join-Path $publicDesktop ($shortcutName + ".lnk")
     if (-not (Test-Path -LiteralPath $shortcutPath)) {
         Write-Host "missing-shortcut => $shortcutPath"
         continue
