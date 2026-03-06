@@ -1849,7 +1849,7 @@ function Convert-AzVmCliTextToTokens {
 }
 
 function Get-AzVmValidCommandList {
-    return @('create', 'update', 'config', 'move', 'resize', 'set', 'exec', 'show', 'delete', 'help')
+    return @('create', 'update', 'config', 'group', 'move', 'resize', 'set', 'exec', 'show', 'delete', 'help')
 }
 
 function Show-AzVmCommandHelpOverview {
@@ -1859,7 +1859,8 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "Commands (full details: az-vm help <command>):"
     Write-Host "  create  Build missing resources and run VM init/update flow."
     Write-Host "  update  Re-run create-or-update operations on existing resources."
-    Write-Host "  config  Interactive configuration flow (no resource mutation)."
+    Write-Host "  config  Config precheck/preview flow for a target resource group."
+    Write-Host "  group   List/select managed resource groups for active context."
     Write-Host "  move    Move an existing VM to another Azure region."
     Write-Host "  resize  Change VM size for an existing VM in-place."
     Write-Host "  set     Apply VM feature flags (hibernation, nested virtualization)."
@@ -1869,7 +1870,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  help    Show detailed docs (all commands or one command)."
     Write-Host ""
     Write-Host "Global options:"
-    Write-Host "  --auto[=true|false]    Auto mode (create/update/delete only)."
+    Write-Host "  --auto[=true|false]    Auto mode."
     Write-Host "  --perf[=true|false]    Print timing metrics."
     Write-Host "  --windows / --linux    Force VM platform (create/update/exec)."
     Write-Host "  --help                 Show this overview or command-specific help."
@@ -1883,6 +1884,8 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm config"
     Write-Host "  az-vm create --from-step=vm-init --linux"
     Write-Host "  az-vm update --single-step=network --auto"
+    Write-Host "  az-vm group --list=examplevm"
+    Write-Host "  az-vm group --select=rg-examplevm-ate1-g1"
     Write-Host "  az-vm move --vm-region=centralindia --group=rg-examplevm-ate1-g1 --vm=examplevm"
     Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=rg-examplevm-ate1-g1 --vm=examplevm"
     Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=rg-examplevm-ate1-g1 --vm=examplevm"
@@ -1893,6 +1896,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "Detailed docs:"
     Write-Host "  az-vm help"
     Write-Host "  az-vm help create"
+    Write-Host "  az-vm help group"
     Write-Host "  az-vm help move"
 }
 
@@ -1910,7 +1914,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "Usage: az-vm <command> [--option] [--option=value]"
         Write-Host ""
         Write-Host "Common options:"
-        Write-Host "  --auto[=true|false]      # create/update/delete only"
+        Write-Host "  --auto[=true|false]"
         Write-Host "  --perf[=true|false]"
         Write-Host "  --windows[=true|false]   # create/update/exec only"
         Write-Host "  --linux[=true|false]     # create/update/exec only"
@@ -1924,7 +1928,8 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "Command reference:"
         Write-Host "  create  : supports --to-step, --from-step, --single-step"
         Write-Host "  update  : supports --to-step, --from-step, --single-step"
-        Write-Host "  config  : interactive config + precheck + resource-group preview"
+        Write-Host "  config  : config precheck/preview for selected resource group"
+        Write-Host "  group   : list/select active managed resource group"
         Write-Host "  move    : supports --group, --vm, --vm-region"
         Write-Host "  resize  : supports --group, --vm, --vm-size"
         Write-Host "  set     : supports --group, --vm, --hibernation, --nested-virtualization"
@@ -1937,6 +1942,8 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm config"
         Write-Host "  az-vm create --single-step=config --linux"
         Write-Host "  az-vm update --to-step=vm-init --auto"
+        Write-Host "  az-vm group --list=examplevm"
+        Write-Host "  az-vm group --select=rg-examplevm-ate1-g1"
         Write-Host "  az-vm move --vm-region=austriaeast --group=rg-examplevm-ate1-g1 --vm=examplevm"
         Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=rg-examplevm-ate1-g1 --vm=examplevm"
         Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=rg-examplevm-ate1-g1 --vm=examplevm"
@@ -1944,7 +1951,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm show --group=rg-examplevm-ate1-g1"
         Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1-g1 --yes"
         Write-Host ""
-        Write-Host "For per-command docs: az-vm help <create|update|config|move|resize|set|exec|show|delete>"
+        Write-Host "For per-command docs: az-vm help <create|update|config|group|move|resize|set|exec|show|delete>"
         return
     }
 
@@ -1953,13 +1960,13 @@ function Show-AzVmCommandHelpDetailed {
             -Detail ("Unknown help topic '{0}'." -f $topicText) `
             -Code 2 `
             -Summary "Unknown help topic." `
-            -Hint "Use az-vm help or az-vm help <create|update|config|move|resize|set|exec|show|delete>."
+            -Hint "Use az-vm help or az-vm help <create|update|config|group|move|resize|set|exec|show|delete>."
     }
 
     switch ($topicName) {
         'create' {
             Write-Host "Command: create"
-            Write-Host "Description: create missing resources and continue with VM init/update flow."
+            Write-Host "Description: create a new managed resource group and continue with VM init/update flow."
             Write-Host "Usage:"
             Write-Host "  az-vm create [--auto] [--windows|--linux] [--perf]"
             Write-Host "  az-vm create --to-step=<step>"
@@ -1977,7 +1984,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Command: update"
             Write-Host "Description: re-run create-or-update operations against existing resources."
             Write-Host "Usage:"
-            Write-Host "  az-vm update [--auto] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm update [--auto] [--windows|--linux] [--perf] [--group=<resource-group>]"
             Write-Host "  az-vm update --to-step=<step>"
             Write-Host "  az-vm update --from-step=<step>"
             Write-Host "  az-vm update --single-step=<step>"
@@ -1985,19 +1992,37 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Steps: config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
             Write-Host "Examples:"
             Write-Host "  az-vm update --auto --windows"
+            Write-Host "  az-vm update --group=rg-examplevm-ate1-g1"
             Write-Host "  az-vm update --single-step=vm-update --auto --windows"
             Write-Host "  az-vm update --from-step=group --to-step=vm-init --perf"
             return
         }
         'config' {
             Write-Host "Command: config"
-            Write-Host "Description: interactive configuration flow up to resource-group preview."
+            Write-Host "Description: run config precheck/preview for a target managed resource group."
             Write-Host "Usage:"
-            Write-Host "  az-vm config"
+            Write-Host "  az-vm config [--group=<resource-group>] [--auto]"
             Write-Host "  az-vm config --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm config"
+            Write-Host "  az-vm config --group=rg-examplevm-ate1-g1"
+            Write-Host "  az-vm config --auto"
             Write-Host "Notes: this command does not create/update/delete Azure resources."
+            return
+        }
+        'group' {
+            Write-Host "Command: group"
+            Write-Host "Description: list/select managed resource groups and set active group."
+            Write-Host "Usage:"
+            Write-Host "  az-vm group"
+            Write-Host "  az-vm group --list"
+            Write-Host "  az-vm group --list=<filter>"
+            Write-Host "  az-vm group --select=<resource-group>"
+            Write-Host "  az-vm group --select="
+            Write-Host "  az-vm group --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm group --list=examplevm"
+            Write-Host "  az-vm group --select=rg-examplevm-ate1-g1"
+            Write-Host "  az-vm group --select="
             return
         }
         'move' {
@@ -2123,9 +2148,65 @@ function Parse-AzVmCliArguments {
 
     $validCommands = Get-AzVmValidCommandList
 
+    $normalizedArgs = @()
+    for ($i = 0; $i -lt @($remaining).Count; $i++) {
+        $rawArgText = if ($null -eq $remaining[$i]) { '' } else { [string]$remaining[$i] }
+        if ([string]::IsNullOrWhiteSpace($rawArgText)) {
+            continue
+        }
+
+        if (-not $rawArgText.StartsWith('-') -or $rawArgText.StartsWith('--')) {
+            $normalizedArgs += $rawArgText
+            continue
+        }
+
+        if ($rawArgText -match '^-g=(.+)$') {
+            $normalizedArgs += ("--group={0}" -f [string]$Matches[1])
+            continue
+        }
+        if ($rawArgText -eq '-g') {
+            if (($i + 1) -ge @($remaining).Count) {
+                Throw-FriendlyError `
+                    -Detail "Option '-g' requires a value." `
+                    -Code 2 `
+                    -Summary "Invalid option format." `
+                    -Hint "Use '-g <resource-group>' or '--group=<resource-group>'."
+            }
+
+            $nextArgText = if ($null -eq $remaining[$i + 1]) { '' } else { [string]$remaining[$i + 1] }
+            if ([string]::IsNullOrWhiteSpace([string]$nextArgText) -or $nextArgText.StartsWith('-')) {
+                Throw-FriendlyError `
+                    -Detail "Option '-g' requires a value." `
+                    -Code 2 `
+                    -Summary "Invalid option format." `
+                    -Hint "Use '-g <resource-group>' or '--group=<resource-group>'."
+            }
+
+            $normalizedArgs += ("--group={0}" -f $nextArgText)
+            $i++
+            continue
+        }
+
+        if ($rawArgText -eq '-y') {
+            $normalizedArgs += "--yes=true"
+            continue
+        }
+
+        if ($rawArgText -eq '-a') {
+            $normalizedArgs += "--auto=true"
+            continue
+        }
+
+        Throw-FriendlyError `
+            -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
+            -Code 2 `
+            -Summary "Invalid option format." `
+            -Hint "Supported short options: -g, -y, -a. Use long options for others."
+    }
+
     $options = @{}
     $positionals = @()
-    foreach ($arg in @($remaining)) {
+    foreach ($arg in @($normalizedArgs)) {
         $text = if ($null -eq $arg) { '' } else { [string]$arg }
         if ([string]::IsNullOrWhiteSpace($text)) {
             continue
@@ -2155,14 +2236,6 @@ function Parse-AzVmCliArguments {
             continue
         }
 
-        if ($text.StartsWith('-')) {
-            Throw-FriendlyError `
-                -Detail ("Unsupported short option format '{0}'." -f $text) `
-                -Code 2 `
-                -Summary "Invalid option format." `
-                -Hint "Use long options only: --option or --option=value."
-        }
-
         $positionals += $text
     }
 
@@ -2174,7 +2247,7 @@ function Parse-AzVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | move | resize | set | exec | show | delete | help."
+                -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -2185,7 +2258,7 @@ function Parse-AzVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | config | move | resize | set | exec | show | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete | help. Example: az-vm create --auto"
     }
 
     $helpTopic = ''
@@ -3388,10 +3461,15 @@ function Invoke-AzVmStep1Common {
     if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroupRaw)) {
         $configuredResourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $configuredResourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
     }
+    $resourceGroupForced = ($ConfigOverrides -and $ConfigOverrides.ContainsKey('RESOURCE_GROUP') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['RESOURCE_GROUP']))
 
     $resourceGroup = ''
     $resourceGroupGenerated = $false
-    if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup)) {
+    if ($resourceGroupForced -and -not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup)) {
+        $resourceGroup = [string]$configuredResourceGroup
+        Write-Host ("Resource group override '{0}' will be used." -f $resourceGroup) -ForegroundColor Green
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup)) {
         $configuredExists = Test-AzVmResourceGroupExists -ResourceGroup $configuredResourceGroup
         if ($configuredExists) {
             $resourceGroup = [string]$configuredResourceGroup
@@ -6851,6 +6929,48 @@ function Select-AzVmResourceGroupInteractive {
     }
 }
 
+function Resolve-AzVmTargetResourceGroup {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [string]$DefaultResourceGroup,
+        [string]$ServerName,
+        [string]$OperationName = 'operation'
+    )
+
+    $groupOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
+    $resourceGroup = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$groupOption)) {
+        $resourceGroup = $groupOption.Trim()
+    }
+    elseif ($AutoMode) {
+        $resourceGroup = [string]$DefaultResourceGroup
+        if ([string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
+            Throw-FriendlyError `
+                -Detail ("No active resource group is configured for auto mode in {0} command." -f $OperationName) `
+                -Code 66 `
+                -Summary ("{0} command cannot resolve target resource group." -f $OperationName) `
+                -Hint "Set RESOURCE_GROUP in .env or provide --group=<name>."
+        }
+    }
+    else {
+        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $DefaultResourceGroup -ServerName $ServerName
+    }
+
+    $groupExists = az group exists -n $resourceGroup --only-show-errors
+    Assert-LastExitCode ("az group exists ({0})" -f $OperationName)
+    if (-not [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' was not found." -f $resourceGroup) `
+            -Code 66 `
+            -Summary ("{0} command cannot continue because resource group was not found." -f $OperationName) `
+            -Hint "Provide a valid --group value or select an existing managed resource group."
+    }
+
+    Assert-AzVmManagedResourceGroup -ResourceGroup $resourceGroup -OperationName $OperationName
+    return $resourceGroup
+}
+
 function Get-AzVmVmNamesForResourceGroup {
     param(
         [string]$ResourceGroup
@@ -6917,6 +7037,46 @@ function Select-AzVmVmInteractive {
         }
         Write-Host "Invalid VM selection. Please enter a valid number." -ForegroundColor Yellow
     }
+}
+
+function Resolve-AzVmTargetVmName {
+    param(
+        [string]$ResourceGroup,
+        [string]$DefaultVmName,
+        [switch]$AutoMode,
+        [string]$OperationName = 'operation'
+    )
+
+    $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $ResourceGroup)
+    if ($vmNames.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail ("No VM found in resource group '{0}'." -f $ResourceGroup) `
+            -Code 65 `
+            -Summary ("{0} command cannot continue because VM list is empty." -f $OperationName) `
+            -Hint "Create a VM first or choose another resource group."
+    }
+
+    if ($AutoMode) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$DefaultVmName)) {
+            foreach ($candidate in @($vmNames)) {
+                if ([string]::Equals([string]$candidate, [string]$DefaultVmName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return [string]$candidate
+                }
+            }
+        }
+
+        if ($vmNames.Count -eq 1) {
+            return [string]$vmNames[0]
+        }
+
+        Throw-FriendlyError `
+            -Detail ("Auto mode could not resolve one VM in resource group '{0}'." -f $ResourceGroup) `
+            -Code 65 `
+            -Summary ("{0} command cannot resolve target VM in auto mode." -f $OperationName) `
+            -Hint "Set VM_NAME in .env, provide command-specific VM parameter, or use interactive mode."
+    }
+
+    return (Select-AzVmVmInteractive -ResourceGroup $ResourceGroup -DefaultVmName $DefaultVmName)
 }
 
 function Get-AzVmVmNetworkDescriptor {
@@ -7000,12 +7160,13 @@ function Assert-AzVmCommandOptions {
 
     switch ($CommandName) {
         'create' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step') }
-        'update' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step') }
-        'config' { $allowed = @('help') }
-        'move'   { $allowed = @('perf','help','group','vm','vm-region') }
-        'resize' { $allowed = @('perf','help','group','vm','vm-size') }
-        'set'    { $allowed = @('perf','help','group','vm','hibernation','nested-virtualization') }
-        'exec'   { $allowed = @('perf','windows','linux','help','group','init-task','update-task') }
+        'update' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step','group') }
+        'config' { $allowed = @('auto','perf','windows','linux','help','group') }
+        'group'  { $allowed = @('help','list','select') }
+        'move'   { $allowed = @('auto','perf','help','group','vm','vm-region') }
+        'resize' { $allowed = @('auto','perf','help','group','vm','vm-size') }
+        'set'    { $allowed = @('auto','perf','help','group','vm','hibernation','nested-virtualization') }
+        'exec'   { $allowed = @('auto','perf','windows','linux','help','group','init-task','update-task') }
         'show'   { $allowed = @('perf','help','group') }
         'delete' { $allowed = @('auto','perf','help','target','group','yes') }
         'help'   { $allowed = @('help') }
@@ -7014,7 +7175,7 @@ function Assert-AzVmCommandOptions {
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | move | resize | set | exec | show | delete."
+                -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete."
         }
     }
 
@@ -7281,6 +7442,99 @@ function Invoke-AzVmResourceGroupPreviewStep {
     }
 }
 
+function Invoke-AzVmGroupCommand {
+    param(
+        [hashtable]$Options
+    )
+
+    $envFilePath = Join-Path $PSScriptRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $activeGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
+
+    $hasList = Test-AzVmCliOptionPresent -Options $Options -Name 'list'
+    $hasSelect = Test-AzVmCliOptionPresent -Options $Options -Name 'select'
+    if ($hasList -and $hasSelect) {
+        Throw-FriendlyError `
+            -Detail "Options '--list' and '--select' cannot be used together." `
+            -Code 2 `
+            -Summary "Group command options are conflicting." `
+            -Hint "Run list and select as separate commands."
+    }
+
+    if ($hasSelect) {
+        $selectionRaw = [string](Get-AzVmCliOptionText -Options $Options -Name 'select')
+        $selectedGroup = ''
+        if ([string]::IsNullOrWhiteSpace([string]$selectionRaw)) {
+            $selectedGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $activeGroup -ServerName $serverName
+        }
+        else {
+            $selectedGroup = $selectionRaw.Trim()
+            $exists = az group exists -n $selectedGroup --only-show-errors
+            Assert-LastExitCode "az group exists (group select)"
+            if (-not [string]::Equals([string]$exists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
+                Throw-FriendlyError `
+                    -Detail ("Resource group '{0}' was not found." -f $selectedGroup) `
+                    -Code 64 `
+                    -Summary "Group select failed because target resource group was not found." `
+                    -Hint "Select an existing managed resource group."
+            }
+            Assert-AzVmManagedResourceGroup -ResourceGroup $selectedGroup -OperationName 'group select'
+        }
+
+        Set-DotEnvValue -Path $envFilePath -Key 'RESOURCE_GROUP' -Value $selectedGroup
+        $script:ConfigOverrides['RESOURCE_GROUP'] = $selectedGroup
+        Write-Host ("Active resource group set to '{0}'." -f $selectedGroup) -ForegroundColor Green
+        return
+    }
+
+    $filterRaw = if ($hasList) { [string](Get-AzVmCliOptionText -Options $Options -Name 'list') } else { '' }
+    $filter = if ([string]::IsNullOrWhiteSpace([string]$filterRaw)) { '' } else { $filterRaw.Trim().ToLowerInvariant() }
+
+    $rows = @()
+    try {
+        $rows = @(Get-AzVmManagedResourceGroupRows)
+    }
+    catch {
+        Throw-FriendlyError `
+            -Detail "Managed resource groups could not be listed." `
+            -Code 64 `
+            -Summary "Group list failed." `
+            -Hint "Run az login and verify Azure access."
+    }
+
+    $names = @(
+        ConvertTo-ObjectArrayCompat -InputObject $rows |
+            ForEach-Object { [string]$_.name } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+    if (-not [string]::IsNullOrWhiteSpace([string]$filter)) {
+        $names = @(
+            $names | Where-Object {
+                ([string]$_).ToLowerInvariant().Contains($filter)
+            }
+        )
+    }
+
+    Write-Host "Managed resource groups (az-vm):" -ForegroundColor Cyan
+    if (@($names).Count -eq 0) {
+        Write-Host "- (none)"
+        return
+    }
+
+    for ($i = 0; $i -lt $names.Count; $i++) {
+        $name = [string]$names[$i]
+        $label = if ([string]::Equals($name, $activeGroup, [System.StringComparison]::OrdinalIgnoreCase)) {
+            "*{0}-{1}." -f ($i + 1), $name
+        }
+        else {
+            "{0}-{1}." -f ($i + 1), $name
+        }
+        Write-Host $label
+    }
+}
+
 function Invoke-AzVmConfigCommand {
     param(
         [hashtable]$Options,
@@ -7289,23 +7543,29 @@ function Invoke-AzVmConfigCommand {
         [switch]$LinuxFlag
     )
 
-    if ($AutoMode) {
-        Throw-FriendlyError `
-            -Detail "Config command supports interactive mode only." `
-            -Code 64 `
-            -Summary "Config command cannot run in auto mode." `
-            -Hint "Run 'az-vm config'."
-    }
-
     $envFilePath = Join-Path $PSScriptRoot '.env'
     $configBefore = Read-DotEnvFile -Path $envFilePath
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $configBefore -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $serverName = [string](Get-ConfigValue -Config $configBefore -Key 'SERVER_NAME' -DefaultValue '')
+    $selectedResourceGroup = Resolve-AzVmTargetResourceGroup `
+        -Options $Options `
+        -AutoMode:$AutoMode `
+        -DefaultResourceGroup $defaultResourceGroup `
+        -ServerName $serverName `
+        -OperationName 'config'
+
     $runtime = $null
     $context = $null
     $platform = ''
     $step1Result = $null
 
-    $step1Result = Invoke-Step 'Step 1/3 - interactive configuration values will be selected...' {
-        $runtimeLocal = Initialize-AzVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1 -PersistGeneratedResourceGroup
+    $step1Result = Invoke-Step 'Step 1/3 - configuration values will be resolved...' {
+        $runtimeLocal = Initialize-AzVmCommandRuntimeContext `
+            -AutoMode:$AutoMode `
+            -WindowsFlag:$WindowsFlag `
+            -LinuxFlag:$LinuxFlag `
+            -ConfigMapOverrides @{ RESOURCE_GROUP = $selectedResourceGroup } `
+            -PersistGeneratedResourceGroup
         [pscustomobject]@{
             Runtime = $runtimeLocal
             Context = $runtimeLocal.Context
@@ -7317,7 +7577,7 @@ function Invoke-AzVmConfigCommand {
             -Detail "Interactive configuration step did not produce runtime context." `
             -Code 64 `
             -Summary "Config command could not continue after step 1." `
-            -Hint "Rerun 'az-vm config' and complete step 1."
+            -Hint "Rerun 'az-vm config' and verify group selection."
     }
     if ($step1Result -is [System.Array]) {
         $step1Result = $step1Result[-1]
@@ -7450,21 +7710,18 @@ function Invoke-AzVmExecCommand {
         [switch]$LinuxFlag
     )
 
-    $groupOverrideValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
-    $groupOverride = ''
-    if (-not [string]::IsNullOrWhiteSpace([string]$groupOverrideValue)) {
-        $groupOverride = $groupOverrideValue.Trim()
-    }
-
     $runtimeConfigOverrides = @{}
-    if (-not [string]::IsNullOrWhiteSpace([string]$groupOverride)) {
-        $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOverride
-    }
-
-    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
+    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$true -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
     $context = $runtime.Context
     $platform = [string]$runtime.Platform
     $platformDefaults = $runtime.PlatformDefaults
+    $selectedResourceGroup = Resolve-AzVmTargetResourceGroup `
+        -Options $Options `
+        -AutoMode:$AutoMode `
+        -DefaultResourceGroup ([string]$context.ResourceGroup) `
+        -ServerName ([string]$context.ServerName) `
+        -OperationName 'exec'
+    $context.ResourceGroup = $selectedResourceGroup
 
     $hasInitTask = Test-AzVmCliOptionPresent -Options $Options -Name 'init-task'
     $hasUpdateTask = Test-AzVmCliOptionPresent -Options $Options -Name 'update-task'
@@ -7479,18 +7736,7 @@ function Invoke-AzVmExecCommand {
     $hasTaskSelector = ($hasInitTask -or $hasUpdateTask)
     if ($hasTaskSelector) {
         $stage = if ($hasInitTask) { 'init' } else { 'update' }
-        Assert-AzVmManagedResourceGroup -ResourceGroup ([string]$context.ResourceGroup) -OperationName 'exec'
-        $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", [string]$context.ResourceGroup, "-n", [string]$context.VmName)
-        if (-not $vmExists) {
-            if ($AutoMode) {
-                Throw-FriendlyError `
-                    -Detail ("VM '{0}' was not found in resource group '{1}' for exec task mode." -f [string]$context.VmName, [string]$context.ResourceGroup) `
-                    -Code 61 `
-                    -Summary "Exec task mode cannot continue because VM was not found." `
-                    -Hint "Set VM_NAME in .env or run exec in interactive mode and select a VM."
-            }
-            $context.VmName = Select-AzVmVmInteractive -ResourceGroup ([string]$context.ResourceGroup) -DefaultVmName ([string]$context.VmName)
-        }
+        $context.VmName = Resolve-AzVmTargetVmName -ResourceGroup ([string]$context.ResourceGroup) -DefaultVmName ([string]$context.VmName) -AutoMode:$AutoMode -OperationName 'exec'
 
         if ($stage -eq 'init') {
             $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
@@ -7538,26 +7784,7 @@ function Invoke-AzVmExecCommand {
         return
     }
 
-    $selectedResourceGroup = [string]$context.ResourceGroup
-    if (-not [string]::IsNullOrWhiteSpace([string]$groupOverride)) {
-        $selectedResourceGroup = $groupOverride
-    }
-    else {
-        $selectedResourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $selectedResourceGroup -ServerName ([string]$context.ServerName)
-    }
-
-    $groupExists = az group exists -n $selectedResourceGroup --only-show-errors
-    Assert-LastExitCode "az group exists (exec repl)"
-    if (-not [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
-        Throw-FriendlyError `
-            -Detail ("Resource group '{0}' was not found." -f $selectedResourceGroup) `
-            -Code 61 `
-            -Summary "Exec REPL cannot continue because resource group was not found." `
-            -Hint "Provide a valid --group value or select a valid group in interactive mode."
-    }
-    Assert-AzVmManagedResourceGroup -ResourceGroup $selectedResourceGroup -OperationName 'exec'
-
-    $selectedVmName = Select-AzVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName ([string]$context.VmName)
+    $selectedVmName = Resolve-AzVmTargetVmName -ResourceGroup $selectedResourceGroup -DefaultVmName ([string]$context.VmName) -AutoMode:$AutoMode -OperationName 'exec'
     $vmDetailContext = [ordered]@{
         ResourceGroup = $selectedResourceGroup
         VmName = $selectedVmName
@@ -7701,6 +7928,7 @@ function Copy-AzVmOptionsMap {
 function Invoke-AzVmMoveCommand {
     param(
         [hashtable]$Options,
+        [switch]$AutoMode,
         [switch]$WindowsFlag,
         [switch]$LinuxFlag
     )
@@ -7719,13 +7947,14 @@ function Invoke-AzVmMoveCommand {
     }
 
     $regionValue = [string](Get-AzVmCliOptionText -Options $forwardOptions -Name 'vm-region')
-    $autoMode = -not [string]::IsNullOrWhiteSpace([string]$regionValue)
-    Invoke-AzVmChangeCommand -Options $forwardOptions -AutoMode:$autoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -OperationLabel 'move'
+    $effectiveAutoMode = $AutoMode -or (-not [string]::IsNullOrWhiteSpace([string]$regionValue))
+    Invoke-AzVmChangeCommand -Options $forwardOptions -AutoMode:$effectiveAutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -OperationLabel 'move'
 }
 
 function Invoke-AzVmResizeCommand {
     param(
         [hashtable]$Options,
+        [switch]$AutoMode,
         [switch]$WindowsFlag,
         [switch]$LinuxFlag
     )
@@ -7744,13 +7973,14 @@ function Invoke-AzVmResizeCommand {
     }
 
     $sizeValue = [string](Get-AzVmCliOptionText -Options $forwardOptions -Name 'vm-size')
-    $autoMode = -not [string]::IsNullOrWhiteSpace([string]$sizeValue)
-    Invoke-AzVmChangeCommand -Options $forwardOptions -AutoMode:$autoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -OperationLabel 'resize'
+    $effectiveAutoMode = $AutoMode -or (-not [string]::IsNullOrWhiteSpace([string]$sizeValue))
+    Invoke-AzVmChangeCommand -Options $forwardOptions -AutoMode:$effectiveAutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -OperationLabel 'resize'
 }
 
 function Invoke-AzVmSetCommand {
     param(
         [hashtable]$Options,
+        [switch]$AutoMode,
         [switch]$WindowsFlag,
         [switch]$LinuxFlag
     )
@@ -7765,18 +7995,19 @@ function Invoke-AzVmSetCommand {
         $runtimeConfigOverrides['VM_NAME'] = $vmOption.Trim()
     }
 
-    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
+    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$true -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
     $context = $runtime.Context
 
-    $resourceGroup = [string]$context.ResourceGroup
-    if ([string]::IsNullOrWhiteSpace([string]$groupOption)) {
-        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -ServerName ([string]$context.ServerName)
-    }
-    Assert-AzVmManagedResourceGroup -ResourceGroup $resourceGroup -OperationName 'set'
+    $resourceGroup = Resolve-AzVmTargetResourceGroup `
+        -Options $Options `
+        -AutoMode:$AutoMode `
+        -DefaultResourceGroup ([string]$context.ResourceGroup) `
+        -ServerName ([string]$context.ServerName) `
+        -OperationName 'set'
 
-    $vmName = [string]$context.VmName
-    if ([string]::IsNullOrWhiteSpace([string]$vmOption)) {
-        $vmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $vmName
+    $vmName = [string]$vmOption
+    if ([string]::IsNullOrWhiteSpace([string]$vmName)) {
+        $vmName = Resolve-AzVmTargetVmName -ResourceGroup $resourceGroup -DefaultVmName ([string]$context.VmName) -AutoMode:$AutoMode -OperationName 'set'
     }
 
     $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
@@ -7800,6 +8031,14 @@ function Invoke-AzVmSetCommand {
         $nestedTarget = Resolve-AzVmToggleValue -Name 'nested-virtualization' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'nested-virtualization'))
     }
 
+    if ($AutoMode -and -not $hasHibernation -and -not $hasNested) {
+        Throw-FriendlyError `
+            -Detail "Auto mode requires at least one set target (--hibernation or --nested-virtualization)." `
+            -Code 62 `
+            -Summary "Set command has no update target in auto mode." `
+            -Hint "Provide --hibernation=on|off and/or --nested-virtualization=on|off."
+    }
+
     if (-not $hasHibernation -and -not $hasNested) {
         Write-Host "Set command interactive mode: select feature values." -ForegroundColor Cyan
         $hibernationTarget = Read-AzVmToggleInteractive -PromptText "Set hibernation"
@@ -7808,9 +8047,23 @@ function Invoke-AzVmSetCommand {
         $hasNested = $true
     }
     elseif ($hasHibernation -and [string]::IsNullOrWhiteSpace([string]$hibernationTarget)) {
+        if ($AutoMode) {
+            Throw-FriendlyError `
+                -Detail "Option '--hibernation' was provided without a value in auto mode." `
+                -Code 62 `
+                -Summary "Set command cannot continue in auto mode." `
+                -Hint "Use --hibernation=on|off."
+        }
         $hibernationTarget = Read-AzVmToggleInteractive -PromptText "Set hibernation"
     }
     elseif ($hasNested -and [string]::IsNullOrWhiteSpace([string]$nestedTarget)) {
+        if ($AutoMode) {
+            Throw-FriendlyError `
+                -Detail "Option '--nested-virtualization' was provided without a value in auto mode." `
+                -Code 62 `
+                -Summary "Set command cannot continue in auto mode." `
+                -Hint "Use --nested-virtualization=on|off."
+        }
         $nestedTarget = Read-AzVmToggleInteractive -PromptText "Set nested virtualization"
     }
 
@@ -7877,20 +8130,21 @@ function Invoke-AzVmChangeCommand {
     $groupWasProvided = -not [string]::IsNullOrWhiteSpace([string]$groupOptionValue)
     $vmWasProvided = -not [string]::IsNullOrWhiteSpace([string]$vmOptionValue)
 
-    if (-not $groupWasProvided -and -not $AutoMode) {
-        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -ServerName ([string]$context.ServerName)
-    }
-    if (-not [string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
-        $context.ResourceGroup = $resourceGroup
-    }
-    Assert-AzVmManagedResourceGroup -ResourceGroup $resourceGroup -OperationName $OperationLabel
+    $resourceGroup = Resolve-AzVmTargetResourceGroup `
+        -Options $Options `
+        -AutoMode:$AutoMode `
+        -DefaultResourceGroup $resourceGroup `
+        -ServerName ([string]$context.ServerName) `
+        -OperationName $OperationLabel
+    $context.ResourceGroup = $resourceGroup
 
-    if (-not $vmWasProvided -and -not $AutoMode) {
-        $vmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $vmName
+    if ($vmWasProvided) {
+        $vmName = [string]$vmOptionValue
     }
-    if (-not [string]::IsNullOrWhiteSpace([string]$vmName)) {
-        $context.VmName = $vmName
+    else {
+        $vmName = Resolve-AzVmTargetVmName -ResourceGroup $resourceGroup -DefaultVmName $vmName -AutoMode:$AutoMode -OperationName $OperationLabel
     }
+    $context.VmName = $vmName
 
     $hasRegionOption = Test-AzVmCliOptionPresent -Options $Options -Name 'vm-region'
     $hasSizeOption = Test-AzVmCliOptionPresent -Options $Options -Name 'vm-size'
@@ -9286,7 +9540,7 @@ function Invoke-AzVmCommandDispatcher {
     Assert-AzVmCommandOptions -CommandName $CommandName -Options $Options
 
     $autoRequested = Get-AzVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $false
-    $script:AutoMode = ($CommandName -in @('create','update','delete')) -and $autoRequested
+    $script:AutoMode = ($CommandName -in @('create','update','config','move','resize','set','exec','delete')) -and $autoRequested
     $script:PerfMode = Get-AzVmCliOptionBool -Options $Options -Name 'perf' -DefaultValue $false
     $windowsFlag = Get-AzVmCliOptionBool -Options $Options -Name 'windows' -DefaultValue $false
     $linuxFlag = Get-AzVmCliOptionBool -Options $Options -Name 'linux' -DefaultValue $false
@@ -9326,7 +9580,14 @@ function Invoke-AzVmCommandDispatcher {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmConfigCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                return
+            }
+            'group' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-AzVmGroupCommand -Options $Options
                 return
             }
             'create' {
@@ -9334,7 +9595,14 @@ function Invoke-AzVmCommandDispatcher {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'create' -ActionPlan $actionPlan
+
+                # create always targets a new managed resource group name from template/index.
+                Invoke-AzVmMain `
+                    -WindowsFlag:$windowsFlag `
+                    -LinuxFlag:$linuxFlag `
+                    -CommandName 'create' `
+                    -InitialConfigOverrides @{ RESOURCE_GROUP = '' } `
+                    -ActionPlan $actionPlan
                 return
             }
             'update' {
@@ -9342,35 +9610,52 @@ function Invoke-AzVmCommandDispatcher {
                 $script:UpdateMode = $true
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'update'
-                Invoke-AzVmMain -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag -CommandName 'update' -ActionPlan $actionPlan
+
+                $envFilePath = Join-Path $PSScriptRoot '.env'
+                $configMap = Read-DotEnvFile -Path $envFilePath
+                $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+                $serverName = [string](Get-ConfigValue -Config $configMap -Key 'SERVER_NAME' -DefaultValue '')
+                $targetResourceGroup = Resolve-AzVmTargetResourceGroup `
+                    -Options $Options `
+                    -AutoMode:$script:AutoMode `
+                    -DefaultResourceGroup $defaultResourceGroup `
+                    -ServerName $serverName `
+                    -OperationName 'update'
+
+                Invoke-AzVmMain `
+                    -WindowsFlag:$windowsFlag `
+                    -LinuxFlag:$linuxFlag `
+                    -CommandName 'update' `
+                    -InitialConfigOverrides @{ RESOURCE_GROUP = $targetResourceGroup } `
+                    -ActionPlan $actionPlan
                 return
             }
             'move' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmMoveCommand -Options $Options -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmMoveCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'resize' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmResizeCommand -Options $Options -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmResizeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'set' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmSetCommand -Options $Options -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmSetCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'exec' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmExecCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'show' {
@@ -9392,7 +9677,7 @@ function Invoke-AzVmCommandDispatcher {
                     -Detail ("Unknown command '{0}'." -f $CommandName) `
                     -Code 2 `
                     -Summary "Unknown command." `
-                    -Hint "Use one command: create | update | config | move | resize | set | exec | show | delete."
+                    -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete."
             }
         }
     }
