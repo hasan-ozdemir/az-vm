@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-# CO_VM_TASK_TIMEOUT_SECONDS=1800
+# AZ_VM_TASK_TIMEOUT_SECONDS=1800
 Write-Host "Update task started: wsl2-install-update"
 
 function Invoke-NativeStep {

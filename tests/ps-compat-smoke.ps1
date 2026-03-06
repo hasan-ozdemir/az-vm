@@ -58,13 +58,13 @@ Invoke-Test -Name "Parse all .ps1 files" -Action {
 
 Invoke-Test -Name "Dot-source unified az-vm.ps1" -Action {
     Assert-True -Condition (Test-Path -LiteralPath $script:UnifiedScriptPath) -Message "az-vm.ps1 was not found."
-    Assert-True -Condition ($null -ne (Get-Command Get-CoVmPlatformDefaults -ErrorAction SilentlyContinue)) -Message "Get-CoVmPlatformDefaults was not loaded."
-    Assert-True -Condition ($null -ne (Get-Command Get-CoVmTaskBlocksFromDirectory -ErrorAction SilentlyContinue)) -Message "Get-CoVmTaskBlocksFromDirectory was not loaded."
+    Assert-True -Condition ($null -ne (Get-Command Get-AzVmPlatformDefaults -ErrorAction SilentlyContinue)) -Message "Get-AzVmPlatformDefaults was not loaded."
+    Assert-True -Condition ($null -ne (Get-Command Get-AzVmTaskBlocksFromDirectory -ErrorAction SilentlyContinue)) -Message "Get-AzVmTaskBlocksFromDirectory was not loaded."
 }
 
 Invoke-Test -Name "Platform defaults contract" -Action {
-    $win = Get-CoVmPlatformDefaults -Platform windows
-    $lin = Get-CoVmPlatformDefaults -Platform linux
+    $win = Get-AzVmPlatformDefaults -Platform windows
+    $lin = Get-AzVmPlatformDefaults -Platform linux
     Assert-True -Condition ([string]$win.RunCommandId -eq "RunPowerShellScript") -Message "Windows RunCommandId mismatch."
     Assert-True -Condition ([string]$lin.RunCommandId -eq "RunShellScript") -Message "Linux RunCommandId mismatch."
     Assert-True -Condition ([bool]$win.IncludeRdp) -Message "Windows IncludeRdp should be true."
@@ -78,14 +78,14 @@ Invoke-Test -Name "Azure location picker resolver contract" -Action {
     )
 
     $entryWithLowercaseName = [pscustomobject]@{ name = "centralindia"; displayName = "Central India" }
-    $resolvedFromLowercase = Resolve-CoVmLocationNameFromEntry -Entry $entryWithLowercaseName -Catalog $catalog -FallbackLocation ""
+    $resolvedFromLowercase = Resolve-AzVmLocationNameFromEntry -Entry $entryWithLowercaseName -Catalog $catalog -FallbackLocation ""
     Assert-True -Condition ([string]::Equals([string]$resolvedFromLowercase, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Lowercase name location resolution failed."
 
     $entryWithOnlyDisplay = [pscustomobject]@{ Name = ""; DisplayName = "Austria East" }
-    $resolvedFromDisplay = Resolve-CoVmLocationNameFromEntry -Entry $entryWithOnlyDisplay -Catalog $catalog -FallbackLocation ""
+    $resolvedFromDisplay = Resolve-AzVmLocationNameFromEntry -Entry $entryWithOnlyDisplay -Catalog $catalog -FallbackLocation ""
     Assert-True -Condition ([string]::Equals([string]$resolvedFromDisplay, "austriaeast", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Display-name location resolution failed."
 
-    $resolvedFromFallback = Resolve-CoVmLocationNameFromEntry -Entry $null -Catalog $catalog -FallbackLocation "centralindia"
+    $resolvedFromFallback = Resolve-AzVmLocationNameFromEntry -Entry $null -Catalog $catalog -FallbackLocation "centralindia"
     Assert-True -Condition ([string]::Equals([string]$resolvedFromFallback, "centralindia", [System.StringComparison]::OrdinalIgnoreCase)) -Message "Fallback location resolution failed."
 }
 
@@ -105,8 +105,8 @@ Invoke-Test -Name "Platform fallback config mapping" -Action {
         LIN_VM_UPDATE_TASK_DIR = "linux/update"
     }
 
-    $winMap = Resolve-CoVmPlatformConfigMap -ConfigMap $baseConfig -Platform windows
-    $linMap = Resolve-CoVmPlatformConfigMap -ConfigMap $baseConfig -Platform linux
+    $winMap = Resolve-AzVmPlatformConfigMap -ConfigMap $baseConfig -Platform windows
+    $linMap = Resolve-AzVmPlatformConfigMap -ConfigMap $baseConfig -Platform linux
 
     Assert-True -Condition ([string]$winMap.VM_IMAGE -eq "win:image:latest") -Message "Windows VM_IMAGE fallback mapping failed."
     Assert-True -Condition ([string]$winMap.VM_DISK_SIZE_GB -eq "128") -Message "Windows VM_DISK_SIZE_GB fallback mapping failed."
@@ -115,10 +115,10 @@ Invoke-Test -Name "Platform fallback config mapping" -Action {
 }
 
 Invoke-Test -Name "Task catalog discovery" -Action {
-    $winInit = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\init") -Platform windows -Stage init
-    $winUpdate = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\update") -Platform windows -Stage update
-    $linInit = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\init") -Platform linux -Stage init
-    $linUpdate = Get-CoVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\update") -Platform linux -Stage update
+    $winInit = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\init") -Platform windows -Stage init
+    $winUpdate = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\update") -Platform windows -Stage update
+    $linInit = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\init") -Platform linux -Stage init
+    $linUpdate = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "linux\update") -Platform linux -Stage update
 
     Assert-True -Condition (@($winInit.ActiveTasks).Count -ge 1) -Message "Windows init active tasks are missing."
     Assert-True -Condition (@($winUpdate.ActiveTasks).Count -ge 1) -Message "Windows update active tasks are missing."
@@ -127,35 +127,35 @@ Invoke-Test -Name "Task catalog discovery" -Action {
 }
 
 Invoke-Test -Name "CLI parse help contracts" -Action {
-    $parsedGlobalHelp = Parse-CoVmCliArguments -CommandToken "--help" -RawArgs @()
+    $parsedGlobalHelp = Parse-AzVmCliArguments -CommandToken "--help" -RawArgs @()
     Assert-True -Condition ([string]$parsedGlobalHelp.Command -eq "help") -Message "Global --help should resolve to help command."
 
-    $parsedHelpTopic = Parse-CoVmCliArguments -CommandToken "help" -RawArgs @("create")
+    $parsedHelpTopic = Parse-AzVmCliArguments -CommandToken "help" -RawArgs @("create")
     Assert-True -Condition ([string]$parsedHelpTopic.Command -eq "help") -Message "help command parse failed."
     Assert-True -Condition ([string]$parsedHelpTopic.HelpTopic -eq "create") -Message "Help topic positional parse failed."
 
-    $parsedCommandHelp = Parse-CoVmCliArguments -CommandToken "create" -RawArgs @("--help")
+    $parsedCommandHelp = Parse-AzVmCliArguments -CommandToken "create" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedCommandHelp.Command -eq "create") -Message "Command with --help parse failed."
     Assert-True -Condition ($parsedCommandHelp.Options.ContainsKey("help")) -Message "Command --help option was not captured."
 
-    $parsedConfigHelp = Parse-CoVmCliArguments -CommandToken "config" -RawArgs @("--help")
+    $parsedConfigHelp = Parse-AzVmCliArguments -CommandToken "config" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedConfigHelp.Command -eq "config") -Message "Config command with --help parse failed."
 }
 
 Invoke-Test -Name "CLI option assertions allow command help" -Action {
-    Assert-CoVmCommandOptions -CommandName "create" -Options @{ help = $true }
-    Assert-CoVmCommandOptions -CommandName "update" -Options @{ help = $true }
-    Assert-CoVmCommandOptions -CommandName "config" -Options @{ help = $true }
-    Assert-CoVmCommandOptions -CommandName "change" -Options @{ help = $true }
-    Assert-CoVmCommandOptions -CommandName "exec" -Options @{ help = $true }
-    Assert-CoVmCommandOptions -CommandName "show" -Options @{ help = $true }
-    Assert-CoVmCommandOptions -CommandName "delete" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "create" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "update" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "config" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "change" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "exec" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
 Invoke-Test -Name "Help --command syntax was removed" -Action {
     $threw = $false
     try {
-        Assert-CoVmCommandOptions -CommandName "help" -Options @{ command = "create" }
+        Assert-AzVmCommandOptions -CommandName "help" -Options @{ command = "create" }
     }
     catch {
         $threw = $true
@@ -164,11 +164,11 @@ Invoke-Test -Name "Help --command syntax was removed" -Action {
 }
 
 Invoke-Test -Name "Detailed help topic validation" -Action {
-    Show-CoVmCommandHelp -Topic "create"
-    Show-CoVmCommandHelp -Topic "config"
-    Show-CoVmCommandHelp -Topic "show"
-    Show-CoVmCommandHelp -Topic ""
-    Show-CoVmCommandHelp -Overview
+    Show-AzVmCommandHelp -Topic "create"
+    Show-AzVmCommandHelp -Topic "config"
+    Show-AzVmCommandHelp -Topic "show"
+    Show-AzVmCommandHelp -Topic ""
+    Show-AzVmCommandHelp -Overview
 }
 
 Invoke-Test -Name "Task token replacement" -Action {
@@ -194,7 +194,7 @@ Invoke-Test -Name "Task token replacement" -Action {
         [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_USER__ __SSH_PORT__ __SERVER_NAME__ __TCP_PORTS_BASH__" }
     )
 
-    $resolved = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
+    $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
     $scriptBody = [string]$resolved[0].Script
     Assert-True -Condition ($scriptBody -like "*manager*") -Message "VM user token was not replaced."
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."

@@ -111,7 +111,7 @@ Invoke-Tweak -Name "machine-welcome-suppression" -Action {
 }
 
 Invoke-Tweak -Name "notepad-common-text-associations" -Action {
-    $className = "CoVmTextFile"
+    $className = "AzVmTextFile"
     $classRoot = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\$className"
     Set-RegistryValue -Path $classRoot -Name "(default)" -Value "Co VM Text File" -Kind String
     $commandPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\$className\shell\open\command"

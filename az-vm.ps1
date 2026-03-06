@@ -37,7 +37,7 @@ $script:PerfSuppressAzTimingDepth = 0
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
 
-function Convert-CoVmPerfSecondsText {
+function Convert-AzVmPerfSecondsText {
     param(
         [double]$Seconds
     )
@@ -49,7 +49,7 @@ function Convert-CoVmPerfSecondsText {
     return ("{0:N1} seconds" -f [double]$Seconds)
 }
 
-function Write-CoVmPerfTiming {
+function Write-AzVmPerfTiming {
     param(
         [string]$Category,
         [string]$Label,
@@ -66,11 +66,11 @@ function Write-CoVmPerfTiming {
         $labelText = $labelText.Substring(0, 237) + "..."
     }
 
-    $durationText = Convert-CoVmPerfSecondsText -Seconds $Seconds
+    $durationText = Convert-AzVmPerfSecondsText -Seconds $Seconds
     Write-Host ("perf: {0} -> {1} ({2})" -f $categoryText, $labelText, $durationText) -ForegroundColor DarkGray
 }
 
-function Get-CoVmAzCliExecutable {
+function Get-AzVmAzCliExecutable {
     if (-not [string]::IsNullOrWhiteSpace([string]$script:AzCliExecutable)) {
         return [string]$script:AzCliExecutable
     }
@@ -94,7 +94,7 @@ function Get-CoVmAzCliExecutable {
     return [string]$script:AzCliExecutable
 }
 
-function Invoke-CoVmAzCliCommand {
+function Invoke-AzVmAzCliCommand {
     param(
         [string[]]$Arguments
     )
@@ -109,7 +109,7 @@ function Invoke-CoVmAzCliCommand {
     }
 
     try {
-        $azExecutable = Get-CoVmAzCliExecutable
+        $azExecutable = Get-AzVmAzCliExecutable
         $timeoutSeconds = [int]$script:AzCommandTimeoutSeconds
         if ($timeoutSeconds -lt 0) { $timeoutSeconds = 0 }
         $azExecutableText = [string]$azExecutable
@@ -131,11 +131,11 @@ function Invoke-CoVmAzCliCommand {
             $psi.FileName = $cmdHost
             $cmdArgs = @('/d', '/c', $azExecutableText)
             $cmdArgs += $argValues
-            $psi.Arguments = ($cmdArgs | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+            $psi.Arguments = ($cmdArgs | ForEach-Object { Convert-AzVmProcessArgument -Value ([string]$_) }) -join ' '
         }
         else {
             $psi.FileName = $azExecutableText
-            $psi.Arguments = ($argValues | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+            $psi.Arguments = ($argValues | ForEach-Object { Convert-AzVmProcessArgument -Value ([string]$_) }) -join ' '
         }
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
@@ -187,7 +187,7 @@ function Invoke-CoVmAzCliCommand {
             $perfWatch.Stop()
         }
         if ($null -ne $perfWatch -and $shouldEmitPerf) {
-            Write-CoVmPerfTiming -Category "az" -Label $perfLabel -Seconds $perfWatch.Elapsed.TotalSeconds
+            Write-AzVmPerfTiming -Category "az" -Label $perfLabel -Seconds $perfWatch.Elapsed.TotalSeconds
         }
     }
 }
@@ -198,10 +198,10 @@ function az {
         $argList += [string]$arg
     }
 
-    return (Invoke-CoVmAzCliCommand -Arguments $argList)
+    return (Invoke-AzVmAzCliCommand -Arguments $argList)
 }
 
-function Invoke-CoVmHttpRestMethod {
+function Invoke-AzVmHttpRestMethod {
     param(
         [ValidateSet("Get","Post","Put","Delete","Patch","Head","Options")]
         [string]$Method = "Get",
@@ -241,12 +241,12 @@ function Invoke-CoVmHttpRestMethod {
             $watch.Stop()
         }
         if ($null -ne $watch) {
-            Write-CoVmPerfTiming -Category "http" -Label $PerfLabel -Seconds $watch.Elapsed.TotalSeconds
+            Write-AzVmPerfTiming -Category "http" -Label $PerfLabel -Seconds $watch.Elapsed.TotalSeconds
         }
     }
 }
 
-function Get-CoVmPlatformDefaults {
+function Get-AzVmPlatformDefaults {
     param(
         [ValidateSet('windows','linux')]
         [string]$Platform
@@ -281,7 +281,7 @@ function Get-CoVmPlatformDefaults {
     }
 }
 
-function Resolve-CoVmPlatformConfigMap {
+function Resolve-AzVmPlatformConfigMap {
     param(
         [hashtable]$ConfigMap,
         [ValidateSet('windows','linux')]
@@ -321,7 +321,7 @@ function Resolve-CoVmPlatformConfigMap {
     return $resolved
 }
 
-function Resolve-CoVmPlatformSelection {
+function Resolve-AzVmPlatformSelection {
     param(
         [hashtable]$ConfigMap,
         [string]$EnvFilePath,
@@ -391,7 +391,7 @@ function Resolve-CoVmPlatformSelection {
     return $selected
 }
 
-function Get-CoVmTaskBlocksFromDirectory {
+function Get-AzVmTaskBlocksFromDirectory {
     param(
         [string]$DirectoryPath,
         [ValidateSet('windows','linux')]
@@ -494,7 +494,7 @@ function Get-CoVmTaskBlocksFromDirectory {
     }
 }
 
-function Get-CoVmTaskTokenReplacements {
+function Get-AzVmTaskTokenReplacements {
     param(
         [hashtable]$Context
     )
@@ -525,7 +525,7 @@ function Get-CoVmTaskTokenReplacements {
     }
 }
 
-function Resolve-CoVmRuntimeTaskBlocks {
+function Resolve-AzVmRuntimeTaskBlocks {
     param(
         [object[]]$TemplateTaskBlocks,
         [hashtable]$Context
@@ -535,13 +535,13 @@ function Resolve-CoVmRuntimeTaskBlocks {
         throw 'Task template block list is empty.'
     }
 
-    $replacements = Get-CoVmTaskTokenReplacements -Context $Context
-    return @(Apply-CoVmTaskBlockReplacements -TaskBlocks $TemplateTaskBlocks -Replacements $replacements)
+    $replacements = Get-AzVmTaskTokenReplacements -Context $Context
+    return @(Apply-AzVmTaskBlockReplacements -TaskBlocks $TemplateTaskBlocks -Replacements $replacements)
 }
 
 
 
-function Resolve-CoVmTaskTimeoutSeconds {
+function Resolve-AzVmTaskTimeoutSeconds {
     param(
         [string]$TaskName,
         [string]$TaskScript,
@@ -556,7 +556,7 @@ function Resolve-CoVmTaskTimeoutSeconds {
         return $resolved
     }
 
-    $pattern = '(?im)^\s*(?:#|//)\s*CO_VM_TASK_TIMEOUT_SECONDS\s*=\s*(?<value>\d{1,5})\s*$'
+    $pattern = '(?im)^\s*(?:#|//)\s*AZ_VM_TASK_TIMEOUT_SECONDS\s*=\s*(?<value>\d{1,5})\s*$'
     $match = [regex]::Match([string]$TaskScript, $pattern)
     if (-not $match.Success) {
         return $resolved
@@ -573,7 +573,7 @@ function Resolve-CoVmTaskTimeoutSeconds {
     return [int]$candidate
 }
 
-function Invoke-CoVmSshTaskBlocks {
+function Invoke-AzVmSshTaskBlocks {
     param(
         [ValidateSet('windows','linux')]
         [string]$Platform,
@@ -599,14 +599,14 @@ function Invoke-CoVmSshTaskBlocks {
         throw 'SSH task block list is empty.'
     }
 
-    $SshMaxRetries = Resolve-CoVmSshRetryCount -RetryText ([string]$SshMaxRetries) -DefaultValue 3
+    $SshMaxRetries = Resolve-AzVmSshRetryCount -RetryText ([string]$SshMaxRetries) -DefaultValue 3
     if ($SshTaskTimeoutSeconds -lt 30) { $SshTaskTimeoutSeconds = 30 }
     if ($SshTaskTimeoutSeconds -gt 7200) { $SshTaskTimeoutSeconds = 7200 }
     if ($SshConnectTimeoutSeconds -lt 5) { $SshConnectTimeoutSeconds = 5 }
     if ($SshConnectTimeoutSeconds -gt 300) { $SshConnectTimeoutSeconds = 300 }
-    $pySsh = Ensure-CoVmPySshTools -RepoRoot $RepoRoot -ConfiguredPySshClientPath $ConfiguredPySshClientPath
+    $pySsh = Ensure-AzVmPySshTools -RepoRoot $RepoRoot -ConfiguredPySshClientPath $ConfiguredPySshClientPath
 
-    $bootstrap = Initialize-CoVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+    $bootstrap = Initialize-AzVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
     if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
         Write-Host ([string]$bootstrap.Output)
     }
@@ -625,12 +625,12 @@ function Invoke-CoVmSshTaskBlocks {
         Write-Host ("Task outcome policy: {0}" -f $TaskOutcomeMode)
         Write-Host ("SSH timeouts: task={0}s, connect={1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
 
-        $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+        $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
 
         foreach ($task in @($TaskBlocks)) {
             $taskName = [string]$task.Name
             $taskScript = [string]$task.Script
-            $taskTimeoutSeconds = Resolve-CoVmTaskTimeoutSeconds -TaskName $taskName -TaskScript $taskScript -DefaultTimeoutSeconds $SshTaskTimeoutSeconds
+            $taskTimeoutSeconds = Resolve-AzVmTaskTimeoutSeconds -TaskName $taskName -TaskScript $taskScript -DefaultTimeoutSeconds $SshTaskTimeoutSeconds
             $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
             $taskResult = $null
             $taskInvocationError = $null
@@ -640,15 +640,15 @@ function Invoke-CoVmSshTaskBlocks {
             for ($attempt = 1; $attempt -le $SshMaxRetries; $attempt++) {
                 $taskInvocationError = $null
                 try {
-                    $taskResult = Invoke-CoVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $taskScript -TimeoutSeconds $taskTimeoutSeconds
+                    $taskResult = Invoke-AzVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $taskScript -TimeoutSeconds $taskTimeoutSeconds
                     break
                 }
                 catch {
                     $taskInvocationError = $_
                     if ($attempt -lt $SshMaxRetries) {
                         Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
-                        Stop-CoVmPersistentSshSession -Session $session
-                        $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+                        Stop-AzVmPersistentSshSession -Session $session
+                        $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
                     }
                 }
             }
@@ -656,7 +656,7 @@ function Invoke-CoVmSshTaskBlocks {
             if ($taskWatch.IsRunning) { $taskWatch.Stop() }
             $taskElapsedSeconds = $taskWatch.Elapsed.TotalSeconds
             if ($script:PerfMode) {
-                Write-CoVmPerfTiming -Category $PerfTaskCategory -Label $taskName -Seconds $taskElapsedSeconds
+                Write-AzVmPerfTiming -Category $PerfTaskCategory -Label $taskName -Seconds $taskElapsedSeconds
             }
 
             if ($null -ne $taskInvocationError) {
@@ -691,7 +691,7 @@ function Invoke-CoVmSshTaskBlocks {
 
             $taskRequestedReboot = $false
             if ($taskResult -and $taskResult.PSObject.Properties.Match('Output').Count -gt 0) {
-                $taskRequestedReboot = Test-CoVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
+                $taskRequestedReboot = Test-AzVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
             }
             if ($taskRequestedReboot) {
                 if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$VmName)) {
@@ -705,7 +705,7 @@ function Invoke-CoVmSshTaskBlocks {
 
                 Write-Host ("Task '{0}' requested reboot. Reboot workflow started ({1}/{2})." -f $taskName, $rebootCount, $maxReboots) -ForegroundColor Yellow
                 if ($null -ne $session) {
-                    Stop-CoVmPersistentSshSession -Session $session
+                    Stop-AzVmPersistentSshSession -Session $session
                     $session = $null
                 }
 
@@ -714,7 +714,7 @@ function Invoke-CoVmSshTaskBlocks {
                     Assert-LastExitCode "az vm restart"
                 } | Out-Null
 
-                $running = Wait-CoVmVmRunningState -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 3 -DelaySeconds 10
+                $running = Wait-AzVmVmRunningState -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 3 -DelaySeconds 10
                 if (-not $running) {
                     throw ("VM '{0}' did not return to running state after reboot request from task '{1}'." -f $VmName, $taskName)
                 }
@@ -722,12 +722,12 @@ function Invoke-CoVmSshTaskBlocks {
                 Write-Host 'Waiting 25 seconds for SSH service to stabilize after reboot...'
                 Start-Sleep -Seconds 25
 
-                $bootstrap = Initialize-CoVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+                $bootstrap = Initialize-AzVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
                 if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
                     Write-Host ([string]$bootstrap.Output)
                 }
 
-                $session = Start-CoVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+                $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
                 Write-Host ("Persistent SSH task session resumed after reboot triggered by '{0}'." -f $taskName) -ForegroundColor DarkCyan
             }
         }
@@ -741,7 +741,7 @@ function Invoke-CoVmSshTaskBlocks {
     }
     finally {
         if ($null -ne $session) {
-            Stop-CoVmPersistentSshSession -Session $session
+            Stop-AzVmPersistentSshSession -Session $session
         }
     }
 }
@@ -781,7 +781,7 @@ function Invoke-AzVmMain {
             $effectiveActionPlan = [pscustomobject]@{
                 Mode = 'full'
                 Target = 'vm-summary'
-                Actions = @(Get-CoVmActionOrder)
+                Actions = @(Get-AzVmActionOrder)
             }
         }
 
@@ -799,9 +799,9 @@ function Invoke-AzVmMain {
         $envFilePath = Join-Path $PSScriptRoot '.env'
         $configMap = Read-DotEnvFile -Path $envFilePath
 
-        $platform = Resolve-CoVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
-        $platformDefaults = Get-CoVmPlatformDefaults -Platform $platform
-        $effectiveConfigMap = Resolve-CoVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
+        $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
+        $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
+        $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
         if ($InitialConfigOverrides -and $InitialConfigOverrides.Count -gt 0) {
             foreach ($overrideKey in @($InitialConfigOverrides.Keys)) {
                 $overrideName = [string]$overrideKey
@@ -820,16 +820,16 @@ function Invoke-AzVmMain {
         Start-Transcript -Path $logPath -Force
         $script:TranscriptStarted = $true
 
-        $runConfigAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'config'
-        $runGroupAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'group'
-        $runNetworkAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'network'
-        $runDeployAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-deploy'
-        $runInitAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-init'
-        $runUpdateAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-update'
-        $runFinishAction = Test-CoVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-summary'
+        $runConfigAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'config'
+        $runGroupAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'group'
+        $runNetworkAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'network'
+        $runDeployAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-deploy'
+        $runInitAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-init'
+        $runUpdateAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-update'
+        $runFinishAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-summary'
 
         if ($isPartialActionMode) {
-            $bootstrapRuntime = Initialize-CoVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
+            $bootstrapRuntime = Initialize-AzVmCommandRuntimeContext -AutoMode:$script:AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
             $step1Context = $bootstrapRuntime.Context
             $platform = [string]$bootstrapRuntime.Platform
             $platformDefaults = $bootstrapRuntime.PlatformDefaults
@@ -869,7 +869,7 @@ function Invoke-AzVmMain {
             $sshMaxRetries = 1
             if ($platform -ne 'windows') {
                 $sshMaxRetriesText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')
-                $sshMaxRetries = Resolve-CoVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
+                $sshMaxRetries = Resolve-AzVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
             }
 
             $initTaskBlocks = @()
@@ -877,12 +877,12 @@ function Invoke-AzVmMain {
             $step7VmCreateResult = $null
 
             if ([string]::Equals($actionMode, 'single', [System.StringComparison]::OrdinalIgnoreCase)) {
-                Assert-CoVmSingleActionDependencies -ActionName $actionTarget -Context $step1Context
+                Assert-AzVmSingleActionDependencies -ActionName $actionTarget -Context $step1Context
             }
 
             if ($runConfigAction) {
                 Invoke-Step 'Step 1/9 - initial parameters will be configured...' {
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 1/9 - config bootstrap' -Context $step1Context -ExtraValues @{
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 1/9 - config bootstrap' -Context $step1Context -ExtraValues @{
                         Platform = $platform
                         ServerName = $serverName
                         ResourceGroup = $resourceGroup
@@ -891,35 +891,35 @@ function Invoke-AzVmMain {
                     }
                 }
                 Invoke-Step 'Step 2/9 - region, image, and VM size availability will be checked...' {
-                    Invoke-CoVmPrecheckStep -Context $step1Context
+                    Invoke-AzVmPrecheckStep -Context $step1Context
                 }
             }
 
             if ($runGroupAction) {
                 Invoke-Step 'Step 3/9 - resource group will be checked...' {
-                    Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
+                    Invoke-AzVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
                 }
             }
 
             if ($runNetworkAction) {
                 Invoke-Step 'Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
-                    Invoke-CoVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
+                    Invoke-AzVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
                 }
             }
 
             if ($runInitAction) {
                 Invoke-Step 'Step 5/9 - VM init task files will be prepared...' {
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
-                    $initTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
+                    $initTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
                     $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
                     $initDisabledTasks = @($initTaskCatalog.DisabledTasks)
                     if (@($initTaskTemplates).Count -gt 0) {
-                        $initTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
+                        $initTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
                     }
                     else {
                         $initTaskBlocks = @()
                     }
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
                         InitTaskCount = @($initTaskBlocks).Count
                         InitDisabledTaskCount = @($initDisabledTasks).Count
                     }
@@ -928,17 +928,17 @@ function Invoke-AzVmMain {
 
             if ($runUpdateAction) {
                 Invoke-Step 'Step 6/9 - VM update task files will be prepared...' {
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
-                    $updateTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
+                    $updateTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
                     $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
                     $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
                     if (@($updateTaskTemplates).Count -gt 0) {
-                        $updateTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
+                        $updateTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
                     }
                     else {
                         $updateTaskBlocks = @()
                     }
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
                         UpdateTaskCount = @($updateTaskBlocks).Count
                         UpdateDisabledTaskCount = @($updateDisabledTasks).Count
                         TaskOutcomeMode = $taskOutcomeMode
@@ -949,12 +949,12 @@ function Invoke-AzVmMain {
             if ($runDeployAction) {
                 Invoke-Step 'Step 7/9 - virtual machine will be created...' {
                     if ($platform -eq 'windows') {
-                        $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                        $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                             az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
                         }
                     }
                     else {
-                        $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                        $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                             az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
                         }
                     }
@@ -969,7 +969,7 @@ function Invoke-AzVmMain {
                     }
                     $shouldRunInitTasks = $runInitAction
 
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
                         Platform = $platform
                         InitExecutor = 'az-vm-run-command'
                         UpdateExecutor = 'pyssh-persistent'
@@ -999,7 +999,7 @@ function Invoke-AzVmMain {
                     }
 
                     if ($runUpdateAction) {
-                        $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
+                        $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
                         $sshHost = [string]$vmRuntimeDetails.VmFqdn
                         if ([string]::IsNullOrWhiteSpace($sshHost)) {
                             $sshHost = [string]$vmRuntimeDetails.PublicIP
@@ -1015,7 +1015,7 @@ function Invoke-AzVmMain {
                             Write-Host 'Update task catalog is empty; Step 8 update stage is skipped.' -ForegroundColor Yellow
                         }
                         else {
-                            Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                            Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
                         }
                     }
                 }
@@ -1023,13 +1023,13 @@ function Invoke-AzVmMain {
 
             if ($runFinishAction) {
                 Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
-                    Show-CoVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
 
                     if ([bool]$platformDefaults.IncludeRdp) {
-                        $connectionModel = Get-CoVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
+                        $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
                     }
                     else {
-                        $connectionModel = Get-CoVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort
+                        $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort
                     }
 
                     Write-Host 'VM Public IP Address:'
@@ -1058,7 +1058,7 @@ function Invoke-AzVmMain {
         }
 
         Invoke-Step 'Step 1/9 - initial parameters will be configured...' {
-            $step1Context = Invoke-CoVmStep1Common `
+            $step1Context = Invoke-AzVmStep1Common `
                 -ConfigMap $effectiveConfigMap `
                 -EnvFilePath $envFilePath `
                 -AutoMode:$script:AutoMode `
@@ -1155,34 +1155,34 @@ function Invoke-AzVmMain {
             $step1Context['SshConnectTimeoutSeconds'] = $sshConnectTimeoutSeconds
 
             if ($script:AutoMode) {
-                Show-CoVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $PSScriptRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -RenewMode:$script:RenewMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
+                Show-AzVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $PSScriptRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -RenewMode:$script:RenewMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
             }
         }
 
         Invoke-Step 'Step 2/9 - region, image, and VM size availability will be checked...' {
-            Invoke-CoVmPrecheckStep -Context $step1Context
+            Invoke-AzVmPrecheckStep -Context $step1Context
         }
 
         Invoke-Step 'Step 3/9 - resource group will be checked...' {
-            Invoke-CoVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
+            Invoke-AzVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
         }
 
         Invoke-Step 'Step 4/9 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
-            Invoke-CoVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
+            Invoke-AzVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
         }
 
         Invoke-Step 'Step 5/9 - VM init task files will be prepared...' {
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
-            $initTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmInitTaskDir = $vmInitTaskDir }
+            $initTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
             $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
             $initDisabledTasks = @($initTaskCatalog.DisabledTasks)
             if (@($initTaskTemplates).Count -gt 0) {
-                $initTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
+                $initTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $initTaskTemplates -Context $step1Context)
             }
             else {
                 $initTaskBlocks = @()
             }
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 5/9 - init task catalog' -Context $step1Context -ExtraValues @{
                 InitTaskCount = @($initTaskBlocks).Count
                 InitDisabledTaskCount = @($initDisabledTasks).Count
             }
@@ -1193,17 +1193,17 @@ function Invoke-AzVmMain {
         }
 
         Invoke-Step 'Step 6/9 - VM update task files will be prepared...' {
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
-            $updateTaskCatalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{ Platform = $platform; VmUpdateTaskDir = $vmUpdateTaskDir }
+            $updateTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmUpdateTaskDir -Platform $platform -Stage 'update'
             $updateTaskTemplates = @($updateTaskCatalog.ActiveTasks)
             $updateDisabledTasks = @($updateTaskCatalog.DisabledTasks)
             if (@($updateTaskTemplates).Count -gt 0) {
-                $updateTaskBlocks = @(Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
+                $updateTaskBlocks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $updateTaskTemplates -Context $step1Context)
             }
             else {
                 $updateTaskBlocks = @()
             }
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 6/9 - update task catalog' -Context $step1Context -ExtraValues @{
                 UpdateTaskCount = @($updateTaskBlocks).Count
                 UpdateDisabledTaskCount = @($updateDisabledTasks).Count
                 TaskOutcomeMode = $taskOutcomeMode
@@ -1216,12 +1216,12 @@ function Invoke-AzVmMain {
 
         Invoke-Step 'Step 7/9 - virtual machine will be created...' {
             if ($platform -eq 'windows') {
-                $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                     az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
                 }
             }
             else {
-                $step7VmCreateResult = Invoke-CoVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                $step7VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                     az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
                 }
             }
@@ -1235,7 +1235,7 @@ function Invoke-AzVmMain {
             $shouldRunInitTasks = ($vmCreatedThisRun -or $script:UpdateMode -or $script:RenewMode)
 
             $initExecutorLabel = 'az-vm-run-command'
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{
                 Platform = $platform
                 InitExecutor = $initExecutorLabel
                 UpdateExecutor = 'pyssh-persistent'
@@ -1267,7 +1267,7 @@ function Invoke-AzVmMain {
                 Start-Sleep -Seconds 20
             }
 
-            $vmRuntimeDetails = Get-CoVmVmDetails -Context $step1Context
+            $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
             $sshHost = [string]$vmRuntimeDetails.VmFqdn
             if ([string]::IsNullOrWhiteSpace($sshHost)) {
                 $sshHost = [string]$vmRuntimeDetails.PublicIP
@@ -1279,24 +1279,24 @@ function Invoke-AzVmMain {
             $step8SshUser = [string]$vmUser
             $step8SshPassword = [string]$vmPass
 
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{ Step8SshHost = $sshHost; Step8SshUser = $step8SshUser; Step8SshPort = $sshPort }
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 8/9 - guest execution' -Context $step1Context -ExtraValues @{ Step8SshHost = $sshHost; Step8SshUser = $step8SshUser; Step8SshPort = $sshPort }
 
             if (@($updateTaskBlocks).Count -eq 0) {
                 Write-Host 'Update task catalog is empty; Step 8 update stage is skipped.' -ForegroundColor Yellow
             }
             else {
-                Invoke-CoVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $PSScriptRoot -SshHost $sshHost -SshUser $step8SshUser -SshPassword $step8SshPassword -SshPort $sshPort -ResourceGroup $resourceGroup -VmName $vmName -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
             }
         }
 
         Invoke-Step 'Step 9/9 - VM connection details will be printed...' {
-            Show-CoVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
+            Show-AzVmStepFirstUseValues -StepLabel 'Step 9/9 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
 
             if ([bool]$platformDefaults.IncludeRdp) {
-                $connectionModel = Get-CoVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
+                $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
             }
             else {
-                $connectionModel = Get-CoVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort
+                $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort
             }
 
             Write-Host 'VM Public IP Address:'
@@ -1321,7 +1321,7 @@ function Invoke-AzVmMain {
         Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))
     }
     catch {
-        $resolvedError = Resolve-CoVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
+        $resolvedError = Resolve-AzVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
 
         Write-Host ''
         Write-Host 'Script exited gracefully.' -ForegroundColor Yellow
@@ -1390,7 +1390,7 @@ function Invoke-Step {
         . $Action
         if ($stepWatch.IsRunning) { $stepWatch.Stop() }
         if ($script:PerfMode) {
-            Write-CoVmPerfTiming -Category "step" -Label ("{0} [mode:auto]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
+            Write-AzVmPerfTiming -Category "step" -Label ("{0} [mode:auto]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
         }
         $after = @(Get-Variable)
         Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
@@ -1404,7 +1404,7 @@ function Invoke-Step {
         . $Action
         if ($stepWatch.IsRunning) { $stepWatch.Stop() }
         if ($script:PerfMode) {
-            Write-CoVmPerfTiming -Category "step" -Label ("{0} [mode:interactive]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
+            Write-AzVmPerfTiming -Category "step" -Label ("{0} [mode:interactive]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
         }
         $after = @(Get-Variable)
         Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
@@ -1471,7 +1471,7 @@ function Invoke-TrackedAction {
         Write-Host ("finished: {0} ({1:N1}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
         if ($script:PerfMode) {
             $category = if ($isAzLabel) { "az" } else { "action" }
-            Write-CoVmPerfTiming -Category $category -Label $Label -Seconds $watch.Elapsed.TotalSeconds
+            Write-AzVmPerfTiming -Category $category -Label $Label -Seconds $watch.Elapsed.TotalSeconds
         }
     }
 }
@@ -1500,7 +1500,7 @@ function Throw-FriendlyError {
     throw $ex
 }
 
-function Remove-CoVmMoveCollectionArtifacts {
+function Remove-AzVmMoveCollectionArtifacts {
     param(
         [string]$ResourceGroup,
         [string]$CollectionName,
@@ -1516,7 +1516,7 @@ function Remove-CoVmMoveCollectionArtifacts {
     $moveResourceIdsText = az resource-mover move-resource list -g $ResourceGroup --move-collection-name $CollectionName --query "[].id" -o tsv --only-show-errors 2>$null
     $moveResourceIds = @()
     if ($LASTEXITCODE -eq 0) {
-        $moveResourceIds = @((Convert-CoVmCliTextToTokens -Text $moveResourceIdsText) | Select-Object -Unique)
+        $moveResourceIds = @((Convert-AzVmCliTextToTokens -Text $moveResourceIdsText) | Select-Object -Unique)
     }
 
     if ($moveResourceIds.Count -gt 0) {
@@ -1539,7 +1539,7 @@ function Remove-CoVmMoveCollectionArtifacts {
 
     $moveResourceNamesText = az resource-mover move-resource list -g $ResourceGroup --move-collection-name $CollectionName --query "[].name" -o tsv --only-show-errors 2>$null
     if ($LASTEXITCODE -eq 0) {
-        $moveResourceNames = @((Convert-CoVmCliTextToTokens -Text $moveResourceNamesText) | Select-Object -Unique)
+        $moveResourceNames = @((Convert-AzVmCliTextToTokens -Text $moveResourceNamesText) | Select-Object -Unique)
         foreach ($moveResourceName in @($moveResourceNames)) {
             if ([string]::IsNullOrWhiteSpace([string]$moveResourceName)) { continue }
             Invoke-TrackedAction -Label ("az resource-mover move-resource delete --name {0}" -f $moveResourceName) -Action {
@@ -1570,7 +1570,7 @@ function Remove-CoVmMoveCollectionArtifacts {
     }
 }
 
-function Get-CoVmManagedMoveCollections {
+function Get-AzVmManagedMoveCollections {
     param(
         [string]$ResourceGroup,
         [string]$SourceRegion,
@@ -1599,7 +1599,7 @@ function Get-CoVmManagedMoveCollections {
     )
 }
 
-function Convert-CoVmCliTextToTokens {
+function Convert-AzVmCliTextToTokens {
     param(
         [object]$Text
     )
@@ -1623,11 +1623,11 @@ function Convert-CoVmCliTextToTokens {
     )
 }
 
-function Get-CoVmValidCommandList {
+function Get-AzVmValidCommandList {
     return @('create', 'update', 'config', 'change', 'exec', 'show', 'delete', 'help')
 }
 
-function Show-CoVmCommandHelpOverview {
+function Show-AzVmCommandHelpOverview {
     Write-Host "az-vm quick help"
     Write-Host "Usage: az-vm <command> [--option] [--option=value]"
     Write-Host ""
@@ -1667,12 +1667,12 @@ function Show-CoVmCommandHelpOverview {
     Write-Host "  az-vm help change"
 }
 
-function Show-CoVmCommandHelpDetailed {
+function Show-AzVmCommandHelpDetailed {
     param(
         [string]$Topic
     )
 
-    $validCommands = Get-CoVmValidCommandList
+    $validCommands = Get-AzVmValidCommandList
     $topicText = [string]$Topic
     $topicName = $topicText.Trim().ToLowerInvariant()
 
@@ -1839,21 +1839,21 @@ function Show-CoVmCommandHelpDetailed {
     }
 }
 
-function Show-CoVmCommandHelp {
+function Show-AzVmCommandHelp {
     param(
         [switch]$Overview,
         [string]$Topic
     )
 
     if ($Overview) {
-        Show-CoVmCommandHelpOverview
+        Show-AzVmCommandHelpOverview
         return
     }
 
-    Show-CoVmCommandHelpDetailed -Topic $Topic
+    Show-AzVmCommandHelpDetailed -Topic $Topic
 }
 
-function Parse-CoVmCliArguments {
+function Parse-AzVmCliArguments {
     param(
         [string]$CommandToken,
         [string[]]$RawArgs
@@ -1867,7 +1867,7 @@ function Parse-CoVmCliArguments {
     }
     $remaining += @($RawArgs)
 
-    $validCommands = Get-CoVmValidCommandList
+    $validCommands = Get-AzVmValidCommandList
 
     $options = @{}
     $positionals = @()
@@ -1971,7 +1971,7 @@ function Parse-CoVmCliArguments {
     }
 }
 
-function Get-CoVmCliOptionRaw {
+function Get-AzVmCliOptionRaw {
     param(
         [hashtable]$Options,
         [string]$Name
@@ -1994,7 +1994,7 @@ function Get-CoVmCliOptionRaw {
     return $null
 }
 
-function Test-CoVmCliOptionPresent {
+function Test-AzVmCliOptionPresent {
     param(
         [hashtable]$Options,
         [string]$Name
@@ -2012,7 +2012,7 @@ function Test-CoVmCliOptionPresent {
     return $Options.ContainsKey($key.Trim().ToLowerInvariant())
 }
 
-function Convert-CoVmCliValueToBool {
+function Convert-AzVmCliValueToBool {
     param(
         [string]$OptionName,
         [object]$RawValue
@@ -2041,32 +2041,32 @@ function Convert-CoVmCliValueToBool {
         -Hint ("Use '--{0}' or '--{0}=true|false'." -f $OptionName)
 }
 
-function Get-CoVmCliOptionBool {
+function Get-AzVmCliOptionBool {
     param(
         [hashtable]$Options,
         [string]$Name,
         [bool]$DefaultValue = $false
     )
 
-    if (-not (Test-CoVmCliOptionPresent -Options $Options -Name $Name)) {
+    if (-not (Test-AzVmCliOptionPresent -Options $Options -Name $Name)) {
         return [bool]$DefaultValue
     }
 
-    $raw = Get-CoVmCliOptionRaw -Options $Options -Name $Name
-    return (Convert-CoVmCliValueToBool -OptionName $Name -RawValue $raw)
+    $raw = Get-AzVmCliOptionRaw -Options $Options -Name $Name
+    return (Convert-AzVmCliValueToBool -OptionName $Name -RawValue $raw)
 }
 
-function Get-CoVmCliOptionText {
+function Get-AzVmCliOptionText {
     param(
         [hashtable]$Options,
         [string]$Name
     )
 
-    if (-not (Test-CoVmCliOptionPresent -Options $Options -Name $Name)) {
+    if (-not (Test-AzVmCliOptionPresent -Options $Options -Name $Name)) {
         return $null
     }
 
-    $raw = Get-CoVmCliOptionRaw -Options $Options -Name $Name
+    $raw = Get-AzVmCliOptionRaw -Options $Options -Name $Name
     if ($raw -is [bool]) {
         if ([bool]$raw) {
             return ''
@@ -2078,11 +2078,11 @@ function Get-CoVmCliOptionText {
     return [string]$raw
 }
 
-function Get-CoVmActionOrder {
+function Get-AzVmActionOrder {
     return @('config', 'group', 'network', 'vm-deploy', 'vm-init', 'vm-update', 'vm-summary')
 }
 
-function Resolve-CoVmActionValue {
+function Resolve-AzVmActionValue {
     param(
         [string]$OptionName,
         [string]$RawValue
@@ -2098,7 +2098,7 @@ function Resolve-CoVmActionValue {
             -Hint ("Use '--{0}=config|group|network|vm-deploy|vm-init|vm-update|vm-summary'." -f $OptionName)
     }
 
-    $allowed = Get-CoVmActionOrder
+    $allowed = Get-AzVmActionOrder
     if ($allowed -notcontains $normalized) {
         Throw-FriendlyError `
             -Detail ("Option '--{0}' received invalid value '{1}'." -f $OptionName, $RawValue) `
@@ -2110,17 +2110,17 @@ function Resolve-CoVmActionValue {
     return $normalized
 }
 
-function Resolve-CoVmActionPlan {
+function Resolve-AzVmActionPlan {
     param(
         [string]$CommandName,
         [hashtable]$Options
     )
 
-    $order = Get-CoVmActionOrder
+    $order = Get-AzVmActionOrder
     $supportsActionOptions = ($CommandName -in @('create', 'update'))
-    $hasFrom = Test-CoVmCliOptionPresent -Options $Options -Name 'from-step'
-    $hasTo = Test-CoVmCliOptionPresent -Options $Options -Name 'to-step'
-    $hasSingle = Test-CoVmCliOptionPresent -Options $Options -Name 'single-step'
+    $hasFrom = Test-AzVmCliOptionPresent -Options $Options -Name 'from-step'
+    $hasTo = Test-AzVmCliOptionPresent -Options $Options -Name 'to-step'
+    $hasSingle = Test-AzVmCliOptionPresent -Options $Options -Name 'single-step'
 
     if (-not $supportsActionOptions -and ($hasFrom -or $hasTo -or $hasSingle)) {
         Throw-FriendlyError `
@@ -2147,7 +2147,7 @@ function Resolve-CoVmActionPlan {
     }
 
     if ($hasSingle) {
-        $singleTarget = Resolve-CoVmActionValue -OptionName 'single-step' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'single-step'))
+        $singleTarget = Resolve-AzVmActionValue -OptionName 'single-step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'single-step'))
         return [pscustomobject]@{
             Mode = 'single'
             Target = $singleTarget
@@ -2156,13 +2156,13 @@ function Resolve-CoVmActionPlan {
     }
 
     $fromStep = if ($hasFrom) {
-        Resolve-CoVmActionValue -OptionName 'from-step' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'from-step'))
+        Resolve-AzVmActionValue -OptionName 'from-step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'from-step'))
     }
     else {
         [string]$order[0]
     }
     $toStep = if ($hasTo) {
-        Resolve-CoVmActionValue -OptionName 'to-step' -RawValue ([string](Get-CoVmCliOptionText -Options $Options -Name 'to-step'))
+        Resolve-AzVmActionValue -OptionName 'to-step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'to-step'))
     }
     else {
         [string]$order[$order.Count - 1]
@@ -2194,7 +2194,7 @@ function Resolve-CoVmActionPlan {
     }
 }
 
-function Test-CoVmActionIncluded {
+function Test-AzVmActionIncluded {
     param(
         [psobject]$ActionPlan,
         [string]$ActionName
@@ -2435,7 +2435,7 @@ function Resolve-ServerTemplate {
     return $Value.Replace("{SERVER_NAME}", $ServerName)
 }
 
-function Get-CoVmRegionCodeMap {
+function Get-AzVmRegionCodeMap {
     return @{
         'austriaeast' = 'ate1'
         'austriawest' = 'atw1'
@@ -2500,7 +2500,7 @@ function Get-CoVmRegionCodeMap {
     }
 }
 
-function Get-CoVmRegionCode {
+function Get-AzVmRegionCode {
     param(
         [string]$Location
     )
@@ -2514,7 +2514,7 @@ function Get-CoVmRegionCode {
             -Hint "Set AZ_LOCATION to a valid Azure region."
     }
 
-    $map = Get-CoVmRegionCodeMap
+    $map = Get-AzVmRegionCodeMap
     if ($map.ContainsKey($normalized)) {
         return [string]$map[$normalized]
     }
@@ -2526,7 +2526,7 @@ function Get-CoVmRegionCode {
         -Hint "Add the region to the built-in REGION_CODE map in az-vm.ps1."
 }
 
-function Resolve-CoVmTemplate {
+function Resolve-AzVmTemplate {
     param(
         [string]$Template,
         [hashtable]$Tokens
@@ -2547,7 +2547,7 @@ function Resolve-CoVmTemplate {
     return $result
 }
 
-function Get-CoVmNextNameIndex {
+function Get-AzVmNextNameIndex {
     param(
         [string]$ResourceGroup,
         [string]$NamePrefix
@@ -2567,7 +2567,7 @@ function Get-CoVmNextNameIndex {
         return 1
     }
 
-    $tokens = @(Convert-CoVmCliTextToTokens -Text $namesText)
+    $tokens = @(Convert-AzVmCliTextToTokens -Text $namesText)
     if ($tokens.Count -eq 0) {
         return 1
     }
@@ -2589,7 +2589,7 @@ function Get-CoVmNextNameIndex {
     return ($maxIndex + 1)
 }
 
-function Resolve-CoVmNameFromTemplate {
+function Resolve-AzVmNameFromTemplate {
     param(
         [string]$Template,
         [string]$ResourceType,
@@ -2610,7 +2610,7 @@ function Resolve-CoVmNameFromTemplate {
         REGION_CODE = [string]$RegionCode
     }
 
-    $resolved = Resolve-CoVmTemplate -Template $effectiveTemplate -Tokens $baseTokens
+    $resolved = Resolve-AzVmTemplate -Template $effectiveTemplate -Tokens $baseTokens
     if ($resolved.IndexOf("{N}", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         return $resolved
     }
@@ -2618,7 +2618,7 @@ function Resolve-CoVmNameFromTemplate {
     $index = 1
     if ($UseNextIndex) {
         $prefix = $resolved.Replace("{N}", "")
-        $index = Get-CoVmNextNameIndex -ResourceGroup $ResourceGroup -NamePrefix $prefix
+        $index = Get-AzVmNextNameIndex -ResourceGroup $ResourceGroup -NamePrefix $prefix
     }
 
     return $resolved.Replace("{N}", [string]$index)
@@ -2853,7 +2853,7 @@ function Assert-VmOsDiskSizeCompatible {
 
 
 
-function Get-CoVmConnectionDisplayModel {
+function Get-AzVmConnectionDisplayModel {
     param(
         [hashtable]$Context,
         [string]$ManagerUser,
@@ -2862,7 +2862,7 @@ function Get-CoVmConnectionDisplayModel {
         [switch]$IncludeRdp
     )
 
-    $vmConnectionInfo = Get-CoVmVmDetails -Context $Context
+    $vmConnectionInfo = Get-AzVmVmDetails -Context $Context
     $publicIP = [string]$vmConnectionInfo.PublicIP
     $vmFqdn = [string]$vmConnectionInfo.VmFqdn
 
@@ -2905,7 +2905,7 @@ function Get-CoVmConnectionDisplayModel {
 
 #endregion
 #region Imported:test-orchestration
-function Invoke-CoVmStep1Common {
+function Invoke-AzVmStep1Common {
     param(
         [hashtable]$ConfigMap,
         [string]$EnvFilePath,
@@ -2989,7 +2989,7 @@ function Invoke-CoVmStep1Common {
     $shouldPromptLocationAndSku = (-not $AutoMode) -and -not ($hasForcedAzLocation -or $hasForcedVmSize)
     if ($shouldPromptLocationAndSku) {
         $priceHours = Get-PriceHoursFromConfig -Config $ConfigMap -DefaultHours 730
-        $regionBackToken = Get-CoVmSkuPickerRegionBackToken
+        $regionBackToken = Get-AzVmSkuPickerRegionBackToken
         while ($true) {
             $azLocation = Select-AzLocationInteractive -DefaultLocation $azLocation
             if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
@@ -3026,7 +3026,7 @@ function Invoke-CoVmStep1Common {
         $azLocation = $fallbackLocation
     }
 
-    $regionCode = Get-CoVmRegionCode -Location $azLocation
+    $regionCode = Get-AzVmRegionCode -Location $azLocation
     $namingProfile = [string](Get-ConfigValue -Config $ConfigMap -Key "NAMING_TEMPLATE_ACTIVE" -DefaultValue "regional_v1")
     if (-not [string]::Equals([string]$namingProfile, "regional_v1", [System.StringComparison]::OrdinalIgnoreCase)) {
         Throw-FriendlyError `
@@ -3046,55 +3046,55 @@ function Invoke-CoVmStep1Common {
     if ([string]::IsNullOrWhiteSpace($resourceGroupRaw)) {
         $resourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}")
     }
-    $resourceGroup = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $resourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
+    $resourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $resourceGroupRaw -ServerName $serverName) -Tokens $nameTokens
 
     $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($vnetRaw)) {
         $vnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $VNET = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $vnetRaw -ServerName $serverName) -Tokens $nameTokens
+    $VNET = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vnetRaw -ServerName $serverName) -Tokens $nameTokens
 
     $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($subnetRaw)) {
         $subnetRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $SUBNET = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $subnetRaw -ServerName $serverName) -Tokens $nameTokens
+    $SUBNET = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $subnetRaw -ServerName $serverName) -Tokens $nameTokens
 
     $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($nsgRaw)) {
         $nsgRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $NSG = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRaw -ServerName $serverName) -Tokens $nameTokens
+    $NSG = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRaw -ServerName $serverName) -Tokens $nameTokens
 
     $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($nsgRuleRaw)) {
         $nsgRuleRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsgrule-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $nsgRule = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRuleRaw -ServerName $serverName) -Tokens $nameTokens
+    $nsgRule = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $nsgRuleRaw -ServerName $serverName) -Tokens $nameTokens
 
     $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($ipRaw)) {
         $ipRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $IP = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $ipRaw -ServerName $serverName) -Tokens $nameTokens
+    $IP = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $ipRaw -ServerName $serverName) -Tokens $nameTokens
 
     $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($nicRaw)) {
         $nicRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $NIC = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $nicRaw -ServerName $serverName) -Tokens $nameTokens
+    $NIC = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $nicRaw -ServerName $serverName) -Tokens $nameTokens
 
     $vmNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($vmNameRaw)) {
         $vmNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $vmName = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $vmNameRaw -ServerName $serverName) -Tokens $nameTokens
+    $vmName = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vmNameRaw -ServerName $serverName) -Tokens $nameTokens
 
     $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME" -DefaultValue "")
     if ([string]::IsNullOrWhiteSpace($vmDiskNameRaw)) {
         $vmDiskNameRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
     }
-    $vmDiskName = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $vmDiskNameRaw -ServerName $serverName) -Tokens $nameTokens
+    $vmDiskName = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $vmDiskNameRaw -ServerName $serverName) -Tokens $nameTokens
 
     $vmDiskSize = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_DISK_SIZE_GB" -DefaultValue $VmDiskSizeDefault) -ServerName $serverName
     $vmUser = Resolve-ServerTemplate -Value (Get-ConfigValue -Config $ConfigMap -Key "VM_USER" -DefaultValue "manager") -ServerName $serverName
@@ -3168,12 +3168,12 @@ function Invoke-CoVmStep1Common {
     }
 }
 
-function Invoke-CoVmPrecheckStep {
+function Invoke-AzVmPrecheckStep {
     param(
         [hashtable]$Context
     )
 
-    Show-CoVmStepFirstUseValues `
+    Show-AzVmStepFirstUseValues `
         -StepLabel "Step 2/9 - resource availability precheck" `
         -Context $Context `
         -Keys @("AzLocation", "VmImage", "VmSize", "VmDiskSize")
@@ -3184,7 +3184,7 @@ function Invoke-CoVmPrecheckStep {
     Assert-VmOsDiskSizeCompatible -Location $Context.AzLocation -ImageUrn $Context.VmImage -VmDiskSizeGb $Context.VmDiskSize
 }
 
-function Invoke-CoVmResourceGroupStep {
+function Invoke-AzVmResourceGroupStep {
     param(
         [hashtable]$Context,
         [switch]$AutoMode,
@@ -3195,7 +3195,7 @@ function Invoke-CoVmResourceGroupStep {
 
     $resourceGroup = [string]$Context.ResourceGroup
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
-    Show-CoVmStepFirstUseValues `
+    Show-AzVmStepFirstUseValues `
         -StepLabel "Step 3/9 - resource group check" `
         -Context $Context `
         -Keys @("ResourceGroup") `
@@ -3320,7 +3320,7 @@ function Invoke-CoVmResourceGroupStep {
     }
 }
 
-function Test-CoVmAzResourceExists {
+function Test-AzVmAzResourceExists {
     param(
         [string[]]$AzArgs
     )
@@ -3329,7 +3329,7 @@ function Test-CoVmAzResourceExists {
     return ($LASTEXITCODE -eq 0)
 }
 
-function Test-CoVmResourceGroupExists {
+function Test-AzVmResourceGroupExists {
     param(
         [string]$ResourceGroup
     )
@@ -3343,7 +3343,7 @@ function Test-CoVmResourceGroupExists {
     return [string]::Equals([string]$existsRaw, "true", [System.StringComparison]::OrdinalIgnoreCase)
 }
 
-function Test-CoVmAzResourceExistsByType {
+function Test-AzVmAzResourceExistsByType {
     param(
         [string]$ResourceGroup,
         [string]$ResourceType,
@@ -3370,7 +3370,7 @@ function Test-CoVmAzResourceExistsByType {
     return $false
 }
 
-function Test-CoVmNsgRuleExists {
+function Test-AzVmNsgRuleExists {
     param(
         [string]$ResourceGroup,
         [string]$NsgName,
@@ -3397,7 +3397,7 @@ function Test-CoVmNsgRuleExists {
     return $false
 }
 
-function Assert-CoVmSingleActionDependencies {
+function Assert-AzVmSingleActionDependencies {
     param(
         [ValidateSet('config','group','network','vm-deploy','vm-init','vm-update','vm-summary')]
         [string]$ActionName,
@@ -3437,7 +3437,7 @@ function Assert-CoVmSingleActionDependencies {
                 -Hint "Run create/update with --single-step=group first."
         }
 
-        $nicExists = Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", [string]$Context.NIC)
+        $nicExists = Test-AzVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", [string]$Context.NIC)
         if (-not $nicExists) {
             Throw-FriendlyError `
                 -Detail ("single-step '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
@@ -3449,7 +3449,7 @@ function Assert-CoVmSingleActionDependencies {
     }
 
     if ($ActionName -in @('vm-init', 'vm-update', 'vm-summary')) {
-        $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
+        $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
         if (-not $vmExists) {
             Throw-FriendlyError `
                 -Detail ("single-step '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
@@ -3461,7 +3461,7 @@ function Assert-CoVmSingleActionDependencies {
     }
 }
 
-function Invoke-CoVmNetworkStep {
+function Invoke-AzVmNetworkStep {
     param(
         [hashtable]$Context,
         [ValidateSet("legacy","default","update","destructive rebuild")]
@@ -3470,7 +3470,7 @@ function Invoke-CoVmNetworkStep {
 
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     $alwaysCreate = ($effectiveMode -in @("legacy","update","destructive rebuild"))
-    Show-CoVmStepFirstUseValues `
+    Show-AzVmStepFirstUseValues `
         -StepLabel "Step 4/9 - network provisioning" `
         -Context $Context `
         -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "NIC", "TcpPorts") `
@@ -3479,15 +3479,15 @@ function Invoke-CoVmNetworkStep {
         }
 
     $resourceGroupName = [string]$Context.ResourceGroup
-    $groupExistsBeforeNetwork = Test-CoVmResourceGroupExists -ResourceGroup $resourceGroupName
+    $groupExistsBeforeNetwork = Test-AzVmResourceGroupExists -ResourceGroup $resourceGroupName
     if (-not $groupExistsBeforeNetwork) {
         Write-Host ("Resource group '{0}' was not found before network step; it will be created now." -f $resourceGroupName) -ForegroundColor Yellow
-        Ensure-CoVmResourceGroupReady -Context $Context
+        Ensure-AzVmResourceGroupReady -Context $Context
     }
 
     $createVnet = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createVnet = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/virtualNetworks" -ResourceName ([string]$Context.VNET))
+        $createVnet = -not (Test-AzVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/virtualNetworks" -ResourceName ([string]$Context.VNET))
         if (-not $createVnet) {
             Write-Host ("Default mode: VNet '{0}' exists; create command is skipped." -f [string]$Context.VNET) -ForegroundColor Yellow
         }
@@ -3502,7 +3502,7 @@ function Invoke-CoVmNetworkStep {
 
     $createNsg = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createNsg = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/networkSecurityGroups" -ResourceName ([string]$Context.NSG))
+        $createNsg = -not (Test-AzVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/networkSecurityGroups" -ResourceName ([string]$Context.NSG))
         if (-not $createNsg) {
             Write-Host ("Default mode: NSG '{0}' exists; create command is skipped." -f [string]$Context.NSG) -ForegroundColor Yellow
         }
@@ -3518,7 +3518,7 @@ function Invoke-CoVmNetworkStep {
     $ports = @($Context.TcpPorts)
     $createNsgRule = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createNsgRule = -not (Test-CoVmNsgRuleExists -ResourceGroup ([string]$Context.ResourceGroup) -NsgName ([string]$Context.NSG) -RuleName ([string]$Context.NsgRule))
+        $createNsgRule = -not (Test-AzVmNsgRuleExists -ResourceGroup ([string]$Context.ResourceGroup) -NsgName ([string]$Context.NSG) -RuleName ([string]$Context.NsgRule))
         if (-not $createNsgRule) {
             Write-Host ("Default mode: NSG rule '{0}' exists; create command is skipped." -f [string]$Context.NsgRule) -ForegroundColor Yellow
         }
@@ -3549,7 +3549,7 @@ function Invoke-CoVmNetworkStep {
 
     $createPublicIp = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createPublicIp = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/publicIPAddresses" -ResourceName ([string]$Context.IP))
+        $createPublicIp = -not (Test-AzVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/publicIPAddresses" -ResourceName ([string]$Context.IP))
         if (-not $createPublicIp) {
             Write-Host ("Default mode: public IP '{0}' exists; create command is skipped." -f [string]$Context.IP) -ForegroundColor Yellow
         }
@@ -3564,7 +3564,7 @@ function Invoke-CoVmNetworkStep {
 
     $createNic = $alwaysCreate
     if (-not $alwaysCreate) {
-        $createNic = -not (Test-CoVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/networkInterfaces" -ResourceName ([string]$Context.NIC))
+        $createNic = -not (Test-AzVmAzResourceExistsByType -ResourceGroup ([string]$Context.ResourceGroup) -ResourceType "Microsoft.Network/networkInterfaces" -ResourceName ([string]$Context.NIC))
         if (-not $createNic) {
             Write-Host ("Default mode: NIC '{0}' exists; create command is skipped." -f [string]$Context.NIC) -ForegroundColor Yellow
         }
@@ -3581,7 +3581,7 @@ function Invoke-CoVmNetworkStep {
     }
 }
 
-function Invoke-CoVmVmCreateStep {
+function Invoke-AzVmVmCreateStep {
     param(
         [hashtable]$Context,
         [switch]$AutoMode,
@@ -3598,7 +3598,7 @@ function Invoke-CoVmVmCreateStep {
     $resourceGroup = [string]$Context.ResourceGroup
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "legacy" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
     $vmName = [string]$Context.VmName
-    Show-CoVmStepFirstUseValues `
+    Show-AzVmStepFirstUseValues `
         -StepLabel "Step 7/9 - VM create" `
         -Context $Context `
         -Keys @("ResourceGroup", "VmName", "VmImage", "VmSize", "VmStorageSku", "VmDiskName", "VmDiskSize", "VmUser", "VmPass", "VmAssistantUser", "VmAssistantPass", "NIC") `
@@ -3733,12 +3733,12 @@ function Invoke-CoVmVmCreateStep {
     }
 }
 
-function Get-CoVmVmDetails {
+function Get-AzVmVmDetails {
     param(
         [hashtable]$Context
     )
 
-    Show-CoVmStepFirstUseValues `
+    Show-AzVmStepFirstUseValues `
         -StepLabel "Step 9/9 - VM details" `
         -Context $Context `
         -Keys @("ResourceGroup", "VmName", "AzLocation", "SshPort")
@@ -3767,7 +3767,7 @@ function Get-CoVmVmDetails {
     }
 }
 
-function Resolve-CoVmFriendlyError {
+function Resolve-AzVmFriendlyError {
     param(
         [object]$ErrorRecord,
         [string]$DefaultErrorSummary,
@@ -3827,7 +3827,7 @@ function Resolve-CoVmFriendlyError {
     }
 }
 
-function ConvertTo-CoVmDisplayValue {
+function ConvertTo-AzVmDisplayValue {
     param(
         [object]$Value
     )
@@ -3847,7 +3847,7 @@ function ConvertTo-CoVmDisplayValue {
     if ($Value -is [System.Collections.IDictionary]) {
         $pairs = @()
         foreach ($key in @($Value.Keys | Sort-Object)) {
-            $pairs += ("{0}={1}" -f [string]$key, (ConvertTo-CoVmDisplayValue -Value $Value[$key]))
+            $pairs += ("{0}={1}" -f [string]$key, (ConvertTo-AzVmDisplayValue -Value $Value[$key]))
         }
         return ($pairs -join "; ")
     }
@@ -3859,25 +3859,25 @@ function ConvertTo-CoVmDisplayValue {
     return [string]$Value
 }
 
-function Get-CoVmFirstUseTracker {
-    if (-not $script:CoVmFirstUseTracker) {
-        $script:CoVmFirstUseTracker = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+function Get-AzVmFirstUseTracker {
+    if (-not $script:AzVmFirstUseTracker) {
+        $script:AzVmFirstUseTracker = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     }
 
     # Return as a single object even when empty; otherwise PowerShell may enumerate
     # an empty HashSet into $null and break method calls like .Contains().
-    return (, $script:CoVmFirstUseTracker)
+    return (, $script:AzVmFirstUseTracker)
 }
 
-function Get-CoVmValueStateTracker {
-    if (-not $script:CoVmValueStateTracker) {
-        $script:CoVmValueStateTracker = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([System.StringComparer]::OrdinalIgnoreCase)
+function Get-AzVmValueStateTracker {
+    if (-not $script:AzVmValueStateTracker) {
+        $script:AzVmValueStateTracker = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([System.StringComparer]::OrdinalIgnoreCase)
     }
 
-    return (, $script:CoVmValueStateTracker)
+    return (, $script:AzVmValueStateTracker)
 }
 
-function Register-CoVmValueObservation {
+function Register-AzVmValueObservation {
     param(
         [string]$Key,
         [object]$Value
@@ -3893,9 +3893,9 @@ function Register-CoVmValueObservation {
         }
     }
 
-    $displayValue = ConvertTo-CoVmDisplayValue -Value $Value
-    $valueState = Get-CoVmValueStateTracker
-    $firstUseTracker = Get-CoVmFirstUseTracker
+    $displayValue = ConvertTo-AzVmDisplayValue -Value $Value
+    $valueState = Get-AzVmValueStateTracker
+    $firstUseTracker = Get-AzVmFirstUseTracker
 
     $hasPrevious = $valueState.ContainsKey($normalizedKey)
     $previousValue = ""
@@ -3918,7 +3918,7 @@ function Register-CoVmValueObservation {
     }
 }
 
-function Show-CoVmStepFirstUseValues {
+function Show-AzVmStepFirstUseValues {
     param(
         [string]$StepLabel,
         [hashtable]$Context,
@@ -3954,7 +3954,7 @@ function Show-CoVmStepFirstUseValues {
             continue
         }
 
-        $observed = Register-CoVmValueObservation -Key $normalizedKey -Value $value
+        $observed = Register-AzVmValueObservation -Key $normalizedKey -Value $value
         if ($observed.ShouldPrint) {
             $rows += [pscustomobject]@{
                 Key = $observed.Key
@@ -3974,7 +3974,7 @@ function Show-CoVmStepFirstUseValues {
                 continue
             }
 
-            $observed = Register-CoVmValueObservation -Key $normalizedKey -Value $ExtraValues[$extraKey]
+            $observed = Register-AzVmValueObservation -Key $normalizedKey -Value $ExtraValues[$extraKey]
             if ($observed.ShouldPrint) {
                 $rows += [pscustomobject]@{
                     Key = $observed.Key
@@ -3994,7 +3994,7 @@ function Show-CoVmStepFirstUseValues {
     }
 }
 
-function Get-CoVmAzAccountSnapshot {
+function Get-AzVmAzAccountSnapshot {
     $snapshot = [ordered]@{
         SubscriptionName = ""
         SubscriptionId = ""
@@ -4003,7 +4003,7 @@ function Get-CoVmAzAccountSnapshot {
         UserName = ""
     }
 
-    $accountResult = Invoke-CoVmAzCommandWithTimeout `
+    $accountResult = Invoke-AzVmAzCommandWithTimeout `
         -AzArgs @("account", "show", "-o", "json", "--only-show-errors") `
         -TimeoutSeconds 15
     if ($accountResult.TimedOut -or $accountResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace([string]$accountResult.Output)) {
@@ -4022,7 +4022,7 @@ function Get-CoVmAzAccountSnapshot {
 
     $tenantName = ""
     if (-not [string]::IsNullOrWhiteSpace($snapshot.TenantId)) {
-        $tenantResult = Invoke-CoVmAzCommandWithTimeout `
+        $tenantResult = Invoke-AzVmAzCommandWithTimeout `
             -AzArgs @("account", "tenant", "list", "-o", "json", "--only-show-errors") `
             -TimeoutSeconds 20
         if (-not $tenantResult.TimedOut -and $tenantResult.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$tenantResult.Output)) {
@@ -4051,7 +4051,7 @@ function Get-CoVmAzAccountSnapshot {
     return $snapshot
 }
 
-function Invoke-CoVmAzCommandWithTimeout {
+function Invoke-AzVmAzCommandWithTimeout {
     param(
         [string[]]$AzArgs,
         [int]$TimeoutSeconds = 15
@@ -4113,7 +4113,7 @@ function Invoke-CoVmAzCommandWithTimeout {
     }
 }
 
-function Show-CoVmRuntimeConfigurationSnapshot {
+function Show-AzVmRuntimeConfigurationSnapshot {
     param(
         [string]$Platform,
         [string]$ScriptName,
@@ -4129,7 +4129,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     Write-Host ""
     Write-Host "Configuration Snapshot ($ScriptName / platform=$Platform):" -ForegroundColor DarkCyan
 
-    $azAccount = Get-CoVmAzAccountSnapshot
+    $azAccount = Get-AzVmAzAccountSnapshot
     $accountRows = @()
     $accountFields = [ordered]@{
         SubscriptionName = "Subscription Name"
@@ -4139,7 +4139,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
         UserName = "Account User"
     }
     foreach ($fieldKey in @($accountFields.Keys)) {
-        $observed = Register-CoVmValueObservation -Key ([string]$fieldKey) -Value $azAccount[$fieldKey]
+        $observed = Register-AzVmValueObservation -Key ([string]$fieldKey) -Value $azAccount[$fieldKey]
         if ($observed.ShouldPrint) {
             $accountRows += [pscustomobject]@{
                 Label = [string]$accountFields[$fieldKey]
@@ -4165,7 +4165,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
             VmImage = "VM OS Image"
         }
         foreach ($fieldKey in @($selectedFields.Keys)) {
-            $observed = Register-CoVmValueObservation -Key ([string]$fieldKey) -Value $Context[$fieldKey]
+            $observed = Register-AzVmValueObservation -Key ([string]$fieldKey) -Value $Context[$fieldKey]
             if ($observed.ShouldPrint) {
                 $selectedRows += [pscustomobject]@{
                     Label = [string]$selectedFields[$fieldKey]
@@ -4198,7 +4198,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
         ScriptName = "Script name"
     }
     foreach ($fieldKey in @($runtimeFields.Keys)) {
-        $observed = Register-CoVmValueObservation -Key ([string]$fieldKey) -Value $runtimeFields[$fieldKey]
+        $observed = Register-AzVmValueObservation -Key ([string]$fieldKey) -Value $runtimeFields[$fieldKey]
         if ($observed.ShouldPrint) {
             $runtimeRows += [pscustomobject]@{
                 Label = [string]$runtimeLabels[$fieldKey]
@@ -4218,7 +4218,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($ConfigMap -and $ConfigMap.Count -gt 0) {
         foreach ($key in @($ConfigMap.Keys | Sort-Object)) {
             $obsKey = "ENV::{0}" -f [string]$key
-            $observed = Register-CoVmValueObservation -Key $obsKey -Value $ConfigMap[$key]
+            $observed = Register-AzVmValueObservation -Key $obsKey -Value $ConfigMap[$key]
             if ($observed.ShouldPrint) {
                 $envRows += [pscustomobject]@{
                     Label = [string]$key
@@ -4239,7 +4239,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($ConfigOverrides -and $ConfigOverrides.Count -gt 0) {
         foreach ($key in @($ConfigOverrides.Keys | Sort-Object)) {
             $obsKey = "OVERRIDE::{0}" -f [string]$key
-            $observed = Register-CoVmValueObservation -Key $obsKey -Value $ConfigOverrides[$key]
+            $observed = Register-AzVmValueObservation -Key $obsKey -Value $ConfigOverrides[$key]
             if ($observed.ShouldPrint) {
                 $overrideRows += [pscustomobject]@{
                     Label = [string]$key
@@ -4259,7 +4259,7 @@ function Show-CoVmRuntimeConfigurationSnapshot {
     if ($Context) {
         $effectiveRows = @()
         foreach ($key in @($Context.Keys | Sort-Object)) {
-            $observed = Register-CoVmValueObservation -Key ([string]$key -replace '^\s+|\s+$', '') -Value $Context[$key]
+            $observed = Register-AzVmValueObservation -Key ([string]$key -replace '^\s+|\s+$', '') -Value $Context[$key]
             if ($observed.ShouldPrint) {
                 $effectiveRows += [pscustomobject]@{
                     Label = [string]$key
@@ -4325,7 +4325,7 @@ function Get-CoRunCommandScriptArgs {
     return @("@$tempPath")
 }
 
-function Test-CoVmBenignRunCommandStdErr {
+function Test-AzVmBenignRunCommandStdErr {
     param(
         [string]$Message
     )
@@ -4386,7 +4386,7 @@ function Get-CoRunCommandResultMessage {
         }
 
         if ($isStdErrCode -and -not [string]::IsNullOrWhiteSpace($message)) {
-            if (Test-CoVmBenignRunCommandStdErr -Message $message) {
+            if (Test-AzVmBenignRunCommandStdErr -Message $message) {
                 Write-Warning ("Ignoring benign run-command stderr line for task '{0}': {1}" -f $TaskName, $message.Trim())
             }
             elseif ($message -match '(?i)(terminatingerror|exception|failed|not recognized|cannot find|categoryinfo)') {
@@ -4409,7 +4409,7 @@ function Get-CoRunCommandResultMessage {
     return ($messages -join "`n")
 }
 
-function Parse-CoVmStep8Markers {
+function Parse-AzVmStep8Markers {
     param(
         [string]$MessageText
     )
@@ -4451,7 +4451,7 @@ function Parse-CoVmStep8Markers {
             continue
         }
 
-        if ($trimmed -match '^CO_VM_REBOOT_REQUIRED:') {
+        if ($trimmed -match '^AZ_VM_REBOOT_REQUIRED:') {
             $result.RebootRequired = $true
             continue
         }
@@ -4460,7 +4460,7 @@ function Parse-CoVmStep8Markers {
     return [pscustomobject]$result
 }
 
-function Test-CoVmOutputIndicatesRebootRequired {
+function Test-AzVmOutputIndicatesRebootRequired {
     param(
         [string]$MessageText
     )
@@ -4469,14 +4469,14 @@ function Test-CoVmOutputIndicatesRebootRequired {
         return $false
     }
 
-    if ($MessageText -match '^CO_VM_REBOOT_REQUIRED:' -or $MessageText -match '(?im)^TASK_REBOOT_REQUIRED:') {
+    if ($MessageText -match '^AZ_VM_REBOOT_REQUIRED:' -or $MessageText -match '(?im)^TASK_REBOOT_REQUIRED:') {
         return $true
     }
 
     return ($MessageText -match '(?i)(reboot required|restart required|pending reboot|press any key to install windows subsystem for linux)')
 }
 
-function Get-CoVmTaskDurationsFromMessageText {
+function Get-AzVmTaskDurationsFromMessageText {
     param(
         [string]$MessageText
     )
@@ -4607,18 +4607,18 @@ function Invoke-VmRunCommandBlocks {
             Write-Host $combinedMessage
         }
 
-        $marker = Parse-CoVmStep8Markers -MessageText $combinedMessage
-        $taskDurations = @(Get-CoVmTaskDurationsFromMessageText -MessageText $combinedMessage)
+        $marker = Parse-AzVmStep8Markers -MessageText $combinedMessage
+        $taskDurations = @(Get-AzVmTaskDurationsFromMessageText -MessageText $combinedMessage)
         if ($script:PerfMode -and $taskDurations.Count -gt 0) {
             foreach ($taskDuration in $taskDurations) {
-                Write-CoVmPerfTiming -Category $PerfTaskCategory -Label ([string]$taskDuration.Name) -Seconds ([double]$taskDuration.Seconds)
+                Write-AzVmPerfTiming -Category $PerfTaskCategory -Label ([string]$taskDuration.Name) -Seconds ([double]$taskDuration.Seconds)
             }
         }
         return [pscustomobject]@{
             SuccessCount = [int]$marker.SuccessCount
             WarningCount = [int]$marker.WarningCount
             ErrorCount = [int]$marker.ErrorCount
-            RebootRequired = ([bool]$marker.RebootRequired -or (Test-CoVmOutputIndicatesRebootRequired -MessageText $combinedMessage))
+            RebootRequired = ([bool]$marker.RebootRequired -or (Test-AzVmOutputIndicatesRebootRequired -MessageText $combinedMessage))
             NextTaskIndex = [int]$TaskBlocks.Count
             TaskDurations = @($taskDurations)
         }
@@ -4628,7 +4628,7 @@ function Invoke-VmRunCommandBlocks {
     }
 }
 
-function Apply-CoVmTaskBlockReplacements {
+function Apply-AzVmTaskBlockReplacements {
     param(
         [object[]]$TaskBlocks,
         [hashtable]$Replacements
@@ -4660,7 +4660,7 @@ function Apply-CoVmTaskBlockReplacements {
     return $resolvedBlocks
 }
 
-function Wait-CoVmVmRunningState {
+function Wait-AzVmVmRunningState {
     param(
         [string]$ResourceGroup,
         [string]$VmName,
@@ -4700,7 +4700,7 @@ function Wait-CoVmVmRunningState {
 
 #endregion
 #region Imported:test-ssh
-function Resolve-CoVmSshRetryCount {
+function Resolve-AzVmSshRetryCount {
     param(
         [string]$RetryText,
         [int]$DefaultValue = 3
@@ -4721,7 +4721,7 @@ function Resolve-CoVmSshRetryCount {
     return $value
 }
 
-function Resolve-CoVmPySshToolPath {
+function Resolve-AzVmPySshToolPath {
     param(
         [string]$ConfiguredPath,
         [string]$RepoRoot,
@@ -4746,14 +4746,14 @@ function Resolve-CoVmPySshToolPath {
     return $defaultPath
 }
 
-function Ensure-CoVmPySshTools {
+function Ensure-AzVmPySshTools {
     param(
         [string]$RepoRoot,
         [string]$ConfiguredPySshClientPath = ""
     )
 
     $configuredClientPath = [string]$ConfiguredPySshClientPath
-    $pySshClientPath = Resolve-CoVmPySshToolPath -ConfiguredPath $configuredClientPath -RepoRoot $RepoRoot -ToolName "ssh_client.py"
+    $pySshClientPath = Resolve-AzVmPySshToolPath -ConfiguredPath $configuredClientPath -RepoRoot $RepoRoot -ToolName "ssh_client.py"
     $pySshVenvRoot = Join-Path (Join-Path $RepoRoot "tools\pyssh") ".venv"
     $isWindowsPlatform = ([System.IO.Path]::DirectorySeparatorChar -eq '\')
     $pySshPythonPath = if ($isWindowsPlatform) {
@@ -4793,7 +4793,7 @@ function Ensure-CoVmPySshTools {
     }
 }
 
-function Wait-CoVmVmPowerState {
+function Wait-AzVmVmPowerState {
     param(
         [string]$ResourceGroup,
         [string]$VmName,
@@ -4833,7 +4833,7 @@ function Wait-CoVmVmPowerState {
     return $false
 }
 
-function Invoke-CoVmProcessWithRetry {
+function Invoke-AzVmProcessWithRetry {
     param(
         [string]$FilePath,
         [string[]]$Arguments,
@@ -4875,7 +4875,7 @@ function Invoke-CoVmProcessWithRetry {
     throw ("{0} failed after {1} attempt(s). Exit={2}. Output={3}" -f $Label, $MaxAttempts, $lastExit, $lastOutput)
 }
 
-function Initialize-CoVmSshHostKey {
+function Initialize-AzVmSshHostKey {
     param(
         [string]$PySshPythonPath,
         [string]$PySshClientPath,
@@ -4892,7 +4892,7 @@ function Initialize-CoVmSshHostKey {
         throw "Python executable for pyssh was not found."
     }
 
-    $result = Invoke-CoVmProcessWithRetry `
+    $result = Invoke-AzVmProcessWithRetry `
         -FilePath $PySshPythonPath `
         -Arguments @(
             $PySshClientPath,
@@ -4925,7 +4925,7 @@ function Initialize-CoVmSshHostKey {
 
 
 
-function Convert-CoVmProcessArgument {
+function Convert-AzVmProcessArgument {
     param(
         [string]$Value
     )
@@ -4940,7 +4940,7 @@ function Convert-CoVmProcessArgument {
     return ('"{0}"' -f $escaped)
 }
 
-function Start-CoVmPersistentSshSession {
+function Start-AzVmPersistentSshSession {
     param(
         [string]$PySshPythonPath,
         [string]$PySshClientPath,
@@ -4974,7 +4974,7 @@ function Start-CoVmPersistentSshSession {
         "--task-timeout", [string]$DefaultTaskTimeoutSeconds,
         "--shell", [string]$Shell
     )
-    $argText = ($argList | ForEach-Object { Convert-CoVmProcessArgument -Value ([string]$_) }) -join ' '
+    $argText = ($argList | ForEach-Object { Convert-AzVmProcessArgument -Value ([string]$_) }) -join ' '
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = [string]$PySshPythonPath
@@ -5017,7 +5017,7 @@ function Start-CoVmPersistentSshSession {
     }
 }
 
-function Write-CoVmPersistentSshProtocolLine {
+function Write-AzVmPersistentSshProtocolLine {
     param(
         [psobject]$Session,
         [string]$Line
@@ -5037,7 +5037,7 @@ function Write-CoVmPersistentSshProtocolLine {
     $stream.Flush()
 }
 
-function Normalize-CoVmProtocolLine {
+function Normalize-AzVmProtocolLine {
     param(
         [AllowNull()]
         [string]$Text
@@ -5054,7 +5054,7 @@ function Normalize-CoVmProtocolLine {
     return $value
 }
 
-function Test-CoVmTransientSpinnerLine {
+function Test-AzVmTransientSpinnerLine {
     param(
         [AllowNull()]
         [string]$Text
@@ -5077,7 +5077,7 @@ function Test-CoVmTransientSpinnerLine {
     return [regex]::IsMatch($value, '^[\|/\\-]{1,16}$')
 }
 
-function Write-CoVmTransientConsoleText {
+function Write-AzVmTransientConsoleText {
     param(
         [AllowNull()]
         [string]$Text
@@ -5087,11 +5087,11 @@ function Write-CoVmTransientConsoleText {
     [Console]::Write(("`r{0}" -f $value))
 }
 
-function Clear-CoVmTransientConsoleText {
+function Clear-AzVmTransientConsoleText {
     [Console]::WriteLine("")
 }
 
-function Test-CoVmTaskOutputNoiseLine {
+function Test-AzVmTaskOutputNoiseLine {
     param(
         [AllowNull()]
         [string]$Text
@@ -5107,14 +5107,14 @@ function Test-CoVmTaskOutputNoiseLine {
     }
 
     return (
-        $value.StartsWith("CO_VM_TASK_BEGIN:", [System.StringComparison]::OrdinalIgnoreCase) -or
-        $value.StartsWith("CO_VM_TASK_END:", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $value.StartsWith("AZ_VM_TASK_BEGIN:", [System.StringComparison]::OrdinalIgnoreCase) -or
+        $value.StartsWith("AZ_VM_TASK_END:", [System.StringComparison]::OrdinalIgnoreCase) -or
         $value.StartsWith("Update task started:", [System.StringComparison]::OrdinalIgnoreCase) -or
         $value.StartsWith("Update task completed:", [System.StringComparison]::OrdinalIgnoreCase)
     )
 }
 
-function Invoke-CoVmPersistentSshTask {
+function Invoke-AzVmPersistentSshTask {
     param(
         [psobject]$Session,
         [string]$TaskName,
@@ -5144,7 +5144,7 @@ function Invoke-CoVmPersistentSshTask {
         script = [string]$TaskScript
     } | ConvertTo-Json -Compress -Depth 20
 
-    Write-CoVmPersistentSshProtocolLine -Session $Session -Line ([string]$payload)
+    Write-AzVmPersistentSshProtocolLine -Session $Session -Line ([string]$payload)
 
     $proc = $Session.Process
     $stdoutReader = $Session.StdoutReader
@@ -5165,8 +5165,8 @@ function Invoke-CoVmPersistentSshTask {
         $Session.PendingStderrTask = $stderrReader.ReadLineAsync()
     }
     $outputLines = New-Object 'System.Collections.Generic.List[string]'
-    $endMarkerRegex = '^CO_VM_TASK_END:(?<task>.+?):(?<code>-?\d+)$'
-    $beginMarkerRegex = '^CO_VM_TASK_BEGIN:(?<task>.+)$'
+    $endMarkerRegex = '^AZ_VM_TASK_END:(?<task>.+?):(?<code>-?\d+)$'
+    $beginMarkerRegex = '^AZ_VM_TASK_BEGIN:(?<task>.+)$'
     $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $exitCode = $null
 
@@ -5180,9 +5180,9 @@ function Invoke-CoVmPersistentSshTask {
             $Session.PendingStdoutTask = $stdoutReader.ReadLineAsync()
             if ($null -ne $line) {
                 $lineText = [string]$line
-                $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
+                $normalizedLine = Normalize-AzVmProtocolLine -Text $lineText
                 if ($null -eq $normalizedLine) { $normalizedLine = "" }
-                if (($normalizedLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
+                if (($normalizedLine -as [string]) -like "AZ_VM_SESSION_ERROR:*") {
                     throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$normalizedLine)
                 }
                 if ($normalizedLine -match $endMarkerRegex) {
@@ -5196,16 +5196,16 @@ function Invoke-CoVmPersistentSshTask {
                 if ($normalizedLine -match $beginMarkerRegex) {
                     continue
                 }
-                if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
+                if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
                     continue
                 }
-                if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
-                    Write-CoVmTransientConsoleText -Text ([string]$normalizedLine)
+                if (Test-AzVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
+                    Write-AzVmTransientConsoleText -Text ([string]$normalizedLine)
                     $Session.TransientConsoleActive = $true
                     continue
                 }
                 if ($Session.TransientConsoleActive) {
-                    Clear-CoVmTransientConsoleText
+                    Clear-AzVmTransientConsoleText
                     $Session.TransientConsoleActive = $false
                 }
                 [void]$outputLines.Add([string]$normalizedLine)
@@ -5217,18 +5217,18 @@ function Invoke-CoVmPersistentSshTask {
             $Session.PendingStderrTask = $stderrReader.ReadLineAsync()
             if ($null -ne $line) {
                 $lineText = [string]$line
-                $normalizedLine = Normalize-CoVmProtocolLine -Text $lineText
+                $normalizedLine = Normalize-AzVmProtocolLine -Text $lineText
                 if ($null -eq $normalizedLine) { $normalizedLine = "" }
-                if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
+                if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
                     continue
                 }
-                if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
-                    Write-CoVmTransientConsoleText -Text ([string]$normalizedLine)
+                if (Test-AzVmTransientSpinnerLine -Text ([string]$normalizedLine)) {
+                    Write-AzVmTransientConsoleText -Text ([string]$normalizedLine)
                     $Session.TransientConsoleActive = $true
                     continue
                 }
                 if ($Session.TransientConsoleActive) {
-                    Clear-CoVmTransientConsoleText
+                    Clear-AzVmTransientConsoleText
                     $Session.TransientConsoleActive = $false
                 }
                 [void]$outputLines.Add([string]$normalizedLine)
@@ -5243,21 +5243,21 @@ function Invoke-CoVmPersistentSshTask {
             try { $stderrTail = [string]$stderrReader.ReadToEnd() } catch { }
             if (-not [string]::IsNullOrWhiteSpace($stdoutTail)) {
                 foreach ($line in ($stdoutTail -split "`r?`n")) {
-                    $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
+                    $normalizedTailLine = Normalize-AzVmProtocolLine -Text ([string]$line)
                     if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
-                    if (($normalizedTailLine -as [string]) -like "CO_VM_SESSION_ERROR:*") {
+                    if (($normalizedTailLine -as [string]) -like "AZ_VM_SESSION_ERROR:*") {
                         throw ("Persistent SSH session reported protocol error for task '{0}': {1}" -f $TaskName, [string]$normalizedTailLine)
                     }
                     if ($normalizedTailLine -match $beginMarkerRegex) { continue }
                     if ($normalizedTailLine -match $endMarkerRegex) { continue }
-                    if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
-                    if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
-                        Write-CoVmTransientConsoleText -Text ([string]$normalizedTailLine)
+                    if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
+                    if (Test-AzVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
+                        Write-AzVmTransientConsoleText -Text ([string]$normalizedTailLine)
                         $Session.TransientConsoleActive = $true
                         continue
                     }
                     if ($Session.TransientConsoleActive) {
-                        Clear-CoVmTransientConsoleText
+                        Clear-AzVmTransientConsoleText
                         $Session.TransientConsoleActive = $false
                     }
                     [void]$outputLines.Add([string]$normalizedTailLine)
@@ -5266,16 +5266,16 @@ function Invoke-CoVmPersistentSshTask {
             }
             if (-not [string]::IsNullOrWhiteSpace($stderrTail)) {
                 foreach ($line in ($stderrTail -split "`r?`n")) {
-                    $normalizedTailLine = Normalize-CoVmProtocolLine -Text ([string]$line)
+                    $normalizedTailLine = Normalize-AzVmProtocolLine -Text ([string]$line)
                     if ([string]::IsNullOrWhiteSpace($normalizedTailLine)) { continue }
-                    if (Test-CoVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
-                    if (Test-CoVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
-                        Write-CoVmTransientConsoleText -Text ([string]$normalizedTailLine)
+                    if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
+                    if (Test-AzVmTransientSpinnerLine -Text ([string]$normalizedTailLine)) {
+                        Write-AzVmTransientConsoleText -Text ([string]$normalizedTailLine)
                         $Session.TransientConsoleActive = $true
                         continue
                     }
                     if ($Session.TransientConsoleActive) {
-                        Clear-CoVmTransientConsoleText
+                        Clear-AzVmTransientConsoleText
                         $Session.TransientConsoleActive = $false
                     }
                     [void]$outputLines.Add([string]$normalizedTailLine)
@@ -5291,7 +5291,7 @@ function Invoke-CoVmPersistentSshTask {
 
     if ($taskWatch.IsRunning) { $taskWatch.Stop() }
     if ($Session.TransientConsoleActive) {
-        Clear-CoVmTransientConsoleText
+        Clear-AzVmTransientConsoleText
         $Session.TransientConsoleActive = $false
     }
     return [pscustomobject]@{
@@ -5301,7 +5301,7 @@ function Invoke-CoVmPersistentSshTask {
     }
 }
 
-function Stop-CoVmPersistentSshSession {
+function Stop-AzVmPersistentSshSession {
     param(
         [psobject]$Session
     )
@@ -5311,7 +5311,7 @@ function Stop-CoVmPersistentSshSession {
     }
 
     if ($Session.PSObject.Properties.Match('TransientConsoleActive').Count -gt 0 -and [bool]$Session.TransientConsoleActive) {
-        Clear-CoVmTransientConsoleText
+        Clear-AzVmTransientConsoleText
         $Session.TransientConsoleActive = $false
     }
 
@@ -5321,7 +5321,7 @@ function Stop-CoVmPersistentSshSession {
             if (-not $proc.HasExited) {
                 try {
                     $closePayload = @{ action = "close" } | ConvertTo-Json -Compress
-                    Write-CoVmPersistentSshProtocolLine -Session $Session -Line ([string]$closePayload)
+                    Write-AzVmPersistentSshProtocolLine -Session $Session -Line ([string]$closePayload)
                     $proc.StandardInput.Close()
                 }
                 catch { }
@@ -5434,7 +5434,7 @@ function Write-RegionSelectionGrid {
 
 }
 
-function Resolve-CoVmLocationNameFromEntry {
+function Resolve-AzVmLocationNameFromEntry {
     param(
         [object]$Entry,
         [object[]]$Catalog,
@@ -5530,7 +5530,7 @@ function Select-AzLocationInteractive {
     while ($true) {
         $inputValue = Read-Host "Enter region number (default=$defaultIndex)"
         if ([string]::IsNullOrWhiteSpace($inputValue)) {
-            $selectedLocation = Resolve-CoVmLocationNameFromEntry -Entry $locations[$defaultIndex - 1] -Catalog $locations -FallbackLocation $DefaultLocation
+            $selectedLocation = Resolve-AzVmLocationNameFromEntry -Entry $locations[$defaultIndex - 1] -Catalog $locations -FallbackLocation $DefaultLocation
             if (-not [string]::IsNullOrWhiteSpace([string]$selectedLocation)) {
                 return $selectedLocation
             }
@@ -5541,7 +5541,7 @@ function Select-AzLocationInteractive {
         if ($inputValue -match '^\d+$') {
             $selectedNo = [int]$inputValue
             if ($selectedNo -ge 1 -and $selectedNo -le $locations.Count) {
-                $selectedLocation = Resolve-CoVmLocationNameFromEntry -Entry $locations[$selectedNo - 1] -Catalog $locations -FallbackLocation $DefaultLocation
+                $selectedLocation = Resolve-AzVmLocationNameFromEntry -Entry $locations[$selectedNo - 1] -Catalog $locations -FallbackLocation $DefaultLocation
                 if (-not [string]::IsNullOrWhiteSpace([string]$selectedLocation)) {
                     return $selectedLocation
                 }
@@ -5720,7 +5720,7 @@ function Get-SkuAvailabilityMap {
     $url = "https://management.azure.com/subscriptions/$subscriptionId/providers/Microsoft.Compute/skus?api-version=2023-07-01&`$filter=$filter"
 
     try {
-        $response = Invoke-CoVmHttpRestMethod `
+        $response = Invoke-AzVmHttpRestMethod `
             -Method Get `
             -Uri $url `
             -Headers @{ Authorization = "Bearer $accessToken" } `
@@ -5782,7 +5782,7 @@ function Get-SkuPriceMap {
         return $result
     }
 
-    $catalog = Get-CoVmRetailPricingCatalogForLocation -Location $Location
+    $catalog = Get-AzVmRetailPricingCatalogForLocation -Location $Location
     foreach ($skuName in $SkuNames) {
         if ([string]::IsNullOrWhiteSpace([string]$skuName)) {
             continue
@@ -5797,7 +5797,7 @@ function Get-SkuPriceMap {
     return $result
 }
 
-function Get-CoVmHttpStatusCode {
+function Get-AzVmHttpStatusCode {
     param(
         [object]$ExceptionObject
     )
@@ -5843,7 +5843,7 @@ function Get-CoVmHttpStatusCode {
     return $statusCodeValue
 }
 
-function Get-CoVmHttpRetryAfterSeconds {
+function Get-AzVmHttpRetryAfterSeconds {
     param(
         [object]$ExceptionObject
     )
@@ -5930,7 +5930,7 @@ function Get-CoVmHttpRetryAfterSeconds {
     return $null
 }
 
-function Invoke-CoVmRetailPricingRequest {
+function Invoke-AzVmRetailPricingRequest {
     param(
         [string]$Uri
     )
@@ -5938,10 +5938,10 @@ function Invoke-CoVmRetailPricingRequest {
     $maxRetries = [math]::Max([int]$script:RetailPricingMaxRetries, 0)
     for ($retry = 0; $true; $retry++) {
         try {
-            return Invoke-CoVmHttpRestMethod -Method Get -Uri $Uri -PerfLabel "http retail pricing api"
+            return Invoke-AzVmHttpRestMethod -Method Get -Uri $Uri -PerfLabel "http retail pricing api"
         }
         catch {
-            $statusCode = Get-CoVmHttpStatusCode -ExceptionObject $_.Exception
+            $statusCode = Get-AzVmHttpStatusCode -ExceptionObject $_.Exception
             $isRetryable = $false
             if ($null -ne $statusCode) {
                 $retryableCodes = @(429, 500, 502, 503, 504)
@@ -5954,7 +5954,7 @@ function Invoke-CoVmRetailPricingRequest {
                 throw
             }
 
-            $retryAfterSeconds = Get-CoVmHttpRetryAfterSeconds -ExceptionObject $_.Exception
+            $retryAfterSeconds = Get-AzVmHttpRetryAfterSeconds -ExceptionObject $_.Exception
             if ($null -eq $retryAfterSeconds -or $retryAfterSeconds -le 0) {
                 $retryAfterSeconds = [int][math]::Min([math]::Pow(2, ($retry + 1)), 30)
             }
@@ -5968,7 +5968,7 @@ function Invoke-CoVmRetailPricingRequest {
     }
 }
 
-function Normalize-CoVmRetailPricingNextPageLink {
+function Normalize-AzVmRetailPricingNextPageLink {
     param(
         [string]$Uri
     )
@@ -5990,7 +5990,7 @@ function Normalize-CoVmRetailPricingNextPageLink {
     return $normalized
 }
 
-function Get-CoVmRetailPricingCatalogForLocation {
+function Get-AzVmRetailPricingCatalogForLocation {
     param(
         [string]$Location
     )
@@ -6009,7 +6009,7 @@ function Get-CoVmRetailPricingCatalogForLocation {
     $nextUri = "https://prices.azure.com/api/retail/prices?`$filter=" + [uri]::EscapeDataString($baseFilter) + "&`$top=1000"
 
     while ($nextUri) {
-        $response = Invoke-CoVmRetailPricingRequest -Uri $nextUri
+        $response = Invoke-AzVmRetailPricingRequest -Uri $nextUri
         foreach ($item in (ConvertTo-ObjectArrayCompat -InputObject $response.Items)) {
             if (-not $item.armSkuName -or $item.unitPrice -eq $null) {
                 continue
@@ -6046,7 +6046,7 @@ function Get-CoVmRetailPricingCatalogForLocation {
             }
         }
 
-        $nextUri = Normalize-CoVmRetailPricingNextPageLink -Uri ([string]$response.NextPageLink)
+        $nextUri = Normalize-AzVmRetailPricingNextPageLink -Uri ([string]$response.NextPageLink)
         if ([string]::IsNullOrWhiteSpace($nextUri)) {
             $nextUri = $null
         }
@@ -6140,8 +6140,8 @@ function Read-StrictYesNo {
     }
 }
 
-function Get-CoVmSkuPickerRegionBackToken {
-    return "__CO_VM_PICK_REGION_AGAIN__"
+function Get-AzVmSkuPickerRegionBackToken {
+    return "__AZ_VM_PICK_REGION_AGAIN__"
 }
 
 function Select-VmSkuInteractive {
@@ -6221,7 +6221,7 @@ function Select-VmSkuInteractive {
             }
             if ($selection -match '^[rR]$') {
                 Write-Host "Returning to region selection..." -ForegroundColor DarkGray
-                return (Get-CoVmSkuPickerRegionBackToken)
+                return (Get-AzVmSkuPickerRegionBackToken)
             }
 
             if ($selection -match '^\d+$') {
@@ -6243,7 +6243,7 @@ function Select-VmSkuInteractive {
     }
 }
 
-function Get-CoVmResourceGroupsForSelection {
+function Get-AzVmResourceGroupsForSelection {
     param(
         [string]$ServerName
     )
@@ -6292,13 +6292,13 @@ function Get-CoVmResourceGroupsForSelection {
     return @($filtered | Sort-Object -Unique)
 }
 
-function Select-CoVmResourceGroupInteractive {
+function Select-AzVmResourceGroupInteractive {
     param(
         [string]$DefaultResourceGroup,
         [string]$ServerName
     )
 
-    $groups = @(Get-CoVmResourceGroupsForSelection -ServerName $ServerName)
+    $groups = @(Get-AzVmResourceGroupsForSelection -ServerName $ServerName)
     if ($groups.Count -eq 0) {
         Throw-FriendlyError `
             -Detail "No selectable resource group was found." `
@@ -6337,7 +6337,7 @@ function Select-CoVmResourceGroupInteractive {
     }
 }
 
-function Get-CoVmVmNamesForResourceGroup {
+function Get-AzVmVmNamesForResourceGroup {
     param(
         [string]$ResourceGroup
     )
@@ -6360,13 +6360,13 @@ function Get-CoVmVmNamesForResourceGroup {
     return @($vmNames)
 }
 
-function Select-CoVmVmInteractive {
+function Select-AzVmVmInteractive {
     param(
         [string]$ResourceGroup,
         [string]$DefaultVmName
     )
 
-    $vmNames = @(Get-CoVmVmNamesForResourceGroup -ResourceGroup $ResourceGroup)
+    $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $ResourceGroup)
     if ($vmNames.Count -eq 0) {
         Throw-FriendlyError `
             -Detail ("Resource group '{0}' does not contain any VM." -f $ResourceGroup) `
@@ -6405,7 +6405,7 @@ function Select-CoVmVmInteractive {
     }
 }
 
-function Get-CoVmVmNetworkDescriptor {
+function Get-AzVmVmNetworkDescriptor {
     param(
         [string]$ResourceGroup,
         [string]$VmName
@@ -6476,7 +6476,7 @@ function Get-CoVmVmNetworkDescriptor {
     }
 }
 
-function Assert-CoVmCommandOptions {
+function Assert-AzVmCommandOptions {
     param(
         [string]$CommandName,
         [hashtable]$Options
@@ -6485,7 +6485,7 @@ function Assert-CoVmCommandOptions {
     $allowed = @('auto','perf','windows','linux','help')
     $legacyStepOptions = @('multi-action','single-action')
     foreach ($legacy in $legacyStepOptions) {
-        if (Test-CoVmCliOptionPresent -Options $Options -Name $legacy) {
+        if (Test-AzVmCliOptionPresent -Options $Options -Name $legacy) {
             Throw-FriendlyError `
                 -Detail ("Legacy option '--{0}' is no longer supported." -f $legacy) `
                 -Code 2 `
@@ -6523,12 +6523,12 @@ function Assert-CoVmCommandOptions {
         }
     }
 
-    $helpRequested = Get-CoVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
+    $helpRequested = Get-AzVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
     if ($helpRequested -and $CommandName -ne 'help') {
         return
     }
 
-    if (Test-CoVmCliOptionPresent -Options $Options -Name 'purge') {
+    if (Test-AzVmCliOptionPresent -Options $Options -Name 'purge') {
         Throw-FriendlyError `
             -Detail "Option '--purge' is no longer supported." `
             -Code 2 `
@@ -6537,7 +6537,7 @@ function Assert-CoVmCommandOptions {
     }
 
     if ($CommandName -eq 'delete') {
-        $targetText = [string](Get-CoVmCliOptionText -Options $Options -Name 'target')
+        $targetText = [string](Get-AzVmCliOptionText -Options $Options -Name 'target')
         $target = $targetText.Trim().ToLowerInvariant()
         if ([string]::IsNullOrWhiteSpace($target)) {
             Throw-FriendlyError `
@@ -6557,7 +6557,7 @@ function Assert-CoVmCommandOptions {
     }
 }
 
-function Initialize-CoVmCommandRuntimeContext {
+function Initialize-AzVmCommandRuntimeContext {
     param(
         [switch]$AutoMode,
         [switch]$WindowsFlag,
@@ -6568,9 +6568,9 @@ function Initialize-CoVmCommandRuntimeContext {
 
     $envFilePath = Join-Path $PSScriptRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
-    $platform = Resolve-CoVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
-    $platformDefaults = Get-CoVmPlatformDefaults -Platform $platform
-    $effectiveConfigMap = Resolve-CoVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
+    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
+    $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
+    $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
     foreach ($key in @($ConfigMapOverrides.Keys)) {
         $overrideKey = [string]$key
         if ([string]::IsNullOrWhiteSpace($overrideKey)) {
@@ -6585,7 +6585,7 @@ function Initialize-CoVmCommandRuntimeContext {
         $step1AutoMode = [bool]$AutoMode
     }
 
-    $step1Context = Invoke-CoVmStep1Common `
+    $step1Context = Invoke-AzVmStep1Common `
         -ConfigMap $effectiveConfigMap `
         -EnvFilePath $envFilePath `
         -AutoMode:$step1AutoMode `
@@ -6656,7 +6656,7 @@ function Initialize-CoVmCommandRuntimeContext {
     }
 }
 
-function Get-CoVmConfigPersistenceMap {
+function Get-AzVmConfigPersistenceMap {
     param(
         [string]$Platform,
         [hashtable]$Context
@@ -6685,7 +6685,7 @@ function Get-CoVmConfigPersistenceMap {
     }
 }
 
-function Save-CoVmConfigToDotEnv {
+function Save-AzVmConfigToDotEnv {
     param(
         [string]$EnvFilePath,
         [hashtable]$ConfigBefore,
@@ -6727,7 +6727,7 @@ function Save-CoVmConfigToDotEnv {
     return @($changes)
 }
 
-function Show-CoVmKeyValueList {
+function Show-AzVmKeyValueList {
     param(
         [string]$Title,
         [System.Collections.IDictionary]$Values
@@ -6740,17 +6740,17 @@ function Show-CoVmKeyValueList {
     }
 
     foreach ($key in @($Values.Keys | Sort-Object)) {
-        $valueText = ConvertTo-CoVmDisplayValue -Value $Values[$key]
+        $valueText = ConvertTo-AzVmDisplayValue -Value $Values[$key]
         Write-Host ("- {0} = {1}" -f [string]$key, [string]$valueText)
     }
 }
 
-function Invoke-CoVmResourceGroupPreviewStep {
+function Invoke-AzVmResourceGroupPreviewStep {
     param(
         [hashtable]$Context
     )
 
-    Show-CoVmStepFirstUseValues `
+    Show-AzVmStepFirstUseValues `
         -StepLabel "Step 3/3 - resource group preview" `
         -Context $Context `
         -Keys @("ResourceGroup", "AzLocation")
@@ -6773,7 +6773,7 @@ function Invoke-CoVmResourceGroupPreviewStep {
     }
 }
 
-function Invoke-CoVmConfigCommand {
+function Invoke-AzVmConfigCommand {
     param(
         [hashtable]$Options,
         [switch]$AutoMode,
@@ -6797,7 +6797,7 @@ function Invoke-CoVmConfigCommand {
     $step1Result = $null
 
     $step1Result = Invoke-Step 'Step 1/3 - interactive configuration values will be selected...' {
-        $runtimeLocal = Initialize-CoVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
+        $runtimeLocal = Initialize-AzVmCommandRuntimeContext -AutoMode:$false -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -UseInteractiveStep1
         [pscustomobject]@{
             Runtime = $runtimeLocal
             Context = $runtimeLocal.Context
@@ -6833,23 +6833,23 @@ function Invoke-CoVmConfigCommand {
     }
 
     Invoke-Step 'Step 2/3 - region, image, and VM size availability will be checked...' {
-        Invoke-CoVmPrecheckStep -Context $context
+        Invoke-AzVmPrecheckStep -Context $context
     }
 
     Invoke-Step 'Step 3/3 - resource group preview will be displayed...' {
-        $null = Invoke-CoVmResourceGroupPreviewStep -Context $context
+        $null = Invoke-AzVmResourceGroupPreviewStep -Context $context
     }
 
-    $persistMap = Get-CoVmConfigPersistenceMap -Platform $platform -Context $context
-    $changes = Save-CoVmConfigToDotEnv -EnvFilePath ([string]$runtime.EnvFilePath) -ConfigBefore $configBefore -PersistMap $persistMap
+    $persistMap = Get-AzVmConfigPersistenceMap -Platform $platform -Context $context
+    $changes = Save-AzVmConfigToDotEnv -EnvFilePath ([string]$runtime.EnvFilePath) -ConfigBefore $configBefore -PersistMap $persistMap
     $configAfter = Read-DotEnvFile -Path ([string]$runtime.EnvFilePath)
 
     Write-Host ""
-    Show-CoVmKeyValueList -Title "Existing .env values (before config):" -Values $configBefore
+    Show-AzVmKeyValueList -Title "Existing .env values (before config):" -Values $configBefore
     Write-Host ""
-    Show-CoVmKeyValueList -Title "Resolved configuration values:" -Values $context
+    Show-AzVmKeyValueList -Title "Resolved configuration values:" -Values $context
     Write-Host ""
-    Show-CoVmKeyValueList -Title ".env values after config:" -Values $configAfter
+    Show-AzVmKeyValueList -Title ".env values after config:" -Values $configAfter
     Write-Host ""
     if (@($changes).Count -gt 0) {
         Write-Host "Saved .env changes:" -ForegroundColor Green
@@ -6870,7 +6870,7 @@ function Invoke-CoVmConfigCommand {
     Write-Host "- az-vm create --to-step=vm-deploy"
 }
 
-function Resolve-CoVmTaskSelection {
+function Resolve-AzVmTaskSelection {
     param(
         [object[]]$TaskBlocks,
         [string]$TaskNumberOrName,
@@ -6934,7 +6934,7 @@ function Resolve-CoVmTaskSelection {
     return $selectedTask[0]
 }
 
-function Invoke-CoVmExecCommand {
+function Invoke-AzVmExecCommand {
     param(
         [hashtable]$Options,
         [switch]$AutoMode,
@@ -6942,7 +6942,7 @@ function Invoke-CoVmExecCommand {
         [switch]$LinuxFlag
     )
 
-    $groupOverrideValue = [string](Get-CoVmCliOptionText -Options $Options -Name 'group')
+    $groupOverrideValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
     $groupOverride = ''
     if (-not [string]::IsNullOrWhiteSpace([string]$groupOverrideValue)) {
         $groupOverride = $groupOverrideValue.Trim()
@@ -6953,13 +6953,13 @@ function Invoke-CoVmExecCommand {
         $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOverride
     }
 
-    $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
+    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
     $context = $runtime.Context
     $platform = [string]$runtime.Platform
     $platformDefaults = $runtime.PlatformDefaults
 
-    $hasInitTask = Test-CoVmCliOptionPresent -Options $Options -Name 'init-task'
-    $hasUpdateTask = Test-CoVmCliOptionPresent -Options $Options -Name 'update-task'
+    $hasInitTask = Test-AzVmCliOptionPresent -Options $Options -Name 'init-task'
+    $hasUpdateTask = Test-AzVmCliOptionPresent -Options $Options -Name 'update-task'
     if ($hasInitTask -and $hasUpdateTask) {
         Throw-FriendlyError `
             -Detail "Both --init-task and --update-task were provided." `
@@ -6971,7 +6971,7 @@ function Invoke-CoVmExecCommand {
     $hasTaskSelector = ($hasInitTask -or $hasUpdateTask)
     if ($hasTaskSelector) {
         $stage = if ($hasInitTask) { 'init' } else { 'update' }
-        $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", [string]$context.ResourceGroup, "-n", [string]$context.VmName)
+        $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", [string]$context.ResourceGroup, "-n", [string]$context.VmName)
         if (-not $vmExists) {
             if ($AutoMode) {
                 Throw-FriendlyError `
@@ -6980,26 +6980,26 @@ function Invoke-CoVmExecCommand {
                     -Summary "Exec task mode cannot continue because VM was not found." `
                     -Hint "Set VM_NAME in .env or run exec in interactive mode and select a VM."
             }
-            $context.VmName = Select-CoVmVmInteractive -ResourceGroup ([string]$context.ResourceGroup) -DefaultVmName ([string]$context.VmName)
+            $context.VmName = Select-AzVmVmInteractive -ResourceGroup ([string]$context.ResourceGroup) -DefaultVmName ([string]$context.VmName)
         }
 
         if ($stage -eq 'init') {
-            $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
-            $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
-            $requested = Get-CoVmCliOptionText -Options $Options -Name 'init-task'
-            $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
+            $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
+            $tasks = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
+            $requested = Get-AzVmCliOptionText -Options $Options -Name 'init-task'
+            $selectedTask = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
             Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -PerfTaskCategory "exec-task" | Out-Null
             Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
             return
         }
 
-        $catalog = Get-CoVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
-        $tasks = Resolve-CoVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
-        $requested = Get-CoVmCliOptionText -Options $Options -Name 'update-task'
-        $selectedTask = Resolve-CoVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'update' -AutoMode:$AutoMode
+        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
+        $tasks = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
+        $requested = Get-AzVmCliOptionText -Options $Options -Name 'update-task'
+        $selectedTask = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'update' -AutoMode:$AutoMode
 
-        $vmRuntimeDetails = Get-CoVmVmDetails -Context $context
+        $vmRuntimeDetails = Get-AzVmVmDetails -Context $context
         $sshHost = [string]$vmRuntimeDetails.VmFqdn
         if ([string]::IsNullOrWhiteSpace($sshHost)) {
             $sshHost = [string]$vmRuntimeDetails.PublicIP
@@ -7008,7 +7008,7 @@ function Invoke-CoVmExecCommand {
             throw "Exec could not resolve VM SSH host (FQDN/Public IP)."
         }
 
-        Invoke-CoVmSshTaskBlocks `
+        Invoke-AzVmSshTaskBlocks `
             -Platform $platform `
             -RepoRoot $PSScriptRoot `
             -SshHost $sshHost `
@@ -7034,7 +7034,7 @@ function Invoke-CoVmExecCommand {
         $selectedResourceGroup = $groupOverride
     }
     else {
-        $selectedResourceGroup = Select-CoVmResourceGroupInteractive -DefaultResourceGroup $selectedResourceGroup -ServerName ([string]$context.ServerName)
+        $selectedResourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $selectedResourceGroup -ServerName ([string]$context.ServerName)
     }
 
     $groupExists = az group exists -n $selectedResourceGroup --only-show-errors
@@ -7047,7 +7047,7 @@ function Invoke-CoVmExecCommand {
             -Hint "Provide a valid --group value or select a valid group in interactive mode."
     }
 
-    $selectedVmName = Select-CoVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName ([string]$context.VmName)
+    $selectedVmName = Select-AzVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName ([string]$context.VmName)
     $vmDetailContext = [ordered]@{
         ResourceGroup = $selectedResourceGroup
         VmName = $selectedVmName
@@ -7055,7 +7055,7 @@ function Invoke-CoVmExecCommand {
         SshPort = [string]$context.SshPort
     }
 
-    $vmRuntimeDetails = Get-CoVmVmDetails -Context $vmDetailContext
+    $vmRuntimeDetails = Get-AzVmVmDetails -Context $vmDetailContext
     $sshHost = [string]$vmRuntimeDetails.VmFqdn
     if ([string]::IsNullOrWhiteSpace($sshHost)) {
         $sshHost = [string]$vmRuntimeDetails.PublicIP
@@ -7071,8 +7071,8 @@ function Invoke-CoVmExecCommand {
     $replPlatform = if ([string]::Equals($osType, 'Linux', [System.StringComparison]::OrdinalIgnoreCase)) { 'linux' } else { 'windows' }
     $shell = if ($replPlatform -eq 'linux') { 'bash' } else { 'powershell' }
 
-    $pySsh = Ensure-CoVmPySshTools -RepoRoot $PSScriptRoot -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
-    $bootstrap = Initialize-CoVmSshHostKey `
+    $pySsh = Ensure-AzVmPySshTools -RepoRoot $PSScriptRoot -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
+    $bootstrap = Initialize-AzVmSshHostKey `
         -PySshPythonPath ([string]$pySsh.PythonPath) `
         -PySshClientPath ([string]$pySsh.ClientPath) `
         -HostName $sshHost `
@@ -7086,7 +7086,7 @@ function Invoke-CoVmExecCommand {
 
     $session = $null
     try {
-        $session = Start-CoVmPersistentSshSession `
+        $session = Start-AzVmPersistentSshSession `
             -PySshPythonPath ([string]$pySsh.PythonPath) `
             -PySshClientPath ([string]$pySsh.ClientPath) `
             -HostName $sshHost `
@@ -7114,13 +7114,13 @@ function Invoke-CoVmExecCommand {
             }
 
             $taskName = ("repl-{0:D4}" -f $commandIndex)
-            $taskResult = Invoke-CoVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $commandText -TimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
+            $taskResult = Invoke-AzVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $commandText -TimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
             if ($script:PerfMode) {
                 $taskSeconds = 0.0
                 if ($taskResult -and $taskResult.PSObject.Properties.Match('DurationSeconds').Count -gt 0) {
                     $taskSeconds = [double]$taskResult.DurationSeconds
                 }
-                Write-CoVmPerfTiming -Category "exec-task" -Label ("repl command #{0}: {1}" -f $commandIndex, $commandText) -Seconds $taskSeconds
+                Write-AzVmPerfTiming -Category "exec-task" -Label ("repl command #{0}: {1}" -f $commandIndex, $commandText) -Seconds $taskSeconds
             }
             if ([int]$taskResult.ExitCode -ne 0) {
                 Write-Warning ("Remote command exit code: {0}" -f [int]$taskResult.ExitCode)
@@ -7130,14 +7130,14 @@ function Invoke-CoVmExecCommand {
     }
     finally {
         if ($null -ne $session) {
-            Stop-CoVmPersistentSshSession -Session $session
+            Stop-AzVmPersistentSshSession -Session $session
         }
     }
 
     Write-Host "Exec REPL session closed." -ForegroundColor Green
 }
 
-function Invoke-CoVmChangeCommand {
+function Invoke-AzVmChangeCommand {
     param(
         [hashtable]$Options,
         [switch]$AutoMode,
@@ -7145,15 +7145,15 @@ function Invoke-CoVmChangeCommand {
         [switch]$LinuxFlag
     )
 
-    $runtime = Initialize-CoVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
     $context = $runtime.Context
     $envFilePath = [string]$runtime.EnvFilePath
     $effectiveConfigMap = $runtime.EffectiveConfigMap
     $resourceGroup = [string]$context.ResourceGroup
     $vmName = [string]$context.VmName
 
-    $hasRegionOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-region'
-    $hasSizeOption = Test-CoVmCliOptionPresent -Options $Options -Name 'vm-size'
+    $hasRegionOption = Test-AzVmCliOptionPresent -Options $Options -Name 'vm-region'
+    $hasSizeOption = Test-AzVmCliOptionPresent -Options $Options -Name 'vm-size'
     $targetRegion = ''
     $targetSize = ''
 
@@ -7166,11 +7166,11 @@ function Invoke-CoVmChangeCommand {
                 -Hint "Use --vm-region=<region> and/or --vm-size=<sku>."
         }
 
-        $selectedResourceGroup = Select-CoVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -ServerName ([string]$context.ServerName)
-        $selectedVmName = Select-CoVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName $vmName
+        $selectedResourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $resourceGroup -ServerName ([string]$context.ServerName)
+        $selectedVmName = Select-AzVmVmInteractive -ResourceGroup $selectedResourceGroup -DefaultVmName $vmName
 
         if (-not [string]::Equals($selectedResourceGroup, $resourceGroup, [System.StringComparison]::OrdinalIgnoreCase) -or -not [string]::Equals($selectedVmName, $vmName, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $runtime = Initialize-CoVmCommandRuntimeContext `
+            $runtime = Initialize-AzVmCommandRuntimeContext `
                 -AutoMode:$AutoMode `
                 -WindowsFlag:$WindowsFlag `
                 -LinuxFlag:$LinuxFlag `
@@ -7202,7 +7202,7 @@ function Invoke-CoVmChangeCommand {
     if ([string]::IsNullOrWhiteSpace($currentSize)) { $currentSize = [string]$context.VmSize }
 
     if ($hasRegionOption) {
-        $targetRegion = [string](Get-CoVmCliOptionText -Options $Options -Name 'vm-region')
+        $targetRegion = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-region')
         if ([string]::IsNullOrWhiteSpace($targetRegion)) {
             if ($AutoMode) {
                 Throw-FriendlyError `
@@ -7216,7 +7216,7 @@ function Invoke-CoVmChangeCommand {
     }
 
     if ($hasSizeOption) {
-        $targetSize = [string](Get-CoVmCliOptionText -Options $Options -Name 'vm-size')
+        $targetSize = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-size')
         if ([string]::IsNullOrWhiteSpace($targetSize)) {
             if ($AutoMode) {
                 Throw-FriendlyError `
@@ -7233,7 +7233,7 @@ function Invoke-CoVmChangeCommand {
             $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
             while ($true) {
                 $sizePick = Select-VmSkuInteractive -Location $pickerLocation -DefaultVmSize $currentSize -PriceHours $priceHours
-                if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
+                if ([string]::Equals([string]$sizePick, (Get-AzVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
                     $pickerLocation = Select-AzLocationInteractive -DefaultLocation $pickerLocation
                     if (-not $hasRegionOption) {
                         $targetRegion = $pickerLocation
@@ -7252,7 +7252,7 @@ function Invoke-CoVmChangeCommand {
         $priceHours = Get-PriceHoursFromConfig -Config $effectiveConfigMap -DefaultHours 730
         while ($true) {
             $sizePick = Select-VmSkuInteractive -Location $targetRegion -DefaultVmSize $currentSize -PriceHours $priceHours
-            if ([string]::Equals([string]$sizePick, (Get-CoVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
+            if ([string]::Equals([string]$sizePick, (Get-AzVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
                 $targetRegion = Select-AzLocationInteractive -DefaultLocation $targetRegion
                 continue
             }
@@ -7320,14 +7320,14 @@ function Invoke-CoVmChangeCommand {
         if ([string]::IsNullOrWhiteSpace([string]$sourceDiskSku)) { $sourceDiskSku = "StandardSSD_LRS" }
         if ([string]::IsNullOrWhiteSpace([string]$sourceOsType)) { $sourceOsType = "Windows" }
 
-        $targetRegionCode = Get-CoVmRegionCode -Location $targetRegion
+        $targetRegionCode = Get-AzVmRegionCode -Location $targetRegion
         $nameTokens = @{
             SERVER_NAME = [string]$context.ServerName
             REGION_CODE = [string]$targetRegionCode
         }
 
         $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SERVER_NAME}-{REGION_CODE}")
-        $targetResourceGroup = Resolve-CoVmTemplate -Template (Resolve-ServerTemplate -Value $targetResourceGroupTemplate -ServerName ([string]$context.ServerName)) -Tokens $nameTokens
+        $targetResourceGroup = Resolve-AzVmTemplate -Template (Resolve-ServerTemplate -Value $targetResourceGroupTemplate -ServerName ([string]$context.ServerName)) -Tokens $nameTokens
 
         $targetVmTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_NAME_TEMPLATE" -DefaultValue "vm-{SERVER_NAME}-{REGION_CODE}-n{N}")
         $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SERVER_NAME}-{REGION_CODE}-n{N}")
@@ -7338,14 +7338,14 @@ function Invoke-CoVmChangeCommand {
         $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SERVER_NAME}-{REGION_CODE}-n{N}")
         $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SERVER_NAME}-{REGION_CODE}-n{N}")
 
-        $targetVmName = Resolve-CoVmNameFromTemplate -Template $targetVmTemplate -ResourceType 'vm' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetDiskName = Resolve-CoVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetVnetName = Resolve-CoVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetSubnetName = Resolve-CoVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNsgName = Resolve-CoVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNsgRuleName = Resolve-CoVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetIpName = Resolve-CoVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNicName = Resolve-CoVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetVmName = Resolve-AzVmNameFromTemplate -Template $targetVmTemplate -ResourceType 'vm' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetDiskName = Resolve-AzVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetVnetName = Resolve-AzVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetSubnetName = Resolve-AzVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNsgName = Resolve-AzVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNsgRuleName = Resolve-AzVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetIpName = Resolve-AzVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetNicName = Resolve-AzVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -ServerName ([string]$context.ServerName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
 
         Write-Host ("Target naming resolved: rg={0}, vm={1}, disk={2}" -f $targetResourceGroup, $targetVmName, $targetDiskName)
 
@@ -7447,7 +7447,7 @@ function Invoke-CoVmChangeCommand {
                 TcpPorts = @($context.TcpPorts)
                 VmName = $targetVmName
             }
-            Invoke-CoVmNetworkStep -Context $targetContext -ExecutionMode "update"
+            Invoke-AzVmNetworkStep -Context $targetContext -ExecutionMode "update"
             $targetNetworkAttempted = $true
 
             Invoke-TrackedAction -Label ("az disk create -g {0} -n {1}" -f $targetResourceGroup, $targetDiskName) -Action {
@@ -7471,7 +7471,7 @@ function Invoke-CoVmChangeCommand {
                     az vm deallocate -g $targetResourceGroup -n $targetVmName -o none --only-show-errors
                     Assert-LastExitCode "az vm deallocate (target)"
                 } | Out-Null
-                $targetDeallocated = Wait-CoVmVmPowerState -ResourceGroup $targetResourceGroup -VmName $targetVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+                $targetDeallocated = Wait-AzVmVmPowerState -ResourceGroup $targetResourceGroup -VmName $targetVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
                 if (-not $targetDeallocated) { throw "Target VM did not reach deallocated state before resize." }
 
                 Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $targetResourceGroup, $targetVmName, $targetSize) -Action {
@@ -7485,7 +7485,7 @@ function Invoke-CoVmChangeCommand {
                 az vm start -g $targetResourceGroup -n $targetVmName -o none --only-show-errors
                 Assert-LastExitCode "az vm start (target)"
             } | Out-Null
-            $targetRunning = Wait-CoVmVmRunningState -ResourceGroup $targetResourceGroup -VmName $targetVmName -MaxAttempts 6 -DelaySeconds 10
+            $targetRunning = Wait-AzVmVmRunningState -ResourceGroup $targetResourceGroup -VmName $targetVmName -MaxAttempts 6 -DelaySeconds 10
             if (-not $targetRunning) { throw "Target VM did not reach running state after migration." }
 
             if ($targetSnapshotCreated -and -not [string]::IsNullOrWhiteSpace([string]$targetSnapshotName)) { az snapshot delete -g $targetResourceGroup -n $targetSnapshotName --only-show-errors 2>$null }
@@ -7538,7 +7538,7 @@ function Invoke-CoVmChangeCommand {
             az vm deallocate -g $activeResourceGroup -n $activeVmName -o none --only-show-errors
             Assert-LastExitCode "az vm deallocate"
         } | Out-Null
-        $deallocated = Wait-CoVmVmPowerState -ResourceGroup $activeResourceGroup -VmName $activeVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+        $deallocated = Wait-AzVmVmPowerState -ResourceGroup $activeResourceGroup -VmName $activeVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
         if (-not $deallocated) {
             Throw-FriendlyError `
                 -Detail ("VM '{0}' did not reach deallocated state in expected time." -f $activeVmName) `
@@ -7562,7 +7562,7 @@ function Invoke-CoVmChangeCommand {
         Assert-LastExitCode "az vm start"
     } | Out-Null
 
-    $running = Wait-CoVmVmRunningState -ResourceGroup $activeResourceGroup -VmName $activeVmName -MaxAttempts 3 -DelaySeconds 10
+    $running = Wait-AzVmVmRunningState -ResourceGroup $activeResourceGroup -VmName $activeVmName -MaxAttempts 3 -DelaySeconds 10
     if (-not $running) {
         Throw-FriendlyError `
             -Detail "VM did not return to running state after change operation." `
@@ -7608,7 +7608,7 @@ function Invoke-CoVmChangeCommand {
     }
 }
 
-function Invoke-CoVmAzJsonOrNull {
+function Invoke-AzVmAzJsonOrNull {
     param(
         [string[]]$AzArgs,
         [string]$Context,
@@ -7646,7 +7646,7 @@ function Invoke-CoVmAzJsonOrNull {
     }
 }
 
-function Get-CoVmResourceTypeCountMap {
+function Get-AzVmResourceTypeCountMap {
     param(
         [object[]]$Resources
     )
@@ -7676,13 +7676,13 @@ function Get-CoVmResourceTypeCountMap {
     return $ordered
 }
 
-function Get-CoVmVmInventoryDump {
+function Get-AzVmVmInventoryDump {
     param(
         [string]$ResourceGroup,
         [string]$VmName
     )
 
-    $vmFull = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "show", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm show" -SuppressError
+    $vmFull = Invoke-AzVmAzJsonOrNull -AzArgs @("vm", "show", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm show" -SuppressError
     if ($null -eq $vmFull) {
         return [ordered]@{
             Name = [string]$VmName
@@ -7691,8 +7691,8 @@ function Get-CoVmVmInventoryDump {
         }
     }
 
-    $vmDetailed = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "show", "-d", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm show -d" -SuppressError
-    $vmInstanceView = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "get-instance-view", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm get-instance-view" -SuppressError
+    $vmDetailed = Invoke-AzVmAzJsonOrNull -AzArgs @("vm", "show", "-d", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm show -d" -SuppressError
+    $vmInstanceView = Invoke-AzVmAzJsonOrNull -AzArgs @("vm", "get-instance-view", "-g", $ResourceGroup, "-n", $VmName, "-o", "json", "--only-show-errors") -Context "az vm get-instance-view" -SuppressError
 
     $location = [string]$vmFull.location
     $vmSize = [string]$vmFull.hardwareProfile.vmSize
@@ -7720,7 +7720,7 @@ function Get-CoVmVmInventoryDump {
 
     $diskDetails = @()
     foreach ($diskName in @(@($osDiskName) + @($dataDiskNames) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)) {
-        $diskObj = Invoke-CoVmAzJsonOrNull -AzArgs @("disk", "show", "-g", $ResourceGroup, "-n", [string]$diskName, "-o", "json", "--only-show-errors") -Context "az disk show" -SuppressError
+        $diskObj = Invoke-AzVmAzJsonOrNull -AzArgs @("disk", "show", "-g", $ResourceGroup, "-n", [string]$diskName, "-o", "json", "--only-show-errors") -Context "az disk show" -SuppressError
         if ($null -ne $diskObj) {
             $diskDetails += $diskObj
         }
@@ -7736,7 +7736,7 @@ function Get-CoVmVmInventoryDump {
     $nicDetails = @()
     $publicIpIdSet = New-Object System.Collections.Generic.HashSet[string]
     foreach ($nicId in @($nicIds)) {
-        $nicObj = Invoke-CoVmAzJsonOrNull -AzArgs @("network", "nic", "show", "--ids", [string]$nicId, "-o", "json", "--only-show-errors") -Context "az network nic show" -SuppressError
+        $nicObj = Invoke-AzVmAzJsonOrNull -AzArgs @("network", "nic", "show", "--ids", [string]$nicId, "-o", "json", "--only-show-errors") -Context "az network nic show" -SuppressError
         if ($null -eq $nicObj) {
             continue
         }
@@ -7751,57 +7751,16 @@ function Get-CoVmVmInventoryDump {
     }
 
     $publicIpDetails = @()
-    foreach ($publicIpId in @($publicIpIdSet.ToArray() | Sort-Object)) {
-        $publicIpObj = Invoke-CoVmAzJsonOrNull -AzArgs @("network", "public-ip", "show", "--ids", [string]$publicIpId, "-o", "json", "--only-show-errors") -Context "az network public-ip show" -SuppressError
+    foreach ($publicIpId in @($publicIpIdSet | Sort-Object)) {
+        $publicIpObj = Invoke-AzVmAzJsonOrNull -AzArgs @("network", "public-ip", "show", "--ids", [string]$publicIpId, "-o", "json", "--only-show-errors") -Context "az network public-ip show" -SuppressError
         if ($null -ne $publicIpObj) {
             $publicIpDetails += $publicIpObj
         }
     }
 
-    $skuEntry = $null
-    if (-not [string]::IsNullOrWhiteSpace([string]$location) -and -not [string]::IsNullOrWhiteSpace([string]$vmSize)) {
-        $skuRaw = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "list-skus", "--location", $location, "--resource-type", "virtualMachines", "--size", $vmSize, "--all", "-o", "json", "--only-show-errors") -Context "az vm list-skus" -SuppressError
-        $skuRows = @(ConvertTo-ObjectArrayCompat -InputObject $skuRaw)
-        if ($skuRows.Count -gt 0) {
-            $exact = @($skuRows | Where-Object { [string]::Equals([string]$_.name, [string]$vmSize, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
-            if ($exact -and @($exact).Count -gt 0) {
-                $skuEntry = $exact[0]
-            }
-            else {
-                $skuEntry = $skuRows[0]
-            }
-        }
-    }
-
-    $skuCapabilities = @()
-    if ($skuEntry -and $skuEntry.capabilities) {
-        $skuCapabilities = @(ConvertTo-ObjectArrayCompat -InputObject $skuEntry.capabilities)
-    }
-
-    $focusedCapabilities = @(
-        $skuCapabilities | Where-Object {
-            $capName = [string]$_.name
-            if ([string]::IsNullOrWhiteSpace([string]$capName)) {
-                return $false
-            }
-
-            $capLower = $capName.ToLowerInvariant()
-            return (
-                $capLower.Contains("nested") -or
-                $capLower.Contains("hibern") -or
-                $capLower.Contains("hyperv") -or
-                $capLower.Contains("trusted") -or
-                $capLower.Contains("encryption")
-            )
-        }
-    )
-
     $featureFlags = [ordered]@{
         HibernationEnabled = $vmFull.additionalCapabilities.hibernationEnabled
-        NestedVirtualizationCapabilities = @(
-            $focusedCapabilities |
-                Where-Object { ([string]$_.name).ToLowerInvariant().Contains("nested") }
-        )
+        NestedVirtualizationCapabilities = @()
     }
 
     return [ordered]@{
@@ -7818,11 +7777,12 @@ function Get-CoVmVmInventoryDump {
         Identity = $vmFull.identity
         AdditionalCapabilities = $vmFull.additionalCapabilities
         FeatureFlags = $featureFlags
-        SkuName = if ($skuEntry) { [string]$skuEntry.name } else { [string]$vmSize }
-        SkuTier = if ($skuEntry) { [string]$skuEntry.tier } else { "" }
-        SkuFamily = if ($skuEntry) { [string]$skuEntry.family } else { "" }
-        SkuCapabilities = @($skuCapabilities)
-        FocusedCapabilities = @($focusedCapabilities)
+        SkuName = [string]$vmSize
+        SkuTier = ""
+        SkuFamily = ""
+        SkuAvailability = "unknown"
+        SkuCapabilities = @()
+        FocusedCapabilities = @()
         OsDiskName = [string]$osDiskName
         DataDiskNames = @($dataDiskNames)
         Disks = @($diskDetails)
@@ -7835,12 +7795,134 @@ function Get-CoVmVmInventoryDump {
     }
 }
 
-function Get-CoVmResourceGroupInventoryDump {
+function Get-AzVmSkuMetadataMap {
+    param(
+        [string]$Location,
+        [string[]]$SkuNames
+    )
+
+    $result = @{}
+    if ([string]::IsNullOrWhiteSpace([string]$Location) -or -not $SkuNames -or $SkuNames.Count -eq 0) {
+        return $result
+    }
+
+    $targetSkuSet = @{}
+    foreach ($skuName in @($SkuNames)) {
+        $nameText = [string]$skuName
+        if ([string]::IsNullOrWhiteSpace([string]$nameText)) {
+            continue
+        }
+        $targetSkuSet[$nameText.ToLowerInvariant()] = $true
+    }
+    if ($targetSkuSet.Count -eq 0) {
+        return $result
+    }
+
+    $subscriptionId = az account show --only-show-errors --query id -o tsv
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$subscriptionId)) {
+        return $result
+    }
+
+    $tokenJson = az account get-access-token --only-show-errors --resource https://management.azure.com/ -o json
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$tokenJson)) {
+        return $result
+    }
+
+    $accessToken = (ConvertFrom-JsonCompat -InputObject $tokenJson).accessToken
+    if ([string]::IsNullOrWhiteSpace([string]$accessToken)) {
+        return $result
+    }
+
+    $filter = [uri]::EscapeDataString("location eq '$Location'")
+    $url = "https://management.azure.com/subscriptions/$subscriptionId/providers/Microsoft.Compute/skus?api-version=2023-07-01&`$filter=$filter"
+    try {
+        $response = Invoke-AzVmHttpRestMethod `
+            -Method Get `
+            -Uri $url `
+            -Headers @{ Authorization = "Bearer $accessToken" } `
+            -PerfLabel ("http compute skus metadata (location={0})" -f [string]$Location)
+    }
+    catch {
+        return $result
+    }
+
+    foreach ($item in @((ConvertTo-ObjectArrayCompat -InputObject $response.value) | Where-Object { $_.resourceType -eq "virtualMachines" })) {
+        if (-not $item.name) {
+            continue
+        }
+
+        $itemName = [string]$item.name
+        $itemKey = $itemName.ToLowerInvariant()
+        if (-not $targetSkuSet.ContainsKey($itemKey)) {
+            continue
+        }
+
+        $isUnavailable = $false
+        foreach ($restriction in (ConvertTo-ObjectArrayCompat -InputObject $item.restrictions)) {
+            if ($restriction.reasonCode -eq "NotAvailableForSubscription") {
+                $isUnavailable = $true
+                break
+            }
+            if ($restriction.type -eq "Location" -and (($restriction.values -and ($restriction.values -contains $Location)) -or -not $restriction.values)) {
+                $isUnavailable = $true
+                break
+            }
+        }
+
+        $locationInfo = @(
+            (ConvertTo-ObjectArrayCompat -InputObject $item.locationInfo) |
+                Where-Object { $_.location -ieq $Location }
+        )
+        $availability = if ($isUnavailable -or -not $locationInfo) { "no" } else { "yes" }
+
+        $skuCapabilities = @(ConvertTo-ObjectArrayCompat -InputObject $item.capabilities)
+        $focusedCapabilities = @(
+            $skuCapabilities | Where-Object {
+                $capName = [string]$_.name
+                if ([string]::IsNullOrWhiteSpace([string]$capName)) {
+                    return $false
+                }
+
+                $capLower = $capName.ToLowerInvariant()
+                return (
+                    $capLower.Contains("nested") -or
+                    $capLower.Contains("hibern") -or
+                    $capLower.Contains("hyperv") -or
+                    $capLower.Contains("trusted") -or
+                    $capLower.Contains("encryption")
+                )
+            }
+        )
+
+        $nestedCapabilities = @(
+            $focusedCapabilities |
+                Where-Object {
+                    $capName = [string]$_.name
+                    -not [string]::IsNullOrWhiteSpace([string]$capName) -and $capName.ToLowerInvariant().Contains("nested")
+                }
+        )
+
+        $result[$itemName] = [ordered]@{
+            Name = $itemName
+            Tier = [string]$item.tier
+            Family = [string]$item.family
+            Availability = [string]$availability
+            SkuCapabilities = @($skuCapabilities)
+            FocusedCapabilities = @($focusedCapabilities)
+            NestedCapabilities = @($nestedCapabilities)
+        }
+    }
+
+    return $result
+}
+
+function Get-AzVmResourceGroupInventoryDump {
     param(
         [string]$ResourceGroup
     )
 
-    $groupObj = Invoke-CoVmAzJsonOrNull -AzArgs @("group", "show", "-n", $ResourceGroup, "-o", "json", "--only-show-errors") -Context "az group show" -SuppressError
+    Write-Host ("show: scanning resource group '{0}'..." -f [string]$ResourceGroup) -ForegroundColor DarkGray
+    $groupObj = Invoke-AzVmAzJsonOrNull -AzArgs @("group", "show", "-n", $ResourceGroup, "-o", "json", "--only-show-errors") -Context "az group show" -SuppressError
     if ($null -eq $groupObj) {
         return [ordered]@{
             Name = [string]$ResourceGroup
@@ -7853,13 +7935,13 @@ function Get-CoVmResourceGroupInventoryDump {
         }
     }
 
-    $resourcesRaw = Invoke-CoVmAzJsonOrNull -AzArgs @("resource", "list", "-g", $ResourceGroup, "-o", "json", "--only-show-errors") -Context "az resource list" -SuppressError
+    $resourcesRaw = Invoke-AzVmAzJsonOrNull -AzArgs @("resource", "list", "-g", $ResourceGroup, "-o", "json", "--only-show-errors") -Context "az resource list" -SuppressError
     $resources = @(ConvertTo-ObjectArrayCompat -InputObject $resourcesRaw)
-    $resourceTypeCounts = Get-CoVmResourceTypeCountMap -Resources $resources
+    $resourceTypeCounts = Get-AzVmResourceTypeCountMap -Resources $resources
 
-    $vmNameRows = Invoke-CoVmAzJsonOrNull -AzArgs @("vm", "list", "-g", $ResourceGroup, "--query", "[].name", "-o", "json", "--only-show-errors") -Context "az vm list" -SuppressError
+    $vmNameRows = Invoke-AzVmAzJsonOrNull -AzArgs @("vm", "list", "-g", $ResourceGroup, "--query", "[].name", "-o", "json", "--only-show-errors") -Context "az vm list" -SuppressError
     $vmNames = @(
-        ConvertFrom-JsonArrayCompat -InputObject $vmNameRows |
+        ConvertTo-ObjectArrayCompat -InputObject $vmNameRows |
             ForEach-Object { [string]$_ } |
             Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
             Sort-Object -Unique
@@ -7867,7 +7949,60 @@ function Get-CoVmResourceGroupInventoryDump {
 
     $vmDumps = @()
     foreach ($vmName in @($vmNames)) {
-        $vmDumps += (Get-CoVmVmInventoryDump -ResourceGroup $ResourceGroup -VmName [string]$vmName)
+        Write-Host ("show: collecting VM '{0}' in group '{1}'..." -f [string]$vmName, [string]$ResourceGroup) -ForegroundColor DarkGray
+        $vmDumps += (Get-AzVmVmInventoryDump -ResourceGroup $ResourceGroup -VmName ([string]$vmName))
+    }
+
+    $skuNamesByLocation = @{}
+    foreach ($vmDump in @($vmDumps)) {
+        $vmLocation = [string]$vmDump.Location
+        $vmSkuName = [string]$vmDump.VmSize
+        if ([string]::IsNullOrWhiteSpace([string]$vmLocation) -or [string]::IsNullOrWhiteSpace([string]$vmSkuName)) {
+            continue
+        }
+
+        if (-not $skuNamesByLocation.ContainsKey($vmLocation)) {
+            $skuNamesByLocation[$vmLocation] = New-Object System.Collections.Generic.HashSet[string] ([System.StringComparer]::OrdinalIgnoreCase)
+        }
+        [void]$skuNamesByLocation[$vmLocation].Add($vmSkuName)
+    }
+
+    $skuMetadataByLocation = @{}
+    foreach ($locationKey in @($skuNamesByLocation.Keys)) {
+        $skuNameList = @($skuNamesByLocation[$locationKey] | Sort-Object)
+        if ($skuNameList.Count -eq 0) {
+            continue
+        }
+        Write-Host ("show: loading optimized SKU metadata for location '{0}'..." -f [string]$locationKey) -ForegroundColor DarkGray
+        $skuMetadataByLocation[$locationKey] = Get-AzVmSkuMetadataMap -Location ([string]$locationKey) -SkuNames $skuNameList
+    }
+
+    foreach ($vmDump in @($vmDumps)) {
+        $vmLocation = [string]$vmDump.Location
+        $vmSkuName = [string]$vmDump.VmSize
+        if ([string]::IsNullOrWhiteSpace([string]$vmLocation) -or [string]::IsNullOrWhiteSpace([string]$vmSkuName)) {
+            continue
+        }
+        if (-not $skuMetadataByLocation.ContainsKey($vmLocation)) {
+            continue
+        }
+
+        $locationMeta = $skuMetadataByLocation[$vmLocation]
+        if (-not $locationMeta.ContainsKey($vmSkuName)) {
+            continue
+        }
+
+        $meta = $locationMeta[$vmSkuName]
+        $vmDump['SkuName'] = [string]$meta.Name
+        $vmDump['SkuTier'] = [string]$meta.Tier
+        $vmDump['SkuFamily'] = [string]$meta.Family
+        $vmDump['SkuAvailability'] = [string]$meta.Availability
+        $vmDump['SkuCapabilities'] = @($meta.SkuCapabilities)
+        $vmDump['FocusedCapabilities'] = @($meta.FocusedCapabilities)
+
+        if ($vmDump.Contains('FeatureFlags') -and $vmDump.FeatureFlags) {
+            $vmDump.FeatureFlags['NestedVirtualizationCapabilities'] = @($meta.NestedCapabilities)
+        }
     }
 
     return [ordered]@{
@@ -7886,7 +8021,176 @@ function Get-CoVmResourceGroupInventoryDump {
     }
 }
 
-function Invoke-CoVmShowCommand {
+function Write-AzVmShowSectionHeader {
+    param(
+        [string]$Text
+    )
+
+    Write-Host ""
+    Write-Host $Text -ForegroundColor Cyan
+}
+
+function Write-AzVmShowKeyValueRow {
+    param(
+        [string]$Label,
+        [object]$Value,
+        [int]$Indent = 0
+    )
+
+    $indentSize = [Math]::Max(0, [int]$Indent)
+    $indentText = (' ' * $indentSize)
+    $valueText = ConvertTo-AzVmDisplayValue -Value $Value
+    if ([string]::IsNullOrWhiteSpace([string]$valueText)) {
+        $valueText = "(empty)"
+    }
+
+    Write-Host ("{0}{1}: {2}" -f $indentText, $Label, $valueText)
+}
+
+function Write-AzVmShowReport {
+    param(
+        [hashtable]$Dump
+    )
+
+    Write-AzVmShowSectionHeader -Text "Azure VM Show Report"
+    Write-AzVmShowKeyValueRow -Label "Generated at (UTC)" -Value ([string]$Dump.GeneratedAtUtc) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Command" -Value ([string]$Dump.Command) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Mode" -Value ([string]$Dump.Mode) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Requested platform" -Value ([string]$Dump.RequestedPlatform) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Env file path" -Value ([string]$Dump.EnvFilePath) -Indent 2
+
+    Write-AzVmShowSectionHeader -Text "Azure Account"
+    Write-AzVmShowKeyValueRow -Label "Subscription name" -Value ([string]$Dump.AzureAccount.SubscriptionName) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Subscription id" -Value ([string]$Dump.AzureAccount.SubscriptionId) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Tenant name" -Value ([string]$Dump.AzureAccount.TenantName) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Tenant id" -Value ([string]$Dump.AzureAccount.TenantId) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Account user" -Value ([string]$Dump.AzureAccount.UserName) -Indent 2
+
+    Write-AzVmShowSectionHeader -Text "Selection And Summary"
+    Write-AzVmShowKeyValueRow -Label "Target group filter" -Value ([string]$Dump.Selection.TargetGroup) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Included resource groups" -Value (@($Dump.Selection.IncludedResourceGroups)) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Resource group count" -Value ([int]$Dump.Summary.ResourceGroupCount) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Total VM count" -Value ([int]$Dump.Summary.TotalVmCount) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Running VM count" -Value ([int]$Dump.Summary.RunningVmCount) -Indent 2
+
+    Write-AzVmShowSectionHeader -Text ".env Configuration Values"
+    $envValues = $Dump.Config.DotEnvValues
+    if ($envValues -and $envValues.Count -gt 0) {
+        foreach ($key in @($envValues.Keys | Sort-Object)) {
+            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value ($envValues[$key]) -Indent 2
+        }
+    }
+    else {
+        Write-AzVmShowKeyValueRow -Label "values" -Value "(empty)" -Indent 2
+    }
+
+    Write-AzVmShowSectionHeader -Text "Runtime Overrides"
+    $overrideValues = $Dump.Config.RuntimeOverrides
+    if ($overrideValues -and $overrideValues.Count -gt 0) {
+        foreach ($key in @($overrideValues.Keys | Sort-Object)) {
+            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value ($overrideValues[$key]) -Indent 2
+        }
+    }
+    else {
+        Write-AzVmShowKeyValueRow -Label "values" -Value "(empty)" -Indent 2
+    }
+
+    Write-AzVmShowSectionHeader -Text "Resource Groups"
+    $groupIndex = 0
+    foreach ($group in @(ConvertTo-ObjectArrayCompat -InputObject $Dump.ResourceGroups)) {
+        $groupIndex++
+        Write-Host ""
+        Write-Host ("[{0}] Resource Group: {1}" -f $groupIndex, [string]$group.Name) -ForegroundColor Yellow
+        Write-AzVmShowKeyValueRow -Label "Exists" -Value ([bool]$group.Exists) -Indent 2
+        Write-AzVmShowKeyValueRow -Label "Location" -Value ([string]$group.Location) -Indent 2
+        Write-AzVmShowKeyValueRow -Label "Provisioning state" -Value ([string]$group.ProvisioningState) -Indent 2
+        Write-AzVmShowKeyValueRow -Label "Resource count" -Value ([int]$group.ResourceCount) -Indent 2
+        Write-AzVmShowKeyValueRow -Label "VM count" -Value ([int]$group.VmCount) -Indent 2
+
+        $typeCountMap = $group.ResourceTypeCounts
+        if ($typeCountMap -and $typeCountMap.Count -gt 0) {
+            Write-Host "  Resource types:"
+            foreach ($typeKey in @($typeCountMap.Keys | Sort-Object)) {
+                Write-AzVmShowKeyValueRow -Label ([string]$typeKey) -Value ([int]$typeCountMap[$typeKey]) -Indent 4
+            }
+        }
+        else {
+            Write-AzVmShowKeyValueRow -Label "Resource types" -Value "(none)" -Indent 2
+        }
+
+        $resourceRows = @(
+            ConvertTo-ObjectArrayCompat -InputObject $group.Resources |
+                ForEach-Object {
+                    $resourceName = [string]$_.name
+                    $resourceType = [string]$_.type
+                    $resourceLocation = [string]$_.location
+                    if ([string]::IsNullOrWhiteSpace([string]$resourceLocation)) {
+                        return ("{0} ({1})" -f $resourceName, $resourceType)
+                    }
+                    return ("{0} ({1}, {2})" -f $resourceName, $resourceType, $resourceLocation)
+                } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+        )
+        if ($resourceRows.Count -gt 0) {
+            Write-Host "  Resources:"
+            foreach ($resourceRow in @($resourceRows)) {
+                Write-Host ("    - {0}" -f [string]$resourceRow)
+            }
+        }
+        else {
+            Write-AzVmShowKeyValueRow -Label "Resources" -Value "(none)" -Indent 2
+        }
+
+        $vmRows = @(ConvertTo-ObjectArrayCompat -InputObject $group.Vms)
+        if ($vmRows.Count -eq 0) {
+            Write-AzVmShowKeyValueRow -Label "VM details" -Value "(none)" -Indent 2
+            continue
+        }
+
+        Write-Host "  VM details:"
+        $vmIndex = 0
+        foreach ($vm in @($vmRows)) {
+            $vmIndex++
+            Write-Host ("    [{0}] VM: {1}" -f $vmIndex, [string]$vm.Name) -ForegroundColor Green
+            Write-AzVmShowKeyValueRow -Label "Power state" -Value ([string]$vm.PowerState) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "Provisioning state" -Value ([string]$vm.ProvisioningState) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "Location" -Value ([string]$vm.Location) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "Size (SKU)" -Value ([string]$vm.VmSize) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "SKU availability (subscription)" -Value ([string]$vm.SkuAvailability) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "OS type" -Value ([string]$vm.OsType) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "Public IPs" -Value ([string]$vm.PublicIps) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "Private IPs" -Value ([string]$vm.PrivateIps) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "FQDNs" -Value ([string]$vm.Fqdns) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "OS disk" -Value ([string]$vm.OsDiskName) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "Data disks" -Value (@($vm.DataDiskNames)) -Indent 6
+            Write-AzVmShowKeyValueRow -Label "NIC ids" -Value (@($vm.NicIds)) -Indent 6
+
+            $hibernationEnabled = $null
+            if ($vm.FeatureFlags -and $vm.FeatureFlags.Contains('HibernationEnabled')) {
+                $hibernationEnabled = $vm.FeatureFlags.HibernationEnabled
+            }
+            Write-AzVmShowKeyValueRow -Label "Hibernation enabled" -Value $hibernationEnabled -Indent 6
+
+            $nestedCapabilityRows = @(
+                ConvertTo-ObjectArrayCompat -InputObject $vm.FocusedCapabilities |
+                    Where-Object {
+                        $capName = [string]$_.name
+                        -not [string]::IsNullOrWhiteSpace([string]$capName) -and $capName.ToLowerInvariant().Contains("nested")
+                    } |
+                    ForEach-Object { "{0}={1}" -f ([string]$_.name), ([string]$_.value) }
+            )
+            Write-AzVmShowKeyValueRow -Label "Nested virtualization capabilities" -Value $nestedCapabilityRows -Indent 6
+
+            $focusedCaps = @(
+                ConvertTo-ObjectArrayCompat -InputObject $vm.FocusedCapabilities |
+                    ForEach-Object { "{0}={1}" -f ([string]$_.name), ([string]$_.value) }
+            )
+            Write-AzVmShowKeyValueRow -Label "Focused capabilities" -Value $focusedCaps -Indent 6
+        }
+    }
+}
+
+function Invoke-AzVmShowCommand {
     param(
         [hashtable]$Options,
         [switch]$AutoMode,
@@ -7896,15 +8200,15 @@ function Invoke-CoVmShowCommand {
 
     $envFilePath = Join-Path $PSScriptRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
-    $accountSnapshot = Get-CoVmAzAccountSnapshot
+    $accountSnapshot = Get-AzVmAzAccountSnapshot
 
-    $targetGroupValue = [string](Get-CoVmCliOptionText -Options $Options -Name 'group')
+    $targetGroupValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
     $targetGroup = ''
     if (-not [string]::IsNullOrWhiteSpace([string]$targetGroupValue)) {
         $targetGroup = $targetGroupValue.Trim()
     }
 
-    $allGroupRows = Invoke-CoVmAzJsonOrNull -AzArgs @("group", "list", "-o", "json", "--only-show-errors") -Context "az group list"
+    $allGroupRows = Invoke-AzVmAzJsonOrNull -AzArgs @("group", "list", "-o", "json", "--only-show-errors") -Context "az group list"
     $allGroups = @(
         ConvertFrom-JsonArrayCompat -InputObject $allGroupRows |
             ForEach-Object { [string]$_.name } |
@@ -7944,7 +8248,7 @@ function Invoke-CoVmShowCommand {
 
     $groupDumps = @()
     foreach ($resourceGroup in @($selectedGroups)) {
-        $groupDumps += (Get-CoVmResourceGroupInventoryDump -ResourceGroup [string]$resourceGroup)
+        $groupDumps += (Get-AzVmResourceGroupInventoryDump -ResourceGroup ([string]$resourceGroup))
     }
 
     $totalVmCount = 0
@@ -7993,13 +8297,10 @@ function Invoke-CoVmShowCommand {
         ResourceGroups = @($groupDumps)
     }
 
-    $dumpJson = $dump | ConvertTo-Json -Depth 100
-    Write-Host ""
-    Write-Host "System and configuration dump (JSON):" -ForegroundColor Cyan
-    Write-Host $dumpJson
+    Write-AzVmShowReport -Dump $dump
 }
 
-function Invoke-CoVmDeleteCommand {
+function Invoke-AzVmDeleteCommand {
     param(
         [hashtable]$Options,
         [switch]$AutoMode,
@@ -8014,7 +8315,7 @@ function Invoke-CoVmDeleteCommand {
     $defaultVmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
     $defaultVmDiskName = [string](Get-ConfigValue -Config $configMap -Key 'VM_DISK_NAME' -DefaultValue '')
 
-    $targetRaw = [string](Get-CoVmCliOptionText -Options $Options -Name 'target')
+    $targetRaw = [string](Get-AzVmCliOptionText -Options $Options -Name 'target')
     $target = $targetRaw.Trim().ToLowerInvariant()
     if ($target -notin @('group','network','vm','disk')) {
         Throw-FriendlyError `
@@ -8024,7 +8325,7 @@ function Invoke-CoVmDeleteCommand {
             -Hint "Use --target=group|network|vm|disk."
     }
 
-    $groupOption = [string](Get-CoVmCliOptionText -Options $Options -Name 'group')
+    $groupOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
     $resourceGroup = ''
     if (-not [string]::IsNullOrWhiteSpace([string]$groupOption)) {
         $resourceGroup = $groupOption.Trim()
@@ -8040,7 +8341,7 @@ function Invoke-CoVmDeleteCommand {
         $resourceGroup = $defaultResourceGroup.Trim()
     }
     else {
-        $resourceGroup = Select-CoVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -ServerName $serverName
+        $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -ServerName $serverName
     }
 
     $groupExists = az group exists -n $resourceGroup --only-show-errors
@@ -8053,7 +8354,7 @@ function Invoke-CoVmDeleteCommand {
             -Hint "Select an existing resource group."
     }
 
-    $forceYes = Get-CoVmCliOptionBool -Options $Options -Name 'yes' -DefaultValue $false
+    $forceYes = Get-AzVmCliOptionBool -Options $Options -Name 'yes' -DefaultValue $false
 
     if ($target -eq 'group') {
         $approved = ($forceYes -or $AutoMode)
@@ -8078,7 +8379,7 @@ function Invoke-CoVmDeleteCommand {
         return
     }
 
-    $vmNames = @(Get-CoVmVmNamesForResourceGroup -ResourceGroup $resourceGroup)
+    $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $resourceGroup)
     if ($vmNames.Count -eq 0) {
         Throw-FriendlyError `
             -Detail ("No VM found in resource group '{0}' for target '{1}'." -f $resourceGroup, $target) `
@@ -8110,11 +8411,11 @@ function Invoke-CoVmDeleteCommand {
         }
     }
     else {
-        $selectedVmName = Select-CoVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
+        $selectedVmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
     }
 
-    $descriptor = Get-CoVmVmNetworkDescriptor -ResourceGroup $resourceGroup -VmName $selectedVmName
-    $vmExists = Test-CoVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $selectedVmName)
+    $descriptor = Get-AzVmVmNetworkDescriptor -ResourceGroup $resourceGroup -VmName $selectedVmName
+    $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $selectedVmName)
 
     $confirmPrompt = switch ($target) {
         'vm' { "Delete VM '$selectedVmName' from resource group '$resourceGroup'?" }
@@ -8163,7 +8464,7 @@ function Invoke-CoVmDeleteCommand {
                 -Hint "Set VM_DISK_NAME in .env or ensure VM metadata is available."
         }
 
-        $diskExists = Test-CoVmAzResourceExists -AzArgs @("disk", "show", "-g", $resourceGroup, "-n", $diskName)
+        $diskExists = Test-AzVmAzResourceExists -AzArgs @("disk", "show", "-g", $resourceGroup, "-n", $diskName)
         if ($diskExists) {
             Invoke-TrackedAction -Label ("az disk delete -g {0} -n {1} --yes" -f $resourceGroup, $diskName) -Action {
                 az disk delete -g $resourceGroup -n $diskName --yes -o none --only-show-errors
@@ -8179,7 +8480,7 @@ function Invoke-CoVmDeleteCommand {
 
     $nicName = [string]$descriptor.NicName
     if (-not [string]::IsNullOrWhiteSpace([string]$nicName)) {
-        $nicExists = Test-CoVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", $nicName)
+        $nicExists = Test-AzVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", $nicName)
         if ($nicExists) {
             Invoke-TrackedAction -Label ("az network nic delete -g {0} -n {1}" -f $resourceGroup, $nicName) -Action {
                 az network nic delete -g $resourceGroup -n $nicName --only-show-errors
@@ -8190,7 +8491,7 @@ function Invoke-CoVmDeleteCommand {
 
     $publicIpName = [string]$descriptor.PublicIpName
     if (-not [string]::IsNullOrWhiteSpace([string]$publicIpName)) {
-        $ipExists = Test-CoVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", $resourceGroup, "-n", $publicIpName)
+        $ipExists = Test-AzVmAzResourceExists -AzArgs @("network", "public-ip", "show", "-g", $resourceGroup, "-n", $publicIpName)
         if ($ipExists) {
             Invoke-TrackedAction -Label ("az network public-ip delete -g {0} -n {1}" -f $resourceGroup, $publicIpName) -Action {
                 az network public-ip delete -g $resourceGroup -n $publicIpName --only-show-errors
@@ -8201,7 +8502,7 @@ function Invoke-CoVmDeleteCommand {
 
     $nsgName = [string]$descriptor.NsgName
     if (-not [string]::IsNullOrWhiteSpace([string]$nsgName)) {
-        $nsgExists = Test-CoVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", $resourceGroup, "-n", $nsgName)
+        $nsgExists = Test-AzVmAzResourceExists -AzArgs @("network", "nsg", "show", "-g", $resourceGroup, "-n", $nsgName)
         if ($nsgExists) {
             Invoke-TrackedAction -Label ("az network nsg delete -g {0} -n {1}" -f $resourceGroup, $nsgName) -Action {
                 az network nsg delete -g $resourceGroup -n $nsgName --only-show-errors
@@ -8212,7 +8513,7 @@ function Invoke-CoVmDeleteCommand {
 
     $vnetName = [string]$descriptor.VnetName
     if (-not [string]::IsNullOrWhiteSpace([string]$vnetName)) {
-        $vnetExists = Test-CoVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", $resourceGroup, "-n", $vnetName)
+        $vnetExists = Test-AzVmAzResourceExists -AzArgs @("network", "vnet", "show", "-g", $resourceGroup, "-n", $vnetName)
         if ($vnetExists) {
             Invoke-TrackedAction -Label ("az network vnet delete -g {0} -n {1}" -f $resourceGroup, $vnetName) -Action {
                 az network vnet delete -g $resourceGroup -n $vnetName --only-show-errors
@@ -8224,20 +8525,20 @@ function Invoke-CoVmDeleteCommand {
     Write-Host ("Delete completed: VM-bound network resources for '{0}' were purged." -f $selectedVmName) -ForegroundColor Green
 }
 
-function Invoke-CoVmCommandDispatcher {
+function Invoke-AzVmCommandDispatcher {
     param(
         [string]$CommandName,
         [hashtable]$Options,
         [string]$HelpTopic = ''
     )
 
-    Assert-CoVmCommandOptions -CommandName $CommandName -Options $Options
+    Assert-AzVmCommandOptions -CommandName $CommandName -Options $Options
 
     $defaultAutoMode = [string]::Equals([string]$CommandName, 'exec', [System.StringComparison]::OrdinalIgnoreCase)
-    $script:AutoMode = Get-CoVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $defaultAutoMode
-    $script:PerfMode = Get-CoVmCliOptionBool -Options $Options -Name 'perf' -DefaultValue $false
-    $windowsFlag = Get-CoVmCliOptionBool -Options $Options -Name 'windows' -DefaultValue $false
-    $linuxFlag = Get-CoVmCliOptionBool -Options $Options -Name 'linux' -DefaultValue $false
+    $script:AutoMode = Get-AzVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $defaultAutoMode
+    $script:PerfMode = Get-AzVmCliOptionBool -Options $Options -Name 'perf' -DefaultValue $false
+    $windowsFlag = Get-AzVmCliOptionBool -Options $Options -Name 'windows' -DefaultValue $false
+    $linuxFlag = Get-AzVmCliOptionBool -Options $Options -Name 'linux' -DefaultValue $false
     if ($windowsFlag -and $linuxFlag) {
         Throw-FriendlyError `
             -Detail "Both --windows and --linux were provided." `
@@ -8248,7 +8549,7 @@ function Invoke-CoVmCommandDispatcher {
 
     $script:ConfigOverrides = @{}
     $script:ActiveCommand = [string]$CommandName
-    $helpRequested = Get-CoVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
+    $helpRequested = Get-AzVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
 
     $commandPerfWatch = $null
     if ($script:PerfMode) {
@@ -8256,17 +8557,17 @@ function Invoke-CoVmCommandDispatcher {
     }
     try {
         if ($helpRequested -and $CommandName -ne 'help') {
-            Show-CoVmCommandHelp -Topic $CommandName
+            Show-AzVmCommandHelp -Topic $CommandName
             return
         }
 
         switch ($CommandName) {
             'help' {
                 if ($helpRequested) {
-                    Show-CoVmCommandHelp -Overview
+                    Show-AzVmCommandHelp -Overview
                 }
                 else {
-                    Show-CoVmCommandHelp -Topic $HelpTopic
+                    Show-AzVmCommandHelp -Topic $HelpTopic
                 }
                 return
             }
@@ -8274,11 +8575,11 @@ function Invoke-CoVmCommandDispatcher {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-CoVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmConfigCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'create' {
-                $actionPlan = Resolve-CoVmActionPlan -CommandName 'create' -Options $Options
+                $actionPlan = Resolve-AzVmActionPlan -CommandName 'create' -Options $Options
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
@@ -8286,7 +8587,7 @@ function Invoke-CoVmCommandDispatcher {
                 return
             }
             'update' {
-                $actionPlan = Resolve-CoVmActionPlan -CommandName 'update' -Options $Options
+                $actionPlan = Resolve-AzVmActionPlan -CommandName 'update' -Options $Options
                 $script:UpdateMode = $true
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'update'
@@ -8297,28 +8598,28 @@ function Invoke-CoVmCommandDispatcher {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-CoVmChangeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmChangeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'exec' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-CoVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'show' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-CoVmShowCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmShowCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'delete' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-CoVmDeleteCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmDeleteCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             default {
@@ -8336,7 +8637,7 @@ function Invoke-CoVmCommandDispatcher {
                 $commandPerfWatch.Stop()
             }
 
-            Write-CoVmPerfTiming -Category "command" -Label ([string]$CommandName) -Seconds $commandPerfWatch.Elapsed.TotalSeconds
+            Write-AzVmPerfTiming -Category "command" -Label ([string]$CommandName) -Seconds $commandPerfWatch.Elapsed.TotalSeconds
         }
     }
 }
@@ -8347,11 +8648,11 @@ if ($MyInvocation.InvocationName -eq '.') {
 }
 
 try {
-    $parsedCli = Parse-CoVmCliArguments -CommandToken $Command -RawArgs $CliArgs
-    Invoke-CoVmCommandDispatcher -CommandName ([string]$parsedCli.Command) -Options $parsedCli.Options -HelpTopic ([string]$parsedCli.HelpTopic)
+    $parsedCli = Parse-AzVmCliArguments -CommandToken $Command -RawArgs $CliArgs
+    Invoke-AzVmCommandDispatcher -CommandName ([string]$parsedCli.Command) -Options $parsedCli.Options -HelpTopic ([string]$parsedCli.HelpTopic)
 }
 catch {
-    $resolvedError = Resolve-CoVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
+    $resolvedError = Resolve-AzVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
     Write-Host ''
     Write-Host 'Script exited gracefully.' -ForegroundColor Yellow
     Write-Host ("Reason: {0}" -f $resolvedError.Summary) -ForegroundColor Red

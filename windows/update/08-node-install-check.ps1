@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-# CO_VM_TASK_TIMEOUT_SECONDS=900
+# AZ_VM_TASK_TIMEOUT_SECONDS=900
 Write-Host "Update task started: node-install-check"
 
 function Refresh-SessionPath {

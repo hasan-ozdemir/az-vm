@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-# CO_VM_TASK_TIMEOUT_SECONDS=1800
+# AZ_VM_TASK_TIMEOUT_SECONDS=1800
 Write-Host "Update task started: chrome-install-and-shortcut"
 
 $serverName = "__SERVER_NAME__"

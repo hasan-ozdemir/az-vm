@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-# CO_VM_TASK_TIMEOUT_SECONDS=3600
+# AZ_VM_TASK_TIMEOUT_SECONDS=3600
 Write-Host "Update task started: docker-desktop-install-and-configure"
 
 function Refresh-SessionPath {
