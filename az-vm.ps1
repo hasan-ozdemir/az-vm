@@ -5628,6 +5628,28 @@ function Invoke-CoVmRetailPricingRequest {
     }
 }
 
+function Normalize-CoVmRetailPricingNextPageLink {
+    param(
+        [string]$Uri
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Uri)) {
+        return $null
+    }
+
+    $normalized = ([string]$Uri).Trim()
+    $normalized = $normalized -replace '(?i)([?&])\$top=-?\d+', '$1'
+    $normalized = $normalized -replace '\?&', '?'
+    $normalized = $normalized -replace '&&', '&'
+    $normalized = $normalized -replace '[?&]$', ''
+
+    if ([string]::IsNullOrWhiteSpace([string]$normalized)) {
+        return $null
+    }
+
+    return $normalized
+}
+
 function Get-CoVmRetailPricingCatalogForLocation {
     param(
         [string]$Location
@@ -5684,7 +5706,7 @@ function Get-CoVmRetailPricingCatalogForLocation {
             }
         }
 
-        $nextUri = [string]$response.NextPageLink
+        $nextUri = Normalize-CoVmRetailPricingNextPageLink -Uri ([string]$response.NextPageLink)
         if ([string]::IsNullOrWhiteSpace($nextUri)) {
             $nextUri = $null
         }
