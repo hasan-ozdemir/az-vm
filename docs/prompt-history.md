@@ -3550,3 +3550,27 @@ fix improve update: lütfen docs-contract.ps1 scriptinin adını da yukarıda ba
 **Assistant Summary**
 
 Renamed `tests/docs-contract.ps1` to `tests/documentation-contract-check.ps1`, updated the live quality entrypoint to call the new file name, advanced the current documented release label to `2026.3.8.232`, and re-ran the code-quality check successfully.
+
+### 2026-03-08 02:16 TRT
+
+**User Prompt**
+
+````text
+fix: peki powershell-smoke.ps1 dosyası aslında sadece smoke testlerimi yürütüyor? öyleyse onun da ismini: powershell-smoke-tests.ps1 şeklinde güncelleyelim; ya da az-vm işlevselliklerini smoke test ediyorsa da: az-vm-smoketests.ps1 şeklinde güncelleyelim.
+````
+
+**Assistant Summary**
+
+Renamed `tests/powershell-smoke.ps1` to `tests/az-vm-smoke-tests.ps1` because the script validates `az-vm` runtime contracts and repo-specific smoke behavior, updated the PowerShell compatibility runner to call the new file name, advanced the current documented release label to `2026.3.8.233`, and re-ran the quality and compatibility checks successfully.
+
+### 2026-03-08 02:26 TRT
+
+**User Prompt**
+
+````text
+update: bu arada git-history.....ps1 dosyasını ./tools/scripts altına taşıyıp; gerekli referans güncellemelerini de yapsak çok iyi olacak.
+````
+
+**Assistant Summary**
+
+Moved the manual git-history replay utility from `tests/git-history-replay.ps1` to `tools/scripts/git-history-replay.ps1`, restored an unrelated formatting-only catalog drift back to the committed state, updated the living documentation references to the new path, and re-ran the code-quality and PowerShell compatibility checks successfully.

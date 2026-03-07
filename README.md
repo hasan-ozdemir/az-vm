@@ -14,7 +14,7 @@
 - `modules/`: runtime modules grouped by domain.
 - `windows/init/`, `windows/update/`: Windows guest task catalogs.
 - `linux/init/`, `linux/update/`: Linux guest task catalogs.
-- `tools/`: helper tooling including pyssh bootstrap and git-hook installer.
+- `tools/`: helper tooling including pyssh bootstrap, git-hook toggles, and manual support scripts.
 - `tests/`: static and compatibility checks.
 - `docs/`: historical reconstruction and prompt history.
 
@@ -132,7 +132,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\powershell-compatibi
 
 Manual git-history regression replay:
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\git-history-replay.ps1 -Days 2
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\scripts\git-history-replay.ps1 -Days 2
 ```
 Use this only when you need to replay recent commits in detached worktrees to see where a quality regression entered history.
 
@@ -154,7 +154,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.8.232`.
+- The current documented release is `2026.3.8.233`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.

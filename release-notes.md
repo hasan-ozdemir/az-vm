@@ -2,7 +2,7 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.232 - 2026-03-08
+## Release 2026.3.8.233 - 2026-03-08
 
 ### Summary
 This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, and explicit hook enable/disable controls.
@@ -43,8 +43,9 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Removed the retired `docs/reconstruction/` folder after folding its remaining value into the maintained documentation set.
 - Renamed the `tests/` scripts to clearer, self-explanatory dash-separated file names.
 - Renamed the documentation contract gate to `documentation-contract-check` for clearer test intent.
+- Renamed the `az-vm` smoke suite to `az-vm-smoke-tests` so the file name reflects its actual repo-specific purpose.
 - Split code-quality, bash-syntax, and PowerShell-compatibility checks into separate scripts instead of using skip-style audit switches.
-- Renamed the manual history replay utility to `git-history-replay` and corrected it so it resolves the quality script that actually exists in each historical worktree.
+- Moved the manual history replay utility to `tools/scripts/git-history-replay.ps1` and corrected it so it resolves the quality script that actually exists in each historical worktree.
 
 ### Operator Notes
 - CI remains static and non-live. Azure provisioning is intentionally excluded from automated workflows.
