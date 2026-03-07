@@ -12,6 +12,21 @@ Use these sources in this order when maintaining the repo:
 5. Git history for project evolution.
 6. Relevant `.codex` session JSONL files for workflow, decision, and prompt-history reconstruction.
 
+## Repository Context Assimilation Rule
+- For every user prompt implementation, scan the current repo context before coding:
+  - codebase structure (`modules/`, task directories, tools, tests)
+  - active documentation contract (`AGENTS.md`, `README.md`, `CHANGELOG.md`, `release-notes.md`, `docs/prompt-history.md`)
+  - test and quality entrypoints
+- Treat this scan as mandatory pre-work, not optional discovery.
+- Implement changes so they align with:
+  - existing architecture and naming conventions
+  - current command and configuration contracts
+  - established workflow and validation patterns
+- Do not introduce behavior that conflicts with repository standards when a compatible approach already exists in the codebase.
+- At the start of a new coding session, the assistant must re-assimilate repository context (code, docs, tests, recent history) before making edits.
+- Prefer extending existing patterns over creating parallel patterns.
+- Respect repository continuity: keep behavior and terminology coherent with prior development unless the user explicitly requests a contract-breaking change.
+
 ## Repository Map
 - `az-vm.cmd`: elevated launcher for Windows operators.
 - `az-vm.ps1`: unified orchestrator entrypoint.

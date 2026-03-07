@@ -2,7 +2,7 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.234 - 2026-03-08
+## Release 2026.3.8.235 - 2026-03-08
 
 ### Summary
 This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, and explicit hook enable/disable controls.
@@ -48,6 +48,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Moved the manual history replay utility to `tools/scripts/git-history-replay.ps1` and corrected it so it resolves the quality script that actually exists in each historical worktree.
 - Removed runtime auto-sync writes for task catalogs and moved catalog handling to manual-only editing.
 - Standardized catalog fallback defaults to `priority=1000` and `timeout=180` when entries or timeout values are missing.
+- Added a strict `AGENTS.md` rule requiring repository-wide context assimilation before implementing each prompt.
 
 ### Operator Notes
 - CI remains static and non-live. Azure provisioning is intentionally excluded from automated workflows.

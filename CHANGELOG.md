@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.8.234] - 2026-03-08
+## [2026.3.8.235] - 2026-03-08
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
@@ -11,6 +11,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
 - Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.
 - Removed the retired `docs/reconstruction/` artifact set after its remaining value had been folded into the maintained documentation set.
+- Added an explicit repository-context assimilation rule to `AGENTS.md` so each prompt implementation starts with codebase/documentation/test baseline scanning and alignment.
 
 ### Tests
 - Renamed `tests/powershell-smoke.ps1` to `tests/az-vm-smoke-tests.ps1` because it validates `az-vm` runtime contracts and smoke behavior rather than generic PowerShell behavior.

@@ -3588,3 +3588,16 @@ fix and update: lütfen hiç bir katalog.json dosyasının kod tarafında otomat
 **Assistant Summary**
 
 Removed all runtime code that auto-updated or synchronized task catalog JSON files, switched task loading to read-only catalog consumption, set fallback defaults to `priority=1000` and `timeout=180` for missing entries/fields, added `defaults` blocks to all current catalog files without changing existing task timeout values, and added a smoke-contract test to verify the new catalog fallback behavior.
+
+### 2026-03-08 02:51 TRT
+
+**User Prompt**
+
+````text
+update: agents.md belgesine şöyle bir kural ekle: bu repo boyunca asistan tarafından yürütülen kullanıcı promptları esnasında ve kullanıcının verdiği görevler işleme konur iken; mutlaka bu repo'nun genel kod tabanı ve genel dokümantasyonu taransın; işler bu yapıya uygun olarak yapılsın. asistan iş yaparken repo'nun genel yapısını bilerek, bu zamana kadar yapılmış geliştirmelere paralel olarak hareket etsin.
+*lütfen bu kuralı tüm detaylarıyla önüne boyuna agents.md belgesinde iyice bahset: özellikle de yeni bir kodlama oturumu başlatıldığında, buradaki tüm ön bilgileri asistan tarayıp içselleştirsin, buradaki kod tabanımıza, dokümantasyon yapımıza, test altyapımıza, iş akışlarımıza ve bu zamana kadarki geliştirme geçmişimize, geliştirme tarzımıza, iş yapış biçimimize mümkün olduğunca uygun hareket etmek için çalışsın; bizim bu repo'da kurduğumuz düzene saygı duyarak ilerlesin...
+````
+
+**Assistant Summary**
+
+Added a detailed repository-context assimilation rule to `AGENTS.md` requiring baseline scanning of codebase, documentation, tests, and current contracts before every prompt implementation and at the start of each new coding session, then aligned release documents to `2026.3.8.235` and kept prompt-history continuity updated.
