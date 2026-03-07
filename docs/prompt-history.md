@@ -3514,3 +3514,15 @@ fix: quality-audit ise code-quality-check şeklinde güncellensin; bir de skipma
 **Assistant Summary**
 
 Renamed `tests/quality-audit.ps1` to `tests/code-quality-check.ps1`, split Linux shell validation into `tests/bash-syntax-check.ps1`, removed the skip-style audit switches so each quality concern now runs from its own dedicated script, updated hooks, workflow, history replay, and README to use the new structure, advanced the current documented release label to `2026.3.8.229`, and re-ran the code-quality, bash-syntax, and PowerShell compatibility checks successfully.
+
+### 2026-03-08 01:45 TRT
+
+**User Prompt**
+
+````text
+analiz et ve gerekirse düzelt: bu history-replay.ps1 scripti bu repo'da ne işe yarıyor, nasıl bir görevi var ve nerelerde kullanılıyor?
+````
+
+**Assistant Summary**
+
+Analyzed `tests/history-replay.ps1` as a manual developer utility that replays recent commits in detached worktrees and runs the repo’s quality entrypoint against each one to help localize when a regression entered history; confirmed it is not called by hooks, CI, or runtime code, found that it was incorrectly forcing the latest quality script onto historical worktrees, fixed it to resolve and run the quality script that actually exists in each replayed worktree, advanced the current documented release label to `2026.3.8.230`, and re-validated the quality checks plus the replay behavior.

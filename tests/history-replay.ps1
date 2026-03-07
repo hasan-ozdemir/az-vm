@@ -8,6 +8,43 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
+# Resolves the available PowerShell host for replaying checks against worktrees.
+function Resolve-PowerShellHost {
+    $windowsPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($windowsPowerShell) {
+        return $windowsPowerShell.Source
+    }
+
+    $powerShellCore = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($powerShellCore) {
+        return $powerShellCore.Source
+    }
+
+    throw "Neither powershell.exe nor pwsh was found."
+}
+
+# Resolves the quality-check entrypoint that exists inside the target historical worktree.
+function Resolve-WorktreeQualityScript {
+    param(
+        [string]$WorktreePath
+    )
+
+    $candidates = @(
+        "tests\code-quality-check.ps1",
+        "tests\quality-audit.ps1",
+        "tests\run-quality-audit.ps1"
+    )
+
+    foreach ($relativePath in $candidates) {
+        $fullPath = Join-Path $WorktreePath $relativePath
+        if (Test-Path -LiteralPath $fullPath) {
+            return $fullPath
+        }
+    }
+
+    throw "No supported quality-check entrypoint was found in the target worktree."
+}
+
 if ($Days -lt 1) {
     $Days = 1
 }
@@ -32,10 +69,7 @@ if ($commitList.Count -eq 0) {
     exit 0
 }
 
-$auditScript = Join-Path $RepoRoot "tests\code-quality-check.ps1"
-if (-not (Test-Path -LiteralPath $auditScript)) {
-    throw "code-quality-check.ps1 was not found."
-}
+$powerShellHost = Resolve-PowerShellHost
 
 $results = @()
 for ($i = 0; $i -lt $commitList.Count; $i++) {
@@ -55,11 +89,16 @@ for ($i = 0; $i -lt $commitList.Count; $i++) {
             throw "git worktree add failed."
         }
 
-        $args = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $auditScript, "-RepoRoot", $worktreePath)
+        $qualityCheckScript = Resolve-WorktreeQualityScript -WorktreePath $worktreePath
+        $scriptName = Split-Path -Path $qualityCheckScript -Leaf
+        $args = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $qualityCheckScript, "-RepoRoot", $worktreePath)
+        if ($scriptName -ne 'code-quality-check.ps1') {
+            $args += @("-SkipHelpSmoke", "-SkipMatrix", "-SkipLinuxShellSyntax")
+        }
 
-        & powershell @args
+        & $powerShellHost @args
         if ($LASTEXITCODE -ne 0) {
-            throw ("code quality check failed with exit code {0}" -f $LASTEXITCODE)
+            throw ("quality replay failed with exit code {0} via {1}" -f $LASTEXITCODE, $scriptName)
         }
 
         $passed = $true
