@@ -980,11 +980,19 @@ function Invoke-AzVmSshTaskBlocks {
 
         Write-Host ("VM update stage summary: success={0}, warning={1}, error={2}, reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
         if ($rebootCount -gt 0) {
-            $rebootTaskSummary = (($rebootRequestedTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique) -join ', ')
-            if ([string]::IsNullOrWhiteSpace($rebootTaskSummary)) {
-                $rebootTaskSummary = '(task names unavailable)'
+            $rebootTaskList = @(
+                $rebootRequestedTasks |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+                    Select-Object -Unique
+            )
+            if (@($rebootTaskList).Count -eq 0) {
+                $rebootTaskList = @('(task names unavailable)')
             }
-            Write-Host ("VM restart requirement detected after vm-update. Tasks requesting restart: {0}" -f $rebootTaskSummary) -ForegroundColor Yellow
+            Write-Host 'VM restart requirement detected after vm-update.' -ForegroundColor Yellow
+            Write-Host 'Tasks requesting restart:' -ForegroundColor Yellow
+            foreach ($rebootTaskName in @($rebootTaskList)) {
+                Write-Host ("- {0}" -f [string]$rebootTaskName) -ForegroundColor Yellow
+            }
             if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
                 Write-Host ("Hint: restart the VM after step 6 finishes: az vm restart --resource-group {0} --name {1}" -f $ResourceGroup, $VmName) -ForegroundColor Cyan
             }
