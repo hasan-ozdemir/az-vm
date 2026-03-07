@@ -641,8 +641,93 @@ function Invoke-AzVmPrecheckStep {
     Assert-VmOsDiskSizeCompatible -Location $Context.AzLocation -ImageUrn $Context.VmImage -VmDiskSizeGb $Context.VmDiskSize
 }
 
-# Handles Invoke-AzVmPostDeployHibernationStep.
-function Invoke-AzVmPostDeployHibernationStep {
+# Handles Get-AzVmNestedVirtualizationSupportInfo.
+function Get-AzVmNestedVirtualizationSupportInfo {
+    param(
+        [string]$Location,
+        [string]$VmSize
+    )
+
+    $result = [ordered]@{
+        Known = $false
+        Supported = $false
+        Evidence = @()
+        Message = ''
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$Location) -or [string]::IsNullOrWhiteSpace([string]$VmSize)) {
+        $result.Message = 'location-or-vm-size-missing'
+        return [pscustomobject]$result
+    }
+
+    $subscriptionId = az account show --query id -o tsv --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$subscriptionId)) {
+        $result.Message = 'subscription-read-failed'
+        return [pscustomobject]$result
+    }
+
+    $filter = [uri]::EscapeDataString(("location eq '{0}'" -f [string]$Location))
+    $url = "https://management.azure.com/subscriptions/$subscriptionId/providers/Microsoft.Compute/skus?api-version=2023-07-01&`$filter=$filter"
+    $skuJson = az rest --method get --url $url -o json --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$skuJson)) {
+        $result.Message = 'compute-skus-read-failed'
+        return [pscustomobject]$result
+    }
+
+    try {
+        $skuPayload = ConvertFrom-JsonCompat -InputObject $skuJson
+    }
+    catch {
+        $result.Message = 'compute-skus-parse-failed'
+        return [pscustomobject]$result
+    }
+
+    $skuRows = @(
+        (ConvertTo-ObjectArrayCompat -InputObject $skuPayload.value) |
+            Where-Object {
+                [string]::Equals([string]$_.resourceType, 'virtualMachines', [System.StringComparison]::OrdinalIgnoreCase) -and
+                [string]::Equals([string]$_.name, [string]$VmSize, [System.StringComparison]::OrdinalIgnoreCase)
+            }
+    )
+    if (@($skuRows).Count -eq 0) {
+        $result.Message = 'vm-size-metadata-not-found'
+        return [pscustomobject]$result
+    }
+
+    $capabilities = @(
+        (ConvertTo-ObjectArrayCompat -InputObject $skuRows[0].capabilities) |
+            Where-Object {
+                $capName = [string]$_.name
+                -not [string]::IsNullOrWhiteSpace([string]$capName) -and $capName.ToLowerInvariant().Contains('nested')
+            }
+    )
+    if (@($capabilities).Count -eq 0) {
+        $result.Message = 'nested-capability-not-advertised'
+        return [pscustomobject]$result
+    }
+
+    $result.Known = $true
+    $result.Evidence = @(
+        @($capabilities) | ForEach-Object {
+            "{0}={1}" -f [string]$_.name, [string]$_.value
+        }
+    )
+
+    foreach ($capability in @($capabilities)) {
+        $capValue = ([string]$capability.value).Trim().ToLowerInvariant()
+        if ($capValue -in @('true', 'yes', 'supported', 'on', '1')) {
+            $result.Supported = $true
+            $result.Message = 'nested-supported'
+            return [pscustomobject]$result
+        }
+    }
+
+    $result.Message = 'nested-not-supported'
+    return [pscustomobject]$result
+}
+
+# Handles Invoke-AzVmPostDeployFeatureEnablement.
+function Invoke-AzVmPostDeployFeatureEnablement {
     param(
         [hashtable]$Context,
         [switch]$VmCreatedThisRun
@@ -651,9 +736,12 @@ function Invoke-AzVmPostDeployHibernationStep {
     if (-not $VmCreatedThisRun) {
         Write-Host ("Hibernation check skipped for existing VM '{0}'." -f [string]$Context.VmName) -ForegroundColor DarkCyan
         return [pscustomobject]@{
-            Attempted = $false
-            Enabled = $false
-            Message = 'skipped-existing-vm'
+            HibernationAttempted = $false
+            HibernationEnabled = $false
+            HibernationMessage = 'skipped-existing-vm'
+            NestedAttempted = $false
+            NestedEnabled = $false
+            NestedMessage = 'skipped-existing-vm'
         }
     }
 
@@ -661,45 +749,91 @@ function Invoke-AzVmPostDeployHibernationStep {
     $vmName = [string]$Context.VmName
     $vmDiskName = [string]$Context.VmDiskName
     $deallocated = $false
-    $enabled = $false
-    $attemptMessage = ''
+    $hibernationEnabled = $false
+    $hibernationMessage = ''
+    $nestedEnabled = $false
+    $nestedMessage = ''
+    $nestedSupport = Get-AzVmNestedVirtualizationSupportInfo -Location ([string]$Context.AzLocation) -VmSize ([string]$Context.VmSize)
+    $nestedShouldAttempt = [bool]$nestedSupport.Supported
 
     Write-Host ("Hibernation enable will be attempted for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
+    if ([bool]$nestedSupport.Known) {
+        if ([bool]$nestedSupport.Supported) {
+            $nestedEvidence = @($nestedSupport.Evidence) -join ', '
+            Write-Host ("Nested virtualization is supported for VM size '{0}' and will be enabled. Evidence: {1}" -f [string]$Context.VmSize, [string]$nestedEvidence) -ForegroundColor DarkCyan
+        }
+        else {
+            $nestedEvidence = @($nestedSupport.Evidence) -join ', '
+            Write-Host ("Nested virtualization is not supported for VM size '{0}'. Evidence: {1}" -f [string]$Context.VmSize, [string]$nestedEvidence) -ForegroundColor Yellow
+        }
+    }
+    else {
+        Write-Host ("Nested virtualization support could not be confirmed for VM size '{0}'. Reason: {1}" -f [string]$Context.VmSize, [string]$nestedSupport.Message) -ForegroundColor Yellow
+    }
 
     try {
         $hibernationState = az vm show -g $resourceGroup -n $vmName --query "additionalCapabilities.hibernationEnabled" -o tsv --only-show-errors 2>$null
         if ($LASTEXITCODE -eq 0 -and [string]::Equals(([string]$hibernationState).Trim(), 'true', [System.StringComparison]::OrdinalIgnoreCase)) {
             Write-Host ("Hibernation is already enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
-            return [pscustomobject]@{
-                Attempted = $false
-                Enabled = $true
-                Message = 'already-enabled'
-            }
+            $hibernationEnabled = $true
+            $hibernationMessage = 'already-enabled'
         }
 
-        Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-            az vm deallocate -g $resourceGroup -n $vmName -o none --only-show-errors
-            Assert-LastExitCode "az vm deallocate"
-        } | Out-Null
-        $deallocated = $true
+        if (-not $deallocated -and ([string]::IsNullOrWhiteSpace([string]$hibernationMessage) -or $nestedShouldAttempt)) {
+            Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+                az vm deallocate -g $resourceGroup -n $vmName -o none --only-show-errors
+                Assert-LastExitCode "az vm deallocate"
+            } | Out-Null
+            $deallocated = $true
+        }
 
-        Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --set supportsHibernation=true" -f $resourceGroup, $vmDiskName) -Action {
-            az disk update -g $resourceGroup -n $vmDiskName --set supportsHibernation=true -o none --only-show-errors
-            Assert-LastExitCode "az disk update --set supportsHibernation=true"
-        } | Out-Null
+        if (-not [string]::Equals([string]$hibernationMessage, 'already-enabled', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --set supportsHibernation=true" -f $resourceGroup, $vmDiskName) -Action {
+                az disk update -g $resourceGroup -n $vmDiskName --set supportsHibernation=true -o none --only-show-errors
+                Assert-LastExitCode "az disk update --set supportsHibernation=true"
+            } | Out-Null
 
-        Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation true" -f $resourceGroup, $vmName) -Action {
-            az vm update -g $resourceGroup -n $vmName --enable-hibernation true -o none --only-show-errors
-            Assert-LastExitCode "az vm update --enable-hibernation true"
-        } | Out-Null
+            Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation true" -f $resourceGroup, $vmName) -Action {
+                az vm update -g $resourceGroup -n $vmName --enable-hibernation true -o none --only-show-errors
+                Assert-LastExitCode "az vm update --enable-hibernation true"
+            } | Out-Null
 
-        $enabled = $true
-        $attemptMessage = 'enabled'
-        Write-Host ("Hibernation was enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
+            $hibernationEnabled = $true
+            $hibernationMessage = 'enabled'
+            Write-Host ("Hibernation was enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
+        }
     }
     catch {
-        $attemptMessage = [string]$_.Exception.Message
-        Write-Host ("Hibernation could not be enabled on VM '{0}': {1}" -f $vmName, $attemptMessage) -ForegroundColor Yellow
+        $hibernationMessage = [string]$_.Exception.Message
+        Write-Host ("Hibernation could not be enabled on VM '{0}': {1}" -f $vmName, $hibernationMessage) -ForegroundColor Yellow
+    }
+
+    try {
+        if (-not $nestedShouldAttempt) {
+            $nestedMessage = [string]$nestedSupport.Message
+        }
+        else {
+            if (-not $deallocated) {
+                Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+                    az vm deallocate -g $resourceGroup -n $vmName -o none --only-show-errors
+                    Assert-LastExitCode "az vm deallocate"
+                } | Out-Null
+                $deallocated = $true
+            }
+
+            Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --set additionalCapabilities.nestedVirtualization=true" -f $resourceGroup, $vmName) -Action {
+                az vm update -g $resourceGroup -n $vmName --set "additionalCapabilities.nestedVirtualization=true" -o none --only-show-errors
+                Assert-LastExitCode "az vm update --set additionalCapabilities.nestedVirtualization"
+            } | Out-Null
+
+            $nestedEnabled = $true
+            $nestedMessage = 'enabled'
+            Write-Host ("Nested virtualization was enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
+        }
+    }
+    catch {
+        $nestedMessage = [string]$_.Exception.Message
+        Write-Host ("Nested virtualization could not be enabled on VM '{0}': {1}" -f $vmName, $nestedMessage) -ForegroundColor Yellow
     }
     finally {
         if ($deallocated) {
@@ -717,9 +851,12 @@ function Invoke-AzVmPostDeployHibernationStep {
     }
 
     return [pscustomobject]@{
-        Attempted = $true
-        Enabled = [bool]$enabled
-        Message = [string]$attemptMessage
+        HibernationAttempted = $true
+        HibernationEnabled = [bool]$hibernationEnabled
+        HibernationMessage = [string]$hibernationMessage
+        NestedAttempted = [bool]$nestedShouldAttempt
+        NestedEnabled = [bool]$nestedEnabled
+        NestedMessage = [string]$nestedMessage
     }
 }
 
@@ -1357,7 +1494,7 @@ function Invoke-AzVmVmCreateStep {
     Write-Host "Printing az vm create output..."
     Write-Host $vmCreateJson
 
-    $hibernationResult = Invoke-AzVmPostDeployHibernationStep -Context $Context -VmCreatedThisRun:$vmCreatedThisRun
+    $featureEnablementResult = Invoke-AzVmPostDeployFeatureEnablement -Context $Context -VmCreatedThisRun:$vmCreatedThisRun
 
     return [pscustomobject]@{
         VmExistsBefore = [bool]$hasExistingVm
@@ -1365,9 +1502,12 @@ function Invoke-AzVmVmCreateStep {
         VmCreateInvoked = $true
         VmCreatedThisRun = [bool]$vmCreatedThisRun
         VmId = [string]$vmCreateObj.id
-        HibernationAttempted = [bool]$hibernationResult.Attempted
-        HibernationEnabled = [bool]$hibernationResult.Enabled
-        HibernationMessage = [string]$hibernationResult.Message
+        HibernationAttempted = [bool]$featureEnablementResult.HibernationAttempted
+        HibernationEnabled = [bool]$featureEnablementResult.HibernationEnabled
+        HibernationMessage = [string]$featureEnablementResult.HibernationMessage
+        NestedAttempted = [bool]$featureEnablementResult.NestedAttempted
+        NestedEnabled = [bool]$featureEnablementResult.NestedEnabled
+        NestedMessage = [string]$featureEnablementResult.NestedMessage
     }
 }
 
