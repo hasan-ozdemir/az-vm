@@ -868,6 +868,8 @@ function Invoke-AzVmSshTaskBlocks {
     $totalWarnings = 0
     $totalErrors = 0
     $rebootCount = 0
+    $successfulTasks = @()
+    $failedTasks = @()
     $rebootRequestedTasks = @()
 
     try {
@@ -935,6 +937,7 @@ function Invoke-AzVmSshTaskBlocks {
             }
 
             if ($null -ne $taskInvocationError) {
+                $failedTasks += $taskName
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
                     Write-Warning ("Task warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
@@ -949,9 +952,11 @@ function Invoke-AzVmSshTaskBlocks {
 
             if ([int]$taskResult.ExitCode -eq 0) {
                 $totalSuccess++
+                $successfulTasks += $taskName
                 Write-Host ("Task completed: {0} ({1:N1}s) - success" -f $taskName, $taskElapsedSeconds)
             }
             else {
+                $failedTasks += $taskName
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
                     Write-Warning ("Task warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
@@ -978,7 +983,16 @@ function Invoke-AzVmSshTaskBlocks {
             }
         }
 
-        Write-Host ("VM update stage summary: success={0}, warning={1}, error={2}, reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
+        $uniqueSuccessfulTasks = @($successfulTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
+        $uniqueFailedTasks = @($failedTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
+
+        Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, error={3}, reboot={4}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $totalErrors, $rebootCount)
+        if (@($uniqueFailedTasks).Count -gt 0) {
+            Write-Host 'Failed tasks:' -ForegroundColor Yellow
+            foreach ($failedTaskName in @($uniqueFailedTasks)) {
+                Write-Host ("- {0}" -f [string]$failedTaskName) -ForegroundColor Yellow
+            }
+        }
         if ($rebootCount -gt 0) {
             $rebootTaskList = @(
                 $rebootRequestedTasks |
@@ -1006,6 +1020,9 @@ function Invoke-AzVmSshTaskBlocks {
 
         return [pscustomobject]@{
             SuccessCount = $totalSuccess
+            SuccessTasks = @($uniqueSuccessfulTasks)
+            FailedCount = @($uniqueFailedTasks).Count
+            FailedTasks = @($uniqueFailedTasks)
             WarningCount = $totalWarnings
             ErrorCount = $totalErrors
             RebootCount = $rebootCount
