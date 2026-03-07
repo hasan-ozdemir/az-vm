@@ -1,8 +1,5 @@
 param(
-    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
-    [switch]$SkipMatrix,
-    [switch]$SkipHelpSmoke,
-    [switch]$SkipLinuxShellSyntax
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 )
 
 $ErrorActionPreference = "Stop"
@@ -102,52 +99,6 @@ Invoke-AuditStep -Name "Documentation contract" -Action {
     }
 }
 
-if (-not $SkipLinuxShellSyntax) {
-    Invoke-AuditStep -Name "Linux shell syntax (bash -n)" -Action {
-        $linuxRoot = Join-Path $RepoRoot "linux"
-        if (-not (Test-Path -LiteralPath $linuxRoot)) {
-            Write-Host "linux directory was not found. Linux shell syntax check skipped." -ForegroundColor Yellow
-            return
-        }
-
-        $failed = @()
-        $isWindowsHost = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
-
-        if ($isWindowsHost) {
-            $wsl = Get-Command wsl -ErrorAction SilentlyContinue
-            if (-not $wsl) {
-                throw "WSL is not available."
-            }
-
-            Get-ChildItem -Path $linuxRoot -Recurse -File -Filter *.sh | ForEach-Object {
-                $fullPath = (Resolve-Path -LiteralPath $_.FullName).Path
-                $wslPath = '/mnt/' + $fullPath.Substring(0,1).ToLowerInvariant() + '/' + ($fullPath.Substring(3) -replace '\\','/')
-                & $wsl.Source bash -n $wslPath
-                if ($LASTEXITCODE -ne 0) {
-                    $failed += $fullPath
-                }
-            }
-        }
-        else {
-            $bash = Get-Command bash -ErrorAction SilentlyContinue
-            if (-not $bash) {
-                throw "bash command was not found."
-            }
-
-            Get-ChildItem -Path $linuxRoot -Recurse -File -Filter *.sh | ForEach-Object {
-                & $bash.Source -n $_.FullName
-                if ($LASTEXITCODE -ne 0) {
-                    $failed += $_.FullName
-                }
-            }
-        }
-
-        if ($failed.Count -gt 0) {
-            throw ("bash -n failed for: {0}" -f ($failed -join ", "))
-        }
-    }
-}
-
 Invoke-AuditStep -Name "Python syntax (tools/pyssh/ssh_client.py)" -Action {
     $python = Get-Command python -ErrorAction SilentlyContinue
     if (-not $python) {
@@ -206,47 +157,34 @@ Invoke-AuditStep -Name "Python cache artifact hygiene (tools/pyssh)" -Action {
     }
 }
 
-if (-not $SkipHelpSmoke) {
-    Invoke-AuditStep -Name "CLI help smoke" -Action {
-        $scriptPath = Join-Path $RepoRoot "az-vm.ps1"
-        $ps = Get-Command powershell.exe -ErrorAction SilentlyContinue
-        if (-not $ps) {
-            $ps = Get-Command pwsh -ErrorAction SilentlyContinue
-        }
-        if (-not $ps) {
-            throw "Neither powershell.exe nor pwsh was found."
-        }
-
-        $cases = @(
-            @("--help"),
-            @("help"),
-            @("help","create"),
-            @("help","configure"),
-            @("create","--help"),
-            @("configure","--help"),
-            @("delete","--help")
-        )
-
-        foreach ($case in $cases) {
-            $out = & $ps.Source -NoLogo -NoProfile -ExecutionPolicy Bypass -File $scriptPath @case 2>&1
-            if ($LASTEXITCODE -ne 0) {
-                throw ("help smoke failed for args: {0}" -f ($case -join " "))
-            }
-            $joined = (@($out) | ForEach-Object { [string]$_ }) -join "`n"
-            if ([string]::IsNullOrWhiteSpace($joined)) {
-                throw ("help smoke returned empty output for args: {0}" -f ($case -join " "))
-            }
-        }
+Invoke-AuditStep -Name "CLI help smoke" -Action {
+    $scriptPath = Join-Path $RepoRoot "az-vm.ps1"
+    $ps = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if (-not $ps) {
+        $ps = Get-Command pwsh -ErrorAction SilentlyContinue
     }
-}
+    if (-not $ps) {
+        throw "Neither powershell.exe nor pwsh was found."
+    }
 
-if (-not $SkipMatrix) {
-    Invoke-AuditStep -Name "PS compatibility matrix" -Action {
-        $matrixPath = Join-Path $RepoRoot "tests\powershell-compatibility-check.ps1"
-        $powerShellHost = Resolve-PowerShellHost
-        & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $matrixPath -RepoRoot $RepoRoot
+    $cases = @(
+        @("--help"),
+        @("help"),
+        @("help","create"),
+        @("help","configure"),
+        @("create","--help"),
+        @("configure","--help"),
+        @("delete","--help")
+    )
+
+    foreach ($case in $cases) {
+        $out = & $ps.Source -NoLogo -NoProfile -ExecutionPolicy Bypass -File $scriptPath @case 2>&1
         if ($LASTEXITCODE -ne 0) {
-            throw "powershell-compatibility-check.ps1 failed."
+            throw ("help smoke failed for args: {0}" -f ($case -join " "))
+        }
+        $joined = (@($out) | ForEach-Object { [string]$_ }) -join "`n"
+        if ([string]::IsNullOrWhiteSpace($joined)) {
+            throw ("help smoke returned empty output for args: {0}" -f ($case -join " "))
         }
     }
 }

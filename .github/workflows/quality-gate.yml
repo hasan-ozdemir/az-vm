@@ -25,7 +25,7 @@ jobs:
       - name: Run static audit
         shell: powershell
         run: |
-          .\tests\quality-audit.ps1 -RepoRoot $PWD.Path -SkipMatrix -SkipLinuxShellSyntax
+          .\tests\code-quality-check.ps1 -RepoRoot $PWD.Path
 
   powershell-compatibility:
     runs-on: windows-latest
@@ -45,12 +45,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Validate Linux shell syntax
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          while IFS= read -r -d '' file; do
-            bash -n "$file"
-          done < <(find linux -type f -name '*.sh' -print0)
+          .\tests\bash-syntax-check.ps1 -RepoRoot $PWD.Path
 
   workflow-lint:
     runs-on: ubuntu-latest

@@ -2,7 +2,6 @@ param(
     [int]$Days = 2,
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [string]$TempRoot = "",
-    [switch]$SkipMatrix,
     [switch]$KeepWorktrees
 )
 
@@ -33,9 +32,9 @@ if ($commitList.Count -eq 0) {
     exit 0
 }
 
-$auditScript = Join-Path $RepoRoot "tests\quality-audit.ps1"
+$auditScript = Join-Path $RepoRoot "tests\code-quality-check.ps1"
 if (-not (Test-Path -LiteralPath $auditScript)) {
-    throw "quality-audit.ps1 was not found."
+    throw "code-quality-check.ps1 was not found."
 }
 
 $results = @()
@@ -56,14 +55,11 @@ for ($i = 0; $i -lt $commitList.Count; $i++) {
             throw "git worktree add failed."
         }
 
-        $args = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $auditScript, "-RepoRoot", $worktreePath, "-SkipHelpSmoke")
-        if ($SkipMatrix) {
-            $args += "-SkipMatrix"
-        }
+        $args = @("-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $auditScript, "-RepoRoot", $worktreePath)
 
         & powershell @args
         if ($LASTEXITCODE -ne 0) {
-            throw ("quality audit failed with exit code {0}" -f $LASTEXITCODE)
+            throw ("code quality check failed with exit code {0}" -f $LASTEXITCODE)
         }
 
         $passed = $true

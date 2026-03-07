@@ -3502,3 +3502,15 @@ fix improve update: tests klasörü altındaki dosyaların isimleri bana kriptik
 **Assistant Summary**
 
 Renamed the `tests/` scripts to clearer dash-separated names (`quality-audit`, `docs-contract`, `history-replay`, `powershell-matrix`, `powershell-smoke`), updated all live references across hooks, workflow, README, changelog, and test runners, verified that no active old test-script names remained outside historical ledger text, advanced the current documented release label to `2026.3.8.227`, and re-ran the quality audit plus PowerShell compatibility matrix successfully.
+
+### 2026-03-08 01:36 TRT
+
+**User Prompt**
+
+````text
+fix: quality-audit ise code-quality-check şeklinde güncellensin; bir de skipmatrix gibi bir parametreye ihtiyaç duymasın; burada seperation of concerns uygulayıp, her farklı bir iş için farklı bir ps dosyası kullanalım.
+````
+
+**Assistant Summary**
+
+Renamed `tests/quality-audit.ps1` to `tests/code-quality-check.ps1`, split Linux shell validation into `tests/bash-syntax-check.ps1`, removed the skip-style audit switches so each quality concern now runs from its own dedicated script, updated hooks, workflow, history replay, and README to use the new structure, advanced the current documented release label to `2026.3.8.229`, and re-ran the code-quality, bash-syntax, and PowerShell compatibility checks successfully.
