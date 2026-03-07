@@ -50,6 +50,25 @@ function Remove-PythonCacheArtifacts {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
+# Handles Test-PythonPipModuleAvailable.
+function Test-PythonPipModuleAvailable {
+    param(
+        [string]$PythonPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$PythonPath) -or -not (Test-Path -LiteralPath $PythonPath)) {
+        return $false
+    }
+
+    $pipMainPath = Join-Path (Split-Path -Parent $PythonPath) "..\Lib\site-packages\pip\__main__.py"
+    if (-not (Test-Path -LiteralPath $pipMainPath)) {
+        return $false
+    }
+
+    Invoke-PythonNoBytecode -PythonPath $PythonPath -Arguments @("-m", "pip", "--version") *> $null
+    return ($LASTEXITCODE -eq 0)
+}
+
 function Get-DotEnvMap {
     param(
         [string]$Path
@@ -148,6 +167,14 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 }
 else {
     Write-Host ("Using existing pyssh virtual environment: {0}" -f $venvRoot)
+    if (-not (Test-PythonPipModuleAvailable -PythonPath $venvPython)) {
+        Write-Host "Existing pyssh virtual environment has a broken pip bootstrap. Recreating..." -ForegroundColor Yellow
+        Remove-Item -LiteralPath $venvRoot -Recurse -Force -ErrorAction Stop
+        Invoke-PythonNoBytecode -PythonPath $pythonExecutable -Arguments @("-m", "venv", $venvRoot)
+        if ($LASTEXITCODE -ne 0) {
+            throw "python -m venv failed while rebuilding the pyssh virtual environment."
+        }
+    }
 }
 
 if (-not (Test-Path -LiteralPath $RequirementsFile)) {
@@ -164,6 +191,15 @@ if (-not (Test-Path -LiteralPath $RequirementsFile)) {
 }
 
 Write-Host "Installing pip requirements into pyssh virtual environment..."
+Invoke-PythonNoBytecode -PythonPath $venvPython -Arguments @("-m", "ensurepip", "--upgrade", "--default-pip")
+if ($LASTEXITCODE -ne 0) {
+    throw "ensurepip bootstrap failed in pyssh virtual environment."
+}
+
+if (-not (Test-PythonPipModuleAvailable -PythonPath $venvPython)) {
+    throw "pip bootstrap validation failed in pyssh virtual environment."
+}
+
 Invoke-PythonNoBytecode -PythonPath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
 if ($LASTEXITCODE -ne 0) {
     throw "pip upgrade failed in pyssh virtual environment."
