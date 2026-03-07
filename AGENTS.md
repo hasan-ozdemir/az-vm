@@ -21,7 +21,6 @@ Use these sources in this order when maintaining the repo:
 - `windows/*/disabled/`: intentionally disabled guest tasks.
 - `tools/`: helper tooling, pyssh bootstrap, git-hook installer.
 - `tests/`: static, compatibility, audit, and contract checks.
-- `docs/reconstruction/`: evidence-oriented historical reconstruction artifacts.
 - `docs/prompt-history.md`: human-readable prompt ledger for this repo.
 
 ## Architecture Invariants
@@ -109,7 +108,6 @@ Use these sources in this order when maintaining the repo:
 - `release-notes.md`: current release-oriented summary.
 - `roadmap.md`: forward-looking project plan.
 - `docs/prompt-history.md`: human-readable prompt ledger with raw prompts and assistant summaries.
-- `docs/reconstruction/`: supporting historical evidence and reconstruction notes.
 
 ## Release Versioning Rule
 - `CHANGELOG.md` and `release-notes.md` must use `YYYY.M.D.N`.

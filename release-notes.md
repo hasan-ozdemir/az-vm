@@ -2,7 +2,7 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.225 - 2026-03-08
+## Release 2026.3.8.226 - 2026-03-08
 
 ### Summary
 This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, and explicit hook enable/disable controls.
@@ -40,6 +40,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Added a GitHub Actions `quality-gate.yml` workflow and native local git hooks.
 - Replaced the one-way hook installer with explicit enable/disable scripts for local git-hook control.
 - Adopted commit-count version labels for `CHANGELOG.md` and `release-notes.md`.
+- Removed the retired `docs/reconstruction/` folder after folding its remaining value into the maintained documentation set.
 
 ### Operator Notes
 - CI remains static and non-live. Azure provisioning is intentionally excluded from automated workflows.

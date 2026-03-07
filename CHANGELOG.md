@@ -3,13 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.8.225] - 2026-03-08
+## [2026.3.8.226] - 2026-03-08
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
 - Upgraded `README.md` into a fuller operator and contributor guide aligned with the current CLI, step flow, task model, and configuration contract.
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
 - Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.
+- Removed the retired `docs/reconstruction/` artifact set after its remaining value had been folded into the maintained documentation set.
 
 ### Tests
 - Added `tests/run-doc-contract.ps1` to enforce documentation presence, current command naming, prompt-history structure, and legacy-token removal.

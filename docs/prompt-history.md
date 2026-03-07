@@ -3466,3 +3466,27 @@ Implement the plan.
 **Assistant Summary**
 
 Replaced the one-way hook installer with `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1`, removed the old installer, activated the local `.githooks` path after validating enable/disable idempotence, converted `CHANGELOG.md` and `release-notes.md` to the `YYYY.M.D.N` version format with the current release label `2026.3.8.225`, updated README and AGENTS to document the new hook flow and versioning rule, extended the documentation contract checks to enforce the new scripts and versioned headings, and re-ran the static audit plus PowerShell compatibility checks successfully.
+
+### 2026-03-08 01:11 TRT
+
+**User Prompt**
+
+````text
+update: artık reconstruction klasöründen alacağımız birşey kalmadıysa; o klasörü güvenle silebilir miyiz?
+````
+
+**Assistant Summary**
+
+Reviewed `docs/reconstruction/`, confirmed that it was no longer used by runtime code, tests, or workflows, verified that its remaining historical value was already absorbed by `docs/prompt-history.md` and `CHANGELOG.md`, and concluded that the folder could be removed safely with only README and AGENTS cleanup.
+
+### 2026-03-08 01:12 TRT
+
+**User Prompt**
+
+````text
+action: evet aynen bu reconstruction temizliklerini yap.
+````
+
+**Assistant Summary**
+
+Removed the retired `docs/reconstruction/` folder, cleaned the remaining README and AGENTS references, advanced the current documented release label to `2026.3.8.226`, updated changelog and release-notes to record the cleanup, and re-ran documentation plus compatibility quality gates successfully.
