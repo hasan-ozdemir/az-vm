@@ -99,6 +99,35 @@ Invoke-Test -Name "VM name format contract" -Action {
     Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "examplevm_name")) -Message "VM name with underscore should fail."
 }
 
+Invoke-Test -Name "Managed resource naming contract" -Action {
+    Assert-AzVmManagedResourceNamesValid -NameMap @{
+        RESOURCE_GROUP = 'rg-examplevm-ate1-g1'
+        VNET_NAME = 'net-examplevm-ate1-n1'
+        SUBNET_NAME = 'subnet-examplevm-ate1-n1'
+        NSG_NAME = 'nsg-examplevm-ate1-n1'
+        NSG_RULE_NAME = 'nsgrule-examplevm-ate1-n1'
+        PUBLIC_IP_NAME = 'ip-examplevm-ate1-n1'
+        NIC_NAME = 'nic-examplevm-ate1-n1'
+        VM_DISK_NAME = 'disk-examplevm-ate1-n1'
+    }
+
+    $invalidCases = @(
+        @{ Key = 'RESOURCE_GROUP'; Value = 'rg-examplevm-ate1-g1.' },
+        @{ Key = 'VNET_NAME'; Value = 'net examplevm' },
+        @{ Key = 'NIC_NAME'; Value = 'nic/examplevm' }
+    )
+    foreach ($case in @($invalidCases)) {
+        $threw = $false
+        try {
+            Assert-AzVmManagedResourceNamesValid -NameMap @{ ([string]$case.Key) = [string]$case.Value }
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("Expected managed name validation to fail for {0}='{1}'." -f [string]$case.Key, [string]$case.Value)
+    }
+}
+
 Invoke-Test -Name "Platform config precedence mapping" -Action {
     $legacyInitTaskDirKey = (@('VM','INIT','TASK','DIR') -join '_')
     $legacyUpdateTaskDirKey = (@('VM','UPDATE','TASK','DIR') -join '_')
@@ -214,6 +243,14 @@ Invoke-Test -Name "Task catalog discovery" -Action {
     Assert-True -Condition (@($winUpdate.ActiveTasks).Count -ge 1) -Message "Windows update active tasks are missing."
     Assert-True -Condition (@($linInit.ActiveTasks).Count -ge 1) -Message "Linux init active tasks are missing."
     Assert-True -Condition (@($linUpdate.ActiveTasks).Count -ge 1) -Message "Linux update active tasks are missing."
+
+    foreach ($catalog in @($winInit, $winUpdate, $linInit, $linUpdate)) {
+        foreach ($task in @($catalog.ActiveTasks)) {
+            $hasTimeout = ($task.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0)
+            Assert-True -Condition $hasTimeout -Message ("Task '{0}' must expose TimeoutSeconds from catalog." -f [string]$task.Name)
+            Assert-True -Condition ([int]$task.TimeoutSeconds -ge 5) -Message ("Task '{0}' has invalid TimeoutSeconds value '{1}'." -f [string]$task.Name, [string]$task.TimeoutSeconds)
+        }
+    }
 }
 
 Invoke-Test -Name "CLI parse help contracts" -Action {

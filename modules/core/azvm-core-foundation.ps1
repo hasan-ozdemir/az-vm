@@ -486,6 +486,34 @@ function Convert-AzVmTaskCatalogBool {
     return [bool]$DefaultValue
 }
 
+# Handles Convert-AzVmTaskCatalogTimeout.
+function Convert-AzVmTaskCatalogTimeout {
+    param(
+        [AllowNull()]
+        [object]$Value,
+        [int]$DefaultValue = 180
+    )
+
+    $timeoutSeconds = $DefaultValue
+    try {
+        if ($null -ne $Value -and -not [string]::IsNullOrWhiteSpace([string]$Value)) {
+            $timeoutSeconds = [int]$Value
+        }
+    }
+    catch {
+        $timeoutSeconds = $DefaultValue
+    }
+
+    if ($timeoutSeconds -lt 5) {
+        $timeoutSeconds = 5
+    }
+    if ($timeoutSeconds -gt 7200) {
+        $timeoutSeconds = 7200
+    }
+
+    return [int]$timeoutSeconds
+}
+
 # Handles Sync-AzVmTaskCatalogPriority.
 function Sync-AzVmTaskCatalogPriority {
     param(
@@ -532,6 +560,7 @@ function Sync-AzVmTaskCatalogPriority {
             Name = [string]$entryName
             Priority = (Convert-AzVmTaskCatalogPriority -Value $entry.priority -DefaultValue 10)
             Enabled = (Convert-AzVmTaskCatalogBool -Value $entry.enabled -DefaultValue $true)
+            TimeoutSeconds = (Convert-AzVmTaskCatalogTimeout -Value $entry.timeout -DefaultValue 180)
         }
     }
 
@@ -539,11 +568,12 @@ function Sync-AzVmTaskCatalogPriority {
     foreach ($name in @($activeTaskNames)) {
         $activeNameSet[[string]$name] = $true
         if (-not $existingMap.ContainsKey([string]$name)) {
-            Write-Warning ("Task catalog update: task '{0}' was missing and is added with priority=10 enabled=true." -f [string]$name)
+            Write-Warning ("Task catalog update: task '{0}' was missing and is added with priority=10 enabled=true timeout=180." -f [string]$name)
             $existingMap[[string]$name] = [pscustomobject]@{
                 Name = [string]$name
                 Priority = 10
                 Enabled = $true
+                TimeoutSeconds = 180
             }
         }
     }
@@ -566,6 +596,7 @@ function Sync-AzVmTaskCatalogPriority {
             name = [string]$taskName
             priority = [int](Convert-AzVmTaskCatalogPriority -Value $taskState.Priority -DefaultValue 10)
             enabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskState.Enabled -DefaultValue $true)
+            timeout = [int](Convert-AzVmTaskCatalogTimeout -Value $taskState.TimeoutSeconds -DefaultValue 180)
         }
     }
 
@@ -589,6 +620,7 @@ function Sync-AzVmTaskCatalogPriority {
         $taskMap[[string]$row.name] = [pscustomobject]@{
             Priority = [int]$row.priority
             Enabled = [bool]$row.enabled
+            TimeoutSeconds = [int]$row.timeout
         }
     }
 
@@ -697,11 +729,16 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
 
         $content = Get-Content -Path $row.Path -Raw
+        $taskTimeoutSeconds = 180
+        if ($taskMap.ContainsKey($taskName)) {
+            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
+        }
         $activeTasks += [pscustomobject]@{
             Name = $taskName
             Script = [string]$content
             RelativePath = [string]$row.RelativePath
             DirectoryPath = [string](Split-Path -Path $row.Path -Parent)
+            TimeoutSeconds = [int]$taskTimeoutSeconds
         }
     }
 
@@ -767,37 +804,22 @@ function Resolve-AzVmRuntimeTaskBlocks {
 
 
 
-# Handles Resolve-AzVmTaskTimeoutSeconds.
-function Resolve-AzVmTaskTimeoutSeconds {
+# Handles Get-AzVmTaskTimeoutSeconds.
+function Get-AzVmTaskTimeoutSeconds {
     param(
-        [string]$TaskName,
-        [string]$TaskScript,
-        [int]$DefaultTimeoutSeconds
+        [psobject]$TaskBlock,
+        [int]$DefaultTimeoutSeconds = 180
     )
 
-    $resolved = [int]$DefaultTimeoutSeconds
-    if ($resolved -lt 5) { $resolved = 5 }
-    if ($resolved -gt 7200) { $resolved = 7200 }
-
-    if ([string]::IsNullOrWhiteSpace([string]$TaskScript)) {
-        return $resolved
+    $taskTimeout = $DefaultTimeoutSeconds
+    if ($null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0) {
+        $taskTimeout = [int](Convert-AzVmTaskCatalogTimeout -Value $TaskBlock.TimeoutSeconds -DefaultValue $DefaultTimeoutSeconds)
+    }
+    else {
+        $taskTimeout = [int](Convert-AzVmTaskCatalogTimeout -Value $DefaultTimeoutSeconds -DefaultValue 180)
     }
 
-    $pattern = '(?im)^\s*(?:#|//)\s*AZ_VM_TASK_TIMEOUT_SECONDS\s*=\s*(?<value>\d{1,5})\s*$'
-    $match = [regex]::Match([string]$TaskScript, $pattern)
-    if (-not $match.Success) {
-        return $resolved
-    }
-
-    $candidate = [int]$match.Groups['value'].Value
-    if ($candidate -lt 5) { $candidate = 5 }
-    if ($candidate -gt 7200) { $candidate = 7200 }
-
-    if ($candidate -ne $resolved) {
-        Write-Host ("Task timeout override detected: {0} -> {1}s (default {2}s)." -f $TaskName, $candidate, $resolved) -ForegroundColor DarkCyan
-    }
-
-    return [int]$candidate
+    return [int]$taskTimeout
 }
 
 # Handles Invoke-AzVmSshTaskBlocks.
@@ -858,12 +880,12 @@ function Invoke-AzVmSshTaskBlocks {
         foreach ($task in @($TaskBlocks)) {
             $taskName = [string]$task.Name
             $taskScript = [string]$task.Script
-            $taskTimeoutSeconds = Resolve-AzVmTaskTimeoutSeconds -TaskName $taskName -TaskScript $taskScript -DefaultTimeoutSeconds $SshTaskTimeoutSeconds
+            $taskTimeoutSeconds = Get-AzVmTaskTimeoutSeconds -TaskBlock $task -DefaultTimeoutSeconds $SshTaskTimeoutSeconds
             $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
             $taskResult = $null
             $taskInvocationError = $null
 
-            Write-Host ("Task started: {0}" -f $taskName)
+            Write-Host ("Task started: {0} (max {1}s)" -f $taskName, $taskTimeoutSeconds)
 
             $assetCopies = @()
             if ($task.PSObject.Properties.Match('AssetCopies').Count -gt 0 -and $null -ne $task.AssetCopies) {

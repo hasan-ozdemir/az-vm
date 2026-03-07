@@ -1,5 +1,4 @@
 $ErrorActionPreference = "Stop"
-# AZ_VM_TASK_TIMEOUT_SECONDS=3600
 Write-Host "Update task started: docker-desktop-install-and-configure"
 
 function Refresh-SessionPath {
@@ -84,7 +83,7 @@ function Invoke-ProcessWithTimeout {
     if (-not $completed) {
         try { $proc.Kill() } catch { }
         try { [void]$proc.WaitForExit() } catch { }
-        Write-Warning ("{0} timed out after {1} second(s)." -f $Label, $TimeoutSeconds)
+        Write-Warning ("{0} did not complete in time." -f $Label)
         return [pscustomobject]@{ Success = $false; ExitCode = 124; TimedOut = $true; StdOut = ""; StdErr = "" }
     }
 

@@ -1,5 +1,4 @@
 $ErrorActionPreference = "Stop"
-# AZ_VM_TASK_TIMEOUT_SECONDS=1200
 Write-Host "Update task started: python-install-check"
 
 function Refresh-SessionPath {

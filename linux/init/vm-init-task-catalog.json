@@ -3,22 +3,26 @@
     {
       "name": "00-ensure-linux-user-passwords",
       "priority": 1,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "02-sshd-config-port",
       "priority": 2,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "03-firewall-rules",
       "priority": 3,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "05-sshd-service-restart",
       "priority": 10,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     }
   ]
 }

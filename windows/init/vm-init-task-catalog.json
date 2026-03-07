@@ -3,32 +3,38 @@
     {
       "name": "01-ensure-local-admin-users",
       "priority": 1,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "02-choco-bootstrap",
       "priority": 2,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "03-openssh-install-service",
       "priority": 3,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "04-sshd-config-port",
       "priority": 4,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "05-rdp-configure",
       "priority": 5,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     },
     {
       "name": "06-firewall-open-ports",
       "priority": 6,
-      "enabled": true
+      "enabled": true,
+      "timeout": 180
     }
   ]
 }

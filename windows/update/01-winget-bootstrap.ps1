@@ -1,6 +1,5 @@
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-# AZ_VM_TASK_TIMEOUT_SECONDS=900
 Write-Host "Update task started: winget-bootstrap"
 
 function Refresh-SessionPath {

@@ -254,21 +254,33 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('invoke_combined_task() {')
         [void]$combinedBuilder.AppendLine('  local task_name_base64="$1"')
         [void]$combinedBuilder.AppendLine('  local script_base64="$2"')
+        [void]$combinedBuilder.AppendLine('  local task_timeout="$3"')
         [void]$combinedBuilder.AppendLine('  local task_name')
         [void]$combinedBuilder.AppendLine('  task_name=$(printf ''%s'' "$task_name_base64" | base64 -d)')
-        [void]$combinedBuilder.AppendLine('  echo "TASK started: ${task_name}"')
+        [void]$combinedBuilder.AppendLine('  echo "TASK started: ${task_name} (max ${task_timeout}s)"')
         [void]$combinedBuilder.AppendLine('  local start_ts')
         [void]$combinedBuilder.AppendLine('  start_ts=$(date +%s)')
         [void]$combinedBuilder.AppendLine('  local task_script')
         [void]$combinedBuilder.AppendLine('  task_script=$(printf ''%s'' "$script_base64" | base64 -d)')
-        [void]$combinedBuilder.AppendLine('  if bash -lc "$task_script"; then')
+        [void]$combinedBuilder.AppendLine('  if timeout --signal=TERM --kill-after=15 "${task_timeout}" bash -lc "$task_script"; then')
         [void]$combinedBuilder.AppendLine('    local end_ts')
         [void]$combinedBuilder.AppendLine('    end_ts=$(date +%s)')
         [void]$combinedBuilder.AppendLine('    local elapsed=$(( end_ts - start_ts ))')
         [void]$combinedBuilder.AppendLine('    echo "TASK completed: ${task_name} (${elapsed}s)"')
         [void]$combinedBuilder.AppendLine('    echo "TASK result: success"')
+        [void]$combinedBuilder.AppendLine('    echo "TASK_STATUS:${task_name}:success"')
         [void]$combinedBuilder.AppendLine('  else')
-        [void]$combinedBuilder.AppendLine('    echo "TASK result: failure (${task_name})"')
+        [void]$combinedBuilder.AppendLine('    local exit_code=$?')
+        [void]$combinedBuilder.AppendLine('    local end_ts')
+        [void]$combinedBuilder.AppendLine('    end_ts=$(date +%s)')
+        [void]$combinedBuilder.AppendLine('    local elapsed=$(( end_ts - start_ts ))')
+        [void]$combinedBuilder.AppendLine('    echo "TASK completed: ${task_name} (${elapsed}s)"')
+        [void]$combinedBuilder.AppendLine('    if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ]; then')
+        [void]$combinedBuilder.AppendLine('      echo "TASK result: timeout (${task_name})"')
+        [void]$combinedBuilder.AppendLine('    else')
+        [void]$combinedBuilder.AppendLine('      echo "TASK result: failure (${task_name})"')
+        [void]$combinedBuilder.AppendLine('    fi')
+        [void]$combinedBuilder.AppendLine('    echo "TASK_STATUS:${task_name}:error"')
         [void]$combinedBuilder.AppendLine('    return 1')
         [void]$combinedBuilder.AppendLine('  fi')
         [void]$combinedBuilder.AppendLine('}')
@@ -277,20 +289,70 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('$ErrorActionPreference = "Stop"')
         [void]$combinedBuilder.AppendLine('$ProgressPreference = "SilentlyContinue"')
         [void]$combinedBuilder.AppendLine('function Invoke-CombinedTaskBlock {')
-        [void]$combinedBuilder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64)')
-        [void]$combinedBuilder.AppendLine('    Write-Host "TASK started: $TaskName"')
+        [void]$combinedBuilder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64,[int]$TimeoutSeconds)')
+        [void]$combinedBuilder.AppendLine('    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }')
+        [void]$combinedBuilder.AppendLine('    Write-Host ("TASK started: {0} (max {1}s)" -f $TaskName, $TimeoutSeconds)')
         [void]$combinedBuilder.AppendLine('    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()')
+        [void]$combinedBuilder.AppendLine('    $completionWritten = $false')
+        [void]$combinedBuilder.AppendLine('    $job = $null')
+        [void]$combinedBuilder.AppendLine('    $tempPath = $null')
         [void]$combinedBuilder.AppendLine('    try {')
         [void]$combinedBuilder.AppendLine('        $decodedScript = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($ScriptBase64))')
-        [void]$combinedBuilder.AppendLine('        Invoke-Expression $decodedScript')
-        [void]$combinedBuilder.AppendLine('        $taskWatch.Stop()')
+        [void]$combinedBuilder.AppendLine('        $tempPath = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-init-task-{0}.ps1" -f [System.Guid]::NewGuid().ToString("N"))')
+        [void]$combinedBuilder.AppendLine('        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)')
+        [void]$combinedBuilder.AppendLine('        [System.IO.File]::WriteAllText($tempPath, $decodedScript, $utf8NoBom)')
+        [void]$combinedBuilder.AppendLine('        $job = Start-Job -ArgumentList $tempPath -ScriptBlock {')
+        [void]$combinedBuilder.AppendLine('            param($TaskPath)')
+        [void]$combinedBuilder.AppendLine('            $commandOutput = & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $TaskPath 2>&1')
+        [void]$combinedBuilder.AppendLine('            [pscustomobject]@{ ExitCode = [int]$LASTEXITCODE; Lines = @($commandOutput | ForEach-Object { [string]$_ }) }')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds')
+        [void]$combinedBuilder.AppendLine('        if ($null -eq $completed) {')
+        [void]$combinedBuilder.AppendLine('            Stop-Job -Job $job -ErrorAction SilentlyContinue | Out-Null')
+        [void]$combinedBuilder.AppendLine('            throw "Task timed out."')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        $jobResult = Receive-Job -Job $job -ErrorAction Stop')
+        [void]$combinedBuilder.AppendLine('        if ($jobResult -is [System.Array] -and $jobResult.Count -gt 0) {')
+        [void]$combinedBuilder.AppendLine('            $jobResult = $jobResult[-1]')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        $jobOutputLines = @()')
+        [void]$combinedBuilder.AppendLine('        $jobExitCode = 0')
+        [void]$combinedBuilder.AppendLine('        if ($null -ne $jobResult) {')
+        [void]$combinedBuilder.AppendLine('            if ($jobResult.PSObject.Properties.Match("Lines").Count -gt 0 -and $null -ne $jobResult.Lines) {')
+        [void]$combinedBuilder.AppendLine('                $jobOutputLines = @($jobResult.Lines | ForEach-Object { [string]$_ })')
+        [void]$combinedBuilder.AppendLine('            }')
+        [void]$combinedBuilder.AppendLine('            if ($jobResult.PSObject.Properties.Match("ExitCode").Count -gt 0) {')
+        [void]$combinedBuilder.AppendLine('                $jobExitCode = [int]$jobResult.ExitCode')
+        [void]$combinedBuilder.AppendLine('            }')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        foreach ($line in @($jobOutputLines)) {')
+        [void]$combinedBuilder.AppendLine('            if (-not [string]::IsNullOrWhiteSpace([string]$line)) {')
+        [void]$combinedBuilder.AppendLine('                Write-Host ([string]$line)')
+        [void]$combinedBuilder.AppendLine('            }')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
         [void]$combinedBuilder.AppendLine('        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
+        [void]$combinedBuilder.AppendLine('        $completionWritten = $true')
+        [void]$combinedBuilder.AppendLine('        if ($jobExitCode -ne 0) { throw ("Task exited with code {0}." -f $jobExitCode) }')
         [void]$combinedBuilder.AppendLine('        Write-Host "TASK result: success"')
+        [void]$combinedBuilder.AppendLine('        Write-Host ("TASK_STATUS:{0}:success" -f $TaskName)')
         [void]$combinedBuilder.AppendLine('    }')
         [void]$combinedBuilder.AppendLine('    catch {')
         [void]$combinedBuilder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
-        [void]$combinedBuilder.AppendLine('        Write-Host "TASK result: failure ($TaskName)"')
+        [void]$combinedBuilder.AppendLine('        if (-not $completionWritten) {')
+        [void]$combinedBuilder.AppendLine('            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        Write-Host ("TASK result: failure ({0})" -f $TaskName)')
+        [void]$combinedBuilder.AppendLine('        Write-Host ("TASK_STATUS:{0}:error" -f $TaskName)')
         [void]$combinedBuilder.AppendLine('        throw')
+        [void]$combinedBuilder.AppendLine('    }')
+        [void]$combinedBuilder.AppendLine('    finally {')
+        [void]$combinedBuilder.AppendLine('        if ($null -ne $job) {')
+        [void]$combinedBuilder.AppendLine('            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue | Out-Null')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        if ($null -ne $tempPath) {')
+        [void]$combinedBuilder.AppendLine('            Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue')
+        [void]$combinedBuilder.AppendLine('        }')
         [void]$combinedBuilder.AppendLine('    }')
         [void]$combinedBuilder.AppendLine('}')
     }
@@ -298,18 +360,19 @@ function Invoke-VmRunCommandBlocks {
     foreach ($taskBlock in $TaskBlocks) {
         $taskName = [string]$taskBlock.Name
         $taskScript = Resolve-AzVmRunCommandScriptText -ScriptText ([string]$taskBlock.Script)
+        $taskTimeoutSeconds = Get-AzVmTaskTimeoutSeconds -TaskBlock $taskBlock -DefaultTimeoutSeconds 180
         if ($CombinedShell -eq "bash") {
             $taskNameBytes = [System.Text.Encoding]::UTF8.GetBytes($taskName)
             $taskNameBase64 = [System.Convert]::ToBase64String($taskNameBytes)
             $taskBytes = [System.Text.Encoding]::UTF8.GetBytes($taskScript)
             $taskBase64 = [System.Convert]::ToBase64String($taskBytes)
-            [void]$combinedBuilder.AppendLine(("invoke_combined_task '{0}' '{1}'" -f $taskNameBase64, $taskBase64))
+            [void]$combinedBuilder.AppendLine(("invoke_combined_task '{0}' '{1}' '{2}'" -f $taskNameBase64, $taskBase64, [int]$taskTimeoutSeconds))
         }
         else {
             $taskNameSafe = $taskName.Replace("'", "''")
             $taskBytes = [System.Text.Encoding]::UTF8.GetBytes($taskScript)
             $taskBase64 = [System.Convert]::ToBase64String($taskBytes)
-            [void]$combinedBuilder.AppendLine(("Invoke-CombinedTaskBlock -TaskName '{0}' -ScriptBase64 '{1}'" -f $taskNameSafe, $taskBase64))
+            [void]$combinedBuilder.AppendLine(("Invoke-CombinedTaskBlock -TaskName '{0}' -ScriptBase64 '{1}' -TimeoutSeconds {2}" -f $taskNameSafe, $taskBase64, [int]$taskTimeoutSeconds))
         }
     }
 
@@ -381,6 +444,10 @@ function Apply-AzVmTaskBlockReplacements {
         if ($taskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
             $directoryPath = [string]$taskBlock.DirectoryPath
         }
+        $timeoutSeconds = 180
+        if ($taskBlock.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0) {
+            $timeoutSeconds = Get-AzVmTaskTimeoutSeconds -TaskBlock $taskBlock -DefaultTimeoutSeconds 180
+        }
 
         if ($Replacements) {
             foreach ($key in $Replacements.Keys) {
@@ -407,6 +474,7 @@ function Apply-AzVmTaskBlockReplacements {
             RelativePath = $relativePath
             DirectoryPath = $directoryPath
             AssetCopies = @($assetCopies)
+            TimeoutSeconds = [int]$timeoutSeconds
         }
     }
 

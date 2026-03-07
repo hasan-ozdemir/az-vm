@@ -133,7 +133,7 @@ function Invoke-AzVmMain {
                 Assert-AzVmSingleActionDependencies -ActionName $actionTarget -Context $step1Context
             }
 
-            if ($runConfigAction) {
+            if ($runConfigAction -or $runDeployAction) {
                 Invoke-Step 'Step 1/7 - initial configuration and availability checks will be completed...' {
                     Show-AzVmStepFirstUseValues -StepLabel 'Step 1/7 - config and precheck' -Context $step1Context -ExtraValues @{
                         Platform = $platform

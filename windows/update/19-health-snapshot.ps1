@@ -81,12 +81,12 @@ else {
 if (Get-Command docker -ErrorAction SilentlyContinue) {
     $dockerCli = Invoke-CommandWithTimeout -TimeoutSeconds 15 -Action { docker --version }
     if (-not $dockerCli.Success) {
-        Write-Warning "docker --version failed or timed out"
+        Write-Warning "docker --version did not complete successfully"
     }
 
     $dockerDaemon = Invoke-CommandWithTimeout -TimeoutSeconds 20 -Action { docker version }
     if (-not $dockerDaemon.Success) {
-        if ($dockerDaemon.TimedOut) { Write-Warning "docker version timed out" } else { Write-Warning "docker version failed" }
+        Write-Warning "docker version did not complete successfully"
     }
 }
 else {
@@ -97,7 +97,7 @@ Write-Host "WSL STATUS:"
 if (Get-Command wsl -ErrorAction SilentlyContinue) {
     $wslVersion = Invoke-CommandWithTimeout -TimeoutSeconds 15 -Action { wsl --version }
     if (-not $wslVersion.Success) {
-        if ($wslVersion.TimedOut) { Write-Warning "wsl --version timed out" } else { Write-Warning "wsl --version failed" }
+        Write-Warning "wsl --version did not complete successfully"
     }
 }
 else {
@@ -108,7 +108,7 @@ Write-Host "OLLAMA STATUS:"
 if (Get-Command ollama -ErrorAction SilentlyContinue) {
     $ollamaStatus = Invoke-CommandWithTimeout -TimeoutSeconds 10 -Action { ollama --version }
     if (-not $ollamaStatus.Success) {
-        Write-Warning "ollama --version failed or timed out"
+        Write-Warning "ollama --version did not complete successfully"
     }
 }
 else {

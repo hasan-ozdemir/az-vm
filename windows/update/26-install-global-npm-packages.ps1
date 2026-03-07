@@ -1,5 +1,4 @@
 $ErrorActionPreference = "Stop"
-# AZ_VM_TASK_TIMEOUT_SECONDS=1800
 Write-Host "Update task started: install-global-npm-packages"
 
 function Refresh-SessionPath {

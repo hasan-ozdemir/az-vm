@@ -21,7 +21,7 @@ do {
 } while ($svcWait.Elapsed.TotalSeconds -lt 60)
 
 if (-not $svc -or $svc.Status -ne "Running") {
-    throw "TermService did not reach Running state within 60 seconds."
+    throw "TermService did not reach Running state."
 }
 
 Write-Host "rdp-ready"
