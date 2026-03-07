@@ -1,7 +1,8 @@
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path,
     [switch]$SkipMatrix,
-    [switch]$SkipHelpSmoke
+    [switch]$SkipHelpSmoke,
+    [switch]$SkipLinuxShellSyntax
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +59,20 @@ function Remove-PythonCacheArtifacts {
         Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
+function Resolve-PowerShellHost {
+    $windowsPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
+    if ($windowsPowerShell) {
+        return $windowsPowerShell.Source
+    }
+
+    $powerShellCore = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($powerShellCore) {
+        return $powerShellCore.Source
+    }
+
+    throw "Neither powershell.exe nor pwsh was found."
+}
+
 Invoke-AuditStep -Name "PowerShell parse (*.ps1)" -Action {
     $parseErrors = @()
     Get-ChildItem -Path $RepoRoot -Recurse -File -Filter *.ps1 | ForEach-Object {
@@ -74,30 +89,62 @@ Invoke-AuditStep -Name "PowerShell parse (*.ps1)" -Action {
     }
 }
 
-Invoke-AuditStep -Name "Linux shell syntax (bash -n)" -Action {
-    $linuxRoot = Join-Path $RepoRoot "linux"
-    if (-not (Test-Path -LiteralPath $linuxRoot)) {
-        Write-Host "linux directory was not found. Linux shell syntax check skipped." -ForegroundColor Yellow
-        return
+Invoke-AuditStep -Name "Documentation contract" -Action {
+    $docContractPath = Join-Path $RepoRoot "tests\run-doc-contract.ps1"
+    if (-not (Test-Path -LiteralPath $docContractPath)) {
+        throw "run-doc-contract.ps1 was not found."
     }
 
-    $wsl = Get-Command wsl -ErrorAction SilentlyContinue
-    if (-not $wsl) {
-        throw "WSL is not available."
+    $powerShellHost = Resolve-PowerShellHost
+    & $powerShellHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $docContractPath -RepoRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "run-doc-contract.ps1 failed."
     }
+}
 
-    $failed = @()
-    Get-ChildItem -Path $linuxRoot -Recurse -File -Filter *.sh | ForEach-Object {
-        $fullPath = (Resolve-Path -LiteralPath $_.FullName).Path
-        $wslPath = '/mnt/' + $fullPath.Substring(0,1).ToLowerInvariant() + '/' + ($fullPath.Substring(3) -replace '\\','/')
-        & $wsl.Source bash -n $wslPath
-        if ($LASTEXITCODE -ne 0) {
-            $failed += $fullPath
+if (-not $SkipLinuxShellSyntax) {
+    Invoke-AuditStep -Name "Linux shell syntax (bash -n)" -Action {
+        $linuxRoot = Join-Path $RepoRoot "linux"
+        if (-not (Test-Path -LiteralPath $linuxRoot)) {
+            Write-Host "linux directory was not found. Linux shell syntax check skipped." -ForegroundColor Yellow
+            return
         }
-    }
 
-    if ($failed.Count -gt 0) {
-        throw ("bash -n failed for: {0}" -f ($failed -join ", "))
+        $failed = @()
+        $isWindowsHost = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
+
+        if ($isWindowsHost) {
+            $wsl = Get-Command wsl -ErrorAction SilentlyContinue
+            if (-not $wsl) {
+                throw "WSL is not available."
+            }
+
+            Get-ChildItem -Path $linuxRoot -Recurse -File -Filter *.sh | ForEach-Object {
+                $fullPath = (Resolve-Path -LiteralPath $_.FullName).Path
+                $wslPath = '/mnt/' + $fullPath.Substring(0,1).ToLowerInvariant() + '/' + ($fullPath.Substring(3) -replace '\\','/')
+                & $wsl.Source bash -n $wslPath
+                if ($LASTEXITCODE -ne 0) {
+                    $failed += $fullPath
+                }
+            }
+        }
+        else {
+            $bash = Get-Command bash -ErrorAction SilentlyContinue
+            if (-not $bash) {
+                throw "bash command was not found."
+            }
+
+            Get-ChildItem -Path $linuxRoot -Recurse -File -Filter *.sh | ForEach-Object {
+                & $bash.Source -n $_.FullName
+                if ($LASTEXITCODE -ne 0) {
+                    $failed += $_.FullName
+                }
+            }
+        }
+
+        if ($failed.Count -gt 0) {
+            throw ("bash -n failed for: {0}" -f ($failed -join ", "))
+        }
     }
 }
 
@@ -164,7 +211,10 @@ if (-not $SkipHelpSmoke) {
         $scriptPath = Join-Path $RepoRoot "az-vm.ps1"
         $ps = Get-Command powershell.exe -ErrorAction SilentlyContinue
         if (-not $ps) {
-            throw "powershell.exe was not found."
+            $ps = Get-Command pwsh -ErrorAction SilentlyContinue
+        }
+        if (-not $ps) {
+            throw "Neither powershell.exe nor pwsh was found."
         }
 
         $cases = @(
@@ -193,7 +243,8 @@ if (-not $SkipHelpSmoke) {
 if (-not $SkipMatrix) {
     Invoke-AuditStep -Name "PS compatibility matrix" -Action {
         $matrixPath = Join-Path $RepoRoot "tests\run-ps-compat-matrix.ps1"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File $matrixPath -RepoRoot $RepoRoot
+        $powerShellHost = Resolve-PowerShellHost
+        & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $matrixPath -RepoRoot $RepoRoot
         if ($LASTEXITCODE -ne 0) {
             throw "run-ps-compat-matrix.ps1 failed."
         }

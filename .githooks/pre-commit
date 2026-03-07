@@ -1,0 +1,15 @@
+#!/usr/bin/env sh
+set -eu
+
+REPO_ROOT=$(git rev-parse --show-toplevel)
+PS_EXE=""
+if command -v pwsh >/dev/null 2>&1; then
+  PS_EXE="pwsh"
+elif command -v powershell.exe >/dev/null 2>&1; then
+  PS_EXE="powershell.exe"
+else
+  echo "pre-commit: pwsh or powershell.exe is required." >&2
+  exit 1
+fi
+
+"$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/run-quality-audit.ps1" -RepoRoot "$REPO_ROOT" -SkipMatrix -SkipLinuxShellSyntax

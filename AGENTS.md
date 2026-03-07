@@ -1,91 +1,134 @@
-# AGENTS.md - az-vm Development Conventions
+# AGENTS.md - az-vm Engineering Contract
 
 ## Purpose
-This repository manages unified Azure VM provisioning for Linux and Windows from a single entrypoint with high parity, predictable run modes, and explicit operator feedback.
+This repository manages Azure VM provisioning and lifecycle operations for Windows and Linux through one entrypoint. The project optimizes for parity, deterministic behavior, strong validation before mutation, and operator-visible outcomes.
 
-## Repository Layout
-- `az-vm.cmd`: Elevated launcher.
-- `az-vm.ps1`: Single orchestrator for both platforms.
-- `linux/init/*.sh`: Linux VM init task catalog.
-- `linux/update/*.sh`: Linux VM update task catalog.
-- `windows/init/*.ps1`: Windows VM init task catalog.
-- `windows/init/disabled/*.ps1`: Windows init tasks intentionally disabled.
-- `windows/update/*.ps1`: Windows VM update task catalog.
-- `windows/update/disabled/*.ps1`: Windows update tasks intentionally disabled.
-- `tools/`: pyssh/utility scripts.
-- `tests/`: PowerShell compatibility smoke tests.
+## Source of Truth Hierarchy
+Use these sources in this order when maintaining the repo:
+1. Current code and task catalogs for runtime behavior.
+2. Current CLI/help output for command-surface truth.
+3. Current `.env.example` for committed configuration contract.
+4. Current local `.env` only when a user explicitly states that their local runtime configuration is the temporary source of truth for alignment work.
+5. Git history for project evolution.
+6. Relevant `.codex` session JSONL files for workflow, decision, and prompt-history reconstruction.
 
-## Core Design Rules
-- One orchestration script (`az-vm.ps1`) for both platforms.
-- Keep Linux/Windows flow and wording as identical as possible.
-- Allow differences only for true platform-specific requirements:
-  - VM image and OS behavior
-  - guest task language (`.sh` vs `.ps1`)
-  - Windows-only RDP/Windows-service configuration
+## Repository Map
+- `az-vm.cmd`: elevated launcher for Windows operators.
+- `az-vm.ps1`: unified orchestrator entrypoint.
+- `modules/`: runtime modules grouped by domain.
+- `windows/init/`, `windows/update/`: Windows guest task catalogs.
+- `linux/init/`, `linux/update/`: Linux guest task catalogs.
+- `windows/*/disabled/`: intentionally disabled guest tasks.
+- `tools/`: helper tooling, pyssh bootstrap, git-hook installer.
+- `tests/`: static, compatibility, audit, and contract checks.
+- `docs/reconstruction/`: evidence-oriented historical reconstruction artifacts.
+- `docs/prompt-history.md`: human-readable prompt ledger for this repo.
 
-## Runtime Modes
-- Default mode is `interactive`.
-- Auto mode is `--auto` or `-a`.
+## Architecture Invariants
+- Keep one orchestrator entrypoint: `az-vm.ps1`.
+- Keep Linux and Windows flow and wording as identical as possible.
+- Allow differences only where platform requirements genuinely differ:
+  - image selection and guest OS behavior
+  - init/update task language
+  - Windows-only RDP and Windows service configuration
+- Prefer explicit orchestration steps over hidden side effects.
+- Prefer task catalogs over hard-coded ad hoc execution order.
+- Keep command behavior deterministic across interactive and auto flows.
 
-### Mode Semantics
-- `Step 1..7` are top-level orchestration steps.
-- `Step 5` executes VM init tasks.
-- `Step 6` executes VM update tasks.
-- Init tasks (Windows + Linux) run once via Azure Run Command in task-batch mode when VM is newly created.
-- Update tasks run via persistent pyssh task-by-task.
+## Command-Surface Rules
+- Current public commands are: `configure`, `create`, `update`, `group`, `show`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
+- Do not preserve removed commands or aliases once the repo has cut over to a new surface.
+- If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
+- Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.
+- Keep help output, README examples, and runtime messages aligned with the actual parser contract.
 
-## OS Selection
-- CLI flags: `--windows` or `--linux`.
-- Config: `VM_OS_TYPE=windows|linux`.
-- Precedence: CLI > `.env` > interactive prompt.
-- In auto mode, unresolved OS type must gracefully exit with actionable guidance.
+## Configuration Rules
+- Runtime precedence is: CLI override > `.env` value > hard-coded default.
+- `.env` is local-only and must remain untracked.
+- `.env.example` is the committed configuration contract and must stay current.
+- Use generic env keys whenever possible.
+- Use `WIN_` or `LIN_` keys only for true platform-specific settings.
+- Remove deprecated env keys instead of keeping compatibility fallbacks.
+- Validate region, VM naming, SKU, image, and other mutation-critical config before Azure create/update/delete operations.
 
-## Configuration Strategy
-- Runtime precedence: CLI override > `.env` value > hard-coded default.
-- Root `.env` is local-only and not tracked.
-- Root `.env.example` is source-of-truth and must be kept current.
-- Prefer generic keys; use `WIN_`/`LIN_` fallback keys only when truly platform-specific.
+## Naming and Resource Rules
+- `VM_NAME` is the single naming seed.
+- Template-driven resource names must derive from `VM_NAME`, region code, and the committed templates.
+- Resource-group uniqueness is suffix-based and deterministic.
+- Managed resource name generation must remain explicit, predictable, and validation-backed.
+- If naming rules change, update README, tests, and any naming-related summaries in the same change.
 
 ## Task Catalog Rules
-- Task files must use: `NN-verb-topic.ext`.
-- `NN` is two-digit execution order.
-- `verb-topic` must contain 2-5 English words in kebab-case.
-- Linux extensions: `.sh`; Windows extensions: `.ps1`.
-- `disabled/` subfolders are reserved for intentionally skipped tasks.
+- Task files use `NN-verb-topic.ext`.
+- `NN` is a two-digit task number.
+- The task catalog JSON files are the execution-order and timeout source of truth.
+- Task priority is catalog-driven, not inferred from directory scans at runtime.
+- Disabled tasks belong under `disabled/` and must be ignored by execution logic.
+- Init and update catalogs may diverge by platform, but the orchestration model should remain parallel in concept.
 
-## Networking and Security Rules
-- Ports defined by `TCP_PORTS` must be consistently applied to:
-  - NSG inbound rules (Azure)
-  - Guest OS firewall rules
-- SSH port must remain synchronized end-to-end (NSG, guest firewall/config, printed connection command).
-- Canonical SSH port remains configurable (currently expected as `444` in templates).
+## Reliability and Error-Handling Rules
+- Validate before mutating Azure resources.
+- Prefer fast, filtered Azure checks over broad slow listings.
+- Fail gracefully with:
+  - a short reason
+  - a precise corrective hint
+  - no ambiguous extra noise
+- Avoid retry storms. Retry policies must stay explicit and intentionally bounded.
+- Prefer isolated diagnosis and targeted reruns over destructive full rebuild loops unless the user explicitly wants a rebuild.
 
-## Reliability and Error Handling
-- Pre-check region/image/VM-size availability before provisioning/destructive operations.
-- Prefer server-side filtered checks (`az rest`) over broad slow listings.
-- Exceptional paths must fail gracefully with:
-  - short summary
-  - actionable hint
-  - non-ambiguous exit
+## Logging and UX Rules
+- Keep user-facing strings, comments, and UI wording in English.
+- Keep Linux and Windows wording aligned for equivalent behavior.
+- Keep logs contextual, singular, and readable.
+- Do not emit duplicate informational lines without a real state change.
+- Show durations for long-running operations when the feature exists, but avoid noisy transcript spam.
+- When a stage produces warnings, failures, or reboot requests, summarize them clearly at stage end.
 
-## Package/Path Setup Convention (Windows)
-- Chocolatey is installed unattended when missing.
-- `allowGlobalConfirmation` is enabled once immediately after Chocolatey bootstrap.
-- Required packages are installed via Chocolatey.
-- `refreshenv.cmd` is called after choco bootstrap and after each package installation check/install step.
+## Windows Package and Path Rules
+- Bootstrap Chocolatey unattended when missing.
+- Enable `allowGlobalConfirmation` exactly once immediately after Chocolatey bootstrap.
+- Call `refreshenv.cmd` after Chocolatey bootstrap and after each package installation verification step that depends on updated PATH resolution.
+- Keep package-install behavior explicit. Do not add silent fallback installers unless the user explicitly requests them.
 
-## Language and UX Consistency
-- Keep UI messages, comments, and user-facing strings in English.
-- Keep Linux/Windows wording aligned for equivalent steps.
+## Python Tooling Rules
+- Repo-managed Python execution must not generate `__pycache__`, `.pyc`, or `.pyo` artifacts.
+- Use repo-owned execution wrappers and environment guards for Python-based helpers.
+- Keep pyssh tooling self-contained under `tools/pyssh` and bootstrappable from the repo.
 
-## Logging and Traceability
-- Scripts should transcript output to timestamped run logs.
-- Step/task output should be explicit and easy to correlate with failures.
+## Testing and Quality Rules
+- Maintain PowerShell 5.1 and PowerShell 7 compatibility.
+- Keep non-live quality checks runnable locally.
+- Keep CI non-destructive and non-live; do not run real Azure provisioning in GitHub Actions.
+- Maintain a local hook path and a GitHub Actions quality gate together.
+- Update audit/contract checks when command names, docs, env keys, or task catalog behavior change.
 
-## Commit Discipline
-- Commit in small, contextual, developer-friendly English messages.
-- Use prefixes such as `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`, `test:`.
-- Reflect real intent and scope in each commit.
+## Documentation Responsibilities
+- `AGENTS.md`: engineering contract and collaboration rules.
+- `README.md`: operator and contributor guide.
+- `CHANGELOG.md`: full project history from first day to today.
+- `release-notes.md`: current release-oriented summary.
+- `roadmap.md`: forward-looking project plan.
+- `docs/prompt-history.md`: human-readable prompt ledger with raw prompts and assistant summaries.
+- `docs/reconstruction/`: supporting historical evidence and reconstruction notes.
 
-## Required Assistant Workflow Rule
-After each user prompt is implemented, the assistant must create a meaningful, contextual, developer-friendly English git commit immediately before presenting the final summary.
+## Prompt-History Rule
+- After every completed user-assistant interaction, append the user's raw prompt and the assistant's final summary to `docs/prompt-history.md`.
+- Maintain full two-way dialog continuity.
+- Do not omit completed turns.
+- Keep the file appendable, chronologically ordered, and human-readable.
+- Use the relevant `.codex` JSONL files as the primary source when reconstructing past turns.
+
+## Commit and Change Discipline
+- Make small, contextual, developer-friendly English commits.
+- Use prefixes such as `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
+- Reflect the real scope of the change.
+- Do not batch unrelated changes into one commit.
+- Before presenting the final summary to the user, create the commit for the completed prompt.
+
+## Required Assistant Workflow
+- Explore before mutating.
+- Prefer `rg` / `rg --files` for search.
+- Use non-interactive git commands.
+- Never use destructive git resets or checkouts unless explicitly requested.
+- If unexpected third-party edits appear, stop and ask the user how to proceed.
+- When a change affects docs, config contract, or command surface, update the corresponding contract files in the same prompt.

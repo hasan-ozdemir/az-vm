@@ -1,0 +1,67 @@
+name: quality-gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-static-audit:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.x'
+
+      - name: Run static audit
+        shell: powershell
+        run: |
+          .\tests\run-quality-audit.ps1 -RepoRoot $PWD.Path -SkipMatrix -SkipLinuxShellSyntax
+
+  powershell-compatibility:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run PowerShell compatibility matrix
+        shell: powershell
+        run: |
+          .\tests\run-ps-compat-matrix.ps1 -RepoRoot $PWD.Path
+
+  linux-shell-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate Linux shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            bash -n "$file"
+          done < <(find linux -type f -name '*.sh' -print0)
+
+  workflow-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -sSL -o actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.11/actionlint_1.7.11_linux_amd64.tar.gz
+          tar -xzf actionlint.tar.gz
+          ./actionlint -color

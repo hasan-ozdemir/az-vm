@@ -1,199 +1,187 @@
 # az-vm
 
-Unified Azure VM provisioning toolkit for Windows and Linux with one launcher:
-- `az-vm.cmd`
-- `az-vm.ps1`
+`az-vm` is a unified Azure VM provisioning and lifecycle toolkit for Windows and Linux. It creates or updates Azure infrastructure, prepares guest connectivity, executes init tasks, executes update tasks, and exposes operator-facing commands for inspection, maintenance, and connection.
 
-It creates/updates Azure resource group + network + VM, runs guest init tasks, then runs guest update tasks task-by-task over persistent pyssh.
+## What This Project Is For
+- Building reproducible Azure VM environments from one orchestrator.
+- Keeping Linux and Windows deployment flow as close as possible.
+- Providing a pragmatic operator UX for create, update, inspect, connect, and repair workflows.
+- Maintaining explicit task catalogs instead of hidden guest-side logic.
 
-## Architecture
+## Repository Layout
+- `az-vm.cmd`: elevated Windows launcher.
+- `az-vm.ps1`: unified orchestrator entrypoint.
+- `modules/`: runtime modules grouped by domain.
+- `windows/init/`, `windows/update/`: Windows guest task catalogs.
+- `linux/init/`, `linux/update/`: Linux guest task catalogs.
+- `tools/`: helper tooling including pyssh bootstrap and git-hook installer.
+- `tests/`: static and compatibility checks.
+- `docs/`: historical reconstruction and prompt history.
 
-`az-vm.ps1` now acts as an entrypoint and loads domain modules from `modules/`:
-- `modules/core/` shared runtime helpers
-- `modules/config/` env/config resolution
-- `modules/azure/` Azure API/CLI resource operations
-- `modules/platform/` guest/OS specific helpers
-- `modules/tasks/` run-command + pyssh task execution
-- `modules/ui/` picker/help/output flows
-- `modules/commands/` orchestration and command handlers
+## Command Surface
+- `configure`: interactive configuration and preview without Azure mutation.
+- `create`: create missing resources and continue through the configured step window.
+- `update`: rerun create-or-update logic on existing managed resources.
+- `group`: list or select managed resource groups.
+- `show`: print a human-readable resource and VM inventory.
+- `exec`: run one init task, one update task, or open an interactive remote shell path.
+- `ssh`: launch the local Windows OpenSSH client for a managed VM.
+- `rdp`: launch the local Remote Desktop client for a managed Windows VM.
+- `move`: migrate a managed VM to another Azure region.
+- `resize`: change the VM size in-place within the current region.
+- `set`: toggle supported VM feature flags such as hibernation and nested virtualization.
+- `delete`: purge a selected scope such as group, network, VM, or disk.
+- `help`: show quick or detailed command help.
 
-## Quick Start
+## Orchestration Model
+Top-level steps are:
+1. `configure`
+2. `group`
+3. `network`
+4. `vm-deploy`
+5. `vm-init`
+6. `vm-update`
+7. `vm-summary`
 
-### 1) Prerequisites
-- Windows host, PowerShell 5.1+ or PowerShell 7+
-- Azure CLI (`az`) and authenticated session (`az login`)
-- Admin terminal (for `.cmd` launcher)
+Execution semantics:
+- `vm-init` runs through Azure Run Command in task-batch mode.
+- `vm-update` runs task-by-task through persistent pyssh.
+- Full `create` and `update` flows execute the whole step chain unless explicitly sliced.
 
-### 2) Create local config
+## Runtime Modes
+- Default mode is `interactive`.
+- `--auto` / `-a` applies to `create`, `update`, and `delete`.
+- `show`, `ssh`, and `rdp` are operator-style commands and do not need `--auto`.
+- `exec` is interactive when no task selector is provided, otherwise direct.
 
-```powershell
-Copy-Item .env.example .env
-```
-
-Set at least:
-- `VM_OS_TYPE=windows` or `VM_OS_TYPE=linux` (required in `--auto` mode)
-- `VM_ADMIN_PASS` (strong password)
-
-### 3) Run
-
-```powershell
-# interactive
-.\az-vm.cmd create --windows
-
-# unattended
-.\az-vm.cmd create --auto --windows
-.\az-vm.cmd create --auto --linux
-```
-
-## Commands
-- `create`
-  - create missing resources
-  - supports step slicing: `--to-step`, `--from-step`, `--single-step`
-- `update`
-  - re-run create-or-update operations on existing resources
-  - supports step slicing: `--to-step`, `--from-step`, `--single-step`
-- `configure`
-  - interactive configuration flow up to resource-group preview
-  - runs Step 1 + Step 2 + Step 3 preview and exits without resource mutation
-  - writes selected values to `.env` for subsequent `create` runs
-- `move`
-  - move VM to target region (snapshot-based region migration with rollback cleanup)
-  - parameterized usage: `--group=<resource-group> --vm=<vm-name> --vm-region=<region>`
-  - interactive target region picker when `--vm-region=` is empty
-- `resize`
-  - in-place VM size update
-  - parameterized usage: `--group=<resource-group> --vm=<vm-name> --vm-size=<sku>`
-  - interactive VM size picker when `--vm-size=` is empty
-- `set`
-  - apply VM feature flags
-  - supports: `--hibernation=on|off`, `--nested-virtualization=on|off`
-  - parameterized usage: `--group=<resource-group> --vm=<vm-name>`
-- `exec`
-  - run one init or update task directly (`--init-task` / `--update-task`)
-  - no-parameter call opens interactive persistent pyssh REPL session
-  - optional scope: `--group=<resource-group>`
-- `ssh`
-  - launch external Windows OpenSSH client for a managed VM
-  - parameterized usage: `--group=<resource-group> --vm-name=<name> --user=manager|assistant`
-  - if `--vm-name` is omitted, interactive selection is used
-- `rdp`
-  - launch external Windows Remote Desktop client for a managed Windows VM
-  - parameterized usage: `--group=<resource-group> --vm-name=<name> --user=manager|assistant`
-  - if `--vm-name` is omitted, interactive selection is used
-- `delete`
-  - purge selected resources: `--target=group|network|vm|disk`
-  - optional scope: `--group=<resource-group>`
-  - non-interactive approval: `--yes`
-
-## Help UX
-- `--help`
-  - quick global overview with command list, option summary, and quick examples
-  - works as global flag (`az-vm --help`) and command flag (`az-vm create --help`)
-- `help`
-  - detailed command documentation with richer examples
-  - supports topic filter:
-    - `az-vm help`
-    - `az-vm help create`
-    - `az-vm help move`
-
-## Run Mode
-- `interactive` (default)
-- `--auto` / `-a`
-- `--auto` applies to `create`, `update`, and `delete` commands.
-
-## OS Selection
-- CLI: `--windows` or `--linux`
-- `.env`: `VM_OS_TYPE=windows|linux`
-- interactive selection when unresolved (default choice: windows)
-
-Selection precedence:
-1. CLI flag
-2. `.env` value
+## Platform Selection
+Platform selection precedence is:
+1. `--windows` or `--linux`
+2. `VM_OS_TYPE` from `.env`
 3. interactive prompt
 
-## Step Flow
-1. `configure`: resolve configuration + VM OS type + compatibility checks
-2. `group`: resource group handling
-3. `network`: VNet/Subnet/NSG/PublicIP/NIC
-4. `vm-deploy`: VM create/update
-5. `vm-init`: guest init tasks via `az vm run-command` (task-batch)
-6. `vm-update`: guest update tasks via persistent pyssh session (task-by-task)
-7. `vm-summary`: print SSH/RDP details
+In `--auto` mode, unresolved platform state must terminate gracefully with an actionable message.
 
-## Task Catalog Layout
+## Configuration Model
+Runtime precedence is:
+1. CLI override
+2. `.env`
+3. hard-coded default
 
-```text
-linux/
-  init/*.sh
-  update/*.sh
-windows/
-  init/*.ps1
-  init/disabled/*.ps1
-  update/*.ps1
-  update/disabled/*.ps1
+Key principles:
+- `.env` is local and untracked.
+- `.env.example` is the committed contract.
+- Generic keys are preferred.
+- `WIN_` / `LIN_` keys exist only for true platform-specific settings.
+- `VM_NAME` is the single naming seed.
+
+Important current keys include:
+- `VM_OS_TYPE`
+- `VM_NAME`
+- `AZ_LOCATION`
+- `VM_ADMIN_USER`, `VM_ADMIN_PASS`
+- `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
+- `VM_SSH_PORT`, `VM_RDP_PORT`
+- `VM_TASK_OUTCOME_MODE`
+- platform-specific image, size, disk, and task-directory keys
+
+## Naming Strategy
+Managed resource names are template-driven.
+
+Core principles:
+- `VM_NAME` is both the real Azure VM name and the naming seed.
+- resource group and managed resource names derive from `VM_NAME`, region code, and the committed templates.
+- uniqueness is suffix-based and deterministic.
+- explicit overrides are allowed, but they are validated before mutation.
+
+## Task Catalog Model
+Task catalogs live beside the task files and drive:
+- execution order
+- priority
+- timeout per task
+
+Task naming rules:
+- `NN-verb-topic.ext`
+- two-digit task number
+- 2-5 English words in kebab-case
+- `.ps1` for Windows, `.sh` for Linux
+
+## Connections
+Connection helpers use the current managed VM state plus `.env` credentials.
+
+- `ssh` launches local `ssh.exe`.
+- `rdp` stages credentials with `cmdkey` and launches `mstsc.exe`.
+- `VM_SSH_PORT` and `VM_RDP_PORT` are the canonical connection-port keys.
+- guest firewall and NSG port exposure must remain synchronized end-to-end.
+
+## Quality and Testing
+Current repo-level quality gates include:
+- PowerShell parse validation
+- PowerShell 5.1 and 7 compatibility checks
+- Python syntax/cache hygiene for pyssh tooling
+- CLI help smoke checks
+- documentation contract checks
+- Linux shell syntax checks in CI
+
+Local quality entry points:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-quality-audit.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-ps-compat-matrix.ps1
 ```
 
-Filename pattern is enforced:
-- `NN-verb-topic.ext`
-- 2-digit order + 2-5 English words (kebab-case)
-- files under `disabled/` are discovered but ignored for execution
+## Native Git Hooks
+Install the committed local hooks with:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\install-git-hooks.ps1
+```
 
-## Configuration
-Use root `.env`.
+Hook behavior:
+- `pre-commit`: fast static and contract checks
+- `pre-push`: fuller local audit path
 
-Generic keys (shared):
-- `VM_NAME`, `AZ_LOCATION`
-- `RESOURCE_GROUP_TEMPLATE`
-- `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
-- `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
-- `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
-- `VM_SSH_PORT`, `VM_RDP_PORT`, `TCP_PORTS`
-- `VM_TASK_OUTCOME_MODE=continue|strict`
-- `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
+## Documentation Set
+- `AGENTS.md`: engineering contract.
+- `README.md`: operator and contributor guide.
+- `CHANGELOG.md`: detailed project history.
+- `release-notes.md`: current release-oriented summary.
+- `roadmap.md`: future work.
+- `docs/prompt-history.md`: raw prompt plus assistant-summary ledger.
+- `docs/reconstruction/`: supporting historical evidence.
 
-Windows execution notes:
-- `VM_TASK_OUTCOME_MODE` is honored by both `vm-init` and `vm-update`.
-- Windows update task execution uses single-attempt policy (no retry).
-- Windows `vm-init` runs in full `create` and `update` flows.
+## Practical Operator Flows
+Typical workflows:
+```powershell
+# configure only
+.\az-vm.cmd configure
 
-Optional platform-specific keys (used only when generic key is empty):
-- `WIN_*`, `LIN_*`
-  - examples: `WIN_VM_IMAGE`, `LIN_VM_IMAGE`, `WIN_VM_INIT_TASK_DIR`, `LIN_VM_INIT_TASK_DIR`, `WIN_VM_UPDATE_TASK_DIR`, `LIN_VM_UPDATE_TASK_DIR`
+# create Windows VM end-to-end
+.\az-vm.cmd create --auto --windows
 
-Task catalog selection:
-1. `WIN_VM_INIT_TASK_DIR` / `WIN_VM_UPDATE_TASK_DIR` for Windows
-2. `LIN_VM_INIT_TASK_DIR` / `LIN_VM_UPDATE_TASK_DIR` for Linux
-3. built-in defaults (`windows/init`, `windows/update`, `linux/init`, `linux/update`)
+# rerun update tasks on the active managed group
+.\az-vm.cmd update --auto
 
-Naming notes:
-- Region code is resolved from Azure location (for example `austriaeast -> ate1`, `centralindia -> inc1`, `westus2 -> usw2`).
-- `VM_NAME` is the actual Azure VM name and the primary source for derived resource names.
-- If a specific resource name override is empty, the related template resolves from `VM_NAME`.
-- Recommended template shape:
-  - `RESOURCE_GROUP_TEMPLATE=rg-{VM_NAME}-{REGION_CODE}-g{N}`
-  - `VM_DISK_NAME_TEMPLATE=disk-{VM_NAME}-{REGION_CODE}-n{N}`
-  - `VNET_NAME_TEMPLATE=net-{VM_NAME}-{REGION_CODE}-n{N}`
+# inspect the selected group
+.\az-vm.cmd show --group=rg-examplevm-ate1-g1
 
-## Logs
-One transcript file per run:
-- `az-vm-log-ddMMMyy-HHmmss.txt`
+# run one guest update task
+.\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --windows
 
-## Connection Output
-At `vm-summary`:
-- SSH commands for `manager` and `assistant`
-- Windows flow also prints RDP commands for both users
-- `ssh` command launches external `ssh.exe`
-- `rdp` command launches external `mstsc.exe` after credential staging with `cmdkey`
+# connect
+.\az-vm.cmd ssh --vm-name=examplevm
+.\az-vm.cmd rdp --vm-name=examplevm --user=assistant
+```
 
-## Development Notes
-- Main orchestrator: `az-vm.ps1`
-- Launcher: `az-vm.cmd`
-- Compatibility tests:
-  - `tests/ps-compat-smoke.ps1`
-  - `tests/run-ps-compat-matrix.ps1`
-  - `tests/run-quality-audit.ps1`
-  - `tests/run-history-replay.ps1`
+## Troubleshooting Themes
+Recurring patterns captured in this repo's history:
+- region, image, and SKU validation must happen before mutation.
+- Windows package tasks may require explicit PATH refresh or deferred first sign-in handling.
+- long-running Azure operations should report timing without flooding logs.
+- command-surface migrations should remove legacy forms instead of preserving compatibility shims.
+- Linux and Windows flows should remain conceptually parallel even when guest tasks differ.
 
-Audit commands:
-- `powershell -File .\tests\run-quality-audit.ps1`
-- `powershell -File .\tests\run-history-replay.ps1 -Days 2`
+## Development Guidance
+When changing this repo:
+- update docs, tests, and config contracts together.
+- keep current command names and env keys consistent across help, README, and runtime messages.
+- prefer isolated diagnosis over destructive full rebuilds unless the user explicitly asks for a rebuild.
+- update `docs/prompt-history.md` and create the contextual git commit before presenting the final summary.
