@@ -868,7 +868,7 @@ function Invoke-AzVmSshTaskBlocks {
     $totalWarnings = 0
     $totalErrors = 0
     $rebootCount = 0
-    $maxReboots = 3
+    $rebootRequestedTasks = @()
 
     try {
         Write-Host 'VM update stage mode: tasks run one-by-one over a persistent SSH session.'
@@ -969,50 +969,41 @@ function Invoke-AzVmSshTaskBlocks {
                 $taskRequestedReboot = Test-AzVmOutputIndicatesRebootRequired -MessageText ([string]$taskResult.Output)
             }
             if ($taskRequestedReboot) {
-                if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$VmName)) {
-                    throw ("Task '{0}' requested reboot but ResourceGroup/VmName was not provided." -f $taskName)
-                }
-
                 $rebootCount++
-                if ($rebootCount -gt $maxReboots) {
-                    throw ("VM update stage reboot limit exceeded ({0}). Last task requesting reboot: {1}" -f $maxReboots, $taskName)
+                $rebootRequestedTasks += $taskName
+                Write-Host ("Task '{0}' requested a VM restart. The request was recorded and deferred until the vm-update stage completes." -f $taskName) -ForegroundColor Yellow
+                if ($TaskOutcomeMode -eq 'continue' -and [int]$taskResult.ExitCode -eq 0) {
+                    $totalWarnings++
                 }
-
-                Write-Host ("Task '{0}' requested reboot. Reboot workflow started ({1}/{2})." -f $taskName, $rebootCount, $maxReboots) -ForegroundColor Yellow
-                if ($null -ne $session) {
-                    Stop-AzVmPersistentSshSession -Session $session
-                    $session = $null
-                }
-
-                Invoke-TrackedAction -Label ("az vm restart -g {0} -n {1}" -f $ResourceGroup, $VmName) -Action {
-                    az vm restart --resource-group $ResourceGroup --name $VmName -o none
-                    Assert-LastExitCode "az vm restart"
-                } | Out-Null
-
-                $running = Wait-AzVmVmRunningState -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 3 -DelaySeconds 10
-                if (-not $running) {
-                    throw ("VM '{0}' did not return to running state after reboot request from task '{1}'." -f $VmName, $taskName)
-                }
-
-                Write-Host 'Waiting 25 seconds for SSH service to stabilize after reboot...'
-                Start-Sleep -Seconds 25
-
-                $bootstrap = Initialize-AzVmSshHostKey -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
-                if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
-                    Write-Host ([string]$bootstrap.Output)
-                }
-
-                $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
-                Write-Host ("Persistent SSH task session resumed after reboot triggered by '{0}'." -f $taskName) -ForegroundColor DarkCyan
             }
         }
 
         Write-Host ("VM update stage summary: success={0}, warning={1}, error={2}, reboot={3}" -f $totalSuccess, $totalWarnings, $totalErrors, $rebootCount)
+        if ($rebootCount -gt 0) {
+            $rebootTaskSummary = (($rebootRequestedTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique) -join ', ')
+            if ([string]::IsNullOrWhiteSpace($rebootTaskSummary)) {
+                $rebootTaskSummary = '(task names unavailable)'
+            }
+            Write-Host ("VM restart requirement detected after vm-update. Tasks requesting restart: {0}" -f $rebootTaskSummary) -ForegroundColor Yellow
+            if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+                Write-Host ("Hint: restart the VM after step 6 finishes: az vm restart --resource-group {0} --name {1}" -f $ResourceGroup, $VmName) -ForegroundColor Cyan
+            }
+            else {
+                Write-Host "Hint: restart the VM after step 6 finishes before relying on newly installed components." -ForegroundColor Cyan
+            }
+        }
         if ($TaskOutcomeMode -eq 'strict' -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
             throw ("VM update strict task outcome mode blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
         }
 
-        return [pscustomobject]@{ SuccessCount = $totalSuccess; WarningCount = $totalWarnings; ErrorCount = $totalErrors; RebootCount = $rebootCount }
+        return [pscustomobject]@{
+            SuccessCount = $totalSuccess
+            WarningCount = $totalWarnings
+            ErrorCount = $totalErrors
+            RebootCount = $rebootCount
+            RebootRequired = ($rebootCount -gt 0)
+            RebootRequestedTasks = @($rebootRequestedTasks | Select-Object -Unique)
+        }
     }
     finally {
         if ($null -ne $session) {
