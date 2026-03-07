@@ -248,6 +248,14 @@ Invoke-Test -Name "Task outcome mode is not platform-forced" -Action {
     Assert-True -Condition ($runCommandDefinition.Parameters.ContainsKey('TaskOutcomeMode')) -Message "Run-command task runner must expose TaskOutcomeMode parameter."
 }
 
+Invoke-Test -Name "Create and update always execute vm-init stage" -Action {
+    $mainPath = Join-Path $RepoRoot 'modules\commands\azvm-command-main.ps1'
+    $mainText = Get-Content -LiteralPath $mainPath -Raw
+
+    Assert-True -Condition ($mainText -notmatch [regex]::Escape('Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.')) -Message "Main command runtime must not skip vm-init for existing VMs in full create/update flow."
+    Assert-True -Condition ($mainText -notmatch '\$shouldRunInitTasks\s*=') -Message "Main command runtime must not gate vm-init execution behind a should-run flag in full create/update flow."
+}
+
 Invoke-Test -Name "Task catalog discovery" -Action {
     $winInit = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\init") -Platform windows -Stage init
     $winUpdate = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\update") -Platform windows -Stage update

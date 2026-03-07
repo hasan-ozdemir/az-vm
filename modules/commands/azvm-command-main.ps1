@@ -161,14 +161,14 @@ function Invoke-AzVmMain {
             if ($runDeployAction) {
                 Invoke-Step 'Step 4/7 - virtual machine will be created...' {
                     if ($platform -eq 'windows') {
-                        $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                        Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                             az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                        }
+                        } | Out-Null
                     }
                     else {
-                        $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                        Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                             az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                        }
+                        } | Out-Null
                     }
                 }
             }
@@ -421,31 +421,23 @@ function Invoke-AzVmMain {
 
         Invoke-Step 'Step 4/7 - virtual machine will be created...' {
             if ($platform -eq 'windows') {
-                $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                     az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                }
+                } | Out-Null
             }
             else {
-                $step4VmCreateResult = Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
+                Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                     az vm create --resource-group $resourceGroup --name $vmName --image $vmImage --size $vmSize --storage-sku $vmStorageSku --os-disk-name $vmDiskName --os-disk-size-gb $vmDiskSize --admin-username $vmUser --admin-password $vmPass --authentication-type password --nics $NIC -o json
-                }
+                } | Out-Null
             }
         }
 
         Invoke-Step 'Step 5/7 - VM init tasks will be executed via Azure Run Command...' {
-            $vmCreatedThisRun = -not [bool]$vmExistsAtRunStart
-            if ($step4VmCreateResult -and $step4VmCreateResult.PSObject.Properties.Match('VmCreatedThisRun').Count -gt 0) {
-                $vmCreatedThisRun = [bool]$step4VmCreateResult.VmCreatedThisRun
-            }
-            $shouldRunInitTasks = ($vmCreatedThisRun -or $script:UpdateMode -or $script:RenewMode)
-
             Show-AzVmStepFirstUseValues -StepLabel 'Step 5/7 - vm-init task catalog' -Context $step1Context -ExtraValues @{
                 Platform = $platform
                 VmInitTaskDir = $vmInitTaskDir
                 RunCommandId = [string]$platformDefaults.RunCommandId
                 VmExistsAtRunStart = $vmExistsAtRunStart
-                VmCreatedThisRun = $vmCreatedThisRun
-                ShouldRunInitTasks = $shouldRunInitTasks
             }
             $initTaskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $vmInitTaskDir -Platform $platform -Stage 'init'
             $initTaskTemplates = @($initTaskCatalog.ActiveTasks)
@@ -465,18 +457,15 @@ function Invoke-AzVmMain {
                 Write-Host ("Disabled init tasks (ignored): {0}" -f ($initDisabledNames -join ', ')) -ForegroundColor Yellow
             }
 
-            if ($shouldRunInitTasks -and @($initTaskBlocks).Count -gt 0) {
+            if (@($initTaskBlocks).Count -gt 0) {
                 $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
                 Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell -TaskOutcomeMode $taskOutcomeMode | Out-Null
-            }
-            elseif (-not $shouldRunInitTasks) {
-                Write-Host 'Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.' -ForegroundColor Yellow
             }
             else {
                 Write-Host 'Init task catalog is empty; Step 5 vm-init stage is skipped.' -ForegroundColor Yellow
             }
 
-            if ($shouldRunInitTasks -and @($initTaskBlocks).Count -gt 0) {
+            if (@($initTaskBlocks).Count -gt 0) {
                 Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
                 Start-Sleep -Seconds 20
             }
