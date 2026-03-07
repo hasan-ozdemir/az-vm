@@ -254,7 +254,7 @@ function Invoke-VmRunCommandBlocks {
     $combinedBuilder = New-Object System.Text.StringBuilder
     if ($CombinedShell -eq "bash") {
         [void]$combinedBuilder.AppendLine('set -uo pipefail')
-        [void]$combinedBuilder.AppendLine(("TASK_OUTCOME_MODE='{0}'" -f $TaskOutcomeMode))
+        [void]$combinedBuilder.AppendLine(("VM_TASK_OUTCOME_MODE='{0}'" -f $TaskOutcomeMode))
         [void]$combinedBuilder.AppendLine('success_count=0')
         [void]$combinedBuilder.AppendLine('warning_count=0')
         [void]$combinedBuilder.AppendLine('error_count=0')
@@ -299,7 +299,7 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('    fi')
         [void]$combinedBuilder.AppendLine('    echo "TASK_STATUS:${task_name}:error"')
         [void]$combinedBuilder.AppendLine('    error_count=$(( error_count + 1 ))')
-        [void]$combinedBuilder.AppendLine('    if [ "$TASK_OUTCOME_MODE" = "strict" ]; then')
+        [void]$combinedBuilder.AppendLine('    if [ "$VM_TASK_OUTCOME_MODE" = "strict" ]; then')
         [void]$combinedBuilder.AppendLine('      return 1')
         [void]$combinedBuilder.AppendLine('    fi')
         [void]$combinedBuilder.AppendLine('  fi')
@@ -410,7 +410,7 @@ function Invoke-VmRunCommandBlocks {
     }
     if ($CombinedShell -eq "bash") {
         [void]$combinedBuilder.AppendLine('echo "RUN_COMMAND_SUMMARY:success=${success_count};warning=${warning_count};error=${error_count};reboot=${reboot_count}"')
-        [void]$combinedBuilder.AppendLine('if [ "$TASK_OUTCOME_MODE" = "strict" ] && [ "$strict_failure" -ne 0 ]; then')
+        [void]$combinedBuilder.AppendLine('if [ "$VM_TASK_OUTCOME_MODE" = "strict" ] && [ "$strict_failure" -ne 0 ]; then')
         [void]$combinedBuilder.AppendLine('  exit 1')
         [void]$combinedBuilder.AppendLine('fi')
     }

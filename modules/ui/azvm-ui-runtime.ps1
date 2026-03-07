@@ -1358,15 +1358,15 @@ function Initialize-AzVmCommandRuntimeContext {
 
     $step1Context['VmOsType'] = $platform
 
-    $taskOutcomeModeRaw = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'TASK_OUTCOME_MODE' -DefaultValue 'continue')
+    $taskOutcomeModeRaw = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_TASK_OUTCOME_MODE' -DefaultValue 'continue')
     if ([string]::IsNullOrWhiteSpace($taskOutcomeModeRaw)) { $taskOutcomeModeRaw = 'continue' }
     $taskOutcomeMode = $taskOutcomeModeRaw.Trim().ToLowerInvariant()
     if ($taskOutcomeMode -ne 'continue' -and $taskOutcomeMode -ne 'strict') {
         Throw-FriendlyError `
-            -Detail ("Invalid TASK_OUTCOME_MODE '{0}'." -f $taskOutcomeModeRaw) `
+            -Detail ("Invalid VM_TASK_OUTCOME_MODE '{0}'." -f $taskOutcomeModeRaw) `
             -Code 14 `
             -Summary "Task outcome mode is invalid." `
-            -Hint "Set TASK_OUTCOME_MODE=continue or TASK_OUTCOME_MODE=strict."
+            -Hint "Set VM_TASK_OUTCOME_MODE=continue or VM_TASK_OUTCOME_MODE=strict."
     }
 
     $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')

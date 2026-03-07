@@ -140,11 +140,11 @@ Generic keys (shared):
 - `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
 - `SSH_PORT`, `TCP_PORTS`
-- `TASK_OUTCOME_MODE=continue|strict`
+- `VM_TASK_OUTCOME_MODE=continue|strict`
 - `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
 
 Windows execution notes:
-- `TASK_OUTCOME_MODE` is honored by both `vm-init` and `vm-update`.
+- `VM_TASK_OUTCOME_MODE` is honored by both `vm-init` and `vm-update`.
 - Windows update task execution uses single-attempt policy (no retry).
 - Windows init runs only when the VM is newly created in the current run.
 
