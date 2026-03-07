@@ -286,7 +286,7 @@ function Convert-AzVmCliTextToTokens {
 
 # Handles Get-AzVmValidCommandList.
 function Get-AzVmValidCommandList {
-    return @('create', 'update', 'config', 'group', 'move', 'resize', 'set', 'exec', 'show', 'delete', 'help')
+    return @('create', 'update', 'configure', 'group', 'move', 'resize', 'set', 'exec', 'show', 'delete', 'help')
 }
 
 # Handles Show-AzVmCommandHelpOverview.
@@ -297,7 +297,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "Commands (full details: az-vm help <command>):"
     Write-Host "  create  Create a new managed resource group and run VM init/update flow."
     Write-Host "  update  Re-run create-or-update operations on existing resources."
-    Write-Host "  config  Config precheck/preview flow for a target resource group."
+    Write-Host "  configure  Configure precheck/preview flow for a target resource group."
     Write-Host "  group   List/select managed resource groups for active context."
     Write-Host "  move    Move an existing VM to another Azure region."
     Write-Host "  resize  Change VM size for an existing VM in-place."
@@ -314,12 +314,12 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  --help                 Show this overview or command-specific help."
     Write-Host ""
     Write-Host "Step values for create/update:"
-    Write-Host "  config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
+    Write-Host "  configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
     Write-Host ""
     Write-Host "Quick examples:"
     Write-Host "  az-vm --help"
     Write-Host "  az-vm create --auto --windows"
-    Write-Host "  az-vm config"
+    Write-Host "  az-vm configure"
     Write-Host "  az-vm create --from-step=vm-init --linux"
     Write-Host "  az-vm update --single-step=network --auto"
     Write-Host "  az-vm group --list=examplevm"
@@ -367,7 +367,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "Command reference:"
         Write-Host "  create  : supports --to-step, --from-step, --single-step"
         Write-Host "  update  : supports --to-step, --from-step, --single-step"
-        Write-Host "  config  : config precheck/preview for selected resource group"
+        Write-Host "  configure  : configure precheck/preview for selected resource group"
         Write-Host "  group   : list/select active managed resource group"
         Write-Host "  move    : supports --group, --vm, --vm-region"
         Write-Host "  resize  : supports --group, --vm, --vm-size"
@@ -378,8 +378,8 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host ""
         Write-Host "Examples:"
         Write-Host "  az-vm create --auto --windows"
-        Write-Host "  az-vm config"
-        Write-Host "  az-vm create --single-step=config --linux"
+        Write-Host "  az-vm configure"
+        Write-Host "  az-vm create --single-step=configure --linux"
         Write-Host "  az-vm update --to-step=vm-init --auto"
         Write-Host "  az-vm group --list=examplevm"
         Write-Host "  az-vm group --select=rg-examplevm-ate1-g1"
@@ -390,7 +390,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm show --group=rg-examplevm-ate1-g1"
         Write-Host "  az-vm delete --target=vm --group=rg-examplevm-ate1-g1 --yes"
         Write-Host ""
-        Write-Host "For per-command docs: az-vm help <create|update|config|group|move|resize|set|exec|show|delete>"
+        Write-Host "For per-command docs: az-vm help <create|update|configure|group|move|resize|set|exec|show|delete>"
         return
     }
 
@@ -399,7 +399,7 @@ function Show-AzVmCommandHelpDetailed {
             -Detail ("Unknown help topic '{0}'." -f $topicText) `
             -Code 2 `
             -Summary "Unknown help topic." `
-            -Hint "Use az-vm help or az-vm help <create|update|config|group|move|resize|set|exec|show|delete>."
+            -Hint "Use az-vm help or az-vm help <create|update|configure|group|move|resize|set|exec|show|delete>."
     }
 
     switch ($topicName) {
@@ -412,7 +412,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm create --from-step=<step>"
             Write-Host "  az-vm create --single-step=<step>"
             Write-Host "  az-vm create --help"
-            Write-Host "Steps: config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
+            Write-Host "Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
             Write-Host "Examples:"
             Write-Host "  az-vm create --auto --windows"
             Write-Host "  az-vm create --single-step=network --linux"
@@ -428,7 +428,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm update --from-step=<step>"
             Write-Host "  az-vm update --single-step=<step>"
             Write-Host "  az-vm update --help"
-            Write-Host "Steps: config, group, network, vm-deploy, vm-init, vm-update, vm-summary"
+            Write-Host "Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
             Write-Host "Examples:"
             Write-Host "  az-vm update --auto --windows"
             Write-Host "  az-vm update --group=rg-examplevm-ate1-g1"
@@ -436,14 +436,14 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm update --from-step=group --to-step=vm-init --perf"
             return
         }
-        'config' {
-            Write-Host "Command: config"
-            Write-Host "Description: run config precheck/preview for a target managed resource group."
+        'configure' {
+            Write-Host "Command: configure"
+            Write-Host "Description: run configure precheck/preview for a target managed resource group."
             Write-Host "Usage:"
-            Write-Host "  az-vm config [--group=<resource-group>]"
-            Write-Host "  az-vm config --help"
+            Write-Host "  az-vm configure [--group=<resource-group>]"
+            Write-Host "  az-vm configure --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm config --group=rg-examplevm-ate1-g1"
+            Write-Host "  az-vm configure --group=rg-examplevm-ate1-g1"
             Write-Host "Notes: this command does not create/update/delete Azure resources."
             return
         }
@@ -549,7 +549,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm --help"
             Write-Host "Examples:"
             Write-Host "  az-vm help create"
-            Write-Host "  az-vm help config"
+            Write-Host "  az-vm help configure"
             Write-Host "  az-vm --help"
             return
         }
@@ -687,7 +687,7 @@ function Parse-AzVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete | help."
+                -Hint "Use one command: create | update | configure | group | move | resize | set | exec | show | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -698,7 +698,7 @@ function Parse-AzVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | configure | group | move | resize | set | exec | show | delete | help. Example: az-vm create --auto"
     }
 
     $helpTopic = ''
@@ -852,7 +852,7 @@ function Get-AzVmCliOptionText {
 
 # Handles Get-AzVmActionOrder.
 function Get-AzVmActionOrder {
-    return @('config', 'group', 'network', 'vm-deploy', 'vm-init', 'vm-update', 'vm-summary')
+    return @('configure', 'group', 'network', 'vm-deploy', 'vm-init', 'vm-update', 'vm-summary')
 }
 
 # Handles Resolve-AzVmActionValue.
@@ -869,7 +869,7 @@ function Resolve-AzVmActionValue {
             -Detail ("Option '--{0}' requires a value." -f $OptionName) `
             -Code 2 `
             -Summary "Step option value is missing." `
-            -Hint ("Use '--{0}=config|group|network|vm-deploy|vm-init|vm-update|vm-summary'." -f $OptionName)
+            -Hint ("Use '--{0}=configure|group|network|vm-deploy|vm-init|vm-update|vm-summary'." -f $OptionName)
     }
 
     $allowed = Get-AzVmActionOrder

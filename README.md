@@ -52,7 +52,7 @@ Set at least:
 - `update`
   - re-run create-or-update operations on existing resources
   - supports step slicing: `--to-step`, `--from-step`, `--single-step`
-- `config`
+- `configure`
   - interactive configuration flow up to resource-group preview
   - runs Step 1 + Step 2 + Step 3 preview and exits without resource mutation
   - writes selected values to `.env` for subsequent `create` runs
@@ -104,7 +104,7 @@ Selection precedence:
 3. interactive prompt
 
 ## Step Flow
-1. `config`: resolve config + VM OS type + compatibility checks
+1. `configure`: resolve configuration + VM OS type + compatibility checks
 2. `group`: resource group handling
 3. `network`: VNet/Subnet/NSG/PublicIP/NIC
 4. `vm-deploy`: VM create/update

@@ -280,14 +280,14 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     Assert-True -Condition ([string]$parsedCommandHelp.Command -eq "create") -Message "Command with --help parse failed."
     Assert-True -Condition ($parsedCommandHelp.Options.ContainsKey("help")) -Message "Command --help option was not captured."
 
-    $parsedConfigHelp = Parse-AzVmCliArguments -CommandToken "config" -RawArgs @("--help")
-    Assert-True -Condition ([string]$parsedConfigHelp.Command -eq "config") -Message "Config command with --help parse failed."
+    $parsedConfigureHelp = Parse-AzVmCliArguments -CommandToken "configure" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedConfigureHelp.Command -eq "configure") -Message "Configure command with --help parse failed."
 }
 
 Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "create" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "update" -Options @{ help = $true }
-    Assert-AzVmCommandOptions -CommandName "config" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "configure" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "move" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "resize" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "set" -Options @{ help = $true }
@@ -297,7 +297,7 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
 }
 
 Invoke-Test -Name "Auto option scope contract" -Action {
-    $invalidAutoCommands = @('config','move','resize','set','exec','show','group','help')
+    $invalidAutoCommands = @('configure','move','resize','set','exec','show','group','help')
     foreach ($commandName in $invalidAutoCommands) {
         $threw = $false
         try {
@@ -327,7 +327,7 @@ Invoke-Test -Name "Help --command syntax was removed" -Action {
 
 Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-AzVmCommandHelp -Topic "create"
-    Show-AzVmCommandHelp -Topic "config"
+    Show-AzVmCommandHelp -Topic "configure"
     Show-AzVmCommandHelp -Topic "show"
     Show-AzVmCommandHelp -Topic ""
     Show-AzVmCommandHelp -Overview

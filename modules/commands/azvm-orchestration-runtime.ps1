@@ -1180,12 +1180,12 @@ function Ensure-AzVmResourceGroupReady {
 # Handles Assert-AzVmSingleActionDependencies.
 function Assert-AzVmSingleActionDependencies {
     param(
-        [ValidateSet('config','group','network','vm-deploy','vm-init','vm-update','vm-summary')]
+        [ValidateSet('configure','group','network','vm-deploy','vm-init','vm-update','vm-summary')]
         [string]$ActionName,
         [hashtable]$Context
     )
 
-    if ($ActionName -in @('config', 'group')) {
+    if ($ActionName -in @('configure', 'group')) {
         return
     }
 

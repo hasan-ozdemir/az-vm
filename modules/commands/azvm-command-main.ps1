@@ -76,7 +76,7 @@ function Invoke-AzVmMain {
         Start-Transcript -Path $logPath -Force
         $script:TranscriptStarted = $true
 
-        $runConfigAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'config'
+        $runConfigureAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'configure'
         $runGroupAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'group'
         $runNetworkAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'network'
         $runDeployAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'vm-deploy'
@@ -133,9 +133,9 @@ function Invoke-AzVmMain {
                 Assert-AzVmSingleActionDependencies -ActionName $actionTarget -Context $step1Context
             }
 
-            if ($runConfigAction -or $runDeployAction) {
+            if ($runConfigureAction -or $runDeployAction) {
                 Invoke-Step 'Step 1/7 - initial configuration and availability checks will be completed...' {
-                    Show-AzVmStepFirstUseValues -StepLabel 'Step 1/7 - config and precheck' -Context $step1Context -ExtraValues @{
+                    Show-AzVmStepFirstUseValues -StepLabel 'Step 1/7 - configure and precheck' -Context $step1Context -ExtraValues @{
                         Platform = $platform
                         VmName = $vmName
                         ResourceGroup = $resourceGroup

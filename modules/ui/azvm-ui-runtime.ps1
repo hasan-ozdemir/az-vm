@@ -1257,7 +1257,7 @@ function Assert-AzVmCommandOptions {
     switch ($CommandName) {
         'create' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step') }
         'update' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step','group') }
-        'config' { $allowed = @('perf','windows','linux','help','group') }
+        'configure' { $allowed = @('perf','windows','linux','help','group') }
         'group'  { $allowed = @('help','list','select') }
         'move'   { $allowed = @('perf','help','group','vm','vm-region') }
         'resize' { $allowed = @('perf','help','group','vm','vm-size') }
@@ -1271,7 +1271,7 @@ function Assert-AzVmCommandOptions {
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete."
+                -Hint "Use one command: create | update | configure | group | move | resize | set | exec | show | delete."
         }
     }
 
@@ -1631,8 +1631,8 @@ function Invoke-AzVmGroupCommand {
     }
 }
 
-# Handles Invoke-AzVmConfigCommand.
-function Invoke-AzVmConfigCommand {
+# Handles Invoke-AzVmConfigureCommand.
+function Invoke-AzVmConfigureCommand {
     param(
         [hashtable]$Options,
         [switch]$AutoMode,
@@ -1650,7 +1650,7 @@ function Invoke-AzVmConfigCommand {
         -AutoMode:$AutoMode `
         -DefaultResourceGroup $defaultResourceGroup `
         -VmName $vmName `
-        -OperationName 'config'
+        -OperationName 'configure'
 
     $runtime = $null
     $context = $null
@@ -1674,8 +1674,8 @@ function Invoke-AzVmConfigCommand {
         Throw-FriendlyError `
             -Detail "Interactive configuration step did not produce runtime context." `
             -Code 64 `
-            -Summary "Config command could not continue after step 1." `
-            -Hint "Rerun 'az-vm config' and verify group selection."
+            -Summary "Configure command could not continue after step 1." `
+            -Hint "Rerun 'az-vm configure' and verify group selection."
     }
     if ($step1Result -is [System.Array]) {
         $step1Result = $step1Result[-1]
@@ -1687,14 +1687,14 @@ function Invoke-AzVmConfigCommand {
         Throw-FriendlyError `
             -Detail "Step 1 returned an empty context object." `
             -Code 64 `
-            -Summary "Config command could not continue after step 1." `
-            -Hint "Rerun 'az-vm config' and verify interactive selections."
+            -Summary "Configure command could not continue after step 1." `
+            -Hint "Rerun 'az-vm configure' and verify interactive selections."
     }
     if ([string]::IsNullOrWhiteSpace([string]$context.AzLocation)) {
         Throw-FriendlyError `
             -Detail "Step 1 returned empty AZ_LOCATION in context." `
             -Code 64 `
-            -Summary "Config command could not continue because region was not captured." `
+            -Summary "Configure command could not continue because region was not captured." `
             -Hint "Select a valid region in step 1 and retry."
     }
 
@@ -1711,11 +1711,11 @@ function Invoke-AzVmConfigCommand {
     $configAfter = Read-DotEnvFile -Path ([string]$runtime.EnvFilePath)
 
     Write-Host ""
-    Show-AzVmKeyValueList -Title "Existing .env values (before config):" -Values $configBefore
+    Show-AzVmKeyValueList -Title "Existing .env values (before configure):" -Values $configBefore
     Write-Host ""
     Show-AzVmKeyValueList -Title "Resolved configuration values:" -Values $context
     Write-Host ""
-    Show-AzVmKeyValueList -Title ".env values after config:" -Values $configAfter
+    Show-AzVmKeyValueList -Title ".env values after configure:" -Values $configAfter
     Write-Host ""
     if (@($changes).Count -gt 0) {
         Write-Host "Saved .env changes:" -ForegroundColor Green
@@ -1730,7 +1730,7 @@ function Invoke-AzVmConfigCommand {
     }
 
     Write-Host ""
-    Write-Host "Config completed successfully. No Azure resources were created, updated, or deleted." -ForegroundColor Green
+    Write-Host "Configure completed successfully. No Azure resources were created, updated, or deleted." -ForegroundColor Green
     Write-Host "Next actions:" -ForegroundColor Cyan
     Write-Host "- az-vm create --auto"
     Write-Host "- az-vm create --to-step=vm-deploy"
@@ -3695,11 +3695,11 @@ function Invoke-AzVmCommandDispatcher {
                 }
                 return
             }
-            'config' {
+            'configure' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmConfigCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmConfigureCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'group' {
@@ -3796,7 +3796,7 @@ function Invoke-AzVmCommandDispatcher {
                     -Detail ("Unknown command '{0}'." -f $CommandName) `
                     -Code 2 `
                     -Summary "Unknown command." `
-                    -Hint "Use one command: create | update | config | group | move | resize | set | exec | show | delete."
+                    -Hint "Use one command: create | update | configure | group | move | resize | set | exec | show | delete."
             }
         }
     }
