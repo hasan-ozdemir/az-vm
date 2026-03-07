@@ -137,7 +137,18 @@ $publicShortcutNames = @(
     "t6-azure cli",
     "t7-wsl",
     "t8-docker cli",
-    "U7Network and Sharing"
+    "t9-azd cli",
+    "t10-gh cli",
+    "t11-ffmpeg cli",
+    "t12-7zip cli",
+    "t13-sysinternals",
+    "t14-io-unlocker",
+    "t15-codex cli",
+    "t16-gemini cli",
+    "i8anydesk",
+    "i9windscribe",
+    "v5vscode",
+    "u7network and sharing"
 )
 $publicDesktop = "C:\Users\Public\Desktop"
 $wsh = New-Object -ComObject WScript.Shell

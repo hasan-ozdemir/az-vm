@@ -161,6 +161,20 @@ function New-DesktopShortcutFromAppId {
     New-DesktopShortcut -Name $Name -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $AppId)
 }
 
+function New-ConsoleToolShortcut {
+    param(
+        [string]$Name,
+        [string]$CommandText,
+        [string]$IconLocation = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$CommandText)) {
+        throw "Console command text is empty."
+    }
+
+    New-DesktopShortcut -Name $Name -TargetPath $cmdExe -Arguments ("/k " + $CommandText) -IconLocation $IconLocation
+}
+
 function Invoke-ShortcutAction {
     param(
         [string]$Name,
@@ -243,6 +257,17 @@ $sevenZipExe = Resolve-CommandPath -CommandName "7z.exe" -FallbackCandidates @(
     "C:\Program Files\7-Zip\7z.exe",
     "C:\Program Files\7-Zip\7zFM.exe"
 )
+$sysinternalsExe = Resolve-CommandPath -CommandName "procexp64.exe" -FallbackCandidates @(
+    "C:\ProgramData\chocolatey\lib\sysinternals\tools\procexp64.exe",
+    "C:\ProgramData\chocolatey\bin\procexp64.exe",
+    "C:\ProgramData\chocolatey\bin\procexp.exe",
+    "C:\Windows\System32\procexp64.exe"
+)
+$ioUnlockerExe = Resolve-CommandPath -CommandName "IObitUnlocker.exe" -FallbackCandidates @(
+    "C:\Program Files (x86)\IObit\IObit Unlocker\IObitUnlocker.exe",
+    "C:\Program Files\IObit\IObit Unlocker\IObitUnlocker.exe",
+    "C:\ProgramData\chocolatey\bin\IObitUnlocker.exe"
+)
 $anyDeskExe = Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates @(
     "C:\Program Files (x86)\AnyDesk\AnyDesk.exe",
     "C:\Program Files\AnyDesk\AnyDesk.exe"
@@ -255,6 +280,16 @@ $vsCodeExe = Resolve-CommandPath -CommandName "code.exe" -FallbackCandidates @(
     "C:\Program Files\Microsoft VS Code\Code.exe",
     "C:\Users\__VM_ADMIN_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe",
     "C:\Users\__ASSISTANT_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe"
+)
+$codexExe = Resolve-CommandPath -CommandName "codex.cmd" -FallbackCandidates @(
+    "C:\Program Files\nodejs\codex.cmd",
+    "C:\Users\__VM_ADMIN_USER__\AppData\Roaming\npm\codex.cmd",
+    "C:\Users\__ASSISTANT_USER__\AppData\Roaming\npm\codex.cmd"
+)
+$geminiExe = Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @(
+    "C:\Program Files\nodejs\gemini.cmd",
+    "C:\Users\__VM_ADMIN_USER__\AppData\Roaming\npm\gemini.cmd",
+    "C:\Users\__ASSISTANT_USER__\AppData\Roaming\npm\gemini.cmd"
 )
 
 $whatsAppAppId = Resolve-StartAppId -NameFragment "whatsapp"
@@ -291,33 +326,58 @@ Invoke-ShortcutAction -Name "o3excel" -Action { New-DesktopShortcut -Name "o3exc
 Invoke-ShortcutAction -Name "o4power point" -Action { New-DesktopShortcut -Name "o4power point" -TargetPath $powerPointExe }
 Invoke-ShortcutAction -Name "o5onenote" -Action { New-DesktopShortcut -Name "o5onenote" -TargetPath $oneNoteExe }
 
-Invoke-ShortcutAction -Name "U7Network and Sharing" -Action { New-DesktopShortcut -Name "U7Network and Sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" }
+Invoke-ShortcutAction -Name "u7network and sharing" -Action { New-DesktopShortcut -Name "u7network and sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" }
 
 Invoke-ShortcutAction -Name "t0-git bash" -Action { New-DesktopShortcut -Name "t0-git bash" -TargetPath $gitBashExe }
-Invoke-ShortcutAction -Name "t1-python cli" -Action { New-DesktopShortcut -Name "t1-python cli" -TargetPath $cmdExe -Arguments "/k python" }
-Invoke-ShortcutAction -Name "t2-nodejs cli" -Action { New-DesktopShortcut -Name "t2-nodejs cli" -TargetPath $cmdExe -Arguments "/k node" }
+Invoke-ShortcutAction -Name "t1-python cli" -Action { New-ConsoleToolShortcut -Name "t1-python cli" -CommandText "python" -IconLocation "$pythonExe,0" }
+Invoke-ShortcutAction -Name "t2-nodejs cli" -Action { New-ConsoleToolShortcut -Name "t2-nodejs cli" -CommandText "node" -IconLocation "$nodeExe,0" }
 Invoke-ShortcutAction -Name "t3-ollama app" -Action {
     if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
         New-DesktopShortcut -Name "t3-ollama app" -TargetPath $ollamaExe
     }
     else {
-        New-DesktopShortcut -Name "t3-ollama app" -TargetPath $cmdExe -Arguments "/k ollama"
+        New-ConsoleToolShortcut -Name "t3-ollama app" -CommandText "ollama"
     }
 }
 Invoke-ShortcutAction -Name "t4-pwsh" -Action { New-DesktopShortcut -Name "t4-pwsh" -TargetPath $pwshExe }
 Invoke-ShortcutAction -Name "t5-ps" -Action { New-DesktopShortcut -Name "t5-ps" -TargetPath $powershellExe }
-Invoke-ShortcutAction -Name "t6-azure cli" -Action { New-DesktopShortcut -Name "t6-azure cli" -TargetPath $cmdExe -Arguments "/k az" }
+Invoke-ShortcutAction -Name "t6-azure cli" -Action { New-ConsoleToolShortcut -Name "t6-azure cli" -CommandText "az" -IconLocation "$azExe,0" }
 Invoke-ShortcutAction -Name "t7-wsl" -Action { New-DesktopShortcut -Name "t7-wsl" -TargetPath $wslExe }
-Invoke-ShortcutAction -Name "t8-docker cli" -Action { New-DesktopShortcut -Name "t8-docker cli" -TargetPath $cmdExe -Arguments "/k docker" }
-Invoke-ShortcutAction -Name "t9-azd cli" -Action { New-DesktopShortcut -Name "t9-azd cli" -TargetPath $cmdExe -Arguments "/k azd" }
-Invoke-ShortcutAction -Name "t10-gh cli" -Action { New-DesktopShortcut -Name "t10-gh cli" -TargetPath $cmdExe -Arguments "/k gh" }
-Invoke-ShortcutAction -Name "t11-ffmpeg cli" -Action { New-DesktopShortcut -Name "t11-ffmpeg cli" -TargetPath $cmdExe -Arguments "/k ffmpeg -version" }
+Invoke-ShortcutAction -Name "t8-docker cli" -Action { New-ConsoleToolShortcut -Name "t8-docker cli" -CommandText "docker" -IconLocation "$dockerExe,0" }
+Invoke-ShortcutAction -Name "t9-azd cli" -Action { New-ConsoleToolShortcut -Name "t9-azd cli" -CommandText "azd" -IconLocation "$azdExe,0" }
+Invoke-ShortcutAction -Name "t10-gh cli" -Action { New-ConsoleToolShortcut -Name "t10-gh cli" -CommandText "gh" -IconLocation "$ghExe,0" }
+Invoke-ShortcutAction -Name "t11-ffmpeg cli" -Action { New-ConsoleToolShortcut -Name "t11-ffmpeg cli" -CommandText "ffmpeg -version" -IconLocation "$ffmpegExe,0" }
 Invoke-ShortcutAction -Name "t12-7zip cli" -Action {
     if (-not [string]::IsNullOrWhiteSpace([string]$sevenZipExe)) {
         New-DesktopShortcut -Name "t12-7zip cli" -TargetPath $sevenZipExe
     }
     else {
-        New-DesktopShortcut -Name "t12-7zip cli" -TargetPath $cmdExe -Arguments "/k 7z"
+        New-ConsoleToolShortcut -Name "t12-7zip cli" -CommandText "7z"
+    }
+}
+Invoke-ShortcutAction -Name "t13-sysinternals" -Action {
+    if (-not [string]::IsNullOrWhiteSpace([string]$sysinternalsExe)) {
+        New-DesktopShortcut -Name "t13-sysinternals" -TargetPath $sysinternalsExe
+    }
+    else {
+        New-ConsoleToolShortcut -Name "t13-sysinternals" -CommandText "procexp64"
+    }
+}
+Invoke-ShortcutAction -Name "t14-io-unlocker" -Action { New-DesktopShortcut -Name "t14-io-unlocker" -TargetPath $ioUnlockerExe }
+Invoke-ShortcutAction -Name "t15-codex cli" -Action {
+    if (-not [string]::IsNullOrWhiteSpace([string]$codexExe)) {
+        New-DesktopShortcut -Name "t15-codex cli" -TargetPath $codexExe
+    }
+    else {
+        New-ConsoleToolShortcut -Name "t15-codex cli" -CommandText "codex"
+    }
+}
+Invoke-ShortcutAction -Name "t16-gemini cli" -Action {
+    if (-not [string]::IsNullOrWhiteSpace([string]$geminiExe)) {
+        New-DesktopShortcut -Name "t16-gemini cli" -TargetPath $geminiExe
+    }
+    else {
+        New-ConsoleToolShortcut -Name "t16-gemini cli" -CommandText "gemini"
     }
 }
 
