@@ -3538,3 +3538,15 @@ peki ben bu history-replay scriptini ne zaman ne gibi durumlarda kullanmalıyım
 **Assistant Summary**
 
 Renamed `tests/history-replay.ps1` to `tests/git-history-replay.ps1`, clarified in the README that it is a manual git-history regression replay tool rather than a hook or CI dependency, updated the current documented release label to `2026.3.8.231`, and confirmed that no automated runtime, hook, or workflow path invokes it.
+
+### 2026-03-08 02:09 TRT
+
+**User Prompt**
+
+````text
+fix improve update: lütfen docs-contract.ps1 scriptinin adını da yukarıda bahsettiğim kriterlerde açıklayıcı hale getirelim ve sonunu da -check.ps1 şeklinde tamamlayalaım.
+````
+
+**Assistant Summary**
+
+Renamed `tests/docs-contract.ps1` to `tests/documentation-contract-check.ps1`, updated the live quality entrypoint to call the new file name, advanced the current documented release label to `2026.3.8.232`, and re-ran the code-quality check successfully.

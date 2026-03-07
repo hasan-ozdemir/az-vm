@@ -87,15 +87,15 @@ Invoke-AuditStep -Name "PowerShell parse (*.ps1)" -Action {
 }
 
 Invoke-AuditStep -Name "Documentation contract" -Action {
-    $docContractPath = Join-Path $RepoRoot "tests\docs-contract.ps1"
+    $docContractPath = Join-Path $RepoRoot "tests\documentation-contract-check.ps1"
     if (-not (Test-Path -LiteralPath $docContractPath)) {
-        throw "docs-contract.ps1 was not found."
+        throw "documentation-contract-check.ps1 was not found."
     }
 
     $powerShellHost = Resolve-PowerShellHost
     & $powerShellHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $docContractPath -RepoRoot $RepoRoot
     if ($LASTEXITCODE -ne 0) {
-        throw "docs-contract.ps1 failed."
+        throw "documentation-contract-check.ps1 failed."
     }
 }
 
