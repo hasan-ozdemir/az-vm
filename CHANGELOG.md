@@ -1,23 +1,25 @@
 # Changelog
 
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
+Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [Unreleased] - 2026-03-08
+## [2026.3.8.225] - 2026-03-08
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
 - Upgraded `README.md` into a fuller operator and contributor guide aligned with the current CLI, step flow, task model, and configuration contract.
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
+- Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.
 
 ### Tests
 - Added `tests/run-doc-contract.ps1` to enforce documentation presence, current command naming, prompt-history structure, and legacy-token removal.
 - Extended `tests/run-quality-audit.ps1` to include documentation contract checks and an optional Linux shell syntax skip path for fast local and CI execution.
 
 ### Chores
-- Added native git hook support via `.githooks/` and `tools/install-git-hooks.ps1`.
+- Replaced the one-way hook installer with `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1`.
 - Added `.github/workflows/quality-gate.yml` for non-live static quality enforcement on GitHub Actions.
 
-## [2026-03-07]
+## [2026.3.7.223] - 2026-03-07
 
 ### Features
 - Finalize public desktop shortcut coverage and ordering
@@ -63,7 +65,7 @@ All notable changes to `az-vm` are documented here. The structure follows a Keep
 - List reboot-requesting vm-update tasks in stage summary
 - Normalize task catalog json formatting after modular refactor
 
-## [2026-03-06]
+## [2026.3.6.191] - 2026-03-06
 
 ### Features
 - Add group command and group-aware command targeting
@@ -99,7 +101,7 @@ All notable changes to `az-vm` are documented here. The structure follows a Keep
 ### Tests
 - Expand help contracts and add quality replay audit scripts
 
-## [2026-03-05]
+## [2026.3.5.167] - 2026-03-05
 
 ### Features
 - Add multi-action and single-action execution modes for create/update
@@ -133,7 +135,7 @@ All notable changes to `az-vm` are documented here. The structure follows a Keep
 ### Chores
 - Verify env templates and prune obsolete local env keys
 
-## [2026-03-04]
+## [2026.3.4.147] - 2026-03-04
 
 ### Features
 - Reuse single SSH session for Windows Step 8 substeps and bootstrap winget via choco
@@ -153,7 +155,7 @@ All notable changes to `az-vm` are documented here. The structure follows a Keep
 - Unify linux/windows flow into az-vm.ps1 with task-file catalogs
 - Adopt default/update/destructive rebuild flow and pyssh-first step8
 
-## [2026-03-03]
+## [2026.3.3.135] - 2026-03-03
 
 ### Features
 - Add Windows UX/performance tuning task to VM update flow
@@ -206,7 +208,7 @@ All notable changes to `az-vm` are documented here. The structure follows a Keep
 - Add elevated root launchers for linux and windows flows
 - Initialize az-vm repository with ignore and reconstruction scaffolding
 
-## [2026-03-01]
+## [2026.3.1.94] - 2026-03-01
 
 ### Features
 - Capture auto-mode deletion prompt wording correction

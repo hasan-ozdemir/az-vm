@@ -3440,3 +3440,29 @@ hem bu dosyayı da dahil ederek; hem de diğer geriye kalan işleri de halletmey
 **Assistant Summary**
 
 Restored `windows/update/vm-update-task-catalog.json` to its last committed state, finalized the documentation and process hardening package, added the changelog/release-notes/roadmap/prompt-history set, added the GitHub Actions quality gate and native git-hook flow, tightened documentation contract checks, and re-ran static plus PowerShell compatibility audits successfully.
+
+### 2026-03-08 01:02 TRT
+
+**User Prompt**
+
+````text
+update actions:
+1. local hook'ları etkinleştir; lütfen bunun için kullandığın ps scriptini enable-xxx.ps1 ve disable-xxx.ps1 şeklinde iki adet yap; istediğim zaman kapatabileyim.
+2. release-notes.md ve changelog.md için şöyle bir versiyonlama formatı benimse: {yıl.ay.gün.toplam komit sayısı} örnek: 2026.3.8.154 gibi... sonra da tüm changelog.md ve release-notes.md belgeleri boyunca bu düzeni ve bu güncellemeyi tek tek uygula...
+````
+
+**Assistant Summary**
+
+<proposed_plan> # Hook Toggle Cutover and Commit-Count Versioning ## Summary Replace the one-way hook installer with an explicit enable/disable pair, and convert `CHANGELOG.md` plus `release-notes.md` to a commit-count version scheme based on repository history. ...
+
+### 2026-03-08 01:04 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Replaced the one-way hook installer with `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1`, removed the old installer, activated the local `.githooks` path after validating enable/disable idempotence, converted `CHANGELOG.md` and `release-notes.md` to the `YYYY.M.D.N` version format with the current release label `2026.3.8.225`, updated README and AGENTS to document the new hook flow and versioning rule, extended the documentation contract checks to enforce the new scripts and versioned headings, and re-ran the static audit plus PowerShell compatibility checks successfully.

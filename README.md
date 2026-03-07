@@ -130,14 +130,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-ps-compat-matrix
 ```
 
 ## Native Git Hooks
-Install the committed local hooks with:
+Enable the committed local hooks with:
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\install-git-hooks.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\enable-git-hooks.ps1
+```
+
+Disable them again with:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\disable-git-hooks.ps1
 ```
 
 Hook behavior:
 - `pre-commit`: fast static and contract checks
 - `pre-push`: fuller local audit path
+
+## Release Versioning
+- `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
+- `N` is the cumulative repository commit count at the documented release point.
+- The current documented release is `2026.3.8.225`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.

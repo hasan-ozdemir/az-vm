@@ -111,6 +111,11 @@ Use these sources in this order when maintaining the repo:
 - `docs/prompt-history.md`: human-readable prompt ledger with raw prompts and assistant summaries.
 - `docs/reconstruction/`: supporting historical evidence and reconstruction notes.
 
+## Release Versioning Rule
+- `CHANGELOG.md` and `release-notes.md` must use `YYYY.M.D.N`.
+- `N` is the cumulative repository commit count at the documented release point.
+- Keep changelog and release-notes version labels aligned for the current documented release.
+
 ## Prompt-History Rule
 - After every completed user-assistant interaction, append the user's raw prompt and the assistant's final summary to `docs/prompt-history.md`.
 - Maintain full two-way dialog continuity.
@@ -124,6 +129,7 @@ Use these sources in this order when maintaining the repo:
 - Reflect the real scope of the change.
 - Do not batch unrelated changes into one commit.
 - Before presenting the final summary to the user, create the commit for the completed prompt.
+- Use `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1` for local hook management; do not reintroduce one-way hook installers.
 
 ## Required Assistant Workflow
 - Explore before mutating.

@@ -22,7 +22,9 @@ $requiredFiles = @(
     'CHANGELOG.md',
     'release-notes.md',
     'roadmap.md',
-    'docs\prompt-history.md'
+    'docs\prompt-history.md',
+    'tools\enable-git-hooks.ps1',
+    'tools\disable-git-hooks.ps1'
 )
 
 foreach ($relativePath in $requiredFiles) {
@@ -32,10 +34,14 @@ foreach ($relativePath in $requiredFiles) {
 
 $agentsPath = Join-Path $RepoRoot 'AGENTS.md'
 $readmePath = Join-Path $RepoRoot 'README.md'
+$changelogPath = Join-Path $RepoRoot 'CHANGELOG.md'
+$releaseNotesPath = Join-Path $RepoRoot 'release-notes.md'
 $promptHistoryPath = Join-Path $RepoRoot 'docs\prompt-history.md'
 
 $agentsText = Get-Content -LiteralPath $agentsPath -Raw
 $readmeText = Get-Content -LiteralPath $readmePath -Raw
+$changelogText = Get-Content -LiteralPath $changelogPath -Raw
+$releaseNotesText = Get-Content -LiteralPath $releaseNotesPath -Raw
 $promptHistoryText = Get-Content -LiteralPath $promptHistoryPath -Raw
 
 $requiredCommandTokens = @('configure','create','update','group','show','exec','ssh','rdp','move','resize','set','delete','help')
@@ -49,8 +55,11 @@ foreach ($token in $requiredDocTokens) {
     Assert-True -Condition ($readmeText -match [regex]::Escape($token)) -Message ("README.md must mention '{0}'." -f $token)
 }
 
+Assert-True -Condition ($readmeText -match 'tools[\\/]+enable-git-hooks\.ps1') -Message 'README.md must mention tools/enable-git-hooks.ps1.'
+Assert-True -Condition ($readmeText -match 'tools[\\/]+disable-git-hooks\.ps1') -Message 'README.md must mention tools/disable-git-hooks.ps1.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('docs/prompt-history.md')) -Message 'AGENTS.md must mention docs/prompt-history.md.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('After every completed user-assistant interaction')) -Message 'AGENTS.md must define the prompt-history append rule.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('YYYY.M.D.N')) -Message 'AGENTS.md must define the release versioning format.'
 
 $legacyTokens = @('SSH_PORT','TASK_OUTCOME_MODE','SERVER_NAME','VM_USER','VM_PASS','NAMING_TEMPLATE_ACTIVE','az-vm config ','substep mode')
 foreach ($legacyToken in $legacyTokens) {
@@ -64,6 +73,25 @@ foreach ($legacyToken in $legacyTokens) {
     Assert-True -Condition (-not ($readmeText -match $pattern)) -Message ("README.md must not contain legacy token '{0}'." -f $legacyToken)
     Assert-True -Condition (-not ($agentsText -match $pattern)) -Message ("AGENTS.md must not contain legacy token '{0}'." -f $legacyToken)
 }
+
+$oldHookInstallerPattern = [regex]::Escape('install-git-hooks.ps1')
+Assert-True -Condition (-not ($readmeText -match $oldHookInstallerPattern)) -Message 'README.md must not mention install-git-hooks.ps1.'
+Assert-True -Condition (-not ($agentsText -match $oldHookInstallerPattern)) -Message 'AGENTS.md must not mention install-git-hooks.ps1.'
+Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'tools\install-git-hooks.ps1'))) -Message 'tools/install-git-hooks.ps1 must not remain in the repository.'
+
+$versionHeaderPattern = '(?m)^## \[(\d{4}\.\d{1,2}\.\d{1,2}\.(\d+))\] - \d{4}-\d{2}-\d{2}$'
+$changelogMatches = [regex]::Matches($changelogText, $versionHeaderPattern)
+Assert-True -Condition ($changelogMatches.Count -gt 0) -Message 'CHANGELOG.md must contain versioned headings.'
+
+$currentCommitCount = [int](& git -C $RepoRoot rev-list --count HEAD)
+$allowedCurrentCounts = @($currentCommitCount, ($currentCommitCount + 1))
+$topVersionCount = [int]$changelogMatches[0].Groups[2].Value
+Assert-True -Condition ($allowedCurrentCounts -contains $topVersionCount) -Message ("Top changelog version count must match HEAD or HEAD+1. Actual: {0}; allowed: {1}" -f $topVersionCount, ($allowedCurrentCounts -join ', '))
+
+$releaseHeaderMatch = [regex]::Match($releaseNotesText, '(?m)^## Release (\d{4}\.\d{1,2}\.\d{1,2}\.(\d+)) - \d{4}-\d{2}-\d{2}$')
+Assert-True -Condition $releaseHeaderMatch.Success -Message 'release-notes.md must contain a versioned release heading.'
+$releaseVersionCount = [int]$releaseHeaderMatch.Groups[2].Value
+Assert-True -Condition ($topVersionCount -eq $releaseVersionCount) -Message 'CHANGELOG.md and release-notes.md must use the same current version count.'
 
 $userPromptCount = ([regex]::Matches($promptHistoryText, [regex]::Escape('**User Prompt**'))).Count
 $assistantSummaryCount = ([regex]::Matches($promptHistoryText, [regex]::Escape('**Assistant Summary**'))).Count
