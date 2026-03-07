@@ -233,6 +233,21 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     Assert-True -Condition (-not ($envExampleKeys -contains $legacyUpdateTaskDirKey)) -Message ".env.example must not contain the legacy generic update task dir key."
 }
 
+Invoke-Test -Name "Task outcome mode is not platform-forced" -Action {
+    $mainPath = Join-Path $RepoRoot 'modules\commands\azvm-command-main.ps1'
+    $uiPath = Join-Path $RepoRoot 'modules\ui\azvm-ui-runtime.ps1'
+
+    $mainText = Get-Content -LiteralPath $mainPath -Raw
+    $uiText = Get-Content -LiteralPath $uiPath -Raw
+
+    Assert-True -Condition ($mainText -notmatch "platform\s*-eq\s*'windows'[\s\S]{0,120}taskOutcomeMode\s*=\s*'strict'") -Message "Main command runtime must not force windows task outcome mode to strict."
+    Assert-True -Condition ($uiText -notmatch "platform\s*-eq\s*'windows'[\s\S]{0,120}taskOutcomeMode\s*=\s*'strict'") -Message "UI runtime must not force windows task outcome mode to strict."
+
+    $runCommandDefinition = Get-Command Invoke-VmRunCommandBlocks -CommandType Function
+    Assert-True -Condition ($null -ne $runCommandDefinition) -Message "Run-command task runner function was not loaded."
+    Assert-True -Condition ($runCommandDefinition.Parameters.ContainsKey('TaskOutcomeMode')) -Message "Run-command task runner must expose TaskOutcomeMode parameter."
+}
+
 Invoke-Test -Name "Task catalog discovery" -Action {
     $winInit = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\init") -Platform windows -Stage init
     $winUpdate = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot "windows\update") -Platform windows -Stage update

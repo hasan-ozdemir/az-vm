@@ -144,7 +144,7 @@ Generic keys (shared):
 - `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
 
 Windows execution notes:
-- Windows `vm-update` flow is forced to strict mode (fail-fast).
+- `TASK_OUTCOME_MODE` is honored by both `vm-init` and `vm-update`.
 - Windows update task execution uses single-attempt policy (no retry).
 - Windows init runs only when the VM is newly created in the current run.
 

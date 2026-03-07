@@ -1362,10 +1362,11 @@ function Initialize-AzVmCommandRuntimeContext {
     if ([string]::IsNullOrWhiteSpace($taskOutcomeModeRaw)) { $taskOutcomeModeRaw = 'continue' }
     $taskOutcomeMode = $taskOutcomeModeRaw.Trim().ToLowerInvariant()
     if ($taskOutcomeMode -ne 'continue' -and $taskOutcomeMode -ne 'strict') {
-        $taskOutcomeMode = 'continue'
-    }
-    if ($platform -eq 'windows') {
-        $taskOutcomeMode = 'strict'
+        Throw-FriendlyError `
+            -Detail ("Invalid TASK_OUTCOME_MODE '{0}'." -f $taskOutcomeModeRaw) `
+            -Code 14 `
+            -Summary "Task outcome mode is invalid." `
+            -Hint "Set TASK_OUTCOME_MODE=continue or TASK_OUTCOME_MODE=strict."
     }
 
     $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
@@ -1843,7 +1844,7 @@ function Invoke-AzVmExecCommand {
             $requested = Get-AzVmCliOptionText -Options $Options -Name 'init-task'
             $selectedTask = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -PerfTaskCategory "exec-task" | Out-Null
+            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) -PerfTaskCategory "exec-task" | Out-Null
             Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
             return
         }

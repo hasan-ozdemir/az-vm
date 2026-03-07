@@ -239,6 +239,8 @@ function Invoke-VmRunCommandBlocks {
         [object[]]$TaskBlocks,
         [ValidateSet("bash","powershell")]
         [string]$CombinedShell = "powershell",
+        [ValidateSet("continue","strict")]
+        [string]$TaskOutcomeMode = "continue",
         [ValidateSet("vm-init-task","exec-task")]
         [string]$PerfTaskCategory = "vm-init-task"
     )
@@ -247,10 +249,17 @@ function Invoke-VmRunCommandBlocks {
         throw "VM run-command task list is empty."
     }
     Write-Host "Task-batch mode is enabled: init tasks will run in a single run-command call."
+    Write-Host ("Task outcome policy: {0}" -f $TaskOutcomeMode)
 
     $combinedBuilder = New-Object System.Text.StringBuilder
     if ($CombinedShell -eq "bash") {
-        [void]$combinedBuilder.AppendLine('set -euo pipefail')
+        [void]$combinedBuilder.AppendLine('set -uo pipefail')
+        [void]$combinedBuilder.AppendLine(("TASK_OUTCOME_MODE='{0}'" -f $TaskOutcomeMode))
+        [void]$combinedBuilder.AppendLine('success_count=0')
+        [void]$combinedBuilder.AppendLine('warning_count=0')
+        [void]$combinedBuilder.AppendLine('error_count=0')
+        [void]$combinedBuilder.AppendLine('reboot_count=0')
+        [void]$combinedBuilder.AppendLine('strict_failure=0')
         [void]$combinedBuilder.AppendLine('invoke_combined_task() {')
         [void]$combinedBuilder.AppendLine('  local task_name_base64="$1"')
         [void]$combinedBuilder.AppendLine('  local script_base64="$2"')
@@ -262,18 +271,26 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('  start_ts=$(date +%s)')
         [void]$combinedBuilder.AppendLine('  local task_script')
         [void]$combinedBuilder.AppendLine('  task_script=$(printf ''%s'' "$script_base64" | base64 -d)')
-        [void]$combinedBuilder.AppendLine('  if timeout --signal=TERM --kill-after=15 "${task_timeout}" bash -lc "$task_script"; then')
+        [void]$combinedBuilder.AppendLine('  local task_output=""')
+        [void]$combinedBuilder.AppendLine('  if task_output=$(timeout --signal=TERM --kill-after=15 "${task_timeout}" bash -lc "$task_script" 2>&1); then')
         [void]$combinedBuilder.AppendLine('    local end_ts')
         [void]$combinedBuilder.AppendLine('    end_ts=$(date +%s)')
         [void]$combinedBuilder.AppendLine('    local elapsed=$(( end_ts - start_ts ))')
+        [void]$combinedBuilder.AppendLine('    if [ -n "$task_output" ]; then')
+        [void]$combinedBuilder.AppendLine('      printf ''%s\n'' "$task_output"')
+        [void]$combinedBuilder.AppendLine('    fi')
         [void]$combinedBuilder.AppendLine('    echo "TASK completed: ${task_name} (${elapsed}s)"')
         [void]$combinedBuilder.AppendLine('    echo "TASK result: success"')
         [void]$combinedBuilder.AppendLine('    echo "TASK_STATUS:${task_name}:success"')
+        [void]$combinedBuilder.AppendLine('    success_count=$(( success_count + 1 ))')
         [void]$combinedBuilder.AppendLine('  else')
         [void]$combinedBuilder.AppendLine('    local exit_code=$?')
         [void]$combinedBuilder.AppendLine('    local end_ts')
         [void]$combinedBuilder.AppendLine('    end_ts=$(date +%s)')
         [void]$combinedBuilder.AppendLine('    local elapsed=$(( end_ts - start_ts ))')
+        [void]$combinedBuilder.AppendLine('    if [ -n "$task_output" ]; then')
+        [void]$combinedBuilder.AppendLine('      printf ''%s\n'' "$task_output"')
+        [void]$combinedBuilder.AppendLine('    fi')
         [void]$combinedBuilder.AppendLine('    echo "TASK completed: ${task_name} (${elapsed}s)"')
         [void]$combinedBuilder.AppendLine('    if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ]; then')
         [void]$combinedBuilder.AppendLine('      echo "TASK result: timeout (${task_name})"')
@@ -281,15 +298,24 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('      echo "TASK result: failure (${task_name})"')
         [void]$combinedBuilder.AppendLine('    fi')
         [void]$combinedBuilder.AppendLine('    echo "TASK_STATUS:${task_name}:error"')
-        [void]$combinedBuilder.AppendLine('    return 1')
+        [void]$combinedBuilder.AppendLine('    error_count=$(( error_count + 1 ))')
+        [void]$combinedBuilder.AppendLine('    if [ "$TASK_OUTCOME_MODE" = "strict" ]; then')
+        [void]$combinedBuilder.AppendLine('      return 1')
+        [void]$combinedBuilder.AppendLine('    fi')
         [void]$combinedBuilder.AppendLine('  fi')
         [void]$combinedBuilder.AppendLine('}')
     }
     else {
         [void]$combinedBuilder.AppendLine('$ErrorActionPreference = "Stop"')
         [void]$combinedBuilder.AppendLine('$ProgressPreference = "SilentlyContinue"')
+        [void]$combinedBuilder.AppendLine(('$TaskOutcomeMode = "{0}"' -f $TaskOutcomeMode))
+        [void]$combinedBuilder.AppendLine('$script:SuccessCount = 0')
+        [void]$combinedBuilder.AppendLine('$script:WarningCount = 0')
+        [void]$combinedBuilder.AppendLine('$script:ErrorCount = 0')
+        [void]$combinedBuilder.AppendLine('$script:RebootCount = 0')
+        [void]$combinedBuilder.AppendLine('$script:StrictFailure = $false')
         [void]$combinedBuilder.AppendLine('function Invoke-CombinedTaskBlock {')
-        [void]$combinedBuilder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64,[int]$TimeoutSeconds)')
+        [void]$combinedBuilder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64,[int]$TimeoutSeconds,[string]$TaskOutcomeMode)')
         [void]$combinedBuilder.AppendLine('    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }')
         [void]$combinedBuilder.AppendLine('    Write-Host ("TASK started: {0} (max {1}s)" -f $TaskName, $TimeoutSeconds)')
         [void]$combinedBuilder.AppendLine('    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()')
@@ -336,6 +362,8 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('        if ($jobExitCode -ne 0) { throw ("Task exited with code {0}." -f $jobExitCode) }')
         [void]$combinedBuilder.AppendLine('        Write-Host "TASK result: success"')
         [void]$combinedBuilder.AppendLine('        Write-Host ("TASK_STATUS:{0}:success" -f $TaskName)')
+        [void]$combinedBuilder.AppendLine('        $script:SuccessCount++')
+        [void]$combinedBuilder.AppendLine('        return $true')
         [void]$combinedBuilder.AppendLine('    }')
         [void]$combinedBuilder.AppendLine('    catch {')
         [void]$combinedBuilder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
@@ -344,7 +372,11 @@ function Invoke-VmRunCommandBlocks {
         [void]$combinedBuilder.AppendLine('        }')
         [void]$combinedBuilder.AppendLine('        Write-Host ("TASK result: failure ({0})" -f $TaskName)')
         [void]$combinedBuilder.AppendLine('        Write-Host ("TASK_STATUS:{0}:error" -f $TaskName)')
-        [void]$combinedBuilder.AppendLine('        throw')
+        [void]$combinedBuilder.AppendLine('        $script:ErrorCount++')
+        [void]$combinedBuilder.AppendLine('        if ([string]::Equals($TaskOutcomeMode, "strict", [System.StringComparison]::OrdinalIgnoreCase)) {')
+        [void]$combinedBuilder.AppendLine('            return $false')
+        [void]$combinedBuilder.AppendLine('        }')
+        [void]$combinedBuilder.AppendLine('        return $true')
         [void]$combinedBuilder.AppendLine('    }')
         [void]$combinedBuilder.AppendLine('    finally {')
         [void]$combinedBuilder.AppendLine('        if ($null -ne $job) {')
@@ -366,14 +398,27 @@ function Invoke-VmRunCommandBlocks {
             $taskNameBase64 = [System.Convert]::ToBase64String($taskNameBytes)
             $taskBytes = [System.Text.Encoding]::UTF8.GetBytes($taskScript)
             $taskBase64 = [System.Convert]::ToBase64String($taskBytes)
-            [void]$combinedBuilder.AppendLine(("invoke_combined_task '{0}' '{1}' '{2}'" -f $taskNameBase64, $taskBase64, [int]$taskTimeoutSeconds))
+            [void]$combinedBuilder.AppendLine(("if ! invoke_combined_task '{0}' '{1}' '{2}'; then strict_failure=1; break; fi" -f $taskNameBase64, $taskBase64, [int]$taskTimeoutSeconds))
         }
         else {
             $taskNameSafe = $taskName.Replace("'", "''")
             $taskBytes = [System.Text.Encoding]::UTF8.GetBytes($taskScript)
             $taskBase64 = [System.Convert]::ToBase64String($taskBytes)
-            [void]$combinedBuilder.AppendLine(("Invoke-CombinedTaskBlock -TaskName '{0}' -ScriptBase64 '{1}' -TimeoutSeconds {2}" -f $taskNameSafe, $taskBase64, [int]$taskTimeoutSeconds))
+            [void]$combinedBuilder.AppendLine(('$taskSucceeded = Invoke-CombinedTaskBlock -TaskName ''{0}'' -ScriptBase64 ''{1}'' -TimeoutSeconds {2} -TaskOutcomeMode $TaskOutcomeMode' -f $taskNameSafe, $taskBase64, [int]$taskTimeoutSeconds))
+            [void]$combinedBuilder.AppendLine('if (-not $taskSucceeded) { $script:StrictFailure = $true; break }')
         }
+    }
+    if ($CombinedShell -eq "bash") {
+        [void]$combinedBuilder.AppendLine('echo "RUN_COMMAND_SUMMARY:success=${success_count};warning=${warning_count};error=${error_count};reboot=${reboot_count}"')
+        [void]$combinedBuilder.AppendLine('if [ "$TASK_OUTCOME_MODE" = "strict" ] && [ "$strict_failure" -ne 0 ]; then')
+        [void]$combinedBuilder.AppendLine('  exit 1')
+        [void]$combinedBuilder.AppendLine('fi')
+    }
+    else {
+        [void]$combinedBuilder.AppendLine('Write-Host ("RUN_COMMAND_SUMMARY:success={0};warning={1};error={2};reboot={3}" -f $script:SuccessCount, $script:WarningCount, $script:ErrorCount, $script:RebootCount)')
+        [void]$combinedBuilder.AppendLine('if ([string]::Equals($TaskOutcomeMode, "strict", [System.StringComparison]::OrdinalIgnoreCase) -and $script:StrictFailure) {')
+        [void]$combinedBuilder.AppendLine('    throw "One or more VM init tasks failed in strict mode."')
+        [void]$combinedBuilder.AppendLine('}')
     }
 
     $combinedScript = $combinedBuilder.ToString()

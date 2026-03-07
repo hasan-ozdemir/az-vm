@@ -206,7 +206,7 @@ function Invoke-AzVmMain {
                     }
                     else {
                         $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-                        Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell | Out-Null
+                        Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell -TaskOutcomeMode $taskOutcomeMode | Out-Null
                     }
 
                     if ($runUpdateAction -and @($initTaskBlocks).Count -gt 0) {
@@ -368,7 +368,6 @@ function Invoke-AzVmMain {
                 if ($sshMaxRetries -gt 3) { $sshMaxRetries = 3 }
             }
             if ($platform -eq 'windows') {
-                $taskOutcomeMode = 'strict'
                 $sshMaxRetries = 1
             }
             $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
@@ -468,7 +467,7 @@ function Invoke-AzVmMain {
 
             if ($shouldRunInitTasks -and @($initTaskBlocks).Count -gt 0) {
                 $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-                Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell | Out-Null
+                Invoke-VmRunCommandBlocks -ResourceGroup $resourceGroup -VmName $vmName -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell -TaskOutcomeMode $taskOutcomeMode | Out-Null
             }
             elseif (-not $shouldRunInitTasks) {
                 Write-Host 'Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.' -ForegroundColor Yellow
