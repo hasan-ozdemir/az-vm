@@ -14,6 +14,23 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Handles Invoke-PythonNoBytecode.
+function Invoke-PythonNoBytecode {
+    param(
+        [string]$PythonPath,
+        [string[]]$Arguments
+    )
+
+    $previousDontWriteBytecode = [System.Environment]::GetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "Process")
+    try {
+        [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "1", "Process")
+        & $PythonPath -B @Arguments
+    }
+    finally {
+        [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", $previousDontWriteBytecode, "Process")
+    }
+}
+
 function Get-DotEnvMap {
     param(
         [string]$Path
@@ -105,7 +122,7 @@ else {
 
 if (-not (Test-Path -LiteralPath $venvPython)) {
     Write-Host ("Creating pyssh virtual environment: {0}" -f $venvRoot)
-    & $pythonExecutable -m venv $venvRoot
+    Invoke-PythonNoBytecode -PythonPath $pythonExecutable -Arguments @("-m", "venv", $venvRoot)
     if ($LASTEXITCODE -ne 0) {
         throw "python -m venv failed."
     }
@@ -128,12 +145,12 @@ if (-not (Test-Path -LiteralPath $RequirementsFile)) {
 }
 
 Write-Host "Installing pip requirements into pyssh virtual environment..."
-& $venvPython -m pip install --upgrade pip
+Invoke-PythonNoBytecode -PythonPath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "pip")
 if ($LASTEXITCODE -ne 0) {
     throw "pip upgrade failed in pyssh virtual environment."
 }
 
-& $venvPython -m pip install --upgrade -r $RequirementsFile
+Invoke-PythonNoBytecode -PythonPath $venvPython -Arguments @("-m", "pip", "install", "--upgrade", "-r", $RequirementsFile)
 if ($LASTEXITCODE -ne 0) {
     throw "pip requirements installation failed in pyssh virtual environment."
 }
@@ -210,13 +227,16 @@ else {
     }
     else {
         Write-Host ("Running isolated SSH connection test: {0}@{1}:{2}" -f $TestUser, $TestHost, $TestPort)
-        & $venvPython $clientPath exec `
-            --host $TestHost `
-            --port $TestPort `
-            --user $TestUser `
-            --password $TestPassword `
-            --timeout $TestTimeoutSeconds `
-            --command "whoami"
+        Invoke-PythonNoBytecode -PythonPath $venvPython -Arguments @(
+            $clientPath,
+            "exec",
+            "--host", $TestHost,
+            "--port", [string]$TestPort,
+            "--user", $TestUser,
+            "--password", $TestPassword,
+            "--timeout", [string]$TestTimeoutSeconds,
+            "--command", "whoami"
+        )
 
         if ($LASTEXITCODE -ne 0) {
             throw ("Isolated SSH connection test failed with exit code {0}." -f $LASTEXITCODE)

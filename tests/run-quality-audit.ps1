@@ -95,9 +95,34 @@ Invoke-AuditStep -Name "Python syntax (tools/pyssh/ssh_client.py)" -Action {
         return
     }
 
-    & $python.Source -m py_compile $clientPath
+    $pyCachePath = Join-Path (Split-Path -Path $clientPath -Parent) "__pycache__"
+    if (Test-Path -LiteralPath $pyCachePath) {
+        Remove-Item -LiteralPath $pyCachePath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    $syntaxProbe = @'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+source = path.read_text(encoding="utf-8")
+compile(source, str(path), "exec")
+'@
+
+    $previousDontWriteBytecode = [System.Environment]::GetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "Process")
+    try {
+        [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "1", "Process")
+        $syntaxProbe | & $python.Source -B - $clientPath
+    }
+    finally {
+        [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", $previousDontWriteBytecode, "Process")
+    }
+
     if ($LASTEXITCODE -ne 0) {
-        throw "python -m py_compile failed."
+        throw "in-memory python syntax check failed."
+    }
+    if (Test-Path -LiteralPath $pyCachePath) {
+        throw "__pycache__ must not be created by python syntax validation."
     }
 }
 

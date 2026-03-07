@@ -196,8 +196,15 @@ function Invoke-AzVmProcessWithRetry {
     $lastExit = 0
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         $attemptLabel = if ($MaxAttempts -gt 1) { ("{0} (attempt {1}/{2})" -f $Label, $attempt, $MaxAttempts) } else { $Label }
-        $output = Invoke-TrackedAction -Label $attemptLabel -Action {
-            & $FilePath @Arguments 2>&1
+        $previousDontWriteBytecode = [System.Environment]::GetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "Process")
+        try {
+            [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "1", "Process")
+            $output = Invoke-TrackedAction -Label $attemptLabel -Action {
+                & $FilePath -B @Arguments 2>&1
+            }
+        }
+        finally {
+            [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", $previousDontWriteBytecode, "Process")
         }
         $lastExit = [int]$LASTEXITCODE
         $lastOutput = ((@($output) | ForEach-Object { [string]$_ }) -join "`n")
@@ -310,6 +317,7 @@ function Start-AzVmPersistentSshSession {
     if ($DefaultTaskTimeoutSeconds -lt 5) { $DefaultTaskTimeoutSeconds = 5 }
 
     $argList = @(
+        "-B",
         [string]$PySshClientPath,
         "session",
         "--host", [string]$HostName,
@@ -330,6 +338,8 @@ function Start-AzVmPersistentSshSession {
     $psi.RedirectStandardInput = $true
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    $null = $psi.EnvironmentVariables
+    $psi.EnvironmentVariables["PYTHONDONTWRITEBYTECODE"] = "1"
     $psiType = $psi.GetType()
     if ($psiType.GetProperty("StandardInputEncoding")) {
         try { $psi.StandardInputEncoding = New-Object System.Text.UTF8Encoding($false) } catch { }

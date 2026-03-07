@@ -8,6 +8,8 @@ import threading
 from pathlib import Path
 from typing import Optional
 
+sys.dont_write_bytecode = True
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 VENDOR_DIR = SCRIPT_DIR / "vendor"
