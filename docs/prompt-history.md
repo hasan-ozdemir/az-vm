@@ -3574,3 +3574,17 @@ update: bu arada git-history.....ps1 dosyasını ./tools/scripts altına taşıy
 **Assistant Summary**
 
 Moved the manual git-history replay utility from `tests/git-history-replay.ps1` to `tools/scripts/git-history-replay.ps1`, restored an unrelated formatting-only catalog drift back to the committed state, updated the living documentation references to the new path, and re-ran the code-quality and PowerShell compatibility checks successfully.
+
+### 2026-03-08 02:40 TRT
+
+**User Prompt**
+
+````text
+fix and update: lütfen hiç bir katalog.json dosyasının kod tarafında otomatik olarak güncellenmesine ve senkronize edilmesine sebep olan tüm kodları uçtan uca tarayıp tümünü kaldırabilir misin?
+*ben katalog dosyalarını el ile düzenleyerek; hangi görevin enable/disable edileceğini, max ne kadar süreceğini, önceliklendirmesinin ne olacağını kendim belirleyeceğim ve manuel olarak gireceğim artık.
+*katalog dosyalarımızdaki şuanki değerlere sakın dokunma; sadece priority default değerini hem kodda hem katalogda 1000 olarak ayarla; katalogdaki zaman aşımı değerleri de aynen kalsın; katalogda belirtilmeyen timeout varsayılan değeri ise 180 saniye olsun; unutma, katalogda belirtilmeyen görevler ya da katalogda zaman aşımı girilmeyen görevler için default timeout=180, katalogda belirtilmeyen ya da kataloğa hiç girmeyen görevler için de priority değeri 1000.
+````
+
+**Assistant Summary**
+
+Removed all runtime code that auto-updated or synchronized task catalog JSON files, switched task loading to read-only catalog consumption, set fallback defaults to `priority=1000` and `timeout=180` for missing entries/fields, added `defaults` blocks to all current catalog files without changing existing task timeout values, and added a smoke-contract test to verify the new catalog fallback behavior.

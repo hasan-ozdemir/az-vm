@@ -16,7 +16,7 @@
 - `linux/init/`, `linux/update/`: Linux guest task catalogs.
 - `tools/`: helper tooling including pyssh bootstrap, git-hook toggles, and manual support scripts.
 - `tests/`: static and compatibility checks.
-- `docs/`: historical reconstruction and prompt history.
+- `docs/`: prompt history and supporting operational documentation.
 
 ## Command Surface
 - `configure`: interactive configuration and preview without Azure mutation.
@@ -99,6 +99,13 @@ Task catalogs live beside the task files and drive:
 - execution order
 - priority
 - timeout per task
+- manual task enable/disable control
+
+Catalog behavior:
+- Catalog JSON files are never auto-written or auto-synchronized by runtime code.
+- Missing catalog entry for a discovered task falls back to `priority=1000`, `enabled=true`, `timeout=180`.
+- Missing `priority` in a catalog entry falls back to `1000`.
+- Missing `timeout` in a catalog entry falls back to `180`.
 
 Task naming rules:
 - `NN-verb-topic.ext`
@@ -154,7 +161,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.8.233`.
+- The current documented release is `2026.3.8.234`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.

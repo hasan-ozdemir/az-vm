@@ -1,4 +1,8 @@
 {
+  "defaults": {
+    "priority": 1000,
+    "timeout": 180
+  },
   "tasks": [
     {
       "name": "01-packages-update-install",

@@ -1,4 +1,8 @@
 {
+  "defaults": {
+    "priority": 1000,
+    "timeout": 180
+  },
   "tasks": [
     {
       "name": "00-ensure-linux-user-passwords",

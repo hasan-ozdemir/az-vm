@@ -19,7 +19,7 @@ Use these sources in this order when maintaining the repo:
 - `windows/init/`, `windows/update/`: Windows guest task catalogs.
 - `linux/init/`, `linux/update/`: Linux guest task catalogs.
 - `windows/*/disabled/`: intentionally disabled guest tasks.
-- `tools/`: helper tooling, pyssh bootstrap, git-hook installer.
+- `tools/`: helper tooling, pyssh bootstrap, git-hook toggles, and support scripts.
 - `tests/`: static, compatibility, audit, and contract checks.
 - `docs/prompt-history.md`: human-readable prompt ledger for this repo.
 
@@ -62,6 +62,10 @@ Use these sources in this order when maintaining the repo:
 - `NN` is a two-digit task number.
 - The task catalog JSON files are the execution-order and timeout source of truth.
 - Task priority is catalog-driven, not inferred from directory scans at runtime.
+- Runtime code must not auto-write, auto-sync, or auto-reconcile catalog JSON files.
+- For discovered tasks that are missing from catalog entries, use defaults: `priority=1000`, `enabled=true`, `timeout=180`.
+- For catalog entries missing `priority`, default to `1000`.
+- For catalog entries missing `timeout`, default to `180`.
 - Disabled tasks belong under `disabled/` and must be ignored by execution logic.
 - Init and update catalogs may diverge by platform, but the orchestration model should remain parallel in concept.
 

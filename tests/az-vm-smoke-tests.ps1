@@ -300,6 +300,48 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     Assert-True -Condition ([string]$parsedRdpHelp.Command -eq "rdp") -Message "RDP command with --help parse failed."
 }
 
+Invoke-Test -Name "Task catalog fallback defaults" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-catalog-test-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+    try {
+        $task01 = Join-Path $tempRoot "01-default-fallback.ps1"
+        $task02 = Join-Path $tempRoot "02-priority-override.ps1"
+        Set-Content -Path $task01 -Value "Write-Host 'task01'" -Encoding UTF8
+        Set-Content -Path $task02 -Value "Write-Host 'task02'" -Encoding UTF8
+
+        $catalogPath = Join-Path $tempRoot "vm-init-task-catalog.json"
+        $catalogJson = @'
+{
+  "defaults": {
+    "priority": 1000,
+    "timeout": 180
+  },
+  "tasks": [
+    {
+      "name": "02-priority-override",
+      "priority": 5,
+      "enabled": true
+    }
+  ]
+}
+'@
+        Set-Content -Path $catalogPath -Value $catalogJson -Encoding UTF8
+
+        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage init
+        $active = @($catalog.ActiveTasks)
+        Assert-True -Condition ($active.Count -eq 2) -Message "Expected 2 active tasks."
+        Assert-True -Condition ([string]$active[0].Name -eq "02-priority-override") -Message "Catalog priority override must be applied before filename order."
+        Assert-True -Condition ([string]$active[1].Name -eq "01-default-fallback") -Message "Missing catalog entry must fall back to default priority."
+        Assert-True -Condition ([int]$active[0].TimeoutSeconds -eq 180) -Message "Missing catalog timeout must default to 180."
+        Assert-True -Condition ([int]$active[1].TimeoutSeconds -eq 180) -Message "Missing catalog entry timeout must default to 180."
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "create" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "update" -Options @{ help = $true }

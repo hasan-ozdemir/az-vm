@@ -463,7 +463,7 @@ function Convert-AzVmTaskCatalogPriority {
     param(
         [AllowNull()]
         [object]$Value,
-        [int]$DefaultValue = 10
+        [int]$DefaultValue = 1000
     )
 
     if ($null -eq $Value) {
@@ -471,7 +471,11 @@ function Convert-AzVmTaskCatalogPriority {
     }
 
     try {
-        return [int]$Value
+        $priority = [int]$Value
+        if ($priority -lt 1) {
+            return [int]$DefaultValue
+        }
+        return [int]$priority
     }
     catch {
         return [int]$DefaultValue
@@ -538,124 +542,8 @@ function Convert-AzVmTaskCatalogTimeout {
     return [int]$timeoutSeconds
 }
 
-# Handles Sync-AzVmTaskCatalogPriority.
-function Sync-AzVmTaskCatalogPriority {
-    param(
-        [string]$DirectoryPath,
-        [ValidateSet('init','update')]
-        [string]$Stage,
-        [object[]]$ActiveRows
-    )
-
-    $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
-    $activeRowsSortedByPrefix = @($ActiveRows | Sort-Object Order, Name)
-    $activeTaskNames = @(@($activeRowsSortedByPrefix | ForEach-Object { [string]$_.Name }) | Sort-Object -Unique)
-
-    $catalogBeforeText = ''
-    $catalog = $null
-    if (Test-Path -LiteralPath $catalogPath) {
-        $catalogBeforeText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
-        if (-not [string]::IsNullOrWhiteSpace([string]$catalogBeforeText)) {
-            try {
-                $catalog = ConvertFrom-JsonCompat -InputObject $catalogBeforeText
-            }
-            catch {
-                throw ("Task catalog parse failed for '{0}': {1}" -f $catalogPath, $_.Exception.Message)
-            }
-        }
-    }
-
-    $existingMap = @{}
-    $catalogTasks = @()
-    if ($null -ne $catalog -and $catalog.PSObject.Properties.Match('tasks').Count -gt 0) {
-        $catalogTasks = @($catalog.tasks)
-    }
-    foreach ($entry in @($catalogTasks)) {
-        if ($null -eq $entry) { continue }
-        $entryName = ''
-        if ($entry.PSObject.Properties.Match('name').Count -gt 0) {
-            $entryName = [string]$entry.name
-        }
-        if ([string]::IsNullOrWhiteSpace([string]$entryName)) {
-            continue
-        }
-
-        $existingMap[[string]$entryName] = [pscustomobject]@{
-            Name = [string]$entryName
-            Priority = (Convert-AzVmTaskCatalogPriority -Value $entry.priority -DefaultValue 10)
-            Enabled = (Convert-AzVmTaskCatalogBool -Value $entry.enabled -DefaultValue $true)
-            TimeoutSeconds = (Convert-AzVmTaskCatalogTimeout -Value $entry.timeout -DefaultValue 180)
-        }
-    }
-
-    $activeNameSet = @{}
-    foreach ($name in @($activeTaskNames)) {
-        $activeNameSet[[string]$name] = $true
-        if (-not $existingMap.ContainsKey([string]$name)) {
-            Write-Warning ("Task catalog update: task '{0}' was missing and is added with priority=10 enabled=true timeout=180." -f [string]$name)
-            $existingMap[[string]$name] = [pscustomobject]@{
-                Name = [string]$name
-                Priority = 10
-                Enabled = $true
-                TimeoutSeconds = 180
-            }
-        }
-    }
-
-    foreach ($name in @($existingMap.Keys)) {
-        if (-not $activeNameSet.ContainsKey([string]$name)) {
-            Write-Warning ("Task catalog update: stale task '{0}' was removed because it does not exist on disk." -f [string]$name)
-            [void]$existingMap.Remove([string]$name)
-        }
-    }
-
-    $finalTasks = @()
-    foreach ($row in @($activeRowsSortedByPrefix)) {
-        $taskName = [string]$row.Name
-        if (-not $existingMap.ContainsKey($taskName)) {
-            continue
-        }
-        $taskState = $existingMap[$taskName]
-        $finalTasks += [ordered]@{
-            name = [string]$taskName
-            priority = [int](Convert-AzVmTaskCatalogPriority -Value $taskState.Priority -DefaultValue 10)
-            enabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskState.Enabled -DefaultValue $true)
-            timeout = [int](Convert-AzVmTaskCatalogTimeout -Value $taskState.TimeoutSeconds -DefaultValue 180)
-        }
-    }
-
-    $finalCatalog = [ordered]@{
-        tasks = @($finalTasks)
-    }
-
-    $newCatalogText = [string](ConvertTo-Json -InputObject $finalCatalog -Depth 10)
-    $normalize = {
-        param([string]$Text)
-        if ($null -eq $Text) { return '' }
-        return (($Text -replace "`r`n", "`n") -replace "`r", "`n").Trim()
-    }
-
-    if (-not (Test-Path -LiteralPath $catalogPath) -or (& $normalize $catalogBeforeText) -ne (& $normalize $newCatalogText)) {
-        Write-TextFileNormalized -Path $catalogPath -Content $newCatalogText -Encoding "utf8NoBom" -LineEnding "crlf" -EnsureTrailingNewline
-    }
-
-    $taskMap = @{}
-    foreach ($row in @($finalTasks)) {
-        $taskMap[[string]$row.name] = [pscustomobject]@{
-            Priority = [int]$row.priority
-            Enabled = [bool]$row.enabled
-            TimeoutSeconds = [int]$row.timeout
-        }
-    }
-
-    return [ordered]@{
-        CatalogPath = [string]$catalogPath
-        TaskMap = $taskMap
-    }
-}
-
-# Handles Get-AzVmTaskCatalogTimeoutMap.
-function Get-AzVmTaskCatalogTimeoutMap {
+# Handles Get-AzVmTaskCatalogStateMap.
+function Get-AzVmTaskCatalogStateMap {
     param(
         [string]$DirectoryPath,
         [ValidateSet('init','update')]
@@ -663,23 +551,42 @@ function Get-AzVmTaskCatalogTimeoutMap {
     )
 
     $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
-    $timeoutMap = @{}
+    $taskMap = @{}
     if (-not (Test-Path -LiteralPath $catalogPath)) {
-        return $timeoutMap
+        return $taskMap
     }
 
     $catalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
     if ([string]::IsNullOrWhiteSpace([string]$catalogText)) {
-        return $timeoutMap
+        return $taskMap
     }
 
-    $catalog = ConvertFrom-JsonCompat -InputObject $catalogText
+    $catalog = $null
+    try {
+        $catalog = ConvertFrom-JsonCompat -InputObject $catalogText
+    }
+    catch {
+        throw ("Task catalog parse failed for '{0}': {1}" -f $catalogPath, $_.Exception.Message)
+    }
     if ($null -eq $catalog -or $catalog.PSObject.Properties.Match('tasks').Count -eq 0) {
-        return $timeoutMap
+        return $taskMap
+    }
+
+    $catalogDefaultPriority = 1000
+    $catalogDefaultTimeout = 180
+    if ($catalog.PSObject.Properties.Match('defaults').Count -gt 0 -and $null -ne $catalog.defaults) {
+        $defaults = $catalog.defaults
+        if ($defaults.PSObject.Properties.Match('priority').Count -gt 0) {
+            $catalogDefaultPriority = Convert-AzVmTaskCatalogPriority -Value $defaults.priority -DefaultValue 1000
+        }
+        if ($defaults.PSObject.Properties.Match('timeout').Count -gt 0) {
+            $catalogDefaultTimeout = Convert-AzVmTaskCatalogTimeout -Value $defaults.timeout -DefaultValue 180
+        }
     }
 
     foreach ($entry in @(ConvertTo-ObjectArrayCompat -InputObject $catalog.tasks)) {
         if ($null -eq $entry) { continue }
+
         $entryName = ''
         if ($entry.PSObject.Properties.Match('name').Count -gt 0) {
             $entryName = [string]$entry.name
@@ -688,10 +595,29 @@ function Get-AzVmTaskCatalogTimeoutMap {
             continue
         }
 
-        $timeoutMap[[string]$entryName] = [int](Convert-AzVmTaskCatalogTimeout -Value $entry.timeout -DefaultValue 180)
+        $priorityValue = $null
+        if ($entry.PSObject.Properties.Match('priority').Count -gt 0) {
+            $priorityValue = $entry.priority
+        }
+
+        $enabledValue = $null
+        if ($entry.PSObject.Properties.Match('enabled').Count -gt 0) {
+            $enabledValue = $entry.enabled
+        }
+
+        $timeoutValue = $null
+        if ($entry.PSObject.Properties.Match('timeout').Count -gt 0) {
+            $timeoutValue = $entry.timeout
+        }
+
+        $taskMap[[string]$entryName] = [pscustomobject]@{
+            Priority = (Convert-AzVmTaskCatalogPriority -Value $priorityValue -DefaultValue $catalogDefaultPriority)
+            Enabled = (Convert-AzVmTaskCatalogBool -Value $enabledValue -DefaultValue $true)
+            TimeoutSeconds = (Convert-AzVmTaskCatalogTimeout -Value $timeoutValue -DefaultValue $catalogDefaultTimeout)
+        }
     }
 
-    return $timeoutMap
+    return $taskMap
 }
 
 # Handles Get-AzVmTaskBlocksFromDirectory.
@@ -768,17 +694,12 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
     }
 
-    $syncInfo = Sync-AzVmTaskCatalogPriority -DirectoryPath $DirectoryPath -Stage $Stage -ActiveRows $activeRows
-    $taskMap = @{}
-    $catalogTimeoutMap = Get-AzVmTaskCatalogTimeoutMap -DirectoryPath $DirectoryPath -Stage $Stage
-    if ($syncInfo -and $syncInfo.PSObject.Properties.Match('TaskMap').Count -gt 0 -and $null -ne $syncInfo.TaskMap) {
-        $taskMap = $syncInfo.TaskMap
-    }
+    $taskMap = Get-AzVmTaskCatalogStateMap -DirectoryPath $DirectoryPath -Stage $Stage
 
     $activeTasks = @()
     $sortedActiveRows = @(
         $activeRows | Sort-Object `
-            @{ Expression = { if ($taskMap.ContainsKey([string]$_.Name)) { [int]$taskMap[[string]$_.Name].Priority } else { 10 } } }, `
+            @{ Expression = { if ($taskMap.ContainsKey([string]$_.Name)) { [int]$taskMap[[string]$_.Name].Priority } else { 1000 } } }, `
             @{ Expression = { [int]$_.Order } }, `
             @{ Expression = { [string]$_.Name } }
     )
@@ -795,10 +716,7 @@ function Get-AzVmTaskBlocksFromDirectory {
 
         $content = Get-Content -Path $row.Path -Raw
         $taskTimeoutSeconds = 180
-        if ($catalogTimeoutMap.ContainsKey($taskName)) {
-            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $catalogTimeoutMap[$taskName] -DefaultValue 180
-        }
-        elseif ($taskMap.ContainsKey($taskName)) {
+        if ($taskMap.ContainsKey($taskName)) {
             $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
         }
         $activeTasks += [pscustomobject]@{
