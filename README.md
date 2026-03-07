@@ -130,6 +130,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\bash-syntax-check.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\powershell-compatibility-check.ps1
 ```
 
+Manual git-history regression replay:
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\git-history-replay.ps1 -Days 2
+```
+Use this only when you need to replay recent commits in detached worktrees to see where a quality regression entered history.
+
 ## Native Git Hooks
 Enable the committed local hooks with:
 ```powershell
@@ -148,7 +154,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.8.230`.
+- The current documented release is `2026.3.8.231`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.

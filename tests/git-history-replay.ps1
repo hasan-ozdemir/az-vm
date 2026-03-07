@@ -8,7 +8,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-# Resolves the available PowerShell host for replaying checks against worktrees.
+# Resolves the available PowerShell host for replaying checks against historical worktrees.
 function Resolve-PowerShellHost {
     $windowsPowerShell = Get-Command powershell.exe -ErrorAction SilentlyContinue
     if ($windowsPowerShell) {
@@ -123,7 +123,7 @@ for ($i = 0; $i -lt $commitList.Count; $i++) {
 }
 
 Write-Host ""
-Write-Host "History replay summary:" -ForegroundColor Cyan
+Write-Host "Git history replay summary:" -ForegroundColor Cyan
 $results | ForEach-Object {
     $status = if ($_.Passed) { "PASS" } else { "FAIL" }
     Write-Host ("- [{0}] {1} ({2}s) {3}" -f $status, $_.ShortCommit, $_.DurationSeconds, $_.Detail)

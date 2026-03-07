@@ -3526,3 +3526,15 @@ analiz et ve gerekirse düzelt: bu history-replay.ps1 scripti bu repo'da ne işe
 **Assistant Summary**
 
 Analyzed `tests/history-replay.ps1` as a manual developer utility that replays recent commits in detached worktrees and runs the repo’s quality entrypoint against each one to help localize when a regression entered history; confirmed it is not called by hooks, CI, or runtime code, found that it was incorrectly forcing the latest quality script onto historical worktrees, fixed it to resolve and run the quality script that actually exists in each replayed worktree, advanced the current documented release label to `2026.3.8.230`, and re-validated the quality checks plus the replay behavior.
+
+### 2026-03-08 02:00 TRT
+
+**User Prompt**
+
+````text
+peki ben bu history-replay scriptini ne zaman ne gibi durumlarda kullanmalıyım; ya da repo'da bu scripti otomatik olarak çağıran bir yer var mı? ayrıca bu scriptin ismi de yanlış; en azından git-history-replay.ps1 olsun; ya da hangi amaca hizmet ediyorsa onu da insert edelim bu dosya adına.
+````
+
+**Assistant Summary**
+
+Renamed `tests/history-replay.ps1` to `tests/git-history-replay.ps1`, clarified in the README that it is a manual git-history regression replay tool rather than a hook or CI dependency, updated the current documented release label to `2026.3.8.231`, and confirmed that no automated runtime, hook, or workflow path invokes it.
