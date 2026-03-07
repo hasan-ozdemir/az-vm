@@ -100,6 +100,93 @@ function Resolve-StartAppId {
     return ""
 }
 
+function Resolve-AppxAppIdFromPackage {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    if (@($allPackages).Count -eq 0) {
+        return ""
+    }
+
+    $normalizedNameFragment = [string]$NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+        $normalizedNameFragment = $normalizedNameFragment.Trim().ToLowerInvariant()
+    }
+
+    $normalizedHints = @(
+        @($PackageNameHints) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
+
+    $matchingPackages = @(
+        $allPackages | Where-Object {
+            $pkgName = [string]$_.Name
+            $pkgFamily = [string]$_.PackageFamilyName
+            $installLocation = [string]$_.InstallLocation
+            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) { return $false }
+            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) { return $false }
+
+            $pkgNameLower = $pkgName.ToLowerInvariant()
+            $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+                if ($pkgNameLower.Contains($normalizedNameFragment) -or $pkgFamilyLower.Contains($normalizedNameFragment)) {
+                    return $true
+                }
+            }
+
+            foreach ($hint in @($normalizedHints)) {
+                if ($pkgNameLower.Contains($hint) -or $pkgFamilyLower.Contains($hint)) {
+                    return $true
+                }
+            }
+
+            return $false
+        }
+    )
+
+    foreach ($package in @($matchingPackages)) {
+        $manifestPath = Join-Path ([string]$package.InstallLocation) "AppxManifest.xml"
+        if (-not (Test-Path -LiteralPath $manifestPath)) {
+            continue
+        }
+
+        try {
+            [xml]$manifestXml = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop
+            $appNodes = @($manifestXml.SelectNodes("//*[local-name()='Application']"))
+            foreach ($appNode in @($appNodes)) {
+                $applicationId = [string]$appNode.GetAttribute("Id")
+                if ([string]::IsNullOrWhiteSpace([string]$applicationId)) {
+                    continue
+                }
+
+                return ("{0}!{1}" -f [string]$package.PackageFamilyName, $applicationId)
+            }
+        }
+        catch { }
+    }
+
+    return ""
+}
+
+function Resolve-StoreAppId {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    $startAppsAppId = Resolve-StartAppId -NameFragment $NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$startAppsAppId)) {
+        return $startAppsAppId
+    }
+
+    return (Resolve-AppxAppIdFromPackage -NameFragment $NameFragment -PackageNameHints $PackageNameHints)
+}
+
 function New-DesktopShortcut {
     param(
         [string]$Name,
@@ -175,6 +262,44 @@ function New-ConsoleToolShortcut {
     New-DesktopShortcut -Name $Name -TargetPath $cmdExe -Arguments ("/k " + $CommandText) -IconLocation $IconLocation
 }
 
+function Test-RunOnceMarker {
+    param([string]$ValueName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ValueName)) {
+        return $false
+    }
+
+    $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+    try {
+        $value = Get-ItemProperty -Path $runOncePath -Name $ValueName -ErrorAction Stop
+        return ($null -ne $value)
+    }
+    catch {
+        return $false
+    }
+}
+
+function New-DeferredWingetShortcut {
+    param(
+        [string]$Name,
+        [string]$WingetExecutable,
+        [string]$WingetArguments,
+        [string]$IconLocation = ""
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$WingetExecutable)) {
+        throw "winget executable was not found for deferred shortcut '$Name'."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$WingetArguments)) {
+        throw "winget arguments are empty for deferred shortcut '$Name'."
+    }
+
+    $quotedWinget = "'" + ($WingetExecutable -replace "'", "''") + "'"
+    $commandText = ('& {0} {1}' -f $quotedWinget, $WingetArguments)
+    $powershellArguments = ('-NoExit -ExecutionPolicy Bypass -Command "{0}"' -f ($commandText -replace '"', '\"'))
+    New-DesktopShortcut -Name $Name -TargetPath $powershellExe -Arguments $powershellArguments -IconLocation $IconLocation
+}
+
 function Invoke-ShortcutAction {
     param(
         [string]$Name,
@@ -240,6 +365,9 @@ $wslExe = Resolve-CommandPath -CommandName "wsl.exe" -FallbackCandidates @(
 $dockerExe = Resolve-CommandPath -CommandName "docker.exe" -FallbackCandidates @(
     "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
 )
+$wingetExe = Resolve-CommandPath -CommandName "winget.exe" -FallbackCandidates @(
+    "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+)
 $azExe = Resolve-CommandPath -CommandName "az.cmd" -FallbackCandidates @(
     "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
     "C:\ProgramData\chocolatey\bin\az.cmd"
@@ -292,9 +420,10 @@ $geminiExe = Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @
     "C:\Users\__ASSISTANT_USER__\AppData\Roaming\npm\gemini.cmd"
 )
 
-$whatsAppAppId = Resolve-StartAppId -NameFragment "whatsapp"
-$teamsAppId = Resolve-StartAppId -NameFragment "teams"
-$windscribeAppId = Resolve-StartAppId -NameFragment "windscribe"
+$whatsAppAppId = Resolve-StoreAppId -NameFragment "whatsapp" -PackageNameHints @("whatsapp")
+$teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
+$windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
+$whatsAppDeferred = Test-RunOnceMarker -ValueName "AzVmInstallWhatsApp"
 
 $outlookExe = Resolve-OfficeExecutable -ExeName "OUTLOOK.EXE"
 $wordExe = Resolve-OfficeExecutable -ExeName "WINWORD.EXE"
@@ -305,7 +434,17 @@ $controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates
 
 Invoke-ShortcutAction -Name "i0internet" -Action { New-DesktopShortcut -Name "i0internet" -TargetPath $chromeExe -Arguments $chromeArgs -IconLocation "$chromeExe,0" }
 Invoke-ShortcutAction -Name "c0cmd" -Action { New-DesktopShortcut -Name "c0cmd" -TargetPath $cmdExe }
-Invoke-ShortcutAction -Name "i7whatsapp" -Action { New-DesktopShortcutFromAppId -Name "i7whatsapp" -AppId $whatsAppAppId }
+Invoke-ShortcutAction -Name "i7whatsapp" -Action {
+    if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppAppId)) {
+        New-DesktopShortcutFromAppId -Name "i7whatsapp" -AppId $whatsAppAppId
+    }
+    elseif ($whatsAppDeferred) {
+        New-DeferredWingetShortcut -Name "i7whatsapp" -WingetExecutable $wingetExe -WingetArguments "install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --force" -IconLocation "$powershellExe,0"
+    }
+    else {
+        throw "AppId was not found for 'i7whatsapp'."
+    }
+}
 Invoke-ShortcutAction -Name "local-only-shortcut" -Action { New-DesktopShortcut -Name "local-only-shortcut" -TargetPath $localOnlyAccessibilityExe }
 Invoke-ShortcutAction -Name "a7docker desktop" -Action { New-DesktopShortcut -Name "a7docker desktop" -TargetPath $dockerDesktopExe }
 
