@@ -773,6 +773,7 @@ function Get-AzVmTaskTokenReplacements {
         ASSISTANT_USER = [string]$Context.VmAssistantUser
         ASSISTANT_PASS = [string]$Context.VmAssistantPass
         SSH_PORT = [string]$Context.SshPort
+        RDP_PORT = [string]$Context.RdpPort
         TCP_PORTS_BASH = [string]$tcpPortsBash
         TCP_PORTS_REGEX = [string]$tcpRegex
         TCP_PORTS_PS_ARRAY = [string]$tcpPortsPsArray

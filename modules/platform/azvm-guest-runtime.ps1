@@ -23,27 +23,30 @@ function Get-AzVmConnectionDisplayModel {
         [string]$ManagerUser,
         [string]$AssistantUser,
         [string]$SshPort,
+        [string]$RdpPort = '3389',
         [switch]$IncludeRdp
     )
 
     $vmConnectionInfo = Get-AzVmVmDetails -Context $Context
     $publicIP = [string]$vmConnectionInfo.PublicIP
     $vmFqdn = [string]$vmConnectionInfo.VmFqdn
+    $resolvedHost = if ([string]::IsNullOrWhiteSpace([string]$vmFqdn)) { $publicIP } else { $vmFqdn }
 
     $sshConnections = @(
         [pscustomobject]@{
             User = $ManagerUser
-            Command = ("ssh -p {0} {1}@{2}" -f $SshPort, $ManagerUser, $vmFqdn)
+            Command = ("ssh -p {0} {1}@{2}" -f $SshPort, $ManagerUser, $resolvedHost)
         },
         [pscustomobject]@{
             User = $AssistantUser
-            Command = ("ssh -p {0} {1}@{2}" -f $SshPort, $AssistantUser, $vmFqdn)
+            Command = ("ssh -p {0} {1}@{2}" -f $SshPort, $AssistantUser, $resolvedHost)
         }
     )
 
     $model = [ordered]@{
         PublicIP = $publicIP
         VmFqdn = $vmFqdn
+        ConnectionHost = $resolvedHost
         SshConnections = $sshConnections
     }
 
@@ -52,12 +55,12 @@ function Get-AzVmConnectionDisplayModel {
             [pscustomobject]@{
                 User = $ManagerUser
                 Username = (".\{0}" -f $ManagerUser)
-                Command = ("mstsc /v:{0}:3389" -f $vmFqdn)
+                Command = ("mstsc /v:{0}:{1}" -f $resolvedHost, $RdpPort)
             },
             [pscustomobject]@{
                 User = $AssistantUser
                 Username = (".\{0}" -f $AssistantUser)
-                Command = ("mstsc /v:{0}:3389" -f $vmFqdn)
+                Command = ("mstsc /v:{0}:{1}" -f $resolvedHost, $RdpPort)
             }
         )
         $model["RdpConnections"] = $rdpConnections

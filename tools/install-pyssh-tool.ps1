@@ -151,10 +151,7 @@ if ([string]::IsNullOrWhiteSpace([string]$TestPassword)) {
     $TestPassword = Get-MapValue -Map $envMap -Key "VM_ADMIN_PASS" -DefaultValue ""
 }
 if ($TestPort -le 0) {
-    $sshPortText = Get-MapValue -Map $envMap -Key "ssh_port" -DefaultValue ""
-    if ([string]::IsNullOrWhiteSpace([string]$sshPortText)) {
-        $sshPortText = Get-MapValue -Map $envMap -Key "SSH_PORT" -DefaultValue "444"
-    }
+    $sshPortText = Get-MapValue -Map $envMap -Key "VM_SSH_PORT" -DefaultValue "444"
     if ($sshPortText -match '^\d+$') {
         $TestPort = [int]$sshPortText
     }

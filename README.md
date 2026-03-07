@@ -72,6 +72,14 @@ Set at least:
   - run one init or update task directly (`--init-task` / `--update-task`)
   - no-parameter call opens interactive persistent pyssh REPL session
   - optional scope: `--group=<resource-group>`
+- `ssh`
+  - launch external Windows OpenSSH client for a managed VM
+  - parameterized usage: `--group=<resource-group> --vm-name=<name> --user=manager|assistant`
+  - if `--vm-name` is omitted, interactive selection is used
+- `rdp`
+  - launch external Windows Remote Desktop client for a managed Windows VM
+  - parameterized usage: `--group=<resource-group> --vm-name=<name> --user=manager|assistant`
+  - if `--vm-name` is omitted, interactive selection is used
 - `delete`
   - purge selected resources: `--target=group|network|vm|disk`
   - optional scope: `--group=<resource-group>`
@@ -139,14 +147,14 @@ Generic keys (shared):
 - `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `NSG_RULE_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`
 - `VM_IMAGE`, `VM_SIZE`, `VM_STORAGE_SKU`, `VM_DISK_NAME`, `VM_DISK_SIZE_GB`
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
-- `SSH_PORT`, `TCP_PORTS`
+- `VM_SSH_PORT`, `VM_RDP_PORT`, `TCP_PORTS`
 - `VM_TASK_OUTCOME_MODE=continue|strict`
 - `SSH_MAX_RETRIES`, `PYSSH_CLIENT_PATH`
 
 Windows execution notes:
 - `VM_TASK_OUTCOME_MODE` is honored by both `vm-init` and `vm-update`.
 - Windows update task execution uses single-attempt policy (no retry).
-- Windows init runs only when the VM is newly created in the current run.
+- Windows `vm-init` runs in full `create` and `update` flows.
 
 Optional platform-specific keys (used only when generic key is empty):
 - `WIN_*`, `LIN_*`
@@ -174,6 +182,8 @@ One transcript file per run:
 At `vm-summary`:
 - SSH commands for `manager` and `assistant`
 - Windows flow also prints RDP commands for both users
+- `ssh` command launches external `ssh.exe`
+- `rdp` command launches external `mstsc.exe` after credential staging with `cmdkey`
 
 ## Development Notes
 - Main orchestrator: `az-vm.ps1`

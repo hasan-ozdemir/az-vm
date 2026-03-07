@@ -51,7 +51,7 @@ foreach ($commandName in @("choco", "git", "node", "python", "py", "pwsh", "gh",
 }
 
 Write-Host "OPEN Ports:"
-Get-NetTCPConnection -LocalPort 3389,__SSH_PORT__ -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize
+Get-NetTCPConnection -LocalPort __RDP_PORT__,__SSH_PORT__ -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize
 Write-Host "Firewall STATUS:"
 Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction | Format-Table -AutoSize
 Write-Host "RDP STATUS:"

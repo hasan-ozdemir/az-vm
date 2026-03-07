@@ -23,9 +23,9 @@ function Invoke-AzVmMain {
         Write-Host "script description:
 - A unified Linux/Windows virtual machine deployment flow is executed.
 - OS type is selected by --windows/--linux or VM_OS_TYPE from .env.
-- Init tasks run once on first VM creation via Azure Run Command task-batch.
+- Init tasks run in full create/update flow via Azure Run Command task-batch.
 - Update tasks run via persistent pyssh task-by-task.
-- SSH (default 444) and RDP (Windows) access are prepared.
+- SSH and RDP (Windows) access are prepared from VM_SSH_PORT / VM_RDP_PORT.
 - Command mode: $CommandName.
 - Run mode: interactive (default), auto (--auto).
 - Performance timing mode: --perf.
@@ -112,6 +112,7 @@ function Invoke-AzVmMain {
             $vmAssistantUser = [string]$step1Context.VmAssistantUser
             $vmAssistantPass = [string]$step1Context.VmAssistantPass
             $sshPort = [string]$step1Context.SshPort
+            $rdpPort = [string]$step1Context.RdpPort
             $tcpPorts = @($step1Context.TcpPorts)
             $vmInitTaskDir = [string]$step1Context.VmInitTaskDir
             $vmUpdateTaskDir = [string]$step1Context.VmUpdateTaskDir
@@ -278,7 +279,7 @@ function Invoke-AzVmMain {
                     Show-AzVmStepFirstUseValues -StepLabel 'Step 7/7 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
 
                     if ([bool]$platformDefaults.IncludeRdp) {
-                        $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
+                        $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -RdpPort $rdpPort -IncludeRdp
                     }
                     else {
                         $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort
@@ -344,6 +345,7 @@ function Invoke-AzVmMain {
             $vmAssistantUser = [string]$step1Context.VmAssistantUser
             $vmAssistantPass = [string]$step1Context.VmAssistantPass
             $sshPort = [string]$step1Context.SshPort
+            $rdpPort = [string]$step1Context.RdpPort
             $tcpPorts = @($step1Context.TcpPorts)
             $vmInitTaskDir = [string]$step1Context.VmInitTaskDir
             $vmUpdateTaskDir = [string]$step1Context.VmUpdateTaskDir
@@ -524,7 +526,7 @@ function Invoke-AzVmMain {
             Show-AzVmStepFirstUseValues -StepLabel 'Step 7/7 - connection output' -Context $step1Context -ExtraValues @{ Platform = $platform; ManagerUser = $vmUser; AssistantUser = $vmAssistantUser }
 
             if ([bool]$platformDefaults.IncludeRdp) {
-                $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -IncludeRdp
+                $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort -RdpPort $rdpPort -IncludeRdp
             }
             else {
                 $connectionModel = Get-AzVmConnectionDisplayModel -Context $step1Context -ManagerUser $vmUser -AssistantUser $vmAssistantUser -SshPort $sshPort

@@ -517,22 +517,33 @@ function Invoke-AzVmStep1Common {
     $vmPass = Resolve-AzVmTemplate -Template $vmPassRaw -Tokens $baseTokens
     $vmAssistantUser = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -Tokens $baseTokens
     $vmAssistantPass = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -Tokens $baseTokens
-    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "SSH_PORT" -DefaultValue "444")
+    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_SSH_PORT" -DefaultValue "444")
     $sshPort = Resolve-AzVmTemplate -Template $sshPortValue -Tokens $baseTokens
+    $rdpPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_RDP_PORT" -DefaultValue "3389")
+    $rdpPort = Resolve-AzVmTemplate -Template $rdpPortValue -Tokens $baseTokens
     $vmInitTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmInitTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmInitTaskDirDefault))) -Tokens $baseTokens
     $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmUpdateTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmUpdateTaskDirDefault))) -Tokens $baseTokens
     $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $ScriptRoot
     $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $ScriptRoot
 
-    $defaultPortsCsv = "80,443,444,8444,3389,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434"
-    $tcpPortsCsv = Get-ConfigValue -Config $ConfigMap -Key "TCP_PORTS" -DefaultValue $defaultPortsCsv
-    $tcpPorts = @($tcpPortsCsv -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' })
+    $defaultPortsCsv = "80,443,8444,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434"
+    $tcpPortsConfiguredCsv = Get-ConfigValue -Config $ConfigMap -Key "TCP_PORTS" -DefaultValue $defaultPortsCsv
+    $tcpPorts = @($tcpPortsConfiguredCsv -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' })
 
     if (-not ($sshPort -match '^\d+$')) {
         throw "Invalid SSH port '$sshPort'."
     }
     if ($tcpPorts -notcontains $sshPort) {
         $tcpPorts += $sshPort
+    }
+    $includeRdp = [bool]((Get-AzVmPlatformDefaults -Platform $Platform).IncludeRdp)
+    if ($includeRdp) {
+        if (-not ($rdpPort -match '^\d+$')) {
+            throw "Invalid RDP port '$rdpPort'."
+        }
+        if ($tcpPorts -notcontains $rdpPort) {
+            $tcpPorts += $rdpPort
+        }
     }
     if (-not $tcpPorts -or $tcpPorts.Count -eq 0) {
         throw "No valid TCP ports were found in TCP_PORTS."
@@ -561,7 +572,9 @@ function Invoke-AzVmStep1Common {
         VmAssistantUser = $vmAssistantUser
         VmAssistantPass = $vmAssistantPass
         SshPort = $sshPort
+        RdpPort = $rdpPort
         TcpPorts = @($tcpPorts)
+        TcpPortsConfiguredCsv = [string]$tcpPortsConfiguredCsv
         VmInitTaskDir = $vmInitTaskDir
         VmUpdateTaskDir = $vmUpdateTaskDir
     }
@@ -1535,8 +1548,14 @@ function Get-AzVmVmDetails {
 
     $publicIP = $vmDetails.publicIps
     $vmFqdn = $vmDetails.fqdns
+    $effectiveLocation = [string]$Context.AzLocation
+    if ([string]::IsNullOrWhiteSpace([string]$effectiveLocation)) {
+        $effectiveLocation = [string]$vmDetails.location
+    }
     if ([string]::IsNullOrWhiteSpace($vmFqdn)) {
-        $vmFqdn = "$($Context.VmName).$($Context.AzLocation).cloudapp.azure.com"
+        if (-not [string]::IsNullOrWhiteSpace([string]$effectiveLocation)) {
+            $vmFqdn = "$($Context.VmName).$effectiveLocation.cloudapp.azure.com"
+        }
     }
 
     return [ordered]@{

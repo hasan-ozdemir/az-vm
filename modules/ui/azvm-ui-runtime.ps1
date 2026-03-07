@@ -1263,6 +1263,8 @@ function Assert-AzVmCommandOptions {
         'resize' { $allowed = @('perf','help','group','vm','vm-size') }
         'set'    { $allowed = @('perf','help','group','vm','hibernation','nested-virtualization') }
         'exec'   { $allowed = @('perf','windows','linux','help','group','init-task','update-task') }
+        'ssh'    { $allowed = @('perf','help','group','vm-name','user') }
+        'rdp'    { $allowed = @('perf','help','group','vm-name','user') }
         'show'   { $allowed = @('perf','help','group') }
         'delete' { $allowed = @('auto','perf','help','target','group','yes') }
         'help'   { $allowed = @('help') }
@@ -1271,7 +1273,7 @@ function Assert-AzVmCommandOptions {
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | configure | group | move | resize | set | exec | show | delete."
+                -Hint "Use one command: create | update | configure | group | move | resize | set | exec | ssh | rdp | show | delete."
         }
     }
 
@@ -1416,7 +1418,10 @@ function Get-AzVmConfigPersistenceMap {
         [hashtable]$Context
     )
 
-    $tcpPortsCsv = (@($Context.TcpPorts) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ','
+    $tcpPortsCsv = [string]$Context.TcpPortsConfiguredCsv
+    if ([string]::IsNullOrWhiteSpace([string]$tcpPortsCsv)) {
+        $tcpPortsCsv = (@($Context.TcpPorts) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ','
+    }
     $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_IMAGE"
     $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_SIZE"
     $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_DISK_SIZE_GB"
@@ -1434,7 +1439,8 @@ function Get-AzVmConfigPersistenceMap {
         VM_NAME = [string]$Context.VmName
         VM_DISK_NAME = [string]$Context.VmDiskName
         VM_STORAGE_SKU = [string]$Context.VmStorageSku
-        SSH_PORT = [string]$Context.SshPort
+        VM_SSH_PORT = [string]$Context.SshPort
+        VM_RDP_PORT = [string]$Context.RdpPort
         TCP_PORTS = [string]$tcpPortsCsv
     }
 
@@ -3648,6 +3654,413 @@ function Invoke-AzVmDeleteCommand {
     Write-Host ("Delete completed: VM-bound network resources for '{0}' were purged." -f $selectedVmName) -ForegroundColor Green
 }
 
+# Handles Test-AzVmLocalWindowsHost.
+function Test-AzVmLocalWindowsHost {
+    return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
+}
+
+# Handles Resolve-AzVmConnectionRoleName.
+function Resolve-AzVmConnectionRoleName {
+    param(
+        [hashtable]$Options
+    )
+
+    $roleRaw = [string](Get-AzVmCliOptionText -Options $Options -Name 'user')
+    if ([string]::IsNullOrWhiteSpace([string]$roleRaw)) {
+        return 'manager'
+    }
+
+    $role = $roleRaw.Trim().ToLowerInvariant()
+    if ($role -notin @('manager','assistant')) {
+        Throw-FriendlyError `
+            -Detail ("Unsupported connection user '{0}'." -f $roleRaw) `
+            -Code 66 `
+            -Summary "Connection user is invalid." `
+            -Hint "Use --user=manager or --user=assistant."
+    }
+
+    return $role
+}
+
+# Handles Resolve-AzVmConnectionPortText.
+function Resolve-AzVmConnectionPortText {
+    param(
+        [hashtable]$ConfigMap,
+        [string]$Key,
+        [string]$DefaultValue,
+        [string]$Label
+    )
+
+    $rawValue = [string](Get-ConfigValue -Config $ConfigMap -Key $Key -DefaultValue $DefaultValue)
+    $portText = $rawValue.Trim()
+    if (-not ($portText -match '^\d+$')) {
+        Throw-FriendlyError `
+            -Detail ("Config value '{0}' is invalid for {1}: '{2}'." -f $Key, $Label, $rawValue) `
+            -Code 66 `
+            -Summary ("{0} port is invalid." -f $Label) `
+            -Hint ("Set {0} to a numeric TCP port value in .env." -f $Key)
+    }
+
+    return $portText
+}
+
+# Handles Get-AzVmManagedVmMatchRows.
+function Get-AzVmManagedVmMatchRows {
+    param(
+        [string]$VmName
+    )
+
+    $needle = [string]$VmName
+    if ([string]::IsNullOrWhiteSpace([string]$needle)) {
+        return @()
+    }
+
+    $matches = @()
+    $groups = @(Get-AzVmManagedResourceGroupRows)
+    foreach ($groupRow in @($groups)) {
+        $resourceGroup = [string]$groupRow.name
+        if ([string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
+            continue
+        }
+
+        $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $resourceGroup)
+        foreach ($candidateVmName in @($vmNames)) {
+            if ([string]::Equals([string]$candidateVmName, $needle, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $matches += [pscustomobject]@{
+                    ResourceGroup = $resourceGroup
+                    VmName = [string]$candidateVmName
+                }
+            }
+        }
+    }
+
+    return @($matches)
+}
+
+# Handles Resolve-AzVmConnectionTarget.
+function Resolve-AzVmConnectionTarget {
+    param(
+        [hashtable]$Options,
+        [hashtable]$ConfigMap,
+        [string]$OperationName
+    )
+
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $defaultVmName = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_NAME' -DefaultValue '')
+    $groupOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
+    $vmNameOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
+    $requestedResourceGroup = $groupOption.Trim()
+    $requestedVmName = $vmNameOption.Trim()
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$requestedResourceGroup)) {
+        $resourceGroup = Resolve-AzVmTargetResourceGroup `
+            -Options $Options `
+            -AutoMode:$false `
+            -DefaultResourceGroup $defaultResourceGroup `
+            -VmName $requestedVmName `
+            -OperationName $OperationName
+
+        if ([string]::IsNullOrWhiteSpace([string]$requestedVmName)) {
+            $vmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
+        }
+        else {
+            $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $resourceGroup)
+            $resolvedVmName = @($vmNames | Where-Object { [string]::Equals([string]$_, $requestedVmName, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+            if (@($resolvedVmName).Count -eq 0) {
+                Throw-FriendlyError `
+                    -Detail ("VM '{0}' was not found in resource group '{1}'." -f $requestedVmName, $resourceGroup) `
+                    -Code 66 `
+                    -Summary ("{0} command could not resolve the target VM." -f $OperationName) `
+                    -Hint "Provide an exact VM name in the selected resource group, or omit --vm-name to select interactively."
+            }
+            $vmName = [string]$resolvedVmName[0]
+        }
+
+        return [pscustomobject]@{
+            ResourceGroup = $resourceGroup
+            VmName = $vmName
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$requestedVmName)) {
+        $activeGroupMatches = $false
+        if (-not [string]::IsNullOrWhiteSpace([string]$defaultResourceGroup) -and (Test-AzVmResourceGroupManaged -ResourceGroup $defaultResourceGroup)) {
+            $activeVmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $defaultResourceGroup)
+            foreach ($candidateVmName in @($activeVmNames)) {
+                if ([string]::Equals([string]$candidateVmName, $requestedVmName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return [pscustomobject]@{
+                        ResourceGroup = $defaultResourceGroup
+                        VmName = [string]$candidateVmName
+                    }
+                }
+            }
+            $activeGroupMatches = $true
+        }
+
+        $matches = @(Get-AzVmManagedVmMatchRows -VmName $requestedVmName)
+        if (@($matches).Count -eq 1) {
+            return [pscustomobject]@{
+                ResourceGroup = [string]$matches[0].ResourceGroup
+                VmName = [string]$matches[0].VmName
+            }
+        }
+
+        if (@($matches).Count -gt 1) {
+            $matchGroups = @($matches | ForEach-Object { [string]$_.ResourceGroup } | Sort-Object -Unique)
+            Throw-FriendlyError `
+                -Detail ("VM name '{0}' was found in multiple managed resource groups: {1}." -f $requestedVmName, ($matchGroups -join ', ')) `
+                -Code 66 `
+                -Summary ("{0} command needs an explicit resource group." -f $OperationName) `
+                -Hint "Provide --group=<resource-group> together with --vm-name=<name>."
+        }
+
+        $notFoundHint = if ($activeGroupMatches) {
+            "Provide --group=<resource-group> or select another exact VM name."
+        }
+        else {
+            "Select a managed resource group interactively or provide both --group and --vm-name."
+        }
+
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' was not found in az-vm managed resource groups." -f $requestedVmName) `
+            -Code 66 `
+            -Summary ("{0} command could not find the target VM." -f $OperationName) `
+            -Hint $notFoundHint
+    }
+
+    $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -VmName $defaultVmName
+    $vmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
+    return [pscustomobject]@{
+        ResourceGroup = $resourceGroup
+        VmName = $vmName
+    }
+}
+
+# Handles Resolve-AzVmConnectionCredentials.
+function Resolve-AzVmConnectionCredentials {
+    param(
+        [string]$RoleName,
+        [hashtable]$ConfigMap,
+        [string]$EnvFilePath
+    )
+
+    $role = [string]$RoleName
+    $userKey = ''
+    $passwordKey = ''
+    $defaultUserName = ''
+    switch ($role) {
+        'assistant' {
+            $userKey = 'VM_ASSISTANT_USER'
+            $passwordKey = 'VM_ASSISTANT_PASS'
+            $defaultUserName = 'assistant'
+        }
+        default {
+            $role = 'manager'
+            $userKey = 'VM_ADMIN_USER'
+            $passwordKey = 'VM_ADMIN_PASS'
+            $defaultUserName = 'manager'
+        }
+    }
+
+    $resolvedUserName = [string](Get-ConfigValue -Config $ConfigMap -Key $userKey -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedUserName)) {
+        $enteredUserName = Read-Host ("Enter username for {0} connection (default={1})" -f $role, $defaultUserName)
+        if ([string]::IsNullOrWhiteSpace([string]$enteredUserName)) {
+            $enteredUserName = $defaultUserName
+        }
+        $resolvedUserName = $enteredUserName.Trim()
+        Set-DotEnvValue -Path $EnvFilePath -Key $userKey -Value $resolvedUserName
+        $ConfigMap[$userKey] = $resolvedUserName
+    }
+
+    $resolvedPassword = [string](Get-ConfigValue -Config $ConfigMap -Key $passwordKey -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedPassword)) {
+        $securePassword = Read-Host ("Enter password for {0} connection user '{1}'" -f $role, $resolvedUserName) -AsSecureString
+        $resolvedPassword = [System.Net.NetworkCredential]::new('', $securePassword).Password
+        if ([string]::IsNullOrWhiteSpace([string]$resolvedPassword)) {
+            Throw-FriendlyError `
+                -Detail ("Password input for role '{0}' was empty." -f $role) `
+                -Code 66 `
+                -Summary "Connection password is required." `
+                -Hint ("Enter a non-empty password for {0} and retry." -f $role)
+        }
+        Set-DotEnvValue -Path $EnvFilePath -Key $passwordKey -Value $resolvedPassword
+        $ConfigMap[$passwordKey] = $resolvedPassword
+    }
+
+    return [pscustomobject]@{
+        Role = $role
+        UserName = $resolvedUserName
+        Password = $resolvedPassword
+    }
+}
+
+# Handles Resolve-AzVmLocalExecutablePath.
+function Resolve-AzVmLocalExecutablePath {
+    param(
+        [string[]]$Candidates,
+        [string]$FriendlyName
+    )
+
+    foreach ($candidate in @($Candidates)) {
+        $candidateText = [string]$candidate
+        if ([string]::IsNullOrWhiteSpace([string]$candidateText)) {
+            continue
+        }
+
+        if ([System.IO.Path]::IsPathRooted($candidateText)) {
+            if (Test-Path -LiteralPath $candidateText) {
+                return (Resolve-Path -LiteralPath $candidateText).Path
+            }
+            continue
+        }
+
+        $command = Get-Command $candidateText -ErrorAction SilentlyContinue
+        if ($command -and -not [string]::IsNullOrWhiteSpace([string]$command.Source)) {
+            return [string]$command.Source
+        }
+    }
+
+    Throw-FriendlyError `
+        -Detail ("Local executable for {0} was not found." -f $FriendlyName) `
+        -Code 66 `
+        -Summary ("{0} client is not available on this machine." -f $FriendlyName) `
+        -Hint ("Install or expose the required executable for {0}, then retry." -f $FriendlyName)
+}
+
+# Handles Initialize-AzVmConnectionCommandContext.
+function Initialize-AzVmConnectionCommandContext {
+    param(
+        [hashtable]$Options,
+        [string]$OperationName
+    )
+
+    if (-not (Test-AzVmLocalWindowsHost)) {
+        Throw-FriendlyError `
+            -Detail ("The {0} command is only supported on Windows operator machines." -f $OperationName) `
+            -Code 66 `
+            -Summary "Local client launch is not supported on this operating system." `
+            -Hint "Run this command from Windows."
+    }
+
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $target = Resolve-AzVmConnectionTarget -Options $Options -ConfigMap $configMap -OperationName $OperationName
+    $vmSshPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_SSH_PORT' -DefaultValue '444' -Label 'SSH'
+    $vmRdpPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_RDP_PORT' -DefaultValue '3389' -Label 'RDP'
+    $logicalRole = Resolve-AzVmConnectionRoleName -Options $Options
+    $credentials = Resolve-AzVmConnectionCredentials -RoleName $logicalRole -ConfigMap $configMap -EnvFilePath $envFilePath
+
+    $context = [ordered]@{
+        ResourceGroup = [string]$target.ResourceGroup
+        VmName = [string]$target.VmName
+        AzLocation = ''
+        VmUser = [string](Get-ConfigValue -Config $configMap -Key 'VM_ADMIN_USER' -DefaultValue 'manager')
+        VmPass = [string](Get-ConfigValue -Config $configMap -Key 'VM_ADMIN_PASS' -DefaultValue '')
+        VmAssistantUser = [string](Get-ConfigValue -Config $configMap -Key 'VM_ASSISTANT_USER' -DefaultValue 'assistant')
+        VmAssistantPass = [string](Get-ConfigValue -Config $configMap -Key 'VM_ASSISTANT_PASS' -DefaultValue '')
+        SshPort = [string]$vmSshPort
+        RdpPort = [string]$vmRdpPort
+    }
+
+    if ($logicalRole -eq 'manager') {
+        $context.VmUser = [string]$credentials.UserName
+        $context.VmPass = [string]$credentials.Password
+    }
+    else {
+        $context.VmAssistantUser = [string]$credentials.UserName
+        $context.VmAssistantPass = [string]$credentials.Password
+    }
+
+    $vmRuntimeDetails = Get-AzVmVmDetails -Context $context
+    $resolvedHost = [string]$vmRuntimeDetails.VmFqdn
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedHost)) {
+        $resolvedHost = [string]$vmRuntimeDetails.PublicIP
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedHost)) {
+        Throw-FriendlyError `
+            -Detail ("Neither FQDN nor public IP could be resolved for VM '{0}'." -f [string]$target.VmName) `
+            -Code 66 `
+            -Summary ("{0} command could not resolve a connection host." -f $OperationName) `
+            -Hint "Ensure the VM has a public endpoint and Azure can return VM runtime details."
+    }
+
+    $osType = ''
+    if ($vmRuntimeDetails.VmDetails -and $vmRuntimeDetails.VmDetails.storageProfile -and $vmRuntimeDetails.VmDetails.storageProfile.osDisk) {
+        $osType = [string]$vmRuntimeDetails.VmDetails.storageProfile.osDisk.osType
+    }
+
+    return [pscustomobject]@{
+        EnvFilePath = $envFilePath
+        ConfigMap = $configMap
+        Context = $context
+        ResourceGroup = [string]$target.ResourceGroup
+        VmName = [string]$target.VmName
+        ConnectionHost = $resolvedHost
+        VmRuntimeDetails = $vmRuntimeDetails
+        OsType = $osType
+        SelectedRole = [string]$credentials.Role
+        SelectedUserName = [string]$credentials.UserName
+        SelectedPassword = [string]$credentials.Password
+        VmSshPort = [string]$vmSshPort
+        VmRdpPort = [string]$vmRdpPort
+    }
+}
+
+# Handles Invoke-AzVmSshConnectCommand.
+function Invoke-AzVmSshConnectCommand {
+    param(
+        [hashtable]$Options
+    )
+
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'ssh'
+    $sshExePath = Resolve-AzVmLocalExecutablePath -Candidates @('ssh.exe', (Join-Path $env:SystemRoot 'System32\OpenSSH\ssh.exe')) -FriendlyName 'Windows OpenSSH'
+    $targetText = ("{0}@{1}" -f [string]$runtime.SelectedUserName, [string]$runtime.ConnectionHost)
+    $sshArgs = @('-p', [string]$runtime.VmSshPort, $targetText)
+
+    Write-Host ("Launching SSH client for VM '{0}' in group '{1}'..." -f [string]$runtime.VmName, [string]$runtime.ResourceGroup) -ForegroundColor Cyan
+    Write-Host ("SSH target: {0}" -f $targetText) -ForegroundColor DarkCyan
+    Write-Host "Password entry will appear in the external SSH console window." -ForegroundColor Yellow
+    Start-Process -FilePath $sshExePath -ArgumentList $sshArgs | Out-Null
+}
+
+# Handles Invoke-AzVmRdpConnectCommand.
+function Invoke-AzVmRdpConnectCommand {
+    param(
+        [hashtable]$Options
+    )
+
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'rdp'
+    if (-not [string]::Equals(([string]$runtime.OsType).Trim(), 'Windows', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' reports osType '{1}', so RDP launch is not supported." -f [string]$runtime.VmName, [string]$runtime.OsType) `
+            -Code 66 `
+            -Summary "RDP command is only available for Windows VMs." `
+            -Hint "Use the ssh command for Linux VMs, or target a Windows VM."
+    }
+
+    $cmdKeyPath = Resolve-AzVmLocalExecutablePath -Candidates @((Join-Path $env:SystemRoot 'System32\cmdkey.exe'), 'cmdkey.exe') -FriendlyName 'Windows Credential Manager'
+    $mstscPath = Resolve-AzVmLocalExecutablePath -Candidates @((Join-Path $env:SystemRoot 'System32\mstsc.exe'), 'mstsc.exe') -FriendlyName 'Remote Desktop Connection'
+    $credentialTarget = ("TERMSRV/{0}" -f [string]$runtime.ConnectionHost)
+    $rdpUserName = (".\{0}" -f [string]$runtime.SelectedUserName)
+    $cmdKeyArgs = @("/generic:$credentialTarget", "/user:$rdpUserName", "/pass:$([string]$runtime.SelectedPassword)")
+
+    Write-Host ("Staging RDP credentials for VM '{0}' in group '{1}'..." -f [string]$runtime.VmName, [string]$runtime.ResourceGroup) -ForegroundColor Cyan
+    $cmdKeyProcess = Start-Process -FilePath $cmdKeyPath -ArgumentList $cmdKeyArgs -Wait -PassThru -WindowStyle Hidden
+    if ($null -eq $cmdKeyProcess -or [int]$cmdKeyProcess.ExitCode -ne 0) {
+        $exitCode = if ($null -eq $cmdKeyProcess) { -1 } else { [int]$cmdKeyProcess.ExitCode }
+        Throw-FriendlyError `
+            -Detail ("cmdkey failed while staging credentials for target '{0}' (exit={1})." -f $credentialTarget, $exitCode) `
+            -Code 66 `
+            -Summary "RDP credential staging failed." `
+            -Hint "Verify local Windows credential manager access and retry."
+    }
+
+    Write-Host ("Launching mstsc for {0}:{1}..." -f [string]$runtime.ConnectionHost, [string]$runtime.VmRdpPort) -ForegroundColor Cyan
+    Start-Process -FilePath $mstscPath -ArgumentList @("/v:{0}:{1}" -f [string]$runtime.ConnectionHost, [string]$runtime.VmRdpPort) | Out-Null
+}
+
 # Handles Invoke-AzVmCommandDispatcher.
 function Invoke-AzVmCommandDispatcher {
     param(
@@ -3777,6 +4190,20 @@ function Invoke-AzVmCommandDispatcher {
                 Invoke-AzVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
+            'ssh' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-AzVmSshConnectCommand -Options $Options
+                return
+            }
+            'rdp' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-AzVmRdpConnectCommand -Options $Options
+                return
+            }
             'show' {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
@@ -3796,7 +4223,7 @@ function Invoke-AzVmCommandDispatcher {
                     -Detail ("Unknown command '{0}'." -f $CommandName) `
                     -Code 2 `
                     -Summary "Unknown command." `
-                    -Hint "Use one command: create | update | configure | group | move | resize | set | exec | show | delete."
+                    -Hint "Use one command: create | update | configure | group | move | resize | set | exec | ssh | rdp | show | delete."
             }
         }
     }

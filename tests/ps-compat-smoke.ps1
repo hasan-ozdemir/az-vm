@@ -216,7 +216,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
         'VM_OS_TYPE','VM_NAME','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
-        'VM_STORAGE_SKU','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','SSH_PORT',
+        'VM_STORAGE_SKU','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
         'AZ_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
         'WIN_VM_IMAGE','WIN_VM_SIZE','WIN_VM_DISK_SIZE_GB','LIN_VM_IMAGE','LIN_VM_SIZE','LIN_VM_DISK_SIZE_GB',
         'WIN_VM_INIT_TASK_DIR','WIN_VM_UPDATE_TASK_DIR','LIN_VM_INIT_TASK_DIR','LIN_VM_UPDATE_TASK_DIR',
@@ -229,8 +229,10 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $legacyInitTaskDirKey = (@('VM','INIT','TASK','DIR') -join '_')
     $legacyUpdateTaskDirKey = (@('VM','UPDATE','TASK','DIR') -join '_')
+    $legacySshPortKey = (@('SSH','PORT') -join '_')
     Assert-True -Condition (-not ($envExampleKeys -contains $legacyInitTaskDirKey)) -Message ".env.example must not contain the legacy generic init task dir key."
     Assert-True -Condition (-not ($envExampleKeys -contains $legacyUpdateTaskDirKey)) -Message ".env.example must not contain the legacy generic update task dir key."
+    Assert-True -Condition (-not ($envExampleKeys -contains $legacySshPortKey)) -Message ".env.example must not contain the legacy SSH_PORT key."
 }
 
 Invoke-Test -Name "Task outcome mode is not platform-forced" -Action {
@@ -290,6 +292,12 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
 
     $parsedConfigureHelp = Parse-AzVmCliArguments -CommandToken "configure" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedConfigureHelp.Command -eq "configure") -Message "Configure command with --help parse failed."
+
+    $parsedSshHelp = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedSshHelp.Command -eq "ssh") -Message "SSH command with --help parse failed."
+
+    $parsedRdpHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedRdpHelp.Command -eq "rdp") -Message "RDP command with --help parse failed."
 }
 
 Invoke-Test -Name "CLI option assertions allow command help" -Action {
@@ -300,12 +308,27 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "resize" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "set" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "exec" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
+Invoke-Test -Name "SSH and RDP reject legacy vm option" -Action {
+    foreach ($commandName in @('ssh','rdp')) {
+        $threw = $false
+        try {
+            Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'examplevm' }
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("Legacy --vm must be rejected for command '{0}'." -f $commandName)
+    }
+}
+
 Invoke-Test -Name "Auto option scope contract" -Action {
-    $invalidAutoCommands = @('configure','move','resize','set','exec','show','group','help')
+    $invalidAutoCommands = @('configure','move','resize','set','exec','ssh','rdp','show','group','help')
     foreach ($commandName in $invalidAutoCommands) {
         $threw = $false
         try {
@@ -336,6 +359,8 @@ Invoke-Test -Name "Help --command syntax was removed" -Action {
 Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-AzVmCommandHelp -Topic "create"
     Show-AzVmCommandHelp -Topic "configure"
+    Show-AzVmCommandHelp -Topic "ssh"
+    Show-AzVmCommandHelp -Topic "rdp"
     Show-AzVmCommandHelp -Topic "show"
     Show-AzVmCommandHelp -Topic ""
     Show-AzVmCommandHelp -Overview
@@ -348,6 +373,7 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmAssistantUser = "assistant"
         VmAssistantPass = "secret2"
         SshPort = "444"
+        RdpPort = "3389"
         TcpPorts = @("444","3389","11434")
         ResourceGroup = "rg-examplevm"
         VmName = "examplevm"
@@ -360,13 +386,14 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __VM_NAME__ __TCP_PORTS_BASH__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __TCP_PORTS_BASH__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
     $scriptBody = [string]$resolved[0].Script
     Assert-True -Condition ($scriptBody -like "*manager*") -Message "VM user token was not replaced."
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
 }
 
