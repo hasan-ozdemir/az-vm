@@ -242,11 +242,11 @@ if (-not $SkipHelpSmoke) {
 
 if (-not $SkipMatrix) {
     Invoke-AuditStep -Name "PS compatibility matrix" -Action {
-        $matrixPath = Join-Path $RepoRoot "tests\powershell-matrix.ps1"
+        $matrixPath = Join-Path $RepoRoot "tests\powershell-compatibility-check.ps1"
         $powerShellHost = Resolve-PowerShellHost
         & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $matrixPath -RepoRoot $RepoRoot
         if ($LASTEXITCODE -ne 0) {
-            throw "powershell-matrix.ps1 failed."
+            throw "powershell-compatibility-check.ps1 failed."
         }
     }
 }

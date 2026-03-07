@@ -126,7 +126,7 @@ Current repo-level quality gates include:
 Local quality entry points:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\quality-audit.ps1
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\powershell-matrix.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\powershell-compatibility-check.ps1
 ```
 
 ## Native Git Hooks
