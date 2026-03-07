@@ -3490,3 +3490,15 @@ action: evet aynen bu reconstruction temizliklerini yap.
 **Assistant Summary**
 
 Removed the retired `docs/reconstruction/` folder, cleaned the remaining README and AGENTS references, advanced the current documented release label to `2026.3.8.226`, updated changelog and release-notes to record the cleanup, and re-ran documentation plus compatibility quality gates successfully.
+
+### 2026-03-08 01:29 TRT
+
+**User Prompt**
+
+````text
+fix improve update: tests klasörü altındaki dosyaların isimleri bana kriptik geliyor, pek anlaşılır ve self-explanatory gelmiyor; bu durumu düzeltir misin? tests altındaki her bir dosyanın adı, maximum anlaşılabilirlikte, dash seperated ve en fazla üç oldukça fonksiyonel ve bağlamsal kelimeden oluşsun lütfen!
+````
+
+**Assistant Summary**
+
+Renamed the `tests/` scripts to clearer dash-separated names (`quality-audit`, `docs-contract`, `history-replay`, `powershell-matrix`, `powershell-smoke`), updated all live references across hooks, workflow, README, changelog, and test runners, verified that no active old test-script names remained outside historical ledger text, advanced the current documented release label to `2026.3.8.227`, and re-ran the quality audit plus PowerShell compatibility matrix successfully.

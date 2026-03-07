@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.8.226] - 2026-03-08
+## [2026.3.8.227] - 2026-03-08
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
@@ -13,8 +13,9 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Removed the retired `docs/reconstruction/` artifact set after its remaining value had been folded into the maintained documentation set.
 
 ### Tests
-- Added `tests/run-doc-contract.ps1` to enforce documentation presence, current command naming, prompt-history structure, and legacy-token removal.
-- Extended `tests/run-quality-audit.ps1` to include documentation contract checks and an optional Linux shell syntax skip path for fast local and CI execution.
+- Added `tests/docs-contract.ps1` to enforce documentation presence, current command naming, prompt-history structure, and legacy-token removal.
+- Extended `tests/quality-audit.ps1` to include documentation contract checks and an optional Linux shell syntax skip path for fast local and CI execution.
+- Renamed the `tests/` scripts to clearer dash-separated names and updated all live references across hooks, workflow, and docs.
 
 ### Chores
 - Replaced the one-way hook installer with `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1`.

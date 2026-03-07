@@ -12,4 +12,4 @@ else
   exit 1
 fi
 
-"$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/run-quality-audit.ps1" -RepoRoot "$REPO_ROOT" -SkipMatrix -SkipLinuxShellSyntax
+"$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/quality-audit.ps1" -RepoRoot "$REPO_ROOT" -SkipMatrix -SkipLinuxShellSyntax

@@ -25,7 +25,7 @@ jobs:
       - name: Run static audit
         shell: powershell
         run: |
-          .\tests\run-quality-audit.ps1 -RepoRoot $PWD.Path -SkipMatrix -SkipLinuxShellSyntax
+          .\tests\quality-audit.ps1 -RepoRoot $PWD.Path -SkipMatrix -SkipLinuxShellSyntax
 
   powershell-compatibility:
     runs-on: windows-latest
@@ -36,7 +36,7 @@ jobs:
       - name: Run PowerShell compatibility matrix
         shell: powershell
         run: |
-          .\tests\run-ps-compat-matrix.ps1 -RepoRoot $PWD.Path
+          .\tests\powershell-matrix.ps1 -RepoRoot $PWD.Path
 
   linux-shell-syntax:
     runs-on: ubuntu-latest

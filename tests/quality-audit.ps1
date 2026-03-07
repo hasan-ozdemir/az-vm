@@ -90,15 +90,15 @@ Invoke-AuditStep -Name "PowerShell parse (*.ps1)" -Action {
 }
 
 Invoke-AuditStep -Name "Documentation contract" -Action {
-    $docContractPath = Join-Path $RepoRoot "tests\run-doc-contract.ps1"
+    $docContractPath = Join-Path $RepoRoot "tests\docs-contract.ps1"
     if (-not (Test-Path -LiteralPath $docContractPath)) {
-        throw "run-doc-contract.ps1 was not found."
+        throw "docs-contract.ps1 was not found."
     }
 
     $powerShellHost = Resolve-PowerShellHost
     & $powerShellHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $docContractPath -RepoRoot $RepoRoot
     if ($LASTEXITCODE -ne 0) {
-        throw "run-doc-contract.ps1 failed."
+        throw "docs-contract.ps1 failed."
     }
 }
 
@@ -242,11 +242,11 @@ if (-not $SkipHelpSmoke) {
 
 if (-not $SkipMatrix) {
     Invoke-AuditStep -Name "PS compatibility matrix" -Action {
-        $matrixPath = Join-Path $RepoRoot "tests\run-ps-compat-matrix.ps1"
+        $matrixPath = Join-Path $RepoRoot "tests\powershell-matrix.ps1"
         $powerShellHost = Resolve-PowerShellHost
         & $powerShellHost -NoProfile -ExecutionPolicy Bypass -File $matrixPath -RepoRoot $RepoRoot
         if ($LASTEXITCODE -ne 0) {
-            throw "run-ps-compat-matrix.ps1 failed."
+            throw "powershell-matrix.ps1 failed."
         }
     }
 }

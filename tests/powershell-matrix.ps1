@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
-$testScript = Join-Path $PSScriptRoot "ps-compat-smoke.ps1"
+$testScript = Join-Path $PSScriptRoot "powershell-smoke.ps1"
 if (-not (Test-Path -LiteralPath $testScript)) {
     throw "Compatibility smoke script was not found: $testScript"
 }

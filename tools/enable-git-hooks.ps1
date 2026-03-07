@@ -61,8 +61,8 @@ function Enable-RepoGitHooks {
 
     Write-Host "Configured native git hooks path: .githooks" -ForegroundColor Green
     Write-Host "Hook commands:" -ForegroundColor Cyan
-    Write-Host "- pre-commit -> tests/run-quality-audit.ps1 -SkipMatrix -SkipLinuxShellSyntax"
-    Write-Host "- pre-push   -> tests/run-quality-audit.ps1 -SkipLinuxShellSyntax"
+    Write-Host "- pre-commit -> tests/quality-audit.ps1 -SkipMatrix -SkipLinuxShellSyntax"
+    Write-Host "- pre-push   -> tests/quality-audit.ps1 -SkipLinuxShellSyntax"
 }
 
 Assert-GitCommand

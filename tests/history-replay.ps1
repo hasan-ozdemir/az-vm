@@ -33,9 +33,9 @@ if ($commitList.Count -eq 0) {
     exit 0
 }
 
-$auditScript = Join-Path $RepoRoot "tests\run-quality-audit.ps1"
+$auditScript = Join-Path $RepoRoot "tests\quality-audit.ps1"
 if (-not (Test-Path -LiteralPath $auditScript)) {
-    throw "run-quality-audit.ps1 was not found."
+    throw "quality-audit.ps1 was not found."
 }
 
 $results = @()
