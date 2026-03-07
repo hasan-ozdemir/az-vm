@@ -13,6 +13,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONDONTWRITEBYTECODE = "1"
 
 # Handles Invoke-PythonNoBytecode.
 function Invoke-PythonNoBytecode {
@@ -29,6 +30,24 @@ function Invoke-PythonNoBytecode {
     finally {
         [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", $previousDontWriteBytecode, "Process")
     }
+}
+
+# Handles Remove-PythonCacheArtifacts.
+function Remove-PythonCacheArtifacts {
+    param(
+        [string]$RootPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath) -or -not (Test-Path -LiteralPath $RootPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $RootPath -Recurse -Force -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    Get-ChildItem -LiteralPath $RootPath -Recurse -Force -File -ErrorAction SilentlyContinue |
+        Where-Object { @('.pyc', '.pyo') -contains ([string]$_.Extension).ToLowerInvariant() } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 function Get-DotEnvMap {
@@ -154,6 +173,8 @@ Invoke-PythonNoBytecode -PythonPath $venvPython -Arguments @("-m", "pip", "insta
 if ($LASTEXITCODE -ne 0) {
     throw "pip requirements installation failed in pyssh virtual environment."
 }
+
+Remove-PythonCacheArtifacts -RootPath $ToolsRoot
 
 $clientPath = Join-Path $ToolsRoot "ssh_client.py"
 if (-not (Test-Path -LiteralPath $clientPath)) {

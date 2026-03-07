@@ -6,6 +6,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+$env:PYTHONDONTWRITEBYTECODE = "1"
 
 $results = @()
 
@@ -38,6 +39,23 @@ function Invoke-AuditStep {
         Add-AuditResult -Name $Name -Passed $false -Detail $_.Exception.Message
         Write-Host ("[FAIL] {0}: {1}" -f $Name, $_.Exception.Message) -ForegroundColor Red
     }
+}
+
+function Remove-PythonCacheArtifacts {
+    param(
+        [string]$RootPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath) -or -not (Test-Path -LiteralPath $RootPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $RootPath -Recurse -Force -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue |
+        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+    Get-ChildItem -LiteralPath $RootPath -Recurse -Force -File -ErrorAction SilentlyContinue |
+        Where-Object { @('.pyc', '.pyo') -contains ([string]$_.Extension).ToLowerInvariant() } |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 }
 
 Invoke-AuditStep -Name "PowerShell parse (*.ps1)" -Action {
@@ -123,6 +141,21 @@ compile(source, str(path), "exec")
     }
     if (Test-Path -LiteralPath $pyCachePath) {
         throw "__pycache__ must not be created by python syntax validation."
+    }
+}
+
+Invoke-AuditStep -Name "Python cache artifact hygiene (tools/pyssh)" -Action {
+    $pyRoot = Join-Path $RepoRoot "tools\pyssh"
+    if (-not (Test-Path -LiteralPath $pyRoot)) {
+        return
+    }
+
+    Remove-PythonCacheArtifacts -RootPath $pyRoot
+
+    $cacheDirs = @(Get-ChildItem -LiteralPath $pyRoot -Recurse -Force -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue)
+    $cacheFiles = @(Get-ChildItem -LiteralPath $pyRoot -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { @('.pyc', '.pyo') -contains ([string]$_.Extension).ToLowerInvariant() })
+    if ($cacheDirs.Count -gt 0 -or $cacheFiles.Count -gt 0) {
+        throw "Python cache artifacts must not remain under tools/pyssh."
     }
 }
 

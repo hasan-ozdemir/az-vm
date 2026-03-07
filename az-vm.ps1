@@ -36,6 +36,7 @@ $script:PerfSuppressAzTimingDepth = 0
 $script:ManagedByTagKey = 'managed-by'
 $script:ManagedByTagValue = 'az-vm'
 $script:AzVmRepoRoot = $PSScriptRoot
+$env:PYTHONDONTWRITEBYTECODE = '1'
 
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
