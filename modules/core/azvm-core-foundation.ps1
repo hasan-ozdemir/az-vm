@@ -142,7 +142,11 @@ function Invoke-AzVmAzCliCommand {
         try { $stderrText = [string]$stderrTask.Result } catch { }
         $global:LASTEXITCODE = [int]$proc.ExitCode
 
-        if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
+        $suppressAzStderrEcho = $false
+        if ($script:SuppressAzCliStderrEcho) {
+            $suppressAzStderrEcho = $true
+        }
+        if ((-not $suppressAzStderrEcho) -and -not [string]::IsNullOrWhiteSpace($stderrText)) {
             Write-Host ($stderrText.TrimEnd())
         }
 
@@ -167,6 +171,26 @@ function Invoke-AzVmAzCliCommand {
         if ($null -ne $perfWatch -and $shouldEmitPerf) {
             Write-AzVmPerfTiming -Category "az" -Label $perfLabel -Seconds $perfWatch.Elapsed.TotalSeconds
         }
+    }
+}
+
+# Handles Invoke-AzVmWithSuppressedAzCliStderr.
+function Invoke-AzVmWithSuppressedAzCliStderr {
+    param(
+        [scriptblock]$Action
+    )
+
+    $previousValue = $false
+    if ($script:SuppressAzCliStderrEcho) {
+        $previousValue = $true
+    }
+
+    $script:SuppressAzCliStderrEcho = $true
+    try {
+        return (& $Action)
+    }
+    finally {
+        $script:SuppressAzCliStderrEcho = $previousValue
     }
 }
 

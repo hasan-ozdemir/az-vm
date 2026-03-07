@@ -314,6 +314,11 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
+Invoke-Test -Name "Create and update accept vm-name override" -Action {
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
+}
+
 Invoke-Test -Name "SSH and RDP reject legacy vm option" -Action {
     foreach ($commandName in @('ssh','rdp')) {
         $threw = $false

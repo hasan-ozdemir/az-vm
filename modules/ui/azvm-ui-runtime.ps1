@@ -1255,8 +1255,8 @@ function Assert-AzVmCommandOptions {
     $allowed = @()
 
     switch ($CommandName) {
-        'create' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step') }
-        'update' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step','group') }
+        'create' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step','vm-name') }
+        'update' { $allowed = @('auto','perf','windows','linux','help','to-step','from-step','single-step','group','vm-name') }
         'configure' { $allowed = @('perf','windows','linux','help','group') }
         'group'  { $allowed = @('help','list','select') }
         'move'   { $allowed = @('perf','help','group','vm','vm-region') }
@@ -4127,13 +4127,18 @@ function Invoke-AzVmCommandDispatcher {
                 $script:UpdateMode = $false
                 $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
+                $createOverrides = @{ RESOURCE_GROUP = '' }
+                $createVmName = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
+                if (-not [string]::IsNullOrWhiteSpace([string]$createVmName)) {
+                    $createOverrides['VM_NAME'] = $createVmName.Trim()
+                }
 
                 # create always targets a new managed resource group name from template/index.
                 Invoke-AzVmMain `
                     -WindowsFlag:$windowsFlag `
                     -LinuxFlag:$linuxFlag `
                     -CommandName 'create' `
-                    -InitialConfigOverrides @{ RESOURCE_GROUP = '' } `
+                    -InitialConfigOverrides $createOverrides `
                     -ActionPlan $actionPlan
                 return
             }
@@ -4146,7 +4151,8 @@ function Invoke-AzVmCommandDispatcher {
                 $envFilePath = Join-Path (Get-AzVmRepoRoot) '.env'
                 $configMap = Read-DotEnvFile -Path $envFilePath
                 $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
-                $vmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
+                $vmNameOverride = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
+                $vmName = if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) { $vmNameOverride.Trim() } else { [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '') }
                 $targetResourceGroup = Resolve-AzVmTargetResourceGroup `
                     -Options $Options `
                     -AutoMode:$script:AutoMode `
@@ -4154,11 +4160,16 @@ function Invoke-AzVmCommandDispatcher {
                     -VmName $vmName `
                     -OperationName 'update'
 
+                $updateOverrides = @{ RESOURCE_GROUP = $targetResourceGroup }
+                if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) {
+                    $updateOverrides['VM_NAME'] = $vmNameOverride.Trim()
+                }
+
                 Invoke-AzVmMain `
                     -WindowsFlag:$windowsFlag `
                     -LinuxFlag:$linuxFlag `
                     -CommandName 'update' `
-                    -InitialConfigOverrides @{ RESOURCE_GROUP = $targetResourceGroup } `
+                    -InitialConfigOverrides $updateOverrides `
                     -ActionPlan $actionPlan
                 return
             }

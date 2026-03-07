@@ -415,7 +415,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Command: create"
             Write-Host "Description: create a new managed resource group and continue with VM init/update flow."
             Write-Host "Usage:"
-            Write-Host "  az-vm create [--auto] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm create [--auto] [--windows|--linux] [--vm-name=<vm-name>] [--perf]"
             Write-Host "  az-vm create --to-step=<step>"
             Write-Host "  az-vm create --from-step=<step>"
             Write-Host "  az-vm create --single-step=<step>"
@@ -423,6 +423,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
             Write-Host "Examples:"
             Write-Host "  az-vm create --auto --windows"
+            Write-Host "  az-vm create --auto --windows --vm-name=examplevm"
             Write-Host "  az-vm create --single-step=network --linux"
             Write-Host "  az-vm create --from-step=vm-deploy --to-step=vm-summary --perf"
             return
@@ -431,7 +432,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Command: update"
             Write-Host "Description: re-run create-or-update operations against existing resources."
             Write-Host "Usage:"
-            Write-Host "  az-vm update [--auto] [--windows|--linux] [--perf] [--group=<resource-group>]"
+            Write-Host "  az-vm update [--auto] [--windows|--linux] [--group=<resource-group>] [--vm-name=<vm-name>] [--perf]"
             Write-Host "  az-vm update --to-step=<step>"
             Write-Host "  az-vm update --from-step=<step>"
             Write-Host "  az-vm update --single-step=<step>"
@@ -440,6 +441,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Examples:"
             Write-Host "  az-vm update --auto --windows"
             Write-Host "  az-vm update --group=rg-examplevm-ate1-g1"
+            Write-Host "  az-vm update --auto --group=rg-examplevm-ate1-g1 --vm-name=examplevm"
             Write-Host "  az-vm update --single-step=vm-update --auto --windows"
             Write-Host "  az-vm update --from-step=group --to-step=vm-init --perf"
             return
