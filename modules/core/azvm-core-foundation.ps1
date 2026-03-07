@@ -654,6 +654,46 @@ function Sync-AzVmTaskCatalogPriority {
     }
 }
 
+# Handles Get-AzVmTaskCatalogTimeoutMap.
+function Get-AzVmTaskCatalogTimeoutMap {
+    param(
+        [string]$DirectoryPath,
+        [ValidateSet('init','update')]
+        [string]$Stage
+    )
+
+    $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
+    $timeoutMap = @{}
+    if (-not (Test-Path -LiteralPath $catalogPath)) {
+        return $timeoutMap
+    }
+
+    $catalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
+    if ([string]::IsNullOrWhiteSpace([string]$catalogText)) {
+        return $timeoutMap
+    }
+
+    $catalog = ConvertFrom-JsonCompat -InputObject $catalogText
+    if ($null -eq $catalog -or $catalog.PSObject.Properties.Match('tasks').Count -eq 0) {
+        return $timeoutMap
+    }
+
+    foreach ($entry in @(ConvertTo-ObjectArrayCompat -InputObject $catalog.tasks)) {
+        if ($null -eq $entry) { continue }
+        $entryName = ''
+        if ($entry.PSObject.Properties.Match('name').Count -gt 0) {
+            $entryName = [string]$entry.name
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$entryName)) {
+            continue
+        }
+
+        $timeoutMap[[string]$entryName] = [int](Convert-AzVmTaskCatalogTimeout -Value $entry.timeout -DefaultValue 180)
+    }
+
+    return $timeoutMap
+}
+
 # Handles Get-AzVmTaskBlocksFromDirectory.
 function Get-AzVmTaskBlocksFromDirectory {
     param(
@@ -730,6 +770,7 @@ function Get-AzVmTaskBlocksFromDirectory {
 
     $syncInfo = Sync-AzVmTaskCatalogPriority -DirectoryPath $DirectoryPath -Stage $Stage -ActiveRows $activeRows
     $taskMap = @{}
+    $catalogTimeoutMap = Get-AzVmTaskCatalogTimeoutMap -DirectoryPath $DirectoryPath -Stage $Stage
     if ($syncInfo -and $syncInfo.PSObject.Properties.Match('TaskMap').Count -gt 0 -and $null -ne $syncInfo.TaskMap) {
         $taskMap = $syncInfo.TaskMap
     }
@@ -754,7 +795,10 @@ function Get-AzVmTaskBlocksFromDirectory {
 
         $content = Get-Content -Path $row.Path -Raw
         $taskTimeoutSeconds = 180
-        if ($taskMap.ContainsKey($taskName)) {
+        if ($catalogTimeoutMap.ContainsKey($taskName)) {
+            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $catalogTimeoutMap[$taskName] -DefaultValue 180
+        }
+        elseif ($taskMap.ContainsKey($taskName)) {
             $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
         }
         $activeTasks += [pscustomobject]@{

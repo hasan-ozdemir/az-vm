@@ -23,27 +23,39 @@ if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
     throw "npm command was not found. NodeJS task must run before install-global-npm-packages."
 }
 
-Write-Host "Running: npm -g install @openai/codex@latest"
-npm -g install @openai/codex@latest
-if ($LASTEXITCODE -ne 0) {
-    throw "npm install @openai/codex@latest failed with exit code $LASTEXITCODE."
+function Test-GlobalNpmPackageInstalled {
+    param([string]$PackageName)
+
+    $packageOutput = npm -g list $PackageName --depth=0
+    $packageExit = [int]$LASTEXITCODE
+    $packageText = [string]($packageOutput | Out-String)
+    return ($packageExit -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$packageText) -and $packageText.Contains($PackageName))
 }
 
-Write-Host "Running: npm -g install @google/gemini-cli@latest"
-npm -g install @google/gemini-cli@latest
-if ($LASTEXITCODE -ne 0) {
-    throw "npm install @google/gemini-cli@latest failed with exit code $LASTEXITCODE."
+function Ensure-GlobalNpmPackage {
+    param(
+        [string]$PackageName,
+        [string]$InstallSpec
+    )
+
+    if (Test-GlobalNpmPackageInstalled -PackageName $PackageName) {
+        Write-Host ("Global npm package is already installed: {0}" -f $PackageName)
+        return
+    }
+
+    Write-Host ("Running: npm -g install {0}" -f $InstallSpec)
+    npm -g install $InstallSpec
+    if ($LASTEXITCODE -ne 0) {
+        throw ("npm install {0} failed with exit code {1}." -f $InstallSpec, $LASTEXITCODE)
+    }
+
+    if (-not (Test-GlobalNpmPackageInstalled -PackageName $PackageName)) {
+        throw ("Global npm package '{0}' could not be verified after installation." -f $PackageName)
+    }
 }
 
-Write-Host "Running: npm -g list --depth=0"
-$npmList = npm -g list --depth=0
-$npmListText = [string]($npmList | Out-String)
-if ([string]::IsNullOrWhiteSpace($npmListText) -or -not $npmListText.Contains("@openai/codex")) {
-    throw "Global npm package '@openai/codex' was not found in npm global list."
-}
-if ([string]::IsNullOrWhiteSpace($npmListText) -or -not $npmListText.Contains("@google/gemini-cli")) {
-    throw "Global npm package '@google/gemini-cli' was not found in npm global list."
-}
+Ensure-GlobalNpmPackage -PackageName "@openai/codex" -InstallSpec "@openai/codex@latest"
+Ensure-GlobalNpmPackage -PackageName "@google/gemini-cli" -InstallSpec "@google/gemini-cli@latest"
 
 Write-Host "install-global-npm-packages-completed"
 Write-Host "Update task completed: install-global-npm-packages"

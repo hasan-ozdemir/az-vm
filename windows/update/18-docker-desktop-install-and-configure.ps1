@@ -54,6 +54,30 @@ function Ensure-MachinePathEntry {
     [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
 }
 
+function Ensure-LocalGroupMembership {
+    param(
+        [string]$GroupName,
+        [string]$MemberName
+    )
+
+    if (-not (Get-LocalGroup -Name $GroupName -ErrorAction SilentlyContinue)) {
+        New-LocalGroup -Name $GroupName -Description "Docker Desktop Users" -ErrorAction Stop | Out-Null
+    }
+
+    try {
+        Add-LocalGroupMember -Group $GroupName -Member $MemberName -ErrorAction Stop
+        Write-Host "docker-step-ok: docker-users membership added for $MemberName"
+    }
+    catch {
+        if ($_.Exception.Message -match '(?i)already a member') {
+            Write-Host "docker-step-ok: docker-users membership already exists for $MemberName"
+            return
+        }
+
+        throw
+    }
+}
+
 function Invoke-ProcessWithTimeout {
     param(
         [string]$Label,
@@ -103,6 +127,55 @@ function Invoke-ProcessWithTimeout {
         StdOut = [string]$stdOut
         StdErr = [string]$stdErr
     }
+}
+
+function Start-DockerDesktopProcess {
+    param([string]$DockerDesktopExe)
+
+    $running = @(Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue)
+    if (@($running).Count -gt 0) {
+        Write-Host "docker-step-ok: docker-desktop-process-already-running"
+        return
+    }
+
+    Start-Process -FilePath $DockerDesktopExe -ArgumentList "--minimized" -WindowStyle Hidden
+    Write-Host "docker-step-ok: docker-desktop-process-started"
+}
+
+function Wait-DockerDaemonReady {
+    param(
+        [string]$DockerExe = "docker",
+        [int]$TimeoutSeconds = 240
+    )
+
+    if ($TimeoutSeconds -lt 30) { $TimeoutSeconds = 30 }
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $attempt = 0
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $attempt++
+        $daemonResult = Invoke-ProcessWithTimeout -Label ("docker version (readiness attempt {0})" -f $attempt) -FilePath $DockerExe -Arguments @("version") -TimeoutSeconds 25
+        if ($daemonResult.Success) {
+            Write-Host "docker-step-ok: docker-daemon-version"
+            return $true
+        }
+
+        Write-Host ("Docker daemon is not ready yet. Waiting before retry {0}." -f ($attempt + 1)) -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+    }
+
+    return $false
+}
+
+function Register-DockerDesktopDeferredStart {
+    param([string]$DockerDesktopExe)
+
+    $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+    if (-not (Test-Path -LiteralPath $runOncePath)) {
+        New-Item -Path $runOncePath -Force | Out-Null
+    }
+
+    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -FilePath ''{0}'' -ArgumentList ''--minimized'' -WindowStyle Hidden"' -f $DockerDesktopExe)
+    Set-ItemProperty -Path $runOncePath -Name "AzVmStartDockerDesktop" -Value $commandValue -Type String
 }
 
 Refresh-SessionPath
@@ -163,22 +236,7 @@ else {
 }
 
 foreach ($localUser in @("__VM_ADMIN_USER__", "__ASSISTANT_USER__")) {
-    if (-not (Get-LocalGroup -Name "docker-users" -ErrorAction SilentlyContinue)) {
-        New-LocalGroup -Name "docker-users" -Description "Docker Desktop Users" -ErrorAction Stop
-    }
-
-    try {
-        Add-LocalGroupMember -Group "docker-users" -Member $localUser -ErrorAction Stop
-        Write-Host "docker-step-ok: docker-users membership added for $localUser"
-    }
-    catch {
-        if ($_.Exception.Message -match '(?i)already a member') {
-            Write-Host "docker-step-ok: docker-users membership already exists for $localUser"
-        }
-        else {
-            throw "docker-users membership failed for '$localUser'. $($_.Exception.Message)"
-        }
-    }
+    Ensure-LocalGroupMembership -GroupName "docker-users" -MemberName $localUser
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
@@ -190,15 +248,21 @@ if ($dockerVersionResult.Success) {
     Write-Host "docker-step-ok: docker-client-version"
 }
 else {
-    Write-Warning ("docker --version did not complete successfully (exit={0})." -f $dockerVersionResult.ExitCode)
+    throw ("docker --version did not complete successfully (exit={0})." -f $dockerVersionResult.ExitCode)
 }
 
-$dockerDaemonResult = Invoke-ProcessWithTimeout -Label "docker version" -FilePath "docker" -Arguments @("version") -TimeoutSeconds 20
-if ($dockerDaemonResult.Success) {
-    Write-Host "docker-step-ok: docker-daemon-version"
+Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
+if (Wait-DockerDaemonReady -DockerExe "docker" -TimeoutSeconds 60) {
+    $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds 25
+    if (-not $dockerInfoResult.Success) {
+        throw ("docker info did not complete successfully (exit={0})." -f $dockerInfoResult.ExitCode)
+    }
+    Write-Host "docker-step-ok: docker-info"
 }
 else {
-    Write-Warning ("docker version did not complete successfully (exit={0})." -f $dockerDaemonResult.ExitCode)
+    Register-DockerDesktopDeferredStart -DockerDesktopExe $dockerDesktopExe
+    Write-Warning "Docker Desktop engine could not become ready in the current SSH session. A RunOnce start was registered for the next interactive sign-in."
+    Write-Host "docker-step-deferred: interactive-sign-in-required"
 }
 
 Write-Host "docker-desktop-install-and-configure-completed"
