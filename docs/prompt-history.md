@@ -3672,3 +3672,15 @@ Implement the plan.
 **Assistant Summary**
 
 Corrected the `resize` command contract so direct invocations now use `--vm-name` with `--vm-size` and optional `--group`, added `--windows`/`--linux` support with actual-VM OS validation, split resize away from the shared move prompt flow so no-parameter resize stays interactive in the current region while fully specified resize runs without an extra confirmation prompt, aligned CLI help and release docs to the new syntax, expanded smoke and code-quality coverage for the updated option contract, and verified the change with PowerShell compatibility checks plus isolated live resize tests against `rg-examplevm-ate1-g1/examplevm` for `Standard_D4as_v5` and back to `Standard_D2as_v5`, restoring the VM to `stopped` at the end.
+
+### 2026-03-08 23:59 TRT
+
+**User Prompt**
+
+````text
+fix: rdp ve ssh komutları lütfen sadece vm açık iken çalışsınlar; aksi taktirde kullanıcıyı kibarca bilgilendirip yönlendirsinler.
+````
+
+**Assistant Summary**
+
+Made `ssh` and `rdp` state-aware so both commands now inspect the managed VM lifecycle state before resolving credentials or launching local clients, refuse politely when the target VM is not running, and point the operator to `az-vm do --vm-action=start`; also aligned command help, README connection guidance, release docs, and smoke coverage for the new running-state guard, then re-ran smoke, documentation, code-quality, and PowerShell compatibility checks successfully.

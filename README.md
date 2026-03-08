@@ -119,6 +119,7 @@ Connection helpers use the current managed VM state plus `.env` credentials.
 
 - `ssh` launches local `ssh.exe`.
 - `rdp` stages credentials with `cmdkey` and launches `mstsc.exe`.
+- `ssh` and `rdp` only launch when the target VM is already running.
 - `VM_SSH_PORT` and `VM_RDP_PORT` are the canonical connection-port keys.
 - guest firewall and NSG port exposure must remain synchronized end-to-end.
 
@@ -199,6 +200,7 @@ Typical workflows:
 .\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --windows
 
 # connect
+.\az-vm.cmd do --vm-action=start --group=rg-examplevm-ate1-g1 --vm-name=examplevm
 .\az-vm.cmd ssh --vm-name=examplevm
 .\az-vm.cmd rdp --vm-name=examplevm --user=assistant
 ```

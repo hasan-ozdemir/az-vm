@@ -570,7 +570,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Examples:"
             Write-Host "  az-vm ssh --vm-name=examplevm"
             Write-Host "  az-vm ssh --group=rg-examplevm-ate1-g1 --vm-name=examplevm --user=assistant"
-            Write-Host "Notes: password entry is handled in the external SSH console window."
+            Write-Host "Notes: the VM must already be running; password entry is handled in the external SSH console window."
             return
         }
         'rdp' {
@@ -582,7 +582,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Examples:"
             Write-Host "  az-vm rdp --vm-name=examplevm"
             Write-Host "  az-vm rdp --group=rg-examplevm-ate1-g1 --vm-name=examplevm --user=assistant"
-            Write-Host "Notes: credentials are staged with cmdkey before mstsc is launched."
+            Write-Host "Notes: the VM must already be running; credentials are staged with cmdkey before mstsc is launched."
             return
         }
         'delete' {

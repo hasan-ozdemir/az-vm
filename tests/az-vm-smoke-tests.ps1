@@ -659,6 +659,121 @@ Invoke-Test -Name "Do interactive action selection" -Action {
     }
 }
 
+Invoke-Test -Name "Connection command running-state guard" -Action {
+    function New-TestConnectionSnapshot {
+        param(
+            [string]$NormalizedState,
+            [string]$PowerStateDisplay,
+            [string]$HibernationStateDisplay = '',
+            [string]$HibernationStateCode = ''
+        )
+
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-examplevm-ate1-g1'
+            VmName = 'examplevm'
+            NormalizedState = $NormalizedState
+            PowerStateDisplay = $PowerStateDisplay
+            PowerStateCode = ''
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/succeeded'
+            ProvisioningStateDisplay = 'Provisioning succeeded'
+            HibernationStateDisplay = $HibernationStateDisplay
+            HibernationStateCode = $HibernationStateCode
+        }
+    }
+
+    Assert-AzVmConnectionVmRunning -OperationName 'ssh' -Snapshot (New-TestConnectionSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
+
+    $invalidCases = @(
+        @{ Operation = 'ssh'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'stopped' -PowerStateDisplay 'VM stopped') },
+        @{ Operation = 'rdp'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'deallocated' -PowerStateDisplay 'VM deallocated') },
+        @{ Operation = 'ssh'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'hibernated' -PowerStateDisplay 'VM deallocated' -HibernationStateDisplay 'Hibernated' -HibernationStateCode 'HibernationState/hibernated') }
+    )
+
+    foreach ($case in @($invalidCases)) {
+        $threw = $false
+        try {
+            Assert-AzVmConnectionVmRunning -OperationName ([string]$case.Operation) -Snapshot $case.Snapshot
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("Connection guard should reject non-running VM state for '{0}'." -f [string]$case.Operation)
+    }
+}
+
+Invoke-Test -Name "Connection context checks VM state before credentials" -Action {
+    $script:TestConnectionCredentialsCalled = $false
+    try {
+        function Test-AzVmLocalWindowsHost { return $true }
+        function Get-AzVmRepoRoot { return $RepoRoot }
+        function Read-DotEnvFile { param([string]$Path) return @{} }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-examplevm-ate1-g1'
+                VmName = 'examplevm'
+            }
+        }
+        function Get-AzVmVmLifecycleSnapshot {
+            param([string]$ResourceGroup, [string]$VmName)
+            return [pscustomobject]@{
+                ResourceGroup = $ResourceGroup
+                VmName = $VmName
+                OsType = 'Windows'
+                Location = 'austriaeast'
+                HibernationEnabled = $true
+                ProvisioningStateCode = 'ProvisioningState/succeeded'
+                ProvisioningStateDisplay = 'Provisioning succeeded'
+                PowerStateCode = 'PowerState/stopped'
+                PowerStateDisplay = 'VM stopped'
+                HibernationStateCode = ''
+                HibernationStateDisplay = ''
+                NormalizedState = 'stopped'
+            }
+        }
+        function Resolve-AzVmConnectionPortText { param([hashtable]$ConfigMap, [string]$Key, [string]$DefaultValue, [string]$Label) return [string]$DefaultValue }
+        function Resolve-AzVmConnectionRoleName { param([hashtable]$Options) return 'manager' }
+        function Resolve-AzVmConnectionCredentials {
+            param([string]$RoleName, [hashtable]$ConfigMap, [string]$EnvFilePath)
+            $script:TestConnectionCredentialsCalled = $true
+            return [pscustomobject]@{
+                Role = 'manager'
+                UserName = 'manager'
+                Password = 'secret'
+            }
+        }
+        function Get-AzVmVmDetails { throw 'Get-AzVmVmDetails should not run when the VM is not running.' }
+
+        $threw = $false
+        try {
+            Initialize-AzVmConnectionCommandContext -Options @{} -OperationName 'ssh' | Out-Null
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message "Connection context should stop when the VM is not running."
+        Assert-True -Condition (-not $script:TestConnectionCredentialsCalled) -Message "Connection context must reject non-running VMs before credential resolution."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Test-AzVmLocalWindowsHost',
+            'Get-AzVmRepoRoot',
+            'Read-DotEnvFile',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmLifecycleSnapshot',
+            'Resolve-AzVmConnectionPortText',
+            'Resolve-AzVmConnectionRoleName',
+            'Resolve-AzVmConnectionCredentials',
+            'Get-AzVmVmDetails'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name TestConnectionCredentialsCalled -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Task token replacement" -Action {
     $context = [ordered]@{
         VmUser = "manager"

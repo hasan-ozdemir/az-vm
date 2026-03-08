@@ -4340,6 +4340,25 @@ function Write-AzVmDoStatusReport {
     Write-Host ("- hibernation-enabled = {0}" -f $hibernationEnabledText)
 }
 
+# Handles Assert-AzVmConnectionVmRunning.
+function Assert-AzVmConnectionVmRunning {
+    param(
+        [string]$OperationName,
+        [psobject]$Snapshot
+    )
+
+    if ([string]::Equals([string]$Snapshot.NormalizedState, 'started', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    $commandLabel = ([string]$OperationName).ToUpperInvariant()
+    Throw-FriendlyError `
+        -Detail ("The {0} command cannot launch because VM '{1}' in resource group '{2}' is not running. {3}" -f $OperationName, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
+        -Code 66 `
+        -Summary ("{0} requires the VM to be running." -f $commandLabel) `
+        -Hint ("Start the VM with 'az-vm do --vm-action=start --group={0} --vm-name={1}' and retry." -f [string]$Snapshot.ResourceGroup, [string]$Snapshot.VmName)
+}
+
 # Handles Read-AzVmDoActionInteractive.
 function Read-AzVmDoActionInteractive {
     param(
@@ -4651,6 +4670,8 @@ function Initialize-AzVmConnectionCommandContext {
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $configMap -OperationName $OperationName
+    $lifecycleSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup ([string]$target.ResourceGroup) -VmName ([string]$target.VmName)
+    Assert-AzVmConnectionVmRunning -OperationName $OperationName -Snapshot $lifecycleSnapshot
     $vmSshPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_SSH_PORT' -DefaultValue '444' -Label 'SSH'
     $vmRdpPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_RDP_PORT' -DefaultValue '3389' -Label 'RDP'
     $logicalRole = Resolve-AzVmConnectionRoleName -Options $Options
@@ -4691,6 +4712,9 @@ function Initialize-AzVmConnectionCommandContext {
     }
 
     $osType = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$lifecycleSnapshot.OsType)) {
+        $osType = [string]$lifecycleSnapshot.OsType
+    }
     if ($vmRuntimeDetails.VmDetails -and $vmRuntimeDetails.VmDetails.storageProfile -and $vmRuntimeDetails.VmDetails.storageProfile.osDisk) {
         $osType = [string]$vmRuntimeDetails.VmDetails.storageProfile.osDisk.osType
     }
@@ -4702,6 +4726,7 @@ function Initialize-AzVmConnectionCommandContext {
         ResourceGroup = [string]$target.ResourceGroup
         VmName = [string]$target.VmName
         ConnectionHost = $resolvedHost
+        LifecycleSnapshot = $lifecycleSnapshot
         VmRuntimeDetails = $vmRuntimeDetails
         OsType = $osType
         SelectedRole = [string]$credentials.Role
