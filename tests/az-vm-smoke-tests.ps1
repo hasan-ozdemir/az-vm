@@ -306,6 +306,10 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedDoHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedDoHelp.Command -eq "do") -Message "Do command with --help parse failed."
     Assert-True -Condition ($parsedDoHelp.Options.ContainsKey("help")) -Message "Do command --help option was not captured."
+
+    $parsedResizeHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedResizeHelp.Command -eq "resize") -Message "Resize command with --help parse failed."
+    Assert-True -Condition ($parsedResizeHelp.Options.ContainsKey("help")) -Message "Resize command --help option was not captured."
 }
 
 Invoke-Test -Name "Task catalog fallback defaults" -Action {
@@ -370,14 +374,20 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
 }
 
+Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-examplevm-ate1-g1' }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-examplevm-ate1-g1'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-examplevm-ate1-g1'; linux = $true }
+}
+
 Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'examplevm'; 'vm-action' = 'status' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'deallocate' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
 
-Invoke-Test -Name "Do, SSH, and RDP reject legacy vm option" -Action {
-    foreach ($commandName in @('do','ssh','rdp')) {
+Invoke-Test -Name "Resize, Do, SSH, and RDP reject legacy vm option" -Action {
+    foreach ($commandName in @('resize','do','ssh','rdp')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'examplevm' }
@@ -418,6 +428,12 @@ Invoke-Test -Name "Auto option scope contract" -Action {
     Assert-AzVmCommandOptions -CommandName 'delete' -Options @{ auto = $true; target = 'vm' }
 }
 
+Invoke-Test -Name "Resize direct request detection" -Action {
+    Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D4as_v5' }) -Message "Fully specified resize request must be treated as direct."
+    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm' })) -Message "Resize request without vm-size must not be treated as direct."
+    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; vm = 'examplevm'; 'vm-size' = 'Standard_D4as_v5' })) -Message "Legacy vm option must not satisfy direct resize request detection."
+}
+
 Invoke-Test -Name "Help --command syntax was removed" -Action {
     $threw = $false
     try {
@@ -433,6 +449,7 @@ Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-AzVmCommandHelp -Topic "create"
     Show-AzVmCommandHelp -Topic "configure"
     Show-AzVmCommandHelp -Topic "do"
+    Show-AzVmCommandHelp -Topic "resize"
     Show-AzVmCommandHelp -Topic "ssh"
     Show-AzVmCommandHelp -Topic "rdp"
     Show-AzVmCommandHelp -Topic "show"
@@ -503,6 +520,66 @@ Invoke-Test -Name "Do lifecycle snapshot normalization" -Action {
             }
         })
     Assert-True -Condition ([string]$otherSnapshot.NormalizedState -eq 'other') -Message "Unknown VM state should normalize to other."
+}
+
+Invoke-Test -Name "Resize target size selection stays in current region" -Action {
+    $script:ResizePickerCallCount = 0
+
+    try {
+        function global:Select-AzLocationInteractive {
+            throw "Resize target size selection must not call region picker."
+        }
+
+        function global:Select-VmSkuInteractive {
+            param(
+                [string]$Location,
+                [string]$DefaultVmSize,
+                [int]$PriceHours
+            )
+
+            $script:ResizePickerCallCount++
+            if ($script:ResizePickerCallCount -eq 1) {
+                return (Get-AzVmSkuPickerRegionBackToken)
+            }
+
+            return 'Standard_D4as_v5'
+        }
+
+        $resolvedSize = Resolve-AzVmResizeTargetSize -Options @{} -CurrentRegion 'austriaeast' -CurrentSize 'Standard_D2as_v5' -ConfigMap @{ PRICE_HOURS = '730' }
+        Assert-True -Condition ([string]$resolvedSize -eq 'Standard_D4as_v5') -Message "Resize interactive size selection returned unexpected value."
+        Assert-True -Condition ($script:ResizePickerCallCount -eq 2) -Message "Resize interactive size selection should retry after back token without invoking region picker."
+    }
+    finally {
+        Remove-Item Function:\global:Select-AzLocationInteractive -ErrorAction SilentlyContinue
+        Remove-Item Function:\global:Select-VmSkuInteractive -ErrorAction SilentlyContinue
+        Remove-Variable ResizePickerCallCount -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Resize platform expectation" -Action {
+    Assert-AzVmResizePlatformExpectation -ActualPlatform 'windows' -WindowsFlag -VmName 'examplevm' -ResourceGroup 'rg-examplevm-ate1-g1'
+    Assert-AzVmResizePlatformExpectation -ActualPlatform 'linux' -LinuxFlag -VmName 'examplevm' -ResourceGroup 'rg-examplevm-ate1-g1'
+
+    $invalidCases = @(
+        @{ ActualPlatform = 'windows'; UseLinux = $true },
+        @{ ActualPlatform = 'linux'; UseWindows = $true }
+    )
+
+    foreach ($case in @($invalidCases)) {
+        $threw = $false
+        try {
+            Assert-AzVmResizePlatformExpectation `
+                -ActualPlatform ([string]$case.ActualPlatform) `
+                -WindowsFlag:([bool]$case.UseWindows) `
+                -LinuxFlag:([bool]$case.UseLinux) `
+                -VmName 'examplevm' `
+                -ResourceGroup 'rg-examplevm-ate1-g1'
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("Resize platform expectation should reject mismatched platform '{0}'." -f [string]$case.ActualPlatform)
+    }
 }
 
 Invoke-Test -Name "Do action eligibility contract" -Action {

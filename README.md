@@ -191,6 +191,10 @@ Typical workflows:
 .\az-vm.cmd do --vm-action=status --vm-name=examplevm
 .\az-vm.cmd do --vm-action=deallocate --group=rg-examplevm-ate1-g1 --vm-name=examplevm
 
+# resize the active VM in-place
+.\az-vm.cmd resize --vm-name=examplevm --vm-size=Standard_D4as_v5 --group=rg-examplevm-ate1-g1
+.\az-vm.cmd resize --vm-name=examplevm --vm-size=Standard_D2as_v5 --group=rg-examplevm-ate1-g1 --windows
+
 # run one guest update task
 .\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --windows
 

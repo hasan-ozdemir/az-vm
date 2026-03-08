@@ -3660,3 +3660,15 @@ Implement the plan.
 **Assistant Summary**
 
 Implemented the new state-aware `do` command with `--vm-action=status|start|restart|stop|deallocate|hibernate`, added generic managed-VM target resolution plus interactive group/vm/action selection, updated CLI help and repository docs to include the new command surface and the retirement of `release`, expanded smoke/documentation/help coverage for action parsing and lifecycle-state normalization, advanced the documented release to `2026.3.8.240`, and verified the feature with smoke, code-quality, and PowerShell compatibility checks plus isolated live Azure tests against `rg-examplevm-ate1-g1/examplevm`, restoring the VM to `stopped` at the end.
+
+### 2026-03-08 23:52 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Corrected the `resize` command contract so direct invocations now use `--vm-name` with `--vm-size` and optional `--group`, added `--windows`/`--linux` support with actual-VM OS validation, split resize away from the shared move prompt flow so no-parameter resize stays interactive in the current region while fully specified resize runs without an extra confirmation prompt, aligned CLI help and release docs to the new syntax, expanded smoke and code-quality coverage for the updated option contract, and verified the change with PowerShell compatibility checks plus isolated live resize tests against `rg-examplevm-ate1-g1/examplevm` for `Standard_D4as_v5` and back to `Standard_D2as_v5`, restoring the VM to `stopped` at the end.

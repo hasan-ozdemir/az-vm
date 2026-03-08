@@ -1262,7 +1262,7 @@ function Assert-AzVmCommandOptions {
         'show'   { $allowed = @('perf','help','group') }
         'do'     { $allowed = @('perf','help','group','vm-name','vm-action') }
         'move'   { $allowed = @('perf','help','group','vm','vm-region') }
-        'resize' { $allowed = @('perf','help','group','vm','vm-size') }
+        'resize' { $allowed = @('perf','help','group','vm-name','vm-size','windows','linux') }
         'set'    { $allowed = @('perf','help','group','vm','hibernation','nested-virtualization') }
         'exec'   { $allowed = @('perf','windows','linux','help','group','init-task','update-task') }
         'ssh'    { $allowed = @('perf','help','group','vm-name','user') }
@@ -2067,6 +2067,112 @@ function Invoke-AzVmMoveCommand {
 }
 
 # Handles Invoke-AzVmResizeCommand.
+function Get-AzVmPlatformNameFromOsType {
+    param(
+        [string]$OsType
+    )
+
+    $osTypeText = [string]$OsType
+    if ([string]::IsNullOrWhiteSpace([string]$osTypeText)) {
+        return ''
+    }
+
+    $normalized = $osTypeText.Trim().ToLowerInvariant()
+    switch ($normalized) {
+        'windows' { return 'windows' }
+        'linux' { return 'linux' }
+        default { return '' }
+    }
+}
+
+# Handles Test-AzVmResizeDirectRequest.
+function Test-AzVmResizeDirectRequest {
+    param(
+        [hashtable]$Options
+    )
+
+    foreach ($requiredName in @('group','vm-name','vm-size')) {
+        if (-not (Test-AzVmCliOptionPresent -Options $Options -Name $requiredName)) {
+            return $false
+        }
+
+        $rawValue = [string](Get-AzVmCliOptionText -Options $Options -Name $requiredName)
+        if ([string]::IsNullOrWhiteSpace([string]$rawValue)) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
+# Handles Resolve-AzVmResizeTargetSize.
+function Resolve-AzVmResizeTargetSize {
+    param(
+        [hashtable]$Options,
+        [string]$CurrentRegion,
+        [string]$CurrentSize,
+        [hashtable]$ConfigMap
+    )
+
+    $targetSize = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-size')
+    if (-not [string]::IsNullOrWhiteSpace([string]$targetSize)) {
+        return $targetSize.Trim()
+    }
+
+    $priceHours = Get-PriceHoursFromConfig -Config $ConfigMap -DefaultHours 730
+    while ($true) {
+        $sizePick = Select-VmSkuInteractive -Location $CurrentRegion -DefaultVmSize $CurrentSize -PriceHours $priceHours
+        if ([string]::Equals([string]$sizePick, (Get-AzVmSkuPickerRegionBackToken), [System.StringComparison]::Ordinal)) {
+            Write-Host "Resize command keeps the current region fixed. Select another VM size in the same region." -ForegroundColor Yellow
+            continue
+        }
+
+        $resolvedSize = [string]$sizePick
+        if (-not [string]::IsNullOrWhiteSpace([string]$resolvedSize)) {
+            return $resolvedSize.Trim()
+        }
+    }
+}
+
+# Handles Assert-AzVmResizePlatformExpectation.
+function Assert-AzVmResizePlatformExpectation {
+    param(
+        [string]$ActualPlatform,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag,
+        [string]$VmName,
+        [string]$ResourceGroup
+    )
+
+    $expectedPlatform = ''
+    if ($WindowsFlag) {
+        $expectedPlatform = 'windows'
+    }
+    elseif ($LinuxFlag) {
+        $expectedPlatform = 'linux'
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$expectedPlatform)) {
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$ActualPlatform)) {
+        Throw-FriendlyError `
+            -Detail ("Resize command could not resolve the actual platform for VM '{0}' in resource group '{1}'." -f $VmName, $ResourceGroup) `
+            -Code 62 `
+            -Summary "Resize command cannot verify the target VM operating system." `
+            -Hint "Check the VM metadata in Azure and retry without conflicting platform flags."
+    }
+
+    if (-not [string]::Equals([string]$expectedPlatform, [string]$ActualPlatform, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("Resize command expected a {0} VM, but '{1}' in resource group '{2}' is {3}." -f $expectedPlatform, $VmName, $ResourceGroup, $ActualPlatform) `
+            -Code 62 `
+            -Summary "Resize command platform flag does not match the target VM." `
+            -Hint "Use the correct --windows or --linux flag for the existing VM, or omit the platform flag."
+    }
+}
+
 function Invoke-AzVmResizeCommand {
     param(
         [hashtable]$Options,
@@ -2083,14 +2189,106 @@ function Invoke-AzVmResizeCommand {
             -Hint "Use move command for region changes."
     }
 
-    $forwardOptions = Copy-AzVmOptionsMap -Source $Options
-    if (-not (Test-AzVmCliOptionPresent -Options $forwardOptions -Name 'vm-size')) {
-        $forwardOptions['vm-size'] = ''
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $configMap -OperationName 'resize'
+    $resourceGroup = [string]$target.ResourceGroup
+    $vmName = [string]$target.VmName
+    $isDirectRequest = Test-AzVmResizeDirectRequest -Options $Options
+
+    $vmJson = az vm show -g $resourceGroup -n $vmName -o json --only-show-errors
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmJson)) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' was not found in resource group '{1}'." -f $vmName, $resourceGroup) `
+            -Code 62 `
+            -Summary "Resize command cannot continue because VM does not exist." `
+            -Hint "Select an existing VM or run create first."
     }
 
-    $sizeValue = [string](Get-AzVmCliOptionText -Options $forwardOptions -Name 'vm-size')
-    $effectiveAutoMode = $AutoMode -or (-not [string]::IsNullOrWhiteSpace([string]$sizeValue))
-    Invoke-AzVmChangeCommand -Options $forwardOptions -AutoMode:$effectiveAutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -OperationLabel 'resize'
+    $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
+    $currentRegion = [string]$vmObject.location
+    $currentSize = [string]$vmObject.hardwareProfile.vmSize
+    $actualPlatform = Get-AzVmPlatformNameFromOsType -OsType ([string]$vmObject.storageProfile.osDisk.osType)
+    $vmSizeConfigKey = if ([string]::IsNullOrWhiteSpace([string]$actualPlatform)) { 'VM_SIZE' } else { Get-AzVmPlatformVmConfigKey -Platform $actualPlatform -BaseKey 'VM_SIZE' }
+
+    Assert-AzVmResizePlatformExpectation `
+        -ActualPlatform $actualPlatform `
+        -WindowsFlag:$WindowsFlag `
+        -LinuxFlag:$LinuxFlag `
+        -VmName $vmName `
+        -ResourceGroup $resourceGroup
+
+    if ([string]::IsNullOrWhiteSpace([string]$currentRegion)) {
+        Throw-FriendlyError `
+            -Detail ("Resize command could not resolve the Azure region for VM '{0}'." -f $vmName) `
+            -Code 62 `
+            -Summary "Resize command cannot continue because VM region is unknown." `
+            -Hint "Check the VM metadata in Azure, then retry."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$currentSize)) {
+        Throw-FriendlyError `
+            -Detail ("Resize command could not resolve the current VM size for '{0}'." -f $vmName) `
+            -Code 62 `
+            -Summary "Resize command cannot continue because current VM size is unknown." `
+            -Hint "Check the VM metadata in Azure, then retry."
+    }
+
+    $targetSize = Resolve-AzVmResizeTargetSize -Options $Options -CurrentRegion $currentRegion -CurrentSize $currentSize -ConfigMap $configMap
+    Assert-LocationExists -Location $currentRegion
+    Assert-VmSkuAvailableViaRest -Location $currentRegion -VmSize $targetSize
+
+    if ([string]::Equals([string]$targetSize, [string]$currentSize, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("No effective resize operation is required. VM size is already '{0}'." -f $targetSize) -ForegroundColor Yellow
+        return
+    }
+
+    if (-not $isDirectRequest) {
+        $approveResize = Confirm-YesNo -PromptText "Continue with VM size change?" -DefaultYes $false
+        if (-not $approveResize) {
+            Write-Host "Resize command canceled by user." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    Write-Host ("Applying VM size update for '{0}' in '{1}': {2} -> {3}" -f $vmName, $resourceGroup, $currentSize, $targetSize)
+
+    Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+        az vm deallocate -g $resourceGroup -n $vmName -o none --only-show-errors
+        Assert-LastExitCode "az vm deallocate"
+    } | Out-Null
+    $deallocated = Wait-AzVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+    if (-not $deallocated) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' did not reach deallocated state in expected time." -f $vmName) `
+            -Code 62 `
+            -Summary "Resize command stopped because VM deallocation was not confirmed." `
+            -Hint "Check VM power state in Azure and retry resize."
+    }
+
+    Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $resourceGroup, $vmName, $targetSize) -Action {
+        az vm resize -g $resourceGroup -n $vmName --size $targetSize -o none --only-show-errors
+        Assert-LastExitCode "az vm resize"
+    } | Out-Null
+
+    Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+        az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
+        Assert-LastExitCode "az vm start"
+    } | Out-Null
+
+    $running = Wait-AzVmVmRunningState -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 3 -DelaySeconds 10
+    if (-not $running) {
+        Throw-FriendlyError `
+            -Detail "VM did not return to running state after resize operation." `
+            -Code 62 `
+            -Summary "Resize command completed with unhealthy VM power state." `
+            -Hint "Check VM power state in Azure Portal and start VM manually if needed."
+    }
+
+    Set-DotEnvValue -Path $envFilePath -Key $vmSizeConfigKey -Value $targetSize
+    $script:ConfigOverrides[$vmSizeConfigKey] = $targetSize
+
+    Write-Host ("Resize completed successfully. VM size is now '{0}'." -f $targetSize) -ForegroundColor Green
 }
 
 # Handles Invoke-AzVmSetCommand.

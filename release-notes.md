@@ -2,16 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.240 - 2026-03-08
+## Release 2026.3.8.241 - 2026-03-08
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, and a new state-aware VM power-action command.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, and a corrected direct resize contract.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
 - One orchestrator for Windows and Linux with parity-first step semantics.
 - Catalog-driven guest task execution with explicit priority and timeout metadata.
 - New `do` command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against managed VMs.
+- Corrected `resize` command syntax to use `--vm-name`, added `--windows`/`--linux` support, and kept resize interactive when parameters are omitted.
 - External `ssh` and `rdp` connection commands for managed VMs.
 - Hardened naming, env-key, and validation contracts across provisioning flows.
 - Post-deploy feature enablement for hibernation and nested-virtualization support checks.
@@ -22,6 +23,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Legacy command names and aliases have been removed rather than preserved.
 - `configure` is the current configuration-preview command; `config` is no longer part of the public surface.
 - `do` is the current VM power-action command; `release` is no longer a valid VM action token.
+- `resize` now uses `--vm-name`; the legacy `--vm` form is no longer part of the public resize contract.
 - `VM_NAME` is the single naming seed for managed resources.
 - `VM_SSH_PORT` and `VM_RDP_PORT` are the canonical connection-port keys.
 - `VM_TASK_OUTCOME_MODE` is the canonical task outcome policy key.
