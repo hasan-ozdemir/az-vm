@@ -3601,3 +3601,14 @@ update: agents.md belgesine şöyle bir kural ekle: bu repo boyunca asistan tara
 **Assistant Summary**
 
 Added a detailed repository-context assimilation rule to `AGENTS.md` requiring baseline scanning of codebase, documentation, tests, and current contracts before every prompt implementation and at the start of each new coding session, then aligned release documents to `2026.3.8.235` and kept prompt-history continuity updated.
+### 2026-03-08 03:41 TRT
+
+**User Prompt**
+
+````text
+fix: agents.md kurallarımızda ufak bir gevşeltme yapalım: kod üzerinde hiç bir değişikliğe sebep olmayan kullanıcı prompt'ları için prompt-history.md belgesinde bir güncelleme yapılmasın; asistan sadece kullanıcının promptuna cevap versin; bir de bu promptu bu repo'ya kaydetmek isteyip istemediğini sorsun; eğer kullanıcı "evet" derse ya da pozitif bir cevap verirse, işte o zaman kullanıcı ile asistan arasında geçen son dialog da prompt-history.md belgesine kaydedilip git commit atılsın; bu özel bir istisnadır; kodda değişikliğe sebep olan her bir kullanıcı promptu, asistanın verdiği cevap ile birlikte aynen prompt-history.md belgesine kaydedilip git commit atılmalı.
+````
+
+**Assistant Summary**
+
+Relaxed the prompt-history contract so only prompts that change repo files are mandatory prompt-history entries, while non-mutating prompts are answered directly and recorded only after explicit user confirmation, then aligned `AGENTS.md`, `README.md`, `CHANGELOG.md`, `release-notes.md`, and `tests/documentation-contract-check.ps1`, advanced the documented release label to `2026.3.8.237`, and re-ran the documentation contract plus code-quality checks successfully.

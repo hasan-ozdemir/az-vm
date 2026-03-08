@@ -134,9 +134,12 @@ Use these sources in this order when maintaining the repo:
 - Keep changelog and release-notes version labels aligned for the current documented release.
 
 ## Prompt-History Rule
-- After every completed user-assistant interaction, append the user's raw prompt and the assistant's final summary to `docs/prompt-history.md`.
-- Maintain full two-way dialog continuity.
-- Do not omit completed turns.
+- For every completed user prompt that causes code or repo file changes, append the user's raw prompt and the assistant's final summary to `docs/prompt-history.md`.
+- For user prompts that do not cause any repo file changes, do not update `docs/prompt-history.md` automatically.
+- For non-mutating prompts, the assistant must answer normally and then ask whether the user wants that prompt recorded in the repo history.
+- If the user replies yes or gives another clearly positive confirmation, append the most recent user-assistant dialog to `docs/prompt-history.md` and create the corresponding git commit as a special exception.
+- Maintain full two-way dialog continuity for recorded turns.
+- Do not omit completed turns that changed repo files.
 - Keep the file appendable, chronologically ordered, and human-readable.
 - Use the relevant `.codex` JSONL files as the primary source when reconstructing past turns.
 

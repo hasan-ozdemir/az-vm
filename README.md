@@ -161,7 +161,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.8.235`.
+- The current documented release is `2026.3.8.237`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.
@@ -207,4 +207,5 @@ When changing this repo:
 - update docs, tests, and config contracts together.
 - keep current command names and env keys consistent across help, README, and runtime messages.
 - prefer isolated diagnosis over destructive full rebuilds unless the user explicitly asks for a rebuild.
-- update `docs/prompt-history.md` and create the contextual git commit before presenting the final summary.
+- for prompts that change repo files, update `docs/prompt-history.md` and create the contextual git commit before presenting the final summary.
+- for prompts that do not change repo files, answer directly and ask whether the user wants that turn recorded; only append to `docs/prompt-history.md` and create a git commit after an explicit positive confirmation.

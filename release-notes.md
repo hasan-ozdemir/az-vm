@@ -2,7 +2,7 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.235 - 2026-03-08
+## Release 2026.3.8.237 - 2026-03-08
 
 ### Summary
 This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, and explicit hook enable/disable controls.
@@ -49,11 +49,12 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Removed runtime auto-sync writes for task catalogs and moved catalog handling to manual-only editing.
 - Standardized catalog fallback defaults to `priority=1000` and `timeout=180` when entries or timeout values are missing.
 - Added a strict `AGENTS.md` rule requiring repository-wide context assimilation before implementing each prompt.
+- Relaxed the prompt-history policy so non-mutating prompts are only recorded on explicit user confirmation, while repo-changing prompts still require prompt-history capture plus a commit.
 
 ### Operator Notes
 - CI remains static and non-live. Azure provisioning is intentionally excluded from automated workflows.
 - Some Windows application installs may still require first interactive sign-in for full activation even after unattended installation succeeds.
-- `docs/prompt-history.md` is intended to be append-only and updated after each completed interaction.
+- `docs/prompt-history.md` is append-only for recorded turns; repo-changing prompts are mandatory entries, while non-mutating prompts are recorded only after explicit user confirmation.
 
 ### Known Limitations
 - No live Azure end-to-end validation runs in CI.

@@ -58,7 +58,9 @@ foreach ($token in $requiredDocTokens) {
 Assert-True -Condition ($readmeText -match 'tools[\\/]+enable-git-hooks\.ps1') -Message 'README.md must mention tools/enable-git-hooks.ps1.'
 Assert-True -Condition ($readmeText -match 'tools[\\/]+disable-git-hooks\.ps1') -Message 'README.md must mention tools/disable-git-hooks.ps1.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('docs/prompt-history.md')) -Message 'AGENTS.md must mention docs/prompt-history.md.'
-Assert-True -Condition ($agentsText -match [regex]::Escape('After every completed user-assistant interaction')) -Message 'AGENTS.md must define the prompt-history append rule.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('For every completed user prompt that causes code or repo file changes')) -Message 'AGENTS.md must define the mandatory prompt-history rule for repo-changing prompts.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('For user prompts that do not cause any repo file changes')) -Message 'AGENTS.md must define the non-mutating prompt-history exception.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('If the user replies yes or gives another clearly positive confirmation')) -Message 'AGENTS.md must define the opt-in recording path for non-mutating prompts.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('YYYY.M.D.N')) -Message 'AGENTS.md must define the release versioning format.'
 
 $legacyTokens = @('SSH_PORT','TASK_OUTCOME_MODE','SERVER_NAME','VM_USER','VM_PASS','NAMING_TEMPLATE_ACTIVE','az-vm config ','substep mode')
