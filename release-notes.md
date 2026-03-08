@@ -2,15 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.239 - 2026-03-08
+## Release 2026.3.8.240 - 2026-03-08
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, and explicit hook enable/disable controls.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, and a new state-aware VM power-action command.
 
 ### Highlights
-- Unified command surface for configure, create, update, inspect, connect, move, resize, set, and delete workflows.
+- Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
 - One orchestrator for Windows and Linux with parity-first step semantics.
 - Catalog-driven guest task execution with explicit priority and timeout metadata.
+- New `do` command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against managed VMs.
 - External `ssh` and `rdp` connection commands for managed VMs.
 - Hardened naming, env-key, and validation contracts across provisioning flows.
 - Post-deploy feature enablement for hibernation and nested-virtualization support checks.
@@ -20,6 +21,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 ### Breaking and Contract-Significant Changes
 - Legacy command names and aliases have been removed rather than preserved.
 - `configure` is the current configuration-preview command; `config` is no longer part of the public surface.
+- `do` is the current VM power-action command; `release` is no longer a valid VM action token.
 - `VM_NAME` is the single naming seed for managed resources.
 - `VM_SSH_PORT` and `VM_RDP_PORT` are the canonical connection-port keys.
 - `VM_TASK_OUTCOME_MODE` is the canonical task outcome policy key.

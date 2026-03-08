@@ -44,7 +44,7 @@ $changelogText = Get-Content -LiteralPath $changelogPath -Raw
 $releaseNotesText = Get-Content -LiteralPath $releaseNotesPath -Raw
 $promptHistoryText = Get-Content -LiteralPath $promptHistoryPath -Raw
 
-$requiredCommandTokens = @('configure','create','update','group','show','exec','ssh','rdp','move','resize','set','delete','help')
+$requiredCommandTokens = @('configure','create','update','group','show','do','exec','ssh','rdp','move','resize','set','delete','help')
 foreach ($token in $requiredCommandTokens) {
     $commandNeedle = ([string][char]96) + $token + ([string][char]96)
     Assert-True -Condition ($readmeText.Contains($commandNeedle)) -Message ("README.md must mention command '{0}'." -f $token)

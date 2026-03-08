@@ -24,6 +24,7 @@
 - `update`: rerun create-or-update logic on existing managed resources.
 - `group`: list or select managed resource groups.
 - `show`: print a human-readable resource and VM inventory.
+- `do`: inspect or change the power/lifecycle state of one managed VM.
 - `exec`: run one init task, one update task, or open an interactive remote shell path.
 - `ssh`: launch the local Windows OpenSSH client for a managed VM.
 - `rdp`: launch the local Remote Desktop client for a managed Windows VM.
@@ -51,7 +52,7 @@ Execution semantics:
 ## Runtime Modes
 - Default mode is `interactive`.
 - `--auto` / `-a` applies to `create`, `update`, and `delete`.
-- `show`, `ssh`, and `rdp` are operator-style commands and do not need `--auto`.
+- `show`, `do`, `ssh`, and `rdp` are operator-style commands and do not need `--auto`.
 - `exec` is interactive when no task selector is provided, otherwise direct.
 
 ## Platform Selection
@@ -185,6 +186,10 @@ Typical workflows:
 
 # inspect the selected group
 .\az-vm.cmd show --group=rg-examplevm-ate1-g1
+
+# inspect or change one VM lifecycle state
+.\az-vm.cmd do --vm-action=status --vm-name=examplevm
+.\az-vm.cmd do --vm-action=deallocate --group=rg-examplevm-ate1-g1 --vm-name=examplevm
 
 # run one guest update task
 .\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --windows

@@ -50,7 +50,7 @@ Use these sources in this order when maintaining the repo:
 - Keep command behavior deterministic across interactive and auto flows.
 
 ## Command-Surface Rules
-- Current public commands are: `configure`, `create`, `update`, `group`, `show`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
+- Current public commands are: `configure`, `create`, `update`, `group`, `show`, `do`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
 - Do not preserve removed commands or aliases once the repo has cut over to a new surface.
 - If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
 - Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.

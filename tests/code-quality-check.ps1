@@ -172,8 +172,10 @@ Invoke-AuditStep -Name "CLI help smoke" -Action {
         @("help"),
         @("help","create"),
         @("help","configure"),
+        @("help","do"),
         @("create","--help"),
         @("configure","--help"),
+        @("do","--help"),
         @("delete","--help")
     )
 

@@ -3648,3 +3648,15 @@ son sürümle değişmiş sürümü karşılaştırıp; benim yukarıda verdiği
 **Assistant Summary**
 
 Compared the committed and re-modified `windows/update/vm-update-task-catalog.json` variants, merged them by keeping the renamed `19-install-microsoft-azd`, `20-private-local-task`, and `28-health-snapshot` task names while preserving the user-adjusted late ordering intent with `27-windows-ux-public-desktop-shortcuts` at priority `98` and `28-health-snapshot` at priority `99`, then advanced the documented release to `2026.3.8.239`.
+
+### 2026-03-08 23:08 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented the new state-aware `do` command with `--vm-action=status|start|restart|stop|deallocate|hibernate`, added generic managed-VM target resolution plus interactive group/vm/action selection, updated CLI help and repository docs to include the new command surface and the retirement of `release`, expanded smoke/documentation/help coverage for action parsing and lifecycle-state normalization, advanced the documented release to `2026.3.8.240`, and verified the feature with smoke, code-quality, and PowerShell compatibility checks plus isolated live Azure tests against `rg-examplevm-ate1-g1/examplevm`, restoring the VM to `stopped` at the end.

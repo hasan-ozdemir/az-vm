@@ -286,6 +286,10 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     Assert-True -Condition ([string]$parsedHelpTopic.Command -eq "help") -Message "help command parse failed."
     Assert-True -Condition ([string]$parsedHelpTopic.HelpTopic -eq "create") -Message "Help topic positional parse failed."
 
+    $parsedDoTopic = Parse-AzVmCliArguments -CommandToken "help" -RawArgs @("do")
+    Assert-True -Condition ([string]$parsedDoTopic.Command -eq "help") -Message "help do parse failed."
+    Assert-True -Condition ([string]$parsedDoTopic.HelpTopic -eq "do") -Message "Help topic parse failed for do."
+
     $parsedCommandHelp = Parse-AzVmCliArguments -CommandToken "create" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedCommandHelp.Command -eq "create") -Message "Command with --help parse failed."
     Assert-True -Condition ($parsedCommandHelp.Options.ContainsKey("help")) -Message "Command --help option was not captured."
@@ -298,6 +302,10 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
 
     $parsedRdpHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedRdpHelp.Command -eq "rdp") -Message "RDP command with --help parse failed."
+
+    $parsedDoHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedDoHelp.Command -eq "do") -Message "Do command with --help parse failed."
+    Assert-True -Condition ($parsedDoHelp.Options.ContainsKey("help")) -Message "Do command --help option was not captured."
 }
 
 Invoke-Test -Name "Task catalog fallback defaults" -Action {
@@ -346,13 +354,14 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "create" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "update" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "configure" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "do" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "move" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "resize" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "set" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "exec" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ help = $true }
-    Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
@@ -361,8 +370,14 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
 }
 
-Invoke-Test -Name "SSH and RDP reject legacy vm option" -Action {
-    foreach ($commandName in @('ssh','rdp')) {
+Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'examplevm'; 'vm-action' = 'status' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'deallocate' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
+}
+
+Invoke-Test -Name "Do, SSH, and RDP reject legacy vm option" -Action {
+    foreach ($commandName in @('do','ssh','rdp')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'examplevm' }
@@ -374,8 +389,19 @@ Invoke-Test -Name "SSH and RDP reject legacy vm option" -Action {
     }
 }
 
+Invoke-Test -Name "Do command rejects retired release action" -Action {
+    $threw = $false
+    try {
+        Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = 'release' }
+    }
+    catch {
+        $threw = $true
+    }
+    Assert-True -Condition $threw -Message "Do command must reject retired release action."
+}
+
 Invoke-Test -Name "Auto option scope contract" -Action {
-    $invalidAutoCommands = @('configure','move','resize','set','exec','ssh','rdp','show','group','help')
+    $invalidAutoCommands = @('configure','show','do','move','resize','set','exec','ssh','rdp','group','help')
     foreach ($commandName in $invalidAutoCommands) {
         $threw = $false
         try {
@@ -406,11 +432,154 @@ Invoke-Test -Name "Help --command syntax was removed" -Action {
 Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-AzVmCommandHelp -Topic "create"
     Show-AzVmCommandHelp -Topic "configure"
+    Show-AzVmCommandHelp -Topic "do"
     Show-AzVmCommandHelp -Topic "ssh"
     Show-AzVmCommandHelp -Topic "rdp"
     Show-AzVmCommandHelp -Topic "show"
     Show-AzVmCommandHelp -Topic ""
     Show-AzVmCommandHelp -Overview
+}
+
+Invoke-Test -Name "Do lifecycle snapshot normalization" -Action {
+    $vmObject = [pscustomobject]@{
+        location = 'austriaeast'
+        osType = 'Windows'
+        hibernationEnabled = $true
+    }
+
+    $stoppedSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
+        -ResourceGroup 'rg-examplevm-ate1-g1' `
+        -VmName 'examplevm' `
+        -VmObject $vmObject `
+        -InstanceViewObject ([pscustomobject]@{
+            instanceView = [pscustomobject]@{
+                statuses = @(
+                    [pscustomobject]@{ code = 'ProvisioningState/succeeded'; displayStatus = 'Provisioning succeeded' },
+                    [pscustomobject]@{ code = 'PowerState/stopped'; displayStatus = 'VM stopped' }
+                )
+            }
+        })
+    Assert-True -Condition ([string]$stoppedSnapshot.NormalizedState -eq 'stopped') -Message "Stopped VM state normalization failed."
+
+    $deallocatedSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
+        -ResourceGroup 'rg-examplevm-ate1-g1' `
+        -VmName 'examplevm' `
+        -VmObject $vmObject `
+        -InstanceViewObject ([pscustomobject]@{
+            instanceView = [pscustomobject]@{
+                statuses = @(
+                    [pscustomobject]@{ code = 'ProvisioningState/succeeded'; displayStatus = 'Provisioning succeeded' },
+                    [pscustomobject]@{ code = 'PowerState/deallocated'; displayStatus = 'VM deallocated' }
+                )
+            }
+        })
+    Assert-True -Condition ([string]$deallocatedSnapshot.NormalizedState -eq 'deallocated') -Message "Deallocated VM state normalization failed."
+
+    $hibernatedSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
+        -ResourceGroup 'rg-examplevm-ate1-g1' `
+        -VmName 'examplevm' `
+        -VmObject $vmObject `
+        -InstanceViewObject ([pscustomobject]@{
+            instanceView = [pscustomobject]@{
+                statuses = @(
+                    [pscustomobject]@{ code = 'ProvisioningState/succeeded'; displayStatus = 'Provisioning succeeded' },
+                    [pscustomobject]@{ code = 'PowerState/deallocated'; displayStatus = 'VM deallocated' },
+                    [pscustomobject]@{ code = 'HibernationState/hibernated'; displayStatus = 'Hibernated' }
+                )
+            }
+        })
+    Assert-True -Condition ([string]$hibernatedSnapshot.NormalizedState -eq 'hibernated') -Message "Hibernated VM state normalization failed."
+
+    $otherSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
+        -ResourceGroup 'rg-examplevm-ate1-g1' `
+        -VmName 'examplevm' `
+        -VmObject $vmObject `
+        -InstanceViewObject ([pscustomobject]@{
+            instanceView = [pscustomobject]@{
+                statuses = @(
+                    [pscustomobject]@{ code = 'ProvisioningState/succeeded'; displayStatus = 'Provisioning succeeded' },
+                    [pscustomobject]@{ code = 'PowerState/starting'; displayStatus = 'VM starting' }
+                )
+            }
+        })
+    Assert-True -Condition ([string]$otherSnapshot.NormalizedState -eq 'other') -Message "Unknown VM state should normalize to other."
+}
+
+Invoke-Test -Name "Do action eligibility contract" -Action {
+    function New-TestDoSnapshot {
+        param(
+            [string]$NormalizedState,
+            [string]$PowerStateDisplay,
+            [bool]$HibernationEnabled = $true,
+            [string]$ProvisioningStateCode = 'ProvisioningState/succeeded',
+            [string]$ProvisioningStateDisplay = 'Provisioning succeeded',
+            [string]$HibernationStateDisplay = '',
+            [string]$HibernationStateCode = ''
+        )
+
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-examplevm-ate1-g1'
+            VmName = 'examplevm'
+            NormalizedState = $NormalizedState
+            PowerStateDisplay = $PowerStateDisplay
+            PowerStateCode = ''
+            HibernationEnabled = $HibernationEnabled
+            ProvisioningStateCode = $ProvisioningStateCode
+            ProvisioningStateDisplay = $ProvisioningStateDisplay
+            HibernationStateDisplay = $HibernationStateDisplay
+            HibernationStateCode = $HibernationStateCode
+        }
+    }
+
+    Assert-AzVmDoActionAllowed -ActionName 'status' -Snapshot (New-TestDoSnapshot -NormalizedState 'other' -PowerStateDisplay 'VM starting')
+    Assert-AzVmDoActionAllowed -ActionName 'restart' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
+    Assert-AzVmDoActionAllowed -ActionName 'deallocate' -Snapshot (New-TestDoSnapshot -NormalizedState 'hibernated' -PowerStateDisplay 'VM deallocated' -HibernationStateDisplay 'Hibernated' -HibernationStateCode 'HibernationState/hibernated')
+
+    $invalidCases = @(
+        @{ Action = 'start'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running') },
+        @{ Action = 'hibernate'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -HibernationEnabled:$false) },
+        @{ Action = 'stop'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -ProvisioningStateCode 'ProvisioningState/updating' -ProvisioningStateDisplay 'Updating') }
+    )
+
+    foreach ($case in @($invalidCases)) {
+        $threw = $false
+        try {
+            Assert-AzVmDoActionAllowed -ActionName ([string]$case.Action) -Snapshot $case.Snapshot
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("Do action eligibility should reject invalid case '{0}'." -f [string]$case.Action)
+    }
+}
+
+Invoke-Test -Name "Do interactive action selection" -Action {
+    $snapshot = [pscustomobject]@{
+        ResourceGroup = 'rg-examplevm-ate1-g1'
+        VmName = 'examplevm'
+        NormalizedState = 'stopped'
+        PowerStateDisplay = 'VM stopped'
+        PowerStateCode = 'PowerState/stopped'
+        HibernationEnabled = $true
+        ProvisioningStateCode = 'ProvisioningState/succeeded'
+        ProvisioningStateDisplay = 'Provisioning succeeded'
+        HibernationStateDisplay = ''
+        HibernationStateCode = ''
+    }
+
+    try {
+        function global:Read-Host { param([string]$Prompt) return '' }
+        $defaultAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
+        Assert-True -Condition ([string]$defaultAction -eq 'status') -Message "Interactive do action default should be status."
+
+        function global:Read-Host { param([string]$Prompt) return '5' }
+        $pickedAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
+        Assert-True -Condition ([string]$pickedAction -eq 'deallocate') -Message "Interactive do action selection by number failed."
+    }
+    finally {
+        Remove-Item Function:\global:Read-Host -ErrorAction SilentlyContinue
+        Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+    }
 }
 
 Invoke-Test -Name "Task token replacement" -Action {
