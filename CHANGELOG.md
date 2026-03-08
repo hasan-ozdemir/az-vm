@@ -10,6 +10,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Upgraded `README.md` into a fuller operator and contributor guide aligned with the current CLI, step flow, task model, and configuration contract.
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
 - Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.
+- Normalized `CHANGELOG.md` and `release-notes.md` to LF line endings and pinned that expectation in `.gitattributes` so documentation-contract checks behave consistently.
 - Removed the retired `docs/reconstruction/` artifact set after its remaining value had been folded into the maintained documentation set.
 - Added an explicit repository-context assimilation rule to `AGENTS.md` so each prompt implementation starts with codebase/documentation/test baseline scanning and alignment.
 - Relaxed the prompt-history rule so non-mutating prompts are only recorded on explicit user opt-in, while repo-changing prompts remain mandatory prompt-history entries with a commit.

@@ -40,6 +40,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Added a GitHub Actions `quality-gate.yml` workflow and native local git hooks.
 - Replaced the one-way hook installer with explicit enable/disable scripts for local git-hook control.
 - Adopted commit-count version labels for `CHANGELOG.md` and `release-notes.md`.
+- Normalized `CHANGELOG.md` and `release-notes.md` to LF line endings and pinned that expectation in `.gitattributes` so documentation-contract checks behave consistently.
 - Removed the retired `docs/reconstruction/` folder after folding its remaining value into the maintained documentation set.
 - Renamed the `tests/` scripts to clearer, self-explanatory dash-separated file names.
 - Renamed the documentation contract gate to `documentation-contract-check` for clearer test intent.

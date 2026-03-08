@@ -3612,3 +3612,15 @@ fix: agents.md kurallarımızda ufak bir gevşeltme yapalım: kod üzerinde hiç
 **Assistant Summary**
 
 Relaxed the prompt-history contract so only prompts that change repo files are mandatory prompt-history entries, while non-mutating prompts are answered directly and recorded only after explicit user confirmation, then aligned `AGENTS.md`, `README.md`, `CHANGELOG.md`, `release-notes.md`, and `tests/documentation-contract-check.ps1`, advanced the documented release label to `2026.3.8.237`, and re-ran the documentation contract plus code-quality checks successfully.
+
+### 2026-03-08 03:55 TRT
+
+**User Prompt**
+
+````text
+changelog.md belgesindeki satır sonları konusunda yaşanan tutarsızlığı giderebilir misin?
+````
+
+**Assistant Summary**
+
+Resolved the release-document line-ending inconsistency by adding `.gitattributes` rules that pin `CHANGELOG.md` and `release-notes.md` to LF, normalized both files to LF, documented the change in the current release notes and changelog entry, and re-ran the documentation contract and code-quality checks successfully.
