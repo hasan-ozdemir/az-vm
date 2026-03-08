@@ -2,17 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.9.243 - 2026-03-09
+## Release 2026.3.9.244 - 2026-03-09
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, connection commands that now require a running VM, and a clarified Azure hibernation contract.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, and connection commands that now require a running VM.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
 - One orchestrator for Windows and Linux with parity-first step semantics.
 - Catalog-driven guest task execution with explicit priority and timeout metadata.
-- New `do` command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate-deallocate` actions against managed VMs.
-- `do --vm-action=hibernate` is now rejected with a precise hint because Azure CLI only exposes hibernation through deallocation; use `stop` to keep the VM provisioned or `hibernate-deallocate` for real hibernation.
+- New `do` command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against managed VMs.
+- `do --vm-action=hibernate` remains the public hibernation action; Azure still executes it through the deallocation-based hibernate path, so `stop` remains the non-deallocated power-off path.
 - Corrected `resize` command syntax to use `--vm-name`, added `--windows`/`--linux` support, and kept resize interactive when parameters are omitted.
 - `ssh` and `rdp` now refuse politely unless the target VM is already running, with a direct hint to start it through `do`.
 - External `ssh` and `rdp` connection commands for managed VMs.

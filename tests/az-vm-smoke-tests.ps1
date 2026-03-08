@@ -383,7 +383,7 @@ Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
 Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'examplevm'; 'vm-action' = 'status' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'deallocate' }
-    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'hibernate-deallocate' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'hibernate' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
 
@@ -400,8 +400,8 @@ Invoke-Test -Name "Resize, Do, SSH, and RDP reject legacy vm option" -Action {
     }
 }
 
-Invoke-Test -Name "Do command rejects retired or unsupported power aliases" -Action {
-    foreach ($actionName in @('release','hibernate')) {
+Invoke-Test -Name "Do command rejects retired or unknown power actions" -Action {
+    foreach ($actionName in @('release','sleep')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = $actionName }
@@ -614,11 +614,11 @@ Invoke-Test -Name "Do action eligibility contract" -Action {
     Assert-AzVmDoActionAllowed -ActionName 'status' -Snapshot (New-TestDoSnapshot -NormalizedState 'other' -PowerStateDisplay 'VM starting')
     Assert-AzVmDoActionAllowed -ActionName 'restart' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
     Assert-AzVmDoActionAllowed -ActionName 'deallocate' -Snapshot (New-TestDoSnapshot -NormalizedState 'hibernated' -PowerStateDisplay 'VM deallocated' -HibernationStateDisplay 'Hibernated' -HibernationStateCode 'HibernationState/hibernated')
-    Assert-AzVmDoActionAllowed -ActionName 'hibernate-deallocate' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
+    Assert-AzVmDoActionAllowed -ActionName 'hibernate' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
 
     $invalidCases = @(
         @{ Action = 'start'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running') },
-        @{ Action = 'hibernate-deallocate'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -HibernationEnabled:$false) },
+        @{ Action = 'hibernate'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -HibernationEnabled:$false) },
         @{ Action = 'stop'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -ProvisioningStateCode 'ProvisioningState/updating' -ProvisioningStateDisplay 'Updating') }
     )
 
@@ -659,7 +659,7 @@ Invoke-Test -Name "Do interactive action selection" -Action {
 
         function global:Read-Host { param([string]$Prompt) return '6' }
         $hibernateAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
-        Assert-True -Condition ([string]$hibernateAction -eq 'hibernate-deallocate') -Message "Interactive do action selection must expose hibernate-deallocate."
+        Assert-True -Condition ([string]$hibernateAction -eq 'hibernate') -Message "Interactive do action selection must expose hibernate."
     }
     finally {
         Remove-Item Function:\global:Read-Host -ErrorAction SilentlyContinue

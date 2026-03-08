@@ -4068,7 +4068,7 @@ function Resolve-AzVmDoActionName {
             -Detail "Option '--vm-action' requires a value." `
             -Code 2 `
             -Summary "VM action is missing." `
-            -Hint "Use --vm-action=status|start|restart|stop|deallocate|hibernate-deallocate."
+            -Hint "Use --vm-action=status|start|restart|stop|deallocate|hibernate."
     }
 
     if ($normalized -eq 'release') {
@@ -4079,20 +4079,12 @@ function Resolve-AzVmDoActionName {
             -Hint "Use --vm-action=deallocate."
     }
 
-    if ($normalized -eq 'hibernate') {
-        Throw-FriendlyError `
-            -Detail "Option '--vm-action=hibernate' is not supported because Azure hibernation deallocates the VM." `
-            -Code 2 `
-            -Summary "Non-deallocated hibernate is not available." `
-            -Hint "Use --vm-action=stop to keep the VM provisioned, or --vm-action=hibernate-deallocate for real Azure hibernation."
-    }
-
-    if ($normalized -notin @('status','start','restart','stop','deallocate','hibernate-deallocate')) {
+    if ($normalized -notin @('status','start','restart','stop','deallocate','hibernate')) {
         Throw-FriendlyError `
             -Detail ("Invalid --vm-action value '{0}'." -f $RawValue) `
             -Code 2 `
             -Summary "VM action is invalid." `
-            -Hint "Use --vm-action=status|start|restart|stop|deallocate|hibernate-deallocate."
+            -Hint "Use --vm-action=status|start|restart|stop|deallocate|hibernate."
     }
 
     return $normalized
@@ -4279,7 +4271,7 @@ function Get-AzVmDoAllowedSourceStates {
         'restart' { return @('started') }
         'stop' { return @('started') }
         'deallocate' { return @('started','stopped','hibernated') }
-        'hibernate-deallocate' { return @('started') }
+        'hibernate' { return @('started') }
         default { return @() }
     }
 }
@@ -4311,7 +4303,7 @@ function Assert-AzVmDoActionAllowed {
             -Hint "Wait until provisioning succeeds, run '--vm-action=status', then retry."
     }
 
-    if ($ActionName -in @('hibernate','hibernate-deallocate') -and -not [bool]$Snapshot.HibernationEnabled) {
+    if ($ActionName -eq 'hibernate' -and -not [bool]$Snapshot.HibernationEnabled) {
         Throw-FriendlyError `
             -Detail ("Requested action '{0}' cannot continue for VM '{1}' in resource group '{2}' because hibernation is not enabled. {3}" -f $ActionName, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
             -Code 66 `
@@ -4383,7 +4375,7 @@ function Read-AzVmDoActionInteractive {
         [pscustomobject]@{ Number = 3; Action = 'restart'; Label = 'restart' },
         [pscustomobject]@{ Number = 4; Action = 'stop'; Label = 'stop' },
         [pscustomobject]@{ Number = 5; Action = 'deallocate'; Label = 'deallocate' },
-        [pscustomobject]@{ Number = 6; Action = 'hibernate-deallocate'; Label = 'hibernate-deallocate' }
+        [pscustomobject]@{ Number = 6; Action = 'hibernate'; Label = 'hibernate' }
     )
 
     foreach ($choice in @($choices)) {
@@ -4539,9 +4531,9 @@ function Invoke-AzVmDoCommand {
                 -AzArguments @('vm','deallocate','-g',$resourceGroup,'-n',$vmName,'-o','none','--only-show-errors') `
                 -AzContext 'az vm deallocate'
         }
-        'hibernate-deallocate' {
+        'hibernate' {
             $desiredState = 'hibernated'
-            $successVerb = 'hibernated and deallocated'
+            $successVerb = 'hibernated'
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `

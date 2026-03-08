@@ -191,8 +191,8 @@ Typical workflows:
 # inspect or change one VM lifecycle state
 .\az-vm.cmd do --vm-action=status --vm-name=examplevm
 .\az-vm.cmd do --vm-action=deallocate --group=rg-examplevm-ate1-g1 --vm-name=examplevm
-.\az-vm.cmd do --vm-action=hibernate-deallocate --group=rg-examplevm-ate1-g1 --vm-name=examplevm
-.\az-vm.cmd do --vm-action=stop --group=rg-examplevm-ate1-g1 --vm-name=examplevm    # keep provisioned; Azure hibernation always deallocates
+.\az-vm.cmd do --vm-action=hibernate --group=rg-examplevm-ate1-g1 --vm-name=examplevm
+.\az-vm.cmd do --vm-action=stop --group=rg-examplevm-ate1-g1 --vm-name=examplevm    # keep provisioned; Azure hibernation deallocates
 
 # resize the active VM in-place
 .\az-vm.cmd resize --vm-name=examplevm --vm-size=Standard_D4as_v5 --group=rg-examplevm-ate1-g1

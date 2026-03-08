@@ -3696,3 +3696,15 @@ task: do komutu --vm-action=hibernate parametresiyle çalıştığında hem hibe
 **Assistant Summary**
 
 Updated the `do` command to avoid a misleading Azure hibernation contract: `--vm-action=hibernate-deallocate` is now the only real hibernation action and continues to call Azure hibernation-through-deallocation, while plain `--vm-action=hibernate` is rejected with a precise hint because the current Azure CLI exposes hibernation only on `az vm deallocate --hibernate` and `stop` remains the non-deallocated power-off path; aligned interactive action selection, CLI help, README examples, changelog, and release notes to the new naming, then re-ran smoke, documentation, code-quality, and PowerShell compatibility checks successfully.
+
+### 2026-03-09 00:53 TRT
+
+**User Prompt**
+
+````text
+hayır; retired/unsupported yerine, hibernate-deallocate parametresi hiç olmamış gibi tamamen kaldır tüm kalıntılarıyla birlikte...
+````
+
+**Assistant Summary**
+
+Removed all live `hibernate-deallocate` traces from the current `do` command contract so runtime parsing, interactive selection, help output, README examples, changelog, release notes, and smoke tests now expose only `--vm-action=hibernate` again, while preserving the existing Azure behavior that hibernation still runs through the platform's deallocation-based hibernate path; then re-ran smoke, documentation, code-quality, and PowerShell compatibility checks successfully.
