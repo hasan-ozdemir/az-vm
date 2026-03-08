@@ -3684,3 +3684,15 @@ fix: rdp ve ssh komutları lütfen sadece vm açık iken çalışsınlar; aksi t
 **Assistant Summary**
 
 Made `ssh` and `rdp` state-aware so both commands now inspect the managed VM lifecycle state before resolving credentials or launching local clients, refuse politely when the target VM is not running, and point the operator to `az-vm do --vm-action=start`; also aligned command help, README connection guidance, release docs, and smoke coverage for the new running-state guard, then re-ran smoke, documentation, code-quality, and PowerShell compatibility checks successfully.
+
+### 2026-03-09 00:27 TRT
+
+**User Prompt**
+
+````text
+task: do komutu --vm-action=hibernate parametresiyle çalıştığında hem hibernate hem deallocate yapıyor; bu davranışı şöyle güncelleyelim: --vm-action=hibernate şu anlama gelsin: vm hibernate edilerek stop edilsin, yani deallocate edilmesin; eğer --vm-action=hibernate-deallocate parametresi verirsem, işte o zaman hibernate ve deallocate etsin.
+````
+
+**Assistant Summary**
+
+Updated the `do` command to avoid a misleading Azure hibernation contract: `--vm-action=hibernate-deallocate` is now the only real hibernation action and continues to call Azure hibernation-through-deallocation, while plain `--vm-action=hibernate` is rejected with a precise hint because the current Azure CLI exposes hibernation only on `az vm deallocate --hibernate` and `stop` remains the non-deallocated power-off path; aligned interactive action selection, CLI help, README examples, changelog, and release notes to the new naming, then re-ran smoke, documentation, code-quality, and PowerShell compatibility checks successfully.

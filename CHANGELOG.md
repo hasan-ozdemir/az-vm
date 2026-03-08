@@ -3,13 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.8.242] - 2026-03-08
+## [2026.3.9.243] - 2026-03-09
 
 ### Features
-- Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
+- Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate-deallocate` actions against one managed VM.
 - Made the new `do` command state-aware so it inspects Azure power/provisioning/hibernation state before mutating and exits politely with a non-zero code when the requested action is not valid for the current VM state.
 
 ### Fixes
+- Split Azure hibernation naming in `do` so real hibernation now lives under `--vm-action=hibernate-deallocate`, while plain `--vm-action=hibernate` is rejected with a precise hint because Azure CLI only exposes hibernation through deallocation and `stop` remains the non-deallocated power-off path.
 - Made `ssh` and `rdp` state-aware so they now refuse politely when the target VM is not running and point operators to `az-vm do --vm-action=start`.
 - Updated `resize` to use `--vm-name` instead of legacy `--vm`, added `--windows`/`--linux` support, and kept no-parameter invocation interactive.
 - Split `resize` away from the generic move/resize prompt flow so interactive resize stays in the current region and direct fully specified resize runs without an extra confirmation prompt.
