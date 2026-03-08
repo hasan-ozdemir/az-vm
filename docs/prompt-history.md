@@ -3636,3 +3636,15 @@ Implement the plan.
 **Assistant Summary**
 
 Implemented the approved Windows `vm-update` private local-only accessibility task plan by aligning the renamed `19/20/28` task entries in `windows/update/vm-update-task-catalog.json`, converting the private local-only accessibility asset flow to repo-managed zip packages under `windows/update/local-private-assets/`, updating `20-private-local-task.ps1` to extract `private local-only accessibility-version.zip` into `C:\Program Files\local accessibility vendor\private local-only accessibility\2025` and `private local-only accessibility-roaming-settings.zip` into `C:\Users\<VM_ADMIN_USER>\AppData\Roaming\local accessibility vendor\private local-only accessibility\2025\Settings`, extending runtime asset-copy resolution for the new zip assets, adding smoke coverage for renamed catalog entries plus private local-only accessibility zip layout/asset resolution, advancing the documented release to `2026.3.8.238`, and re-running smoke, code-quality, and PowerShell compatibility checks successfully.
+
+### 2026-03-08 22:17 TRT
+
+**User Prompt**
+
+````text
+son sürümle değişmiş sürümü karşılaştırıp; benim yukarıda verdiğim talimatlara göre en optimum şekilde merge et.
+````
+
+**Assistant Summary**
+
+Compared the committed and re-modified `windows/update/vm-update-task-catalog.json` variants, merged them by keeping the renamed `19-install-microsoft-azd`, `20-private-local-task`, and `28-health-snapshot` task names while preserving the user-adjusted late ordering intent with `27-windows-ux-public-desktop-shortcuts` at priority `98` and `28-health-snapshot` at priority `99`, then advanced the documented release to `2026.3.8.239`.

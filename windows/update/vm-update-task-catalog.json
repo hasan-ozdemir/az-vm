@@ -162,13 +162,13 @@
                   },
                   {
                       "name":  "27-windows-ux-public-desktop-shortcuts",
-                      "priority":  99,
+                      "priority":  98,
                       "enabled":  true,
                       "timeout":  1800
                   },
                   {
                       "name":  "28-health-snapshot",
-                      "priority":  10,
+                      "priority":  99,
                       "enabled":  true,
                       "timeout":  180
                   },

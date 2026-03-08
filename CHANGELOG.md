@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.8.238] - 2026-03-08
+## [2026.3.8.239] - 2026-03-08
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
@@ -29,6 +29,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Removed runtime task-catalog auto-sync/auto-write behavior; catalogs are now read-only inputs at execution time.
 - Added catalog-level default consumption (`defaults.priority`, `defaults.timeout`) with fallback `priority=1000`, `timeout=180`.
 - Renamed the Windows private local-only accessibility vm-update task to `20-private-local-task`, aligned the update catalog with the new `19/20/28` task names, and moved both private local-only accessibility assets to zip-based packaging under `windows/update/local-private-assets/`.
+- Merged the user-adjusted Windows vm-update catalog ordering back onto the renamed task set by keeping `27-windows-ux-public-desktop-shortcuts` at priority `98` and `28-health-snapshot` at priority `99`.
 
 ### Chores
 - Replaced the one-way hook installer with `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1`.
