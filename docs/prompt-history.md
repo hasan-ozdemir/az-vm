@@ -3624,3 +3624,15 @@ changelog.md belgesindeki satır sonları konusunda yaşanan tutarsızlığı gi
 **Assistant Summary**
 
 Resolved the release-document line-ending inconsistency by adding `.gitattributes` rules that pin `CHANGELOG.md` and `release-notes.md` to LF, normalized both files to LF, documented the change in the current release notes and changelog entry, and re-ran the documentation contract and code-quality checks successfully.
+
+### 2026-03-08 22:13 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented the approved Windows `vm-update` private local-only accessibility task plan by aligning the renamed `19/20/28` task entries in `windows/update/vm-update-task-catalog.json`, converting the private local-only accessibility asset flow to repo-managed zip packages under `windows/update/local-private-assets/`, updating `20-private-local-task.ps1` to extract `private local-only accessibility-version.zip` into `C:\Program Files\local accessibility vendor\private local-only accessibility\2025` and `private local-only accessibility-roaming-settings.zip` into `C:\Users\<VM_ADMIN_USER>\AppData\Roaming\local accessibility vendor\private local-only accessibility\2025\Settings`, extending runtime asset-copy resolution for the new zip assets, adding smoke coverage for renamed catalog entries plus private local-only accessibility zip layout/asset resolution, advancing the documented release to `2026.3.8.238`, and re-running smoke, code-quality, and PowerShell compatibility checks successfully.

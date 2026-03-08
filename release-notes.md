@@ -2,7 +2,7 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.8.237 - 2026-03-08
+## Release 2026.3.8.238 - 2026-03-08
 
 ### Summary
 This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, and explicit hook enable/disable controls.
@@ -15,6 +15,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Hardened naming, env-key, and validation contracts across provisioning flows.
 - Post-deploy feature enablement for hibernation and nested-virtualization support checks.
 - Broader Windows guest update coverage, including UX tuning and public desktop shortcut generation.
+- Windows private local-only accessibility update assets now deploy from repo-managed zip packages, including version replacement and roaming settings restore.
 
 ### Breaking and Contract-Significant Changes
 - Legacy command names and aliases have been removed rather than preserved.
@@ -30,6 +31,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Catalog-driven timeout handling for guest tasks.
 - Repo-managed Python tooling configured to avoid bytecode cache artifacts.
 - More consistent Linux/Windows terminology and step/task wording.
+- Renamed Windows vm-update task entries are now aligned with the task catalog so the intended `19/20/28` ordering and timeout policy apply again.
 
 ### Documentation and Process Improvements
 - Expanded `AGENTS.md` into a repository engineering contract.

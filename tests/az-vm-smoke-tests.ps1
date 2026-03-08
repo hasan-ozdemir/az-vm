@@ -444,6 +444,107 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
 }
 
+Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
+    $updateDir = Join-Path $RepoRoot 'windows\update'
+    $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $updateDir -Platform windows -Stage update
+    $active = @($catalog.ActiveTasks)
+    $activeNames = @($active | ForEach-Object { [string]$_.Name })
+
+    Assert-True -Condition ($activeNames -contains '19-install-microsoft-azd') -Message "Renamed azd task was not discovered."
+    Assert-True -Condition ($activeNames -contains '20-private-local-task') -Message "Renamed private local-only accessibility task was not discovered."
+    Assert-True -Condition ($activeNames -contains '28-health-snapshot') -Message "Renamed health snapshot task was not discovered."
+    Assert-True -Condition (-not ($activeNames -contains '19-health-snapshot')) -Message "Legacy 19-health-snapshot entry must not remain active."
+    Assert-True -Condition (-not ($activeNames -contains '20-private-local-task')) -Message "Legacy 20-private-local-task entry must not remain active."
+    Assert-True -Condition (-not ($activeNames -contains '28-install-microsoft-azd')) -Message "Legacy 28-install-microsoft-azd entry must not remain active."
+
+    $azdTask = $active | Where-Object { [string]$_.Name -eq '19-install-microsoft-azd' } | Select-Object -First 1
+    $localOnlyAccessibilityTask = $active | Where-Object { [string]$_.Name -eq '20-private-local-task' } | Select-Object -First 1
+    $healthTask = $active | Where-Object { [string]$_.Name -eq '28-health-snapshot' } | Select-Object -First 1
+
+    Assert-True -Condition ([int]$azdTask.TimeoutSeconds -eq 1800) -Message "Renamed azd task timeout must remain 1800."
+    Assert-True -Condition ([int]$localOnlyAccessibilityTask.TimeoutSeconds -eq 180) -Message "private local-only accessibility task timeout must remain 180."
+    Assert-True -Condition ([int]$healthTask.TimeoutSeconds -eq 180) -Message "Renamed health snapshot timeout must remain 180."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '19-install-microsoft-azd')) -lt ([array]::IndexOf($activeNames, '20-private-local-task'))) -Message "Renamed task order must keep azd before copy-private local-only accessibility-settings."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '20-private-local-task')) -lt ([array]::IndexOf($activeNames, '28-health-snapshot'))) -Message "Renamed task order must keep copy-private local-only accessibility-settings before health snapshot."
+}
+
+Invoke-Test -Name "Windows private local-only accessibility zip asset layout" -Action {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $assetsRoot = Join-Path $RepoRoot 'windows\update\local-private-assets'
+    $versionZipPath = Join-Path $assetsRoot 'private local-only accessibility-version.zip'
+    $roamingZipPath = Join-Path $assetsRoot 'private local-only accessibility-roaming-settings.zip'
+
+    Assert-True -Condition (Test-Path -LiteralPath $versionZipPath) -Message "private local-only accessibility version zip asset was not found."
+    Assert-True -Condition (Test-Path -LiteralPath $roamingZipPath) -Message "private local-only accessibility roaming settings zip asset was not found."
+
+    $versionArchive = [System.IO.Compression.ZipFile]::OpenRead($versionZipPath)
+    try {
+        $versionEntries = @($versionArchive.Entries | ForEach-Object { [string]$_.FullName })
+    }
+    finally {
+        $versionArchive.Dispose()
+    }
+
+    $roamingArchive = [System.IO.Compression.ZipFile]::OpenRead($roamingZipPath)
+    try {
+        $roamingEntries = @($roamingArchive.Entries | ForEach-Object { [string]$_.FullName })
+    }
+    finally {
+        $roamingArchive.Dispose()
+    }
+
+    Assert-True -Condition ($versionEntries.Count -eq 1) -Message "private local-only accessibility version zip must contain exactly one root file."
+    Assert-True -Condition ([string]$versionEntries[0] -eq 'version.dll') -Message "private local-only accessibility version zip must contain version.dll at archive root."
+    Assert-True -Condition ($roamingEntries.Count -gt 0) -Message "private local-only accessibility roaming settings zip must not be empty."
+    Assert-True -Condition (-not ($roamingEntries | Where-Object { $_ -like 'Settings/*' -or $_ -eq 'Settings/' })) -Message "private local-only accessibility roaming settings zip must contain Settings contents, not a nested Settings root."
+}
+
+Invoke-Test -Name "Windows private local-only accessibility task asset copies" -Action {
+    $context = [ordered]@{
+        VmUser = "manager"
+        VmPass = "secret"
+        VmAssistantUser = "assistant"
+        VmAssistantPass = "secret2"
+        SshPort = "444"
+        RdpPort = "3389"
+        TcpPorts = @("444","3389","11434")
+        ResourceGroup = "rg-examplevm"
+        VmName = "examplevm"
+        AzLocation = "austriaeast"
+        VmSize = "Standard_B2as_v2"
+        VmImage = "example:image:urn"
+        VmDiskName = "disk-examplevm"
+        VmDiskSize = "128"
+        VmStorageSku = "StandardSSD_LRS"
+    }
+
+    $taskScriptPath = Join-Path $RepoRoot 'windows\update\20-private-local-task.ps1'
+    $templates = @(
+        [pscustomobject]@{
+            Name = "20-private-local-task"
+            Script = [string](Get-Content -LiteralPath $taskScriptPath -Raw)
+            RelativePath = "20-private-local-task.ps1"
+            DirectoryPath = (Join-Path $RepoRoot 'windows\update')
+            TimeoutSeconds = 180
+        }
+    )
+
+    $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
+    $resolvedTask = @($resolved)[0]
+    $assetCopies = @($resolvedTask.AssetCopies)
+    $scriptBody = [string]$resolvedTask.Script
+    $remotePaths = @($assetCopies | ForEach-Object { [string]$_.RemotePath })
+    $localPaths = @($assetCopies | ForEach-Object { [string]$_.LocalPath })
+
+    Assert-True -Condition ($scriptBody -like '*C:\Users\manager\AppData\Roaming\local accessibility vendor\private local-only accessibility\2025\Settings*') -Message "private local-only accessibility task must resolve VM_ADMIN_USER into roaming settings target."
+    Assert-True -Condition ($assetCopies.Count -eq 2) -Message "private local-only accessibility task must publish two asset copies."
+    Assert-True -Condition ($remotePaths -contains 'C:/Windows/Temp/az-vm-private local-only accessibility-version.zip') -Message "private local-only accessibility version zip remote path mismatch."
+    Assert-True -Condition ($remotePaths -contains 'C:/Windows/Temp/az-vm-private local-only accessibility-roaming-settings.zip') -Message "private local-only accessibility roaming zip remote path mismatch."
+    Assert-True -Condition (($localPaths | Where-Object { $_ -like '*private local-only accessibility-version.zip' }).Count -eq 1) -Message "private local-only accessibility version zip local asset path mismatch."
+    Assert-True -Condition (($localPaths | Where-Object { $_ -like '*private local-only accessibility-roaming-settings.zip' }).Count -eq 1) -Message "private local-only accessibility roaming zip local asset path mismatch."
+}
+
 Write-Host ""
 Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $passCount, $failCount)
 if ($failCount -gt 0) {

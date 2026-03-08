@@ -503,12 +503,28 @@ function Apply-AzVmTaskBlockReplacements {
         }
 
         $assetCopies = @()
-        if ($taskName -match '^\d{2}-set-private local-only accessibility-version$' -and -not [string]::IsNullOrWhiteSpace([string]$directoryPath)) {
-            $versionDllPath = Join-Path $directoryPath 'version.dll'
-            if (Test-Path -LiteralPath $versionDllPath) {
+        if ($taskName -eq '20-private-local-task' -and -not [string]::IsNullOrWhiteSpace([string]$directoryPath)) {
+            $assetRoot = Join-Path $directoryPath 'local-private-assets'
+            $requiredAssets = @(
+                [pscustomobject]@{
+                    FileName = 'private local-only accessibility-version.zip'
+                    RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-version.zip'
+                },
+                [pscustomobject]@{
+                    FileName = 'private local-only accessibility-roaming-settings.zip'
+                    RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-roaming-settings.zip'
+                }
+            )
+
+            foreach ($assetSpec in @($requiredAssets)) {
+                $assetLocalPath = Join-Path $assetRoot ([string]$assetSpec.FileName)
+                if (-not (Test-Path -LiteralPath $assetLocalPath)) {
+                    throw ("Task asset was not found for '{0}': {1}" -f $taskName, $assetLocalPath)
+                }
+
                 $assetCopies += [pscustomobject]@{
-                    LocalPath = [string](Resolve-Path -LiteralPath $versionDllPath).Path
-                    RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-version.dll'
+                    LocalPath = [string](Resolve-Path -LiteralPath $assetLocalPath).Path
+                    RemotePath = [string]$assetSpec.RemotePath
                 }
             }
         }

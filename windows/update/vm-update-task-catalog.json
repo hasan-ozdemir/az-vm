@@ -113,10 +113,10 @@
                       "timeout":  3600
                   },
                   {
-                      "name":  "19-health-snapshot",
+                      "name":  "19-install-microsoft-azd",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  1800
                   },
                   {
                       "name":  "20-private-local-task",
@@ -167,10 +167,10 @@
                       "timeout":  1800
                   },
                   {
-                      "name":  "28-install-microsoft-azd",
+                      "name":  "28-health-snapshot",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  180
                   },
                   {
                       "name":  "51-local-diagnostic",

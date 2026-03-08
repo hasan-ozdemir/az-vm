@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.8.237] - 2026-03-08
+## [2026.3.8.238] - 2026-03-08
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
@@ -23,10 +23,12 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Moved the manual git-history regression replay tool to `tools/scripts/git-history-replay.ps1` so it lives with helper tooling instead of the primary test entrypoints.
 - Fixed `tools/scripts/git-history-replay.ps1` to use the quality entrypoint that exists inside each replayed worktree instead of forcing the latest script onto historical commits.
 - Added a smoke-contract case for catalog fallback behavior: missing entries default to `priority=1000` and missing timeouts default to `180`.
+- Added smoke coverage for renamed Windows vm-update private local-only accessibility tasks, zip asset layout, and runtime asset-copy resolution.
 
 ### Refactors
 - Removed runtime task-catalog auto-sync/auto-write behavior; catalogs are now read-only inputs at execution time.
 - Added catalog-level default consumption (`defaults.priority`, `defaults.timeout`) with fallback `priority=1000`, `timeout=180`.
+- Renamed the Windows private local-only accessibility vm-update task to `20-private-local-task`, aligned the update catalog with the new `19/20/28` task names, and moved both private local-only accessibility assets to zip-based packaging under `windows/update/local-private-assets/`.
 
 ### Chores
 - Replaced the one-way hook installer with `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1`.
