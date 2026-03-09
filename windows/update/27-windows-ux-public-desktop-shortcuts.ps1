@@ -2,9 +2,14 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: windows-ux-public-desktop-shortcuts"
 
 $vmName = "__VM_NAME__"
+$managerUser = "__VM_ADMIN_USER__"
+$assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
-$chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$vmName https://www.google.com"
-$chromeBankArgsPrefix = "--new-window --start-maximized --profile-directory=$vmName"
+$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
+$chromeRemoteArgsPrefix = ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $vmName)
+$chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $vmName)
+$chromeBankArgsPrefix = ("--new-window --start-maximized --profile-directory={0}" -f $vmName)
+$whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe"
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
@@ -87,10 +92,6 @@ function Resolve-StartAppId {
         if ([string]::IsNullOrWhiteSpace([string]$nameText)) { return $false }
         return $nameText.ToLowerInvariant().Contains($normalized)
     })
-
-    if ($startApps.Count -eq 0) {
-        return ""
-    }
 
     foreach ($entry in @($startApps)) {
         if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
@@ -188,13 +189,108 @@ function Resolve-StoreAppId {
     return (Resolve-AppxAppIdFromPackage -NameFragment $NameFragment -PackageNameHints $PackageNameHints)
 }
 
+function Resolve-AppPackageExecutablePath {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @(),
+        [string]$ExecutableName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ExecutableName)) {
+        return ""
+    }
+
+    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    if (@($allPackages).Count -eq 0) {
+        return ""
+    }
+
+    $normalizedNameFragment = [string]$NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+        $normalizedNameFragment = $normalizedNameFragment.Trim().ToLowerInvariant()
+    }
+
+    $normalizedHints = @(
+        @($PackageNameHints) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
+
+    $matchingPackages = @(
+        $allPackages | Where-Object {
+            $pkgName = [string]$_.Name
+            $pkgFamily = [string]$_.PackageFamilyName
+            $installLocation = [string]$_.InstallLocation
+            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) { return $false }
+            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) { return $false }
+
+            $pkgNameLower = $pkgName.ToLowerInvariant()
+            $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+                if ($pkgNameLower.Contains($normalizedNameFragment) -or $pkgFamilyLower.Contains($normalizedNameFragment)) {
+                    return $true
+                }
+            }
+
+            foreach ($hint in @($normalizedHints)) {
+                if ($pkgNameLower.Contains($hint) -or $pkgFamilyLower.Contains($hint)) {
+                    return $true
+                }
+            }
+
+            return $false
+        }
+    )
+
+    foreach ($package in @($matchingPackages)) {
+        $installLocation = [string]$package.InstallLocation
+        if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+            continue
+        }
+
+        $candidate = Join-Path $installLocation $ExecutableName
+        if (Test-Path -LiteralPath $candidate) {
+            return [string]$candidate
+        }
+
+        $match = Get-ChildItem -LiteralPath $installLocation -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($match -and (Test-Path -LiteralPath $match.FullName)) {
+            return [string]$match.FullName
+        }
+    }
+
+    return ""
+}
+
+function Resolve-ExistingOrFallbackPath {
+    param(
+        [string]$PreferredPath,
+        [string]$ResolvedPath,
+        [string]$FallbackPath
+    )
+
+    foreach ($candidate in @($PreferredPath, $ResolvedPath, $FallbackPath)) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        if ((Test-Path -LiteralPath $candidate) -or [string]::Equals([string]$candidate, [string]$FallbackPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return [string]$candidate
+        }
+    }
+
+    return ""
+}
+
 function New-DesktopShortcut {
     param(
         [string]$Name,
         [string]$TargetPath,
         [string]$Arguments = "",
         [string]$WorkingDirectory = "",
-        [string]$IconLocation = ""
+        [string]$IconLocation = "",
+        [switch]$AllowMissingTargetPath
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$Name)) {
@@ -203,7 +299,7 @@ function New-DesktopShortcut {
     if ([string]::IsNullOrWhiteSpace([string]$TargetPath)) {
         throw "Shortcut target is empty."
     }
-    if (-not (Test-Path -LiteralPath $TargetPath)) {
+    if (-not $AllowMissingTargetPath -and -not (Test-Path -LiteralPath $TargetPath)) {
         throw "Shortcut target was not found: $TargetPath"
     }
 
@@ -217,7 +313,10 @@ function New-DesktopShortcut {
     $shortcut.TargetPath = $TargetPath
     $shortcut.Arguments = $Arguments
     if ([string]::IsNullOrWhiteSpace([string]$WorkingDirectory)) {
-        $shortcut.WorkingDirectory = (Split-Path -Path $TargetPath -Parent)
+        $parentPath = Split-Path -Path $TargetPath -Parent
+        if (-not [string]::IsNullOrWhiteSpace([string]$parentPath)) {
+            $shortcut.WorkingDirectory = $parentPath
+        }
     }
     else {
         $shortcut.WorkingDirectory = $WorkingDirectory
@@ -263,42 +362,22 @@ function New-ConsoleToolShortcut {
     New-DesktopShortcut -Name $Name -TargetPath $cmdExe -Arguments ("/k " + $CommandText) -IconLocation $IconLocation
 }
 
-function Test-RunOnceMarker {
-    param([string]$ValueName)
-
-    if ([string]::IsNullOrWhiteSpace([string]$ValueName)) {
-        return $false
-    }
-
-    $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-    try {
-        $value = Get-ItemProperty -Path $runOncePath -Name $ValueName -ErrorAction Stop
-        return ($null -ne $value)
-    }
-    catch {
-        return $false
-    }
-}
-
-function New-DeferredWingetShortcut {
+function New-CmdWrappedShortcut {
     param(
         [string]$Name,
-        [string]$WingetExecutable,
-        [string]$WingetArguments,
-        [string]$IconLocation = ""
+        [string]$CommandArguments,
+        [string]$IconLocation = "",
+        [string]$WorkingDirectory = ""
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$WingetExecutable)) {
-        throw "winget executable was not found for deferred shortcut '$Name'."
+    if ([string]::IsNullOrWhiteSpace([string]$cmdExe)) {
+        throw "cmd.exe was not found."
     }
-    if ([string]::IsNullOrWhiteSpace([string]$WingetArguments)) {
-        throw "winget arguments are empty for deferred shortcut '$Name'."
+    if ([string]::IsNullOrWhiteSpace([string]$CommandArguments)) {
+        throw "Wrapped command arguments are empty."
     }
 
-    $quotedWinget = "'" + ($WingetExecutable -replace "'", "''") + "'"
-    $commandText = ('& {0} {1}' -f $quotedWinget, $WingetArguments)
-    $powershellArguments = ('-NoExit -ExecutionPolicy Bypass -Command "{0}"' -f ($commandText -replace '"', '\"'))
-    New-DesktopShortcut -Name $Name -TargetPath $powershellExe -Arguments $powershellArguments -IconLocation $IconLocation
+    New-DesktopShortcut -Name $Name -TargetPath $cmdExe -Arguments $CommandArguments -IconLocation $IconLocation -WorkingDirectory $WorkingDirectory
 }
 
 function Invoke-ShortcutAction {
@@ -335,6 +414,7 @@ $chromeExe = Resolve-CommandPath -CommandName "chrome.exe" -FallbackCandidates @
     "C:\Program Files\Google\Chrome\Application\chrome.exe",
     "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 )
+$chromeTarget = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Chrome\Application\chrome.exe" -ResolvedPath $chromeExe -FallbackPath "C:\Program Files\Google\Chrome\Application\chrome.exe"
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
 $powershellExe = Resolve-CommandPath -CommandName "powershell.exe" -FallbackCandidates @("C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
 $pwshExe = Resolve-CommandPath -CommandName "pwsh.exe" -FallbackCandidates @(
@@ -357,17 +437,11 @@ $pythonExe = Resolve-CommandPath -CommandName "python.exe" -FallbackCandidates @
 $nodeExe = Resolve-CommandPath -CommandName "node.exe" -FallbackCandidates @(
     "C:\Program Files\nodejs\node.exe"
 )
-$ollamaExe = Resolve-CommandPath -CommandName "ollama.exe" -FallbackCandidates @(
-    "C:\Program Files\Ollama\ollama.exe"
-)
 $wslExe = Resolve-CommandPath -CommandName "wsl.exe" -FallbackCandidates @(
     "C:\Windows\System32\wsl.exe"
 )
 $dockerExe = Resolve-CommandPath -CommandName "docker.exe" -FallbackCandidates @(
     "C:\Program Files\Docker\Docker\resources\bin\docker.exe"
-)
-$wingetExe = Resolve-CommandPath -CommandName "winget.exe" -FallbackCandidates @(
-    "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
 )
 $azExe = Resolve-CommandPath -CommandName "az.cmd" -FallbackCandidates @(
     "C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd",
@@ -383,6 +457,7 @@ $ffmpegExe = Resolve-CommandPath -CommandName "ffmpeg.exe" -FallbackCandidates @
     "C:\ProgramData\chocolatey\bin\ffmpeg.exe"
 )
 $sevenZipExe = Resolve-CommandPath -CommandName "7z.exe" -FallbackCandidates @(
+    "C:\ProgramData\chocolatey\bin\7z.exe",
     "C:\Program Files\7-Zip\7z.exe",
     "C:\Program Files\7-Zip\7zFM.exe"
 )
@@ -411,20 +486,19 @@ $vsCodeExe = Resolve-CommandPath -CommandName "code.exe" -FallbackCandidates @(
     "C:\Users\__ASSISTANT_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe"
 )
 $codexExe = Resolve-CommandPath -CommandName "codex.cmd" -FallbackCandidates @(
-    "C:\Program Files\nodejs\codex.cmd",
-    "C:\Users\__VM_ADMIN_USER__\AppData\Roaming\npm\codex.cmd",
-    "C:\Users\__ASSISTANT_USER__\AppData\Roaming\npm\codex.cmd"
+    ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser),
+    ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $assistantUser),
+    "C:\Program Files\nodejs\codex.cmd"
 )
 $geminiExe = Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @(
-    "C:\Program Files\nodejs\gemini.cmd",
-    "C:\Users\__VM_ADMIN_USER__\AppData\Roaming\npm\gemini.cmd",
-    "C:\Users\__ASSISTANT_USER__\AppData\Roaming\npm\gemini.cmd"
+    ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser),
+    ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $assistantUser),
+    "C:\Program Files\nodejs\gemini.cmd"
 )
 
-$whatsAppAppId = Resolve-StoreAppId -NameFragment "whatsapp" -PackageNameHints @("whatsapp")
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
 $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
-$whatsAppDeferred = Test-RunOnceMarker -ValueName "AzVmInstallWhatsApp"
+$whatsAppRootExe = Resolve-AppPackageExecutablePath -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop") -ExecutableName "WhatsApp.Root.exe"
 
 $outlookExe = Resolve-OfficeExecutable -ExeName "OUTLOOK.EXE"
 $wordExe = Resolve-OfficeExecutable -ExeName "WINWORD.EXE"
@@ -433,27 +507,28 @@ $powerPointExe = Resolve-OfficeExecutable -ExeName "POWERPNT.EXE"
 $oneNoteExe = Resolve-OfficeExecutable -ExeName "ONENOTE.EXE"
 $controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 
-Invoke-ShortcutAction -Name "i0internet" -Action { New-DesktopShortcut -Name "i0internet" -TargetPath $chromeExe -Arguments $chromeArgs -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b1GarantiBank Bireysel" -Action { New-DesktopShortcut -Name "b1GarantiBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b2GarantiBank Kurumsal" -Action { New-DesktopShortcut -Name "b2GarantiBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b3QnbBank Bireysel" -Action { New-DesktopShortcut -Name "b3QnbBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b4QnbBank Kurumsal" -Action { New-DesktopShortcut -Name "b4QnbBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b5AktifBank Bireysel" -Action { New-DesktopShortcut -Name "b5AktifBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b6AktifBank Kurumsal" -Action { New-DesktopShortcut -Name "b6AktifBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b7ZiraatBank Bireysel" -Action { New-DesktopShortcut -Name "b7ZiraatBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx"') -IconLocation "$chromeExe,0" }
-Invoke-ShortcutAction -Name "b8ZiraatBank Kurumsal" -Action { New-DesktopShortcut -Name "b8ZiraatBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp"') -IconLocation "$chromeExe,0" }
+$whatsAppBusinessTarget = Resolve-ExistingOrFallbackPath -PreferredPath $whatsAppRootExe -ResolvedPath $whatsAppRootExe -FallbackPath $whatsAppFallbackPath
+$sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData\chocolatey\bin\7z.exe" -ResolvedPath $sevenZipExe -FallbackPath "C:\ProgramData\chocolatey\bin\7z.exe"
+$codexCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser) -ResolvedPath $codexExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser)
+$geminiCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser) -ResolvedPath $geminiExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser)
+
+Invoke-ShortcutAction -Name "a1ChatGPT Web" -Action { New-DesktopShortcut -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://chatgpt.com"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "i0internet" -Action { New-DesktopShortcut -Name "i0internet" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://www.google.com"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "i1WhatsApp Kurumsal" -Action { New-DesktopShortcut -Name "i1WhatsApp Kurumsal" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath }
+Invoke-ShortcutAction -Name "i2WhatsApp Bireysel" -Action { New-DesktopShortcut -Name "i2WhatsApp Bireysel" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://web.whatsapp.com"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "z1google account setup" -Action { New-DesktopShortcut -Name "z1google account setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "chrome://settings/syncSetup"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "z2Office365 account setup" -Action { New-DesktopShortcut -Name "z2Office365 account setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "https://portal.office.com"') -IconLocation "$chromeTarget,0" }
+
+Invoke-ShortcutAction -Name "b1GarantiBank Bireysel" -Action { New-DesktopShortcut -Name "b1GarantiBank Bireysel" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b2GarantiBank Kurumsal" -Action { New-DesktopShortcut -Name "b2GarantiBank Kurumsal" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b3QnbBank Bireysel" -Action { New-DesktopShortcut -Name "b3QnbBank Bireysel" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b4QnbBank Kurumsal" -Action { New-DesktopShortcut -Name "b4QnbBank Kurumsal" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b5AktifBank Bireysel" -Action { New-DesktopShortcut -Name "b5AktifBank Bireysel" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b6AktifBank Kurumsal" -Action { New-DesktopShortcut -Name "b6AktifBank Kurumsal" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b7ZiraatBank Bireysel" -Action { New-DesktopShortcut -Name "b7ZiraatBank Bireysel" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx"') -IconLocation "$chromeTarget,0" }
+Invoke-ShortcutAction -Name "b8ZiraatBank Kurumsal" -Action { New-DesktopShortcut -Name "b8ZiraatBank Kurumsal" -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp"') -IconLocation "$chromeTarget,0" }
+
 Invoke-ShortcutAction -Name "c0cmd" -Action { New-DesktopShortcut -Name "c0cmd" -TargetPath $cmdExe }
-Invoke-ShortcutAction -Name "i7whatsapp" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppAppId)) {
-        New-DesktopShortcutFromAppId -Name "i7whatsapp" -AppId $whatsAppAppId
-    }
-    elseif ($whatsAppDeferred) {
-        New-DeferredWingetShortcut -Name "i7whatsapp" -WingetExecutable $wingetExe -WingetArguments "install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --force" -IconLocation "$powershellExe,0"
-    }
-    else {
-        throw "AppId was not found for 'i7whatsapp'."
-    }
-}
 Invoke-ShortcutAction -Name "local-only-shortcut" -Action { New-DesktopShortcut -Name "local-only-shortcut" -TargetPath $localOnlyAccessibilityExe }
 Invoke-ShortcutAction -Name "a7docker desktop" -Action { New-DesktopShortcut -Name "a7docker desktop" -TargetPath $dockerDesktopExe }
 
@@ -476,58 +551,30 @@ Invoke-ShortcutAction -Name "o5onenote" -Action { New-DesktopShortcut -Name "o5o
 
 Invoke-ShortcutAction -Name "u7network and sharing" -Action { New-DesktopShortcut -Name "u7network and sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" }
 
-Invoke-ShortcutAction -Name "t0-git bash" -Action { New-DesktopShortcut -Name "t0-git bash" -TargetPath $gitBashExe }
-Invoke-ShortcutAction -Name "t1-python cli" -Action { New-ConsoleToolShortcut -Name "t1-python cli" -CommandText "python" -IconLocation "$pythonExe,0" }
-Invoke-ShortcutAction -Name "t2-nodejs cli" -Action { New-ConsoleToolShortcut -Name "t2-nodejs cli" -CommandText "node" -IconLocation "$nodeExe,0" }
-Invoke-ShortcutAction -Name "t3-ollama app" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
-        New-DesktopShortcut -Name "t3-ollama app" -TargetPath $ollamaExe
-    }
-    else {
-        New-ConsoleToolShortcut -Name "t3-ollama app" -CommandText "ollama"
-    }
-}
-Invoke-ShortcutAction -Name "t4-pwsh" -Action { New-DesktopShortcut -Name "t4-pwsh" -TargetPath $pwshExe }
-Invoke-ShortcutAction -Name "t5-ps" -Action { New-DesktopShortcut -Name "t5-ps" -TargetPath $powershellExe }
-Invoke-ShortcutAction -Name "t6-azure cli" -Action { New-ConsoleToolShortcut -Name "t6-azure cli" -CommandText "az" -IconLocation "$azExe,0" }
-Invoke-ShortcutAction -Name "t7-wsl" -Action { New-DesktopShortcut -Name "t7-wsl" -TargetPath $wslExe }
-Invoke-ShortcutAction -Name "t8-docker cli" -Action { New-ConsoleToolShortcut -Name "t8-docker cli" -CommandText "docker" -IconLocation "$dockerExe,0" }
-Invoke-ShortcutAction -Name "t9-azd cli" -Action { New-ConsoleToolShortcut -Name "t9-azd cli" -CommandText "azd" -IconLocation "$azdExe,0" }
-Invoke-ShortcutAction -Name "t10-gh cli" -Action { New-ConsoleToolShortcut -Name "t10-gh cli" -CommandText "gh" -IconLocation "$ghExe,0" }
-Invoke-ShortcutAction -Name "t11-ffmpeg cli" -Action { New-ConsoleToolShortcut -Name "t11-ffmpeg cli" -CommandText "ffmpeg -version" -IconLocation "$ffmpegExe,0" }
-Invoke-ShortcutAction -Name "t12-7zip cli" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$sevenZipExe)) {
-        New-DesktopShortcut -Name "t12-7zip cli" -TargetPath $sevenZipExe
-    }
-    else {
-        New-ConsoleToolShortcut -Name "t12-7zip cli" -CommandText "7z"
-    }
-}
-Invoke-ShortcutAction -Name "t13-sysinternals" -Action {
+Invoke-ShortcutAction -Name "t0git bash" -Action { New-DesktopShortcut -Name "t0git bash" -TargetPath $gitBashExe }
+Invoke-ShortcutAction -Name "t1python cli" -Action { New-ConsoleToolShortcut -Name "t1python cli" -CommandText "python" -IconLocation "$pythonExe,0" }
+Invoke-ShortcutAction -Name "t2nodejs cli" -Action { New-ConsoleToolShortcut -Name "t2nodejs cli" -CommandText "node" -IconLocation "$nodeExe,0" }
+Invoke-ShortcutAction -Name "t3OllamaApp" -Action { New-CmdWrappedShortcut -Name "t3OllamaApp" -CommandArguments '/c TaskKill -im "ollama app.exe" & "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"' }
+Invoke-ShortcutAction -Name "t4pwsh" -Action { New-DesktopShortcut -Name "t4pwsh" -TargetPath $pwshExe }
+Invoke-ShortcutAction -Name "t5ps" -Action { New-DesktopShortcut -Name "t5ps" -TargetPath $powershellExe }
+Invoke-ShortcutAction -Name "t6azure-cli" -Action { New-CmdWrappedShortcut -Name "t6azure-cli" -CommandArguments '/k cd /d c:\users\public & az --version' -IconLocation "$azExe,0" -WorkingDirectory "C:\Users\Public" }
+Invoke-ShortcutAction -Name "t7wsl" -Action { New-DesktopShortcut -Name "t7wsl" -TargetPath $wslExe }
+Invoke-ShortcutAction -Name "t8docker cli" -Action { New-ConsoleToolShortcut -Name "t8docker cli" -CommandText "docker" -IconLocation "$dockerExe,0" }
+Invoke-ShortcutAction -Name "t9azd cli" -Action { New-ConsoleToolShortcut -Name "t9azd cli" -CommandText "azd" -IconLocation "$azdExe,0" }
+Invoke-ShortcutAction -Name "t10gh cli" -Action { New-ConsoleToolShortcut -Name "t10gh cli" -CommandText "gh" -IconLocation "$ghExe,0" }
+Invoke-ShortcutAction -Name "t11ffmpeg cli" -Action { New-ConsoleToolShortcut -Name "t11ffmpeg cli" -CommandText "ffmpeg -version" -IconLocation "$ffmpegExe,0" }
+Invoke-ShortcutAction -Name "t12SevenZip-cli" -Action { New-CmdWrappedShortcut -Name "t12SevenZip-cli" -CommandArguments ('/c "{0}"' -f $sevenZipCliPath) -IconLocation "$sevenZipCliPath,0" }
+Invoke-ShortcutAction -Name "t13sysinternals" -Action {
     if (-not [string]::IsNullOrWhiteSpace([string]$sysinternalsExe)) {
-        New-DesktopShortcut -Name "t13-sysinternals" -TargetPath $sysinternalsExe
+        New-DesktopShortcut -Name "t13sysinternals" -TargetPath $sysinternalsExe
     }
     else {
-        New-ConsoleToolShortcut -Name "t13-sysinternals" -CommandText "procexp64"
+        New-ConsoleToolShortcut -Name "t13sysinternals" -CommandText "procexp64"
     }
 }
-Invoke-ShortcutAction -Name "t14-io-unlocker" -Action { New-DesktopShortcut -Name "t14-io-unlocker" -TargetPath $ioUnlockerExe }
-Invoke-ShortcutAction -Name "t15-codex cli" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$codexExe)) {
-        New-DesktopShortcut -Name "t15-codex cli" -TargetPath $codexExe
-    }
-    else {
-        New-ConsoleToolShortcut -Name "t15-codex cli" -CommandText "codex"
-    }
-}
-Invoke-ShortcutAction -Name "t16-gemini cli" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$geminiExe)) {
-        New-DesktopShortcut -Name "t16-gemini cli" -TargetPath $geminiExe
-    }
-    else {
-        New-ConsoleToolShortcut -Name "t16-gemini cli" -CommandText "gemini"
-    }
-}
+Invoke-ShortcutAction -Name "t14io-unlocker" -Action { New-DesktopShortcut -Name "t14io-unlocker" -TargetPath $ioUnlockerExe }
+Invoke-ShortcutAction -Name "t15codex-cli" -Action { New-CmdWrappedShortcut -Name "t15codex-cli" -CommandArguments ('/c start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "c:\users\public" --search' -f $codexCmdPath) }
+Invoke-ShortcutAction -Name "t16gemini-cli" -Action { New-CmdWrappedShortcut -Name "t16gemini-cli" -CommandArguments ('/c start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) }
 
 Invoke-ShortcutAction -Name "i8anydesk" -Action { New-DesktopShortcut -Name "i8anydesk" -TargetPath $anyDeskExe }
 Invoke-ShortcutAction -Name "i9windscribe" -Action {

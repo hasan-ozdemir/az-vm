@@ -3807,3 +3807,15 @@ fix: hem kaldığın yerden devam et; hem de copy-default-profile locallow kısm
 **Assistant Summary**
 
 Completed the interrupted Windows UX and user-settings repair cycle by stabilizing `04-windows-ux-performance-tuning` and `28-copy-user-settings` under isolated live `exec` runs on `rg-examplevm-ate1-g1/examplevm`: `04` now routes user-hive writes through the bounded password-logon helper, uses writable .NET registry handles, resets unsafe minimal Task Manager state instead of regenerating a synthetic `settings.json`, and hides Widgets through the supported `HKLM\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests=0` policy; `28` was reworked to stop offline assistant-hive collisions, seed assistant HKCU/user-class settings through a dedicated assistant logon worker, keep default-profile seeding on the offline main hive only, and exclude heavy non-settings branches such as `AppData\Local\Programs`, `Microsoft\WindowsApps`, and default-profile `LocalLow` so robocopy no longer stalls on binaries or alias placeholders. Verified locally with code-quality, smoke, and PowerShell compatibility checks, then live with successful isolated reruns of tasks `04`, `28`, and `29-health-snapshot`.
+
+### 2026-03-09 18:59 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Updated `27-windows-ux-public-desktop-shortcuts` to the refreshed canonical public shortcut set, adding the requested ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, bank, and command-style tool launchers; removed legacy `i7whatsapp`; wrapped `.cmd`-style launchers through `cmd.exe`; and added dynamic WhatsApp desktop executable resolution with the requested fallback path. Expanded `29-health-snapshot` to inventory the new shortcut names plus exact target-path and argument contracts, recalibrated all Windows `vm-update` task catalog timeouts from observed successful live durations with a 30% buffer, then validated the change set with isolated live `exec` reruns of tasks `27` and `29` on `rg-examplevm-ate1-g1/examplevm` before updating the smoke, changelog, and release-note contracts.

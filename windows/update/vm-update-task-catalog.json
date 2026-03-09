@@ -8,175 +8,175 @@
                       "name":  "01-winget-bootstrap",
                       "priority":  1,
                       "enabled":  true,
-                      "timeout":  900
+                      "timeout":  70
                   },
                   {
                       "name":  "02-private-local-task",
                       "priority":  2,
                       "enabled":  true,
-                      "timeout":  3600
+                      "timeout":  318
                   },
                   {
                       "name":  "03-chrome-install-check",
                       "priority":  3,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  128
                   },
                   {
                       "name":  "04-windows-ux-performance-tuning",
                       "priority":  4,
                       "enabled":  true,
-                      "timeout":  600
+                      "timeout":  13
                   },
                   {
                       "name":  "05-windows-advanced-system-settings",
                       "priority":  5,
                       "enabled":  true,
-                      "timeout":  300
+                      "timeout":  5
                   },
                   {
                       "name":  "06-git-install-check",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  900
+                      "timeout":  131
                   },
                   {
                       "name":  "07-python-install-check",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1200
+                      "timeout":  105
                   },
                   {
                       "name":  "08-node-install-check",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  900
+                      "timeout":  27
                   },
                   {
                       "name":  "09-install-ollama",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  3600
+                      "timeout":  376
                   },
                   {
                       "name":  "10-install-sysinternals",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  82
                   },
                   {
                       "name":  "11-install-powershell-core",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  37
                   },
                   {
                       "name":  "12-install-io-unlocker",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  23
                   },
                   {
                       "name":  "13-install-gh",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  11
                   },
                   {
                       "name":  "14-install-ffmpeg",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  34
                   },
                   {
                       "name":  "15-install-7zip",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  13
                   },
                   {
                       "name":  "16-install-azure-cli",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1200
+                      "timeout":  139
                   },
                   {
                       "name":  "17-wsl2-install-update",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  137
                   },
                   {
                       "name":  "18-docker-desktop-install-and-configure",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  3600
+                      "timeout":  1649
                   },
                   {
                       "name":  "19-install-microsoft-azd",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  88
                   },
                   {
                       "name":  "20-private-local-task",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  7
                   },
                   {
                       "name":  "21-install-whatsapp",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  10
                   },
                   {
                       "name":  "22-install-anydesk",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  20
                   },
                   {
                       "name":  "23-install-windscribe",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  63
                   },
                   {
                       "name":  "24-install-microsoft-teams",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  60
                   },
                   {
                       "name":  "25-install-microsoft-vscode",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  104
                   },
                   {
                       "name":  "26-install-global-npm-packages",
                       "priority":  10,
                       "enabled":  true,
-                      "timeout":  3600
+                      "timeout":  363
                   },
                   {
                       "name":  "27-windows-ux-public-desktop-shortcuts",
                       "priority":  98,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  10
                   },
                   {
                       "name":  "28-copy-user-settings",
                       "priority":  99,
                       "enabled":  true,
-                      "timeout":  1800
+                      "timeout":  27
                   },
                   {
                       "name":  "29-health-snapshot",
                       "priority":  100,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  9
                   },
                   {
                       "name":  "51-local-diagnostic",

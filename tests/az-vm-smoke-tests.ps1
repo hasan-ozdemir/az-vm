@@ -948,6 +948,37 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $updateDir -Platform windows -Stage update
     $active = @($catalog.ActiveTasks)
     $activeNames = @($active | ForEach-Object { [string]$_.Name })
+    $expectedTimeouts = [ordered]@{
+        '01-winget-bootstrap' = 70
+        '02-private-local-task' = 318
+        '03-chrome-install-check' = 128
+        '04-windows-ux-performance-tuning' = 13
+        '05-windows-advanced-system-settings' = 5
+        '06-git-install-check' = 131
+        '07-python-install-check' = 105
+        '08-node-install-check' = 27
+        '09-install-ollama' = 376
+        '10-install-sysinternals' = 82
+        '11-install-powershell-core' = 37
+        '12-install-io-unlocker' = 23
+        '13-install-gh' = 11
+        '14-install-ffmpeg' = 34
+        '15-install-7zip' = 13
+        '16-install-azure-cli' = 139
+        '17-wsl2-install-update' = 137
+        '18-docker-desktop-install-and-configure' = 1649
+        '19-install-microsoft-azd' = 88
+        '20-private-local-task' = 7
+        '21-install-whatsapp' = 10
+        '22-install-anydesk' = 20
+        '23-install-windscribe' = 63
+        '24-install-microsoft-teams' = 60
+        '25-install-microsoft-vscode' = 104
+        '26-install-global-npm-packages' = 363
+        '27-windows-ux-public-desktop-shortcuts' = 10
+        '28-copy-user-settings' = 27
+        '29-health-snapshot' = 9
+    }
 
     Assert-True -Condition ($activeNames -contains '19-install-microsoft-azd') -Message "Renamed azd task was not discovered."
     Assert-True -Condition ($activeNames -contains '20-private-local-task') -Message "Renamed private local-only accessibility task was not discovered."
@@ -958,21 +989,12 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     Assert-True -Condition (-not ($activeNames -contains '28-install-microsoft-azd')) -Message "Legacy 28-install-microsoft-azd entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '28-health-snapshot')) -Message "Legacy 28-health-snapshot entry must not remain active."
 
-    $azdTask = $active | Where-Object { [string]$_.Name -eq '19-install-microsoft-azd' } | Select-Object -First 1
-    $localOnlyAccessibilityTask = $active | Where-Object { [string]$_.Name -eq '20-private-local-task' } | Select-Object -First 1
-    $copyUserSettingsTask = $active | Where-Object { [string]$_.Name -eq '28-copy-user-settings' } | Select-Object -First 1
-    $healthTask = $active | Where-Object { [string]$_.Name -eq '29-health-snapshot' } | Select-Object -First 1
-    $publicShortcutsTask = $active | Where-Object { [string]$_.Name -eq '27-windows-ux-public-desktop-shortcuts' } | Select-Object -First 1
-    $uxTask = $active | Where-Object { [string]$_.Name -eq '04-windows-ux-performance-tuning' } | Select-Object -First 1
-    $advancedTask = $active | Where-Object { [string]$_.Name -eq '05-windows-advanced-system-settings' } | Select-Object -First 1
+    foreach ($entry in $expectedTimeouts.GetEnumerator()) {
+        $task = $active | Where-Object { [string]$_.Name -eq [string]$entry.Key } | Select-Object -First 1
+        Assert-True -Condition ($null -ne $task) -Message ("Expected task '{0}' was not discovered." -f [string]$entry.Key)
+        Assert-True -Condition ([int]$task.TimeoutSeconds -eq [int]$entry.Value) -Message ("Task '{0}' timeout must be {1}." -f [string]$entry.Key, [int]$entry.Value)
+    }
 
-    Assert-True -Condition ([int]$uxTask.TimeoutSeconds -eq 600) -Message "Windows UX tuning task timeout must be 600."
-    Assert-True -Condition ([int]$advancedTask.TimeoutSeconds -eq 300) -Message "Windows advanced settings task timeout must be 300."
-    Assert-True -Condition ([int]$azdTask.TimeoutSeconds -eq 1800) -Message "Renamed azd task timeout must remain 1800."
-    Assert-True -Condition ([int]$localOnlyAccessibilityTask.TimeoutSeconds -eq 180) -Message "private local-only accessibility task timeout must remain 180."
-    Assert-True -Condition ([int]$publicShortcutsTask.TimeoutSeconds -eq 1800) -Message "Public desktop shortcut task timeout must remain 1800."
-    Assert-True -Condition ([int]$copyUserSettingsTask.TimeoutSeconds -eq 1800) -Message "Copy user settings task timeout must be 1800."
-    Assert-True -Condition ([int]$healthTask.TimeoutSeconds -eq 180) -Message "Renamed health snapshot timeout must remain 180."
     Assert-True -Condition (([array]::IndexOf($activeNames, '19-install-microsoft-azd')) -lt ([array]::IndexOf($activeNames, '20-private-local-task'))) -Message "Renamed task order must keep azd before copy-private local-only accessibility-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts')) -lt ([array]::IndexOf($activeNames, '28-copy-user-settings'))) -Message "Task order must keep public desktop shortcuts before copy-user-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '28-copy-user-settings')) -lt ([array]::IndexOf($activeNames, '29-health-snapshot'))) -Message "Task order must keep copy-user-settings before health snapshot."
@@ -1170,13 +1192,19 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition (-not $resolvedAdvancedTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Advanced settings task must not publish reboot-resume metadata."
 }
 
-Invoke-Test -Name "Windows public desktop shortcut contract includes banking shortcuts" -Action {
+Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed public shortcuts" -Action {
     $shortcutTaskPath = Join-Path $RepoRoot 'windows\update\27-windows-ux-public-desktop-shortcuts.ps1'
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
     $healthTaskPath = Join-Path $RepoRoot 'windows\update\29-health-snapshot.ps1'
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     $expectedShortcutNames = @(
+        'a1ChatGPT Web',
+        'i0internet',
+        'i1WhatsApp Kurumsal',
+        'i2WhatsApp Bireysel',
+        'z1google account setup',
+        'z2Office365 account setup',
         'b1GarantiBank Bireysel',
         'b2GarantiBank Kurumsal',
         'b3QnbBank Bireysel',
@@ -1184,9 +1212,38 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes banking sho
         'b5AktifBank Bireysel',
         'b6AktifBank Kurumsal',
         'b7ZiraatBank Bireysel',
-        'b8ZiraatBank Kurumsal'
+        'b8ZiraatBank Kurumsal',
+        't3OllamaApp',
+        't6azure-cli',
+        't12SevenZip-cli',
+        't15codex-cli',
+        't16gemini-cli'
     )
-    $expectedUrls = @(
+    $legacyShortcutNames = @(
+        'i7whatsapp',
+        't0-git bash',
+        't1-python cli',
+        't2-nodejs cli',
+        't3-ollama app',
+        't4-pwsh',
+        't5-ps',
+        't6-azure cli',
+        't7-wsl',
+        't9-azd cli',
+        't10-gh cli',
+        't11-ffmpeg cli',
+        't12-7zip cli',
+        't13-sysinternals',
+        't14-io-unlocker',
+        't15-codex cli',
+        't16-gemini cli'
+    )
+    $expectedFragments = @(
+        'https://chatgpt.com',
+        'https://www.google.com',
+        'https://web.whatsapp.com',
+        'chrome://settings/syncSetup',
+        'https://portal.office.com',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx',
@@ -1194,7 +1251,18 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes banking sho
         'https://online.aktifbank.com.tr/default.aspx?lang=tr-TR',
         'https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR',
         'https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx',
-        'https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp'
+        'https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp',
+        'Resolve-AppPackageExecutablePath',
+        'WhatsApp.Root.exe',
+        '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
+        'TaskKill -im "ollama app.exe"',
+        '/k cd /d c:\users\public & az --version',
+        'C:\ProgramData\chocolatey\bin\7z.exe',
+        '--enable multi_agent --yolo -s danger-full-access --cd "c:\users\public" --search',
+        '--screen-reader --yolo',
+        '$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"',
+        '--user-data-dir="{0}"',
+        '--profile-directory="{1}"'
     )
 
     foreach ($shortcutName in @($expectedShortcutNames)) {
@@ -1202,11 +1270,16 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes banking sho
         Assert-True -Condition ($healthTaskScript -like ('*' + $shortcutName + '*')) -Message ("Health snapshot must inventory '{0}'." -f $shortcutName)
     }
 
-    foreach ($url in @($expectedUrls)) {
-        Assert-True -Condition ($shortcutTaskScript -like ('*' + $url + '*')) -Message ("Shortcut task must include URL '{0}'." -f $url)
+    foreach ($legacyShortcutName in @($legacyShortcutNames)) {
+        Assert-True -Condition ($shortcutTaskScript -notlike ('*' + $legacyShortcutName + '*')) -Message ("Shortcut task must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
+        Assert-True -Condition ($healthTaskScript -notlike ('*' + $legacyShortcutName + '*')) -Message ("Health snapshot must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
     }
 
-    Assert-True -Condition ($shortcutTaskScript -like '*--new-window --start-maximized --profile-directory=*') -Message 'Shortcut task must keep the requested Chrome launch arguments for banking shortcuts.'
+    foreach ($fragment in @($expectedFragments)) {
+        Assert-True -Condition ($shortcutTaskScript -like ('*' + $fragment + '*')) -Message ("Shortcut task must include fragment '{0}'." -f $fragment)
+    }
+
+    Assert-True -Condition ($shortcutTaskScript -like '*New-CmdWrappedShortcut*') -Message 'Shortcut task must use cmd.exe wrappers for command-style shortcuts.'
 }
 
 Write-Host ""
