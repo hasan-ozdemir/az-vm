@@ -5,6 +5,7 @@ Human-readable prompt ledger for the `az-vm` repository. This file is reconstruc
 ## Source
 
 - Primary session file: `C:\Users\operator\.codex\sessions\2026\03\02\rollout-2026-03-02T04-21-51-019cac23-2998-72c2-9151-afb00eb84061.jsonl`
+- Supplemental session file: `C:\Users\operator\.codex\sessions\2026\03\08\rollout-2026-03-08T03-25-15-019ccad5-800b-7072-b5d8-10084e6d938c.jsonl`
 - Timestamp format: local repository time (`TRT`).
 - Entry format: raw user prompt followed by a concise assistant summary.
 
@@ -3720,3 +3721,28 @@ Implement the plan.
 **Assistant Summary**
 
 Replaced the failing Windows interactive UX reboot/autologon path with a bounded `manager` password-logon scheduled-task helper under `tools/windows/`, removed reboot-resume metadata from isolated SSH task execution, rewrote `04-windows-ux-performance-tuning` to validate persisted `manager` UX stores including hibernate visibility, Explorer details/no-group defaults, desktop sort/auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager `settings.json`, simplified `05-windows-advanced-system-settings` to deterministic machine-level settings only with legacy audio tuning removed, hardened `20-private-local-task` with staging extraction plus hash/manifest verification, advanced the documented release to `2026.3.9.245`, and verified the work with smoke, code-quality, PowerShell compatibility, isolated live `exec` runs of tasks `04`, `05`, and `20`, an idempotent rerun of task `04`, and private local-only accessibility `version.dll` plus roaming-settings readback checks on `rg-examplevm-ate1-g1/examplevm`.
+
+### 2026-03-09 04:11 TRT
+
+**User Prompt**
+
+````text
+test: az-vm exec ile tek tek her bir vm-init ve vm-update görevlerini izole şekilde koşturalım; sorun çıkarsa düzeltip tekrar koşturalım; bu görevleri doğru priority değerleriyle ve doğru timeout değerleriyle koşturalım lütfen...
+*bu arada exec komutu gereksiz yere vm kaynaklarını tarıyor: network, disk, nsg gibi; eğer exec komutunun çalışması için bunlar bir zorunluluk değilse,lütfen exec komutu daha pratik çalışsın: exec komutu verildiğinde pyssh üzerinden hızlıca bağlanıp ilgili vm görevini yürütüp, beklesin, görev sonuçlanınca da hemen çıksın...
+````
+
+**Assistant Summary**
+
+Streamlined isolated `exec` task runs so they now accept `--vm-name` and use a minimal runtime context that resolves only the selected VM plus task metadata instead of traversing the broader Step-1 managed-resource inventory path, aligned help/README/smoke coverage to that direct-task contract, and then executed every Windows `vm-init` and `vm-update` task in isolated catalog-order `exec` runs against `rg-examplevm-ate1-g1/examplevm` with the effective catalog priority/timeout values.
+
+### 2026-03-09 04:41 TRT
+
+**User Prompt**
+
+````text
+fix update test: 09 ollama vm-update görevi maalesef sağlıklı çalışmıyor; ollama yüklense bile, ollama'nın yüklendiğini garanti altına alamıyoruz! lütfen winget install ollama.ollama komutuyla yüklesin artık; sonra da çalışıp çalışmadığını kontrol edelim; mesela: 11434 default portundan cevap verip vermediğine bakalım!
+````
+
+**Assistant Summary**
+
+Reworked Windows update task `09-install-ollama` to install `Ollama.Ollama` through `winget`, re-resolve the executable after PATH refresh, validate `ollama --version`, and require a healthy response from `http://127.0.0.1:11434/api/version`, starting `ollama serve` when necessary; added smoke coverage for the strengthened readiness check and verified the fix with code-quality and smoke checks plus an isolated live rerun of task `09` on `rg-examplevm-ate1-g1/examplevm` that reported `ollama-api-ready` on port `11434`.

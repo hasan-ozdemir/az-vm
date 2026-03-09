@@ -1264,7 +1264,7 @@ function Assert-AzVmCommandOptions {
         'move'   { $allowed = @('perf','help','group','vm','vm-region') }
         'resize' { $allowed = @('perf','help','group','vm-name','vm-size','windows','linux') }
         'set'    { $allowed = @('perf','help','group','vm','hibernation','nested-virtualization') }
-        'exec'   { $allowed = @('perf','windows','linux','help','group','init-task','update-task') }
+        'exec'   { $allowed = @('perf','windows','linux','help','group','vm-name','init-task','update-task') }
         'ssh'    { $allowed = @('perf','help','group','vm-name','user') }
         'rdp'    { $allowed = @('perf','help','group','vm-name','user') }
         'delete' { $allowed = @('auto','perf','help','target','group','yes') }
@@ -1409,6 +1409,146 @@ function Initialize-AzVmCommandRuntimeContext {
         Platform = $platform
         PlatformDefaults = $platformDefaults
         Context = $step1Context
+        TaskOutcomeMode = $taskOutcomeMode
+        ConfiguredPySshClientPath = $configuredPySshClientPath
+        SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+        SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+    }
+}
+
+# Handles Initialize-AzVmExecCommandRuntimeContext.
+function Initialize-AzVmExecCommandRuntimeContext {
+    param(
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
+    $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
+    $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
+
+    $vmName = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_NAME' -DefaultValue ([string]$platformDefaults.VmNameDefault))
+    if ([string]::IsNullOrWhiteSpace([string]$vmName)) {
+        $vmName = [string]$platformDefaults.VmNameDefault
+    }
+
+    $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_LOCATION' -DefaultValue '')
+    $regionCode = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
+        $regionCode = Get-AzVmRegionCode -Location ([string]$azLocation)
+    }
+
+    $nameTokens = @{
+        VM_NAME = [string]$vmName
+        REGION_CODE = [string]$regionCode
+        N = '1'
+    }
+
+    $resourceGroup = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    if (-not [string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
+        $resourceGroup = Resolve-AzVmTemplate -Template $resourceGroup -Tokens $nameTokens
+    }
+
+    $vmStorageSku = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_STORAGE_SKU' -DefaultValue 'StandardSSD_LRS')) -Tokens $nameTokens
+    $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_SIZE'
+    $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_IMAGE'
+    $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_DISK_SIZE_GB'
+    $vmSize = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmSizeConfigKey -DefaultValue ([string]$platformDefaults.VmSizeDefault))) -Tokens $nameTokens
+    $vmImage = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmImageConfigKey -DefaultValue ([string]$platformDefaults.VmImageDefault))) -Tokens $nameTokens
+    $vmDiskSize = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmDiskSizeConfigKey -DefaultValue ([string]$platformDefaults.VmDiskSizeDefault))) -Tokens $nameTokens
+    $vmDiskName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_DISK_NAME' -DefaultValue '')) -Tokens $nameTokens
+    $vmUser = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ADMIN_USER' -DefaultValue 'manager')) -Tokens $nameTokens
+    $vmPass = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ADMIN_PASS' -DefaultValue '<runtime-secret>')) -Tokens $nameTokens
+    $vmAssistantUser = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ASSISTANT_USER' -DefaultValue 'assistant')) -Tokens $nameTokens
+    $vmAssistantPass = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ASSISTANT_PASS' -DefaultValue '<runtime-secret>')) -Tokens $nameTokens
+    $sshPort = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_SSH_PORT' -DefaultValue '444')) -Tokens $nameTokens
+    $rdpPort = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_RDP_PORT' -DefaultValue '3389')) -Tokens $nameTokens
+
+    $vmInitTaskDirName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key (Get-AzVmPlatformTaskCatalogConfigKey -Platform $platform -Stage 'init') -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault))) -Tokens $nameTokens
+    $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key (Get-AzVmPlatformTaskCatalogConfigKey -Platform $platform -Stage 'update') -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault))) -Tokens $nameTokens
+    $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $repoRoot
+    $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $repoRoot
+
+    $defaultPortsCsv = '80,443,8444,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434'
+    $tcpPortsConfiguredCsv = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'TCP_PORTS' -DefaultValue $defaultPortsCsv)
+    $tcpPorts = @($tcpPortsConfiguredCsv -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' })
+    if (-not [string]::IsNullOrWhiteSpace([string]$sshPort) -and ($sshPort -match '^\d+$') -and $tcpPorts -notcontains $sshPort) {
+        $tcpPorts += $sshPort
+    }
+    if ([bool]$platformDefaults.IncludeRdp -and -not [string]::IsNullOrWhiteSpace([string]$rdpPort) -and ($rdpPort -match '^\d+$') -and $tcpPorts -notcontains $rdpPort) {
+        $tcpPorts += $rdpPort
+    }
+
+    $taskOutcomeModeRaw = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_TASK_OUTCOME_MODE' -DefaultValue 'continue')
+    if ([string]::IsNullOrWhiteSpace($taskOutcomeModeRaw)) { $taskOutcomeModeRaw = 'continue' }
+    $taskOutcomeMode = $taskOutcomeModeRaw.Trim().ToLowerInvariant()
+    if ($taskOutcomeMode -ne 'continue' -and $taskOutcomeMode -ne 'strict') {
+        Throw-FriendlyError `
+            -Detail ("Invalid VM_TASK_OUTCOME_MODE '{0}'." -f $taskOutcomeModeRaw) `
+            -Code 14 `
+            -Summary "Task outcome mode is invalid." `
+            -Hint "Set VM_TASK_OUTCOME_MODE=continue or VM_TASK_OUTCOME_MODE=strict."
+    }
+
+    $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
+    $sshTaskTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_TASK_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshTaskTimeoutSeconds))
+    $sshTaskTimeoutSeconds = $script:SshTaskTimeoutSeconds
+    if ($sshTaskTimeoutText -match '^\d+$') { $sshTaskTimeoutSeconds = [int]$sshTaskTimeoutText }
+    if ($sshTaskTimeoutSeconds -lt 30) { $sshTaskTimeoutSeconds = 30 }
+    if ($sshTaskTimeoutSeconds -gt 7200) { $sshTaskTimeoutSeconds = 7200 }
+
+    $sshConnectTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_CONNECT_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshConnectTimeoutSeconds))
+    $sshConnectTimeoutSeconds = $script:SshConnectTimeoutSeconds
+    if ($sshConnectTimeoutText -match '^\d+$') { $sshConnectTimeoutSeconds = [int]$sshConnectTimeoutText }
+    if ($sshConnectTimeoutSeconds -lt 5) { $sshConnectTimeoutSeconds = 5 }
+    if ($sshConnectTimeoutSeconds -gt 300) { $sshConnectTimeoutSeconds = 300 }
+
+    $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
+    $azCommandTimeoutSeconds = $script:AzCommandTimeoutSeconds
+    if ($azCommandTimeoutText -match '^\d+$') { $azCommandTimeoutSeconds = [int]$azCommandTimeoutText }
+    if ($azCommandTimeoutSeconds -lt 30) { $azCommandTimeoutSeconds = 30 }
+    if ($azCommandTimeoutSeconds -gt 7200) { $azCommandTimeoutSeconds = 7200 }
+
+    $script:AzCommandTimeoutSeconds = $azCommandTimeoutSeconds
+    $script:SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
+    $script:SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+
+    $context = [ordered]@{
+        ResourceGroup = [string]$resourceGroup
+        AzLocation = [string]$azLocation
+        VmName = [string]$vmName
+        VmImage = [string]$vmImage
+        VmStorageSku = [string]$vmStorageSku
+        VmSize = [string]$vmSize
+        VmDiskName = [string]$vmDiskName
+        VmDiskSize = [string]$vmDiskSize
+        VmUser = [string]$vmUser
+        VmPass = [string]$vmPass
+        VmAssistantUser = [string]$vmAssistantUser
+        VmAssistantPass = [string]$vmAssistantPass
+        SshPort = [string]$sshPort
+        RdpPort = [string]$rdpPort
+        TcpPorts = @($tcpPorts)
+        TcpPortsConfiguredCsv = [string]$tcpPortsConfiguredCsv
+        VmInitTaskDir = [string]$vmInitTaskDir
+        VmUpdateTaskDir = [string]$vmUpdateTaskDir
+        VmOsType = [string]$platform
+        AzCommandTimeoutSeconds = [int]$azCommandTimeoutSeconds
+        SshTaskTimeoutSeconds = [int]$sshTaskTimeoutSeconds
+        SshConnectTimeoutSeconds = [int]$sshConnectTimeoutSeconds
+    }
+
+    return [pscustomobject]@{
+        EnvFilePath = $envFilePath
+        ConfigMap = $configMap
+        EffectiveConfigMap = $effectiveConfigMap
+        Platform = $platform
+        PlatformDefaults = $platformDefaults
+        Context = $context
         TaskOutcomeMode = $taskOutcomeMode
         ConfiguredPySshClientPath = $configuredPySshClientPath
         SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
@@ -1821,18 +1961,10 @@ function Invoke-AzVmExecCommand {
         [switch]$LinuxFlag
     )
 
-    $runtimeConfigOverrides = @{}
-    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$true -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
+    $runtime = Initialize-AzVmExecCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
     $context = $runtime.Context
     $platform = [string]$runtime.Platform
     $platformDefaults = $runtime.PlatformDefaults
-    $selectedResourceGroup = Resolve-AzVmTargetResourceGroup `
-        -Options $Options `
-        -AutoMode:$AutoMode `
-        -DefaultResourceGroup ([string]$context.ResourceGroup) `
-        -VmName ([string]$context.VmName) `
-        -OperationName 'exec'
-    $context.ResourceGroup = $selectedResourceGroup
 
     $hasInitTask = Test-AzVmCliOptionPresent -Options $Options -Name 'init-task'
     $hasUpdateTask = Test-AzVmCliOptionPresent -Options $Options -Name 'update-task'
@@ -1847,7 +1979,9 @@ function Invoke-AzVmExecCommand {
     $hasTaskSelector = ($hasInitTask -or $hasUpdateTask)
     if ($hasTaskSelector) {
         $stage = if ($hasInitTask) { 'init' } else { 'update' }
-        $context.VmName = Resolve-AzVmTargetVmName -ResourceGroup ([string]$context.ResourceGroup) -DefaultVmName ([string]$context.VmName) -AutoMode:$AutoMode -OperationName 'exec'
+        $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.EffectiveConfigMap -OperationName 'exec'
+        $context.ResourceGroup = [string]$target.ResourceGroup
+        $context.VmName = [string]$target.VmName
 
         if ($stage -eq 'init') {
             $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
@@ -1895,7 +2029,9 @@ function Invoke-AzVmExecCommand {
         return
     }
 
-    $selectedVmName = Resolve-AzVmTargetVmName -ResourceGroup $selectedResourceGroup -DefaultVmName ([string]$context.VmName) -AutoMode:$AutoMode -OperationName 'exec'
+    $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.EffectiveConfigMap -OperationName 'exec'
+    $selectedResourceGroup = [string]$target.ResourceGroup
+    $selectedVmName = [string]$target.VmName
     $vmDetailContext = [ordered]@{
         ResourceGroup = $selectedResourceGroup
         VmName = $selectedVmName

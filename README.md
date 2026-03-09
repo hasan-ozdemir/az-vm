@@ -25,7 +25,7 @@
 - `group`: list or select managed resource groups.
 - `show`: print a human-readable resource and VM inventory.
 - `do`: inspect or change the power/lifecycle state of one managed VM.
-- `exec`: run one init task, one update task, or open an interactive remote shell path.
+- `exec`: run one init task, one update task, or open an interactive remote shell path; direct task runs can target one VM with `--group` plus `--vm-name`.
 - `ssh`: launch the local Windows OpenSSH client for a managed VM.
 - `rdp`: launch the local Remote Desktop client for a managed Windows VM.
 - `move`: migrate a managed VM to another Azure region.
@@ -47,6 +47,7 @@ Top-level steps are:
 Execution semantics:
 - `vm-init` runs through Azure Run Command in task-batch mode.
 - `vm-update` runs task-by-task through persistent pyssh.
+- isolated `exec --init-task` / `exec --update-task` runs resolve only the selected VM plus task context instead of traversing the broader create/update resource inventory path.
 - Full `create` and `update` flows execute the whole step chain unless explicitly sliced.
 
 ## Runtime Modes
@@ -163,7 +164,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.9.245`.
+- The current documented release is `2026.3.9.246`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.
@@ -199,7 +200,7 @@ Typical workflows:
 .\az-vm.cmd resize --vm-name=examplevm --vm-size=Standard_D2as_v5 --group=rg-examplevm-ate1-g1 --windows
 
 # run one guest update task
-.\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --windows
+.\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --vm-name=examplevm --windows
 
 # connect
 .\az-vm.cmd do --vm-action=start --group=rg-examplevm-ate1-g1 --vm-name=examplevm

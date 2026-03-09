@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.9.245] - 2026-03-09
+## [2026.3.9.246] - 2026-03-09
 
 ### Features
 - Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
@@ -14,10 +14,12 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Made `ssh` and `rdp` state-aware so they now refuse politely when the target VM is not running and point operators to `az-vm do --vm-action=start`.
 - Updated `resize` to use `--vm-name` instead of legacy `--vm`, added `--windows`/`--linux` support, and kept no-parameter invocation interactive.
 - Split `resize` away from the generic move/resize prompt flow so interactive resize stays in the current region and direct fully specified resize runs without an extra confirmation prompt.
+- Streamlined isolated `exec` task runs so they now accept `--vm-name`, resolve only the selected VM/task context, and skip the broader Step-1 managed-resource inventory path before pyssh execution.
 - Replaced the fragile reboot/autologon path for Windows `vm-update` tasks `04` and `05` with a bounded `manager` password-logon scheduled-task helper so isolated `exec` runs no longer stall in interactive-session retry loops.
 - Reworked `04-windows-ux-performance-tuning` so it now enforces and readback-validates hibernate-menu visibility, Explorer details/no-group defaults, desktop name sort plus auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager full view through `TaskManager\settings.json`.
 - Simplified `05-windows-advanced-system-settings` down to deterministic machine-level advanced settings only and removed the unsupported audio/max-volume automation branch.
 - Hardened `20-private-local-task` with staging extraction, `version.dll` hash verification, per-file roaming copy, and explicit missing-file detection after live validation exposed a false-success path.
+- Reworked `09-install-ollama` to install `Ollama.Ollama` through `winget`, re-resolve the executable after PATH refresh, and require a healthy response from `http://127.0.0.1:11434/api/version`, starting `ollama serve` when the API is not already ready.
 
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
@@ -40,8 +42,10 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added smoke coverage for renamed Windows vm-update private local-only accessibility tasks, zip asset layout, and runtime asset-copy resolution.
 - Added smoke coverage for the new `do` command parser/help contract, lifecycle-state normalization, action eligibility checks, and interactive action selection.
 - Added smoke coverage for `resize --vm-name`, direct-request detection, platform-flag validation, and same-region interactive size selection.
+- Added smoke coverage for direct `exec --vm-name` task targeting, the new minimal `exec` runtime path, and the strengthened Ollama HTTP readiness check.
 - Added smoke coverage for the new Windows UX helper-asset model, removal of reboot-resume task metadata, `TaskManager\settings.json` validation, and removal of legacy audio tuning from task `05`.
 - Completed isolated live `exec` validation for Windows update tasks `04`, `05`, and `20` against `rg-examplevm-ate1-g1/examplevm`, including an idempotent rerun of task `04` plus private local-only accessibility `version.dll` hash and roaming-manifest readback checks.
+- Completed isolated live `exec` sweeps for every Windows `vm-init` and `vm-update` task against `rg-examplevm-ate1-g1/examplevm` in effective catalog priority/timeout order, then reran task `09` after the Ollama hardening change to prove `11434` API readiness.
 
 ### Refactors
 - Removed runtime task-catalog auto-sync/auto-write behavior; catalogs are now read-only inputs at execution time.

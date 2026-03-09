@@ -380,6 +380,11 @@ Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-examplevm-ate1-g1'; linux = $true }
 }
 
+Invoke-Test -Name "Exec command accepts vm-name for direct task targeting" -Action {
+    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'init-task' = '01'; group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'update-task' = '28'; group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; windows = $true }
+}
+
 Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'examplevm'; 'vm-action' = 'status' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'deallocate' }
@@ -782,6 +787,120 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
     }
 }
 
+Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
+    $script:ExecMinimalRuntimeUsed = $false
+    $script:ExecRunCommandInvocation = $null
+    try {
+        function Initialize-AzVmCommandRuntimeContext { throw 'Full Step-1 runtime context must not be used by exec.' }
+        function Initialize-AzVmExecCommandRuntimeContext {
+            param([switch]$AutoMode, [switch]$WindowsFlag, [switch]$LinuxFlag)
+            $script:ExecMinimalRuntimeUsed = $true
+            return [pscustomobject]@{
+                EnvFilePath = (Join-Path $RepoRoot '.env')
+                ConfigMap = @{ RESOURCE_GROUP = 'rg-examplevm-ate1-g1'; VM_NAME = 'examplevm' }
+                EffectiveConfigMap = @{ RESOURCE_GROUP = 'rg-examplevm-ate1-g1'; VM_NAME = 'examplevm' }
+                Platform = 'windows'
+                PlatformDefaults = [pscustomobject]@{ RunCommandId = 'RunPowerShellScript' }
+                Context = [ordered]@{
+                    ResourceGroup = 'rg-examplevm-ate1-g1'
+                    VmName = 'examplevm'
+                    VmInitTaskDir = 'windows/init'
+                    VmUpdateTaskDir = 'windows/update'
+                    VmUser = 'manager'
+                    VmPass = 'secret'
+                    VmAssistantUser = 'assistant'
+                    VmAssistantPass = 'secret2'
+                    SshPort = '444'
+                    RdpPort = '3389'
+                    TcpPorts = @('444','3389')
+                    AzLocation = 'austriaeast'
+                    VmSize = 'Standard_D2as_v5'
+                    VmImage = 'example:image:urn'
+                    VmDiskName = 'disk-examplevm'
+                    VmDiskSize = '128'
+                    VmStorageSku = 'StandardSSD_LRS'
+                }
+                TaskOutcomeMode = 'continue'
+                ConfiguredPySshClientPath = ''
+                SshTaskTimeoutSeconds = 180
+                SshConnectTimeoutSeconds = 30
+            }
+        }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-examplevm-ate1-g1'
+                VmName = 'examplevm'
+            }
+        }
+        function Get-AzVmTaskBlocksFromDirectory {
+            param([string]$DirectoryPath, [string]$Platform, [string]$Stage)
+            return [pscustomobject]@{
+                ActiveTasks = @(
+                    [pscustomobject]@{
+                        Name = '01-ensure-local-admin-users'
+                        Script = 'Write-Host ok'
+                        TimeoutSeconds = 180
+                    }
+                )
+            }
+        }
+        function Resolve-AzVmRuntimeTaskBlocks {
+            param([object[]]$TemplateTaskBlocks, [hashtable]$Context)
+            return @($TemplateTaskBlocks)
+        }
+        function Resolve-AzVmTaskSelection {
+            param([object[]]$TaskBlocks, [string]$TaskNumberOrName, [string]$Stage, [switch]$AutoMode)
+            return @($TaskBlocks)[0]
+        }
+        function Invoke-VmRunCommandBlocks {
+            param(
+                [string]$ResourceGroup,
+                [string]$VmName,
+                [string]$CommandId,
+                [object[]]$TaskBlocks,
+                [string]$CombinedShell,
+                [string]$TaskOutcomeMode,
+                [string]$PerfTaskCategory
+            )
+
+            $script:ExecRunCommandInvocation = [pscustomobject]@{
+                ResourceGroup = $ResourceGroup
+                VmName = $VmName
+                CommandId = $CommandId
+                CombinedShell = $CombinedShell
+                TaskOutcomeMode = $TaskOutcomeMode
+                PerfTaskCategory = $PerfTaskCategory
+                TaskName = [string]@($TaskBlocks)[0].Name
+            }
+        }
+
+        Invoke-AzVmExecCommand -Options @{ 'init-task' = '01' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
+
+        Assert-True -Condition $script:ExecMinimalRuntimeUsed -Message 'Exec command must use the minimal exec runtime context.'
+        Assert-True -Condition ($null -ne $script:ExecRunCommandInvocation) -Message 'Exec init task must invoke run-command blocks.'
+        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.ResourceGroup -eq 'rg-examplevm-ate1-g1') -Message 'Exec init task must preserve target resource group.'
+        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.VmName -eq 'examplevm') -Message 'Exec init task must preserve target VM name.'
+        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.CommandId -eq 'RunPowerShellScript') -Message 'Exec init task must preserve platform run-command id.'
+        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.TaskName -eq '01-ensure-local-admin-users') -Message 'Exec init task must preserve selected task.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmCommandRuntimeContext',
+            'Initialize-AzVmExecCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmTaskBlocksFromDirectory',
+            'Resolve-AzVmRuntimeTaskBlocks',
+            'Resolve-AzVmTaskSelection',
+            'Invoke-VmRunCommandBlocks'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name ExecMinimalRuntimeUsed -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ExecRunCommandInvocation -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Task token replacement" -Action {
     $context = [ordered]@{
         VmUser = "manager"
@@ -916,6 +1035,15 @@ Invoke-Test -Name "Windows private local-only accessibility task asset copies" -
     Assert-True -Condition ($remotePaths -contains 'C:/Windows/Temp/az-vm-private local-only accessibility-roaming-settings.zip') -Message "private local-only accessibility roaming zip remote path mismatch."
     Assert-True -Condition (($localPaths | Where-Object { $_ -like '*private local-only accessibility-version.zip' }).Count -eq 1) -Message "private local-only accessibility version zip local asset path mismatch."
     Assert-True -Condition (($localPaths | Where-Object { $_ -like '*private local-only accessibility-roaming-settings.zip' }).Count -eq 1) -Message "private local-only accessibility roaming zip local asset path mismatch."
+}
+
+Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\09-install-ollama.ps1'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*Ollama.Ollama*') -Message 'Ollama install task must use the Ollama.Ollama winget package id.'
+    Assert-True -Condition ($taskScript -like '*127.0.0.1:11434*') -Message 'Ollama install task must check the default Ollama port.'
+    Assert-True -Condition ($taskScript -like '*/api/version*') -Message 'Ollama install task must validate the Ollama HTTP API endpoint.'
+    Assert-True -Condition ($taskScript -like '*ollama serve*') -Message 'Ollama install task must start ollama serve when the API is not already ready.'
 }
 
 Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
