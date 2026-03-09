@@ -503,28 +503,42 @@ function Apply-AzVmTaskBlockReplacements {
         }
 
         $assetCopies = @()
-        if ($taskName -eq '20-private-local-task' -and -not [string]::IsNullOrWhiteSpace([string]$directoryPath)) {
-            $assetRoot = Join-Path $directoryPath 'local-private-assets'
-            $requiredAssets = @(
-                [pscustomobject]@{
-                    FileName = 'private local-only accessibility-version.zip'
-                    RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-version.zip'
-                },
-                [pscustomobject]@{
-                    FileName = 'private local-only accessibility-roaming-settings.zip'
-                    RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-roaming-settings.zip'
-                }
-            )
+        if (-not [string]::IsNullOrWhiteSpace([string]$directoryPath)) {
+            if ($taskName -eq '20-private-local-task') {
+                $assetRoot = Join-Path $directoryPath 'local-private-assets'
+                $requiredAssets = @(
+                    [pscustomobject]@{
+                        FileName = 'private local-only accessibility-version.zip'
+                        RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-version.zip'
+                    },
+                    [pscustomobject]@{
+                        FileName = 'private local-only accessibility-roaming-settings.zip'
+                        RemotePath = 'C:/Windows/Temp/az-vm-private local-only accessibility-roaming-settings.zip'
+                    }
+                )
 
-            foreach ($assetSpec in @($requiredAssets)) {
-                $assetLocalPath = Join-Path $assetRoot ([string]$assetSpec.FileName)
-                if (-not (Test-Path -LiteralPath $assetLocalPath)) {
-                    throw ("Task asset was not found for '{0}': {1}" -f $taskName, $assetLocalPath)
+                foreach ($assetSpec in @($requiredAssets)) {
+                    $assetLocalPath = Join-Path $assetRoot ([string]$assetSpec.FileName)
+                    if (-not (Test-Path -LiteralPath $assetLocalPath)) {
+                        throw ("Task asset was not found for '{0}': {1}" -f $taskName, $assetLocalPath)
+                    }
+
+                    $assetCopies += [pscustomobject]@{
+                        LocalPath = [string](Resolve-Path -LiteralPath $assetLocalPath).Path
+                        RemotePath = [string]$assetSpec.RemotePath
+                    }
+                }
+            }
+            elseif ($taskName -eq '04-windows-ux-performance-tuning') {
+                $repoRoot = Split-Path -Path (Split-Path -Path $directoryPath -Parent) -Parent
+                $helperLocalPath = Join-Path $repoRoot 'tools\windows\az-vm-interactive-session-helper.ps1'
+                if (-not (Test-Path -LiteralPath $helperLocalPath)) {
+                    throw ("Interactive session helper was not found for '{0}': {1}" -f $taskName, $helperLocalPath)
                 }
 
                 $assetCopies += [pscustomobject]@{
-                    LocalPath = [string](Resolve-Path -LiteralPath $assetLocalPath).Path
-                    RemotePath = [string]$assetSpec.RemotePath
+                    LocalPath = [string](Resolve-Path -LiteralPath $helperLocalPath).Path
+                    RemotePath = 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1'
                 }
             }
         }

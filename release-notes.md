@@ -2,10 +2,10 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.9.244 - 2026-03-09
+## Release 2026.3.9.245 - 2026-03-09
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, and connection commands that now require a running VM.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, connection commands that now require a running VM, and a far more reliable Windows interactive UX task path.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
@@ -16,10 +16,13 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Corrected `resize` command syntax to use `--vm-name`, added `--windows`/`--linux` support, and kept resize interactive when parameters are omitted.
 - `ssh` and `rdp` now refuse politely unless the target VM is already running, with a direct hint to start it through `do`.
 - External `ssh` and `rdp` connection commands for managed VMs.
+- Windows update task `04` now applies and validates `manager` UX settings through a bounded password-logon scheduled task instead of a reboot/autologon loop.
+- Windows update task `04` now enforces hibernate-menu visibility, Explorer details/no-group defaults, desktop name-sort plus auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager full view via `TaskManager\settings.json`.
+- Windows update task `05` now keeps only deterministic machine-level advanced settings and no longer carries unsupported audio/max-volume automation.
 - Hardened naming, env-key, and validation contracts across provisioning flows.
 - Post-deploy feature enablement for hibernation and nested-virtualization support checks.
 - Broader Windows guest update coverage, including UX tuning and public desktop shortcut generation.
-- Windows private local-only accessibility update assets now deploy from repo-managed zip packages, including version replacement and roaming settings restore.
+- Windows private local-only accessibility update assets now deploy from repo-managed zip packages, including staged version replacement, roaming settings restore, and stricter post-copy verification.
 
 ### Breaking and Contract-Significant Changes
 - Legacy command names and aliases have been removed rather than preserved.
@@ -39,6 +42,8 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - More consistent Linux/Windows terminology and step/task wording.
 - Renamed Windows vm-update task entries are now aligned with the task catalog so the intended `19/20/28` ordering and timeout policy apply again.
 - The merged Windows update catalog now preserves the late-stage ordering intent by keeping public desktop shortcuts at priority `98` and health snapshot at priority `99`.
+- Windows interactive UX tasks no longer depend on reboot-resume metadata or autologon cleanup; isolated `exec` runs stay on the normal bounded SSH flow.
+- Isolated live validation now covers tasks `04`, `05`, and `20` on `rg-examplevm-ate1-g1/examplevm`, including idempotent rerun of `04` and private local-only accessibility hash/manifest readbacks.
 
 ### Documentation and Process Improvements
 - Expanded `AGENTS.md` into a repository engineering contract.

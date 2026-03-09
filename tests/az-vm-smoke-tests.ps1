@@ -829,7 +829,11 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     $azdTask = $active | Where-Object { [string]$_.Name -eq '19-install-microsoft-azd' } | Select-Object -First 1
     $localOnlyAccessibilityTask = $active | Where-Object { [string]$_.Name -eq '20-private-local-task' } | Select-Object -First 1
     $healthTask = $active | Where-Object { [string]$_.Name -eq '28-health-snapshot' } | Select-Object -First 1
+    $uxTask = $active | Where-Object { [string]$_.Name -eq '04-windows-ux-performance-tuning' } | Select-Object -First 1
+    $advancedTask = $active | Where-Object { [string]$_.Name -eq '05-windows-advanced-system-settings' } | Select-Object -First 1
 
+    Assert-True -Condition ([int]$uxTask.TimeoutSeconds -eq 600) -Message "Windows UX tuning task timeout must be 600."
+    Assert-True -Condition ([int]$advancedTask.TimeoutSeconds -eq 300) -Message "Windows advanced settings task timeout must be 300."
     Assert-True -Condition ([int]$azdTask.TimeoutSeconds -eq 1800) -Message "Renamed azd task timeout must remain 1800."
     Assert-True -Condition ([int]$localOnlyAccessibilityTask.TimeoutSeconds -eq 180) -Message "private local-only accessibility task timeout must remain 180."
     Assert-True -Condition ([int]$healthTask.TimeoutSeconds -eq 180) -Message "Renamed health snapshot timeout must remain 180."
@@ -912,6 +916,65 @@ Invoke-Test -Name "Windows private local-only accessibility task asset copies" -
     Assert-True -Condition ($remotePaths -contains 'C:/Windows/Temp/az-vm-private local-only accessibility-roaming-settings.zip') -Message "private local-only accessibility roaming zip remote path mismatch."
     Assert-True -Condition (($localPaths | Where-Object { $_ -like '*private local-only accessibility-version.zip' }).Count -eq 1) -Message "private local-only accessibility version zip local asset path mismatch."
     Assert-True -Condition (($localPaths | Where-Object { $_ -like '*private local-only accessibility-roaming-settings.zip' }).Count -eq 1) -Message "private local-only accessibility roaming zip local asset path mismatch."
+}
+
+Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
+    $context = [ordered]@{
+        VmUser = "manager"
+        VmPass = "secret"
+        VmAssistantUser = "assistant"
+        VmAssistantPass = "secret2"
+        SshPort = "444"
+        RdpPort = "3389"
+        TcpPorts = @("444","3389","11434")
+        ResourceGroup = "rg-examplevm"
+        VmName = "examplevm"
+        AzLocation = "austriaeast"
+        VmSize = "Standard_B2as_v2"
+        VmImage = "example:image:urn"
+        VmDiskName = "disk-examplevm"
+        VmDiskSize = "128"
+        VmStorageSku = "StandardSSD_LRS"
+    }
+
+    $updateDir = Join-Path $RepoRoot 'windows\update'
+
+    $uxTaskPath = Join-Path $updateDir '04-windows-ux-performance-tuning.ps1'
+    $uxTemplates = @(
+        [pscustomobject]@{
+            Name = '04-windows-ux-performance-tuning'
+            Script = [string](Get-Content -LiteralPath $uxTaskPath -Raw)
+            RelativePath = '04-windows-ux-performance-tuning.ps1'
+            DirectoryPath = $updateDir
+            TimeoutSeconds = 600
+        }
+    )
+
+    $resolvedUxTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $uxTemplates -Context $context)[0]
+    $uxAssetCopies = @($resolvedUxTask.AssetCopies)
+    $uxScriptBody = [string]$resolvedUxTask.Script
+    Assert-True -Condition ($uxAssetCopies.Count -eq 1) -Message "UX task must publish exactly one helper asset."
+    Assert-True -Condition ([string]$uxAssetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "UX task helper remote path mismatch."
+    Assert-True -Condition ($uxScriptBody -like '*TaskManager\settings.json*') -Message "UX task must validate Task Manager through settings.json."
+    Assert-True -Condition (-not $resolvedUxTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "UX task must not publish reboot-resume metadata."
+
+    $advancedTaskPath = Join-Path $updateDir '05-windows-advanced-system-settings.ps1'
+    $advancedTemplates = @(
+        [pscustomobject]@{
+            Name = '05-windows-advanced-system-settings'
+            Script = [string](Get-Content -LiteralPath $advancedTaskPath -Raw)
+            RelativePath = '05-windows-advanced-system-settings.ps1'
+            DirectoryPath = $updateDir
+            TimeoutSeconds = 300
+        }
+    )
+
+    $resolvedAdvancedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $advancedTemplates -Context $context)[0]
+    $advancedAssetCopies = @($resolvedAdvancedTask.AssetCopies)
+    $advancedScriptBody = [string]$resolvedAdvancedTask.Script
+    Assert-True -Condition ($advancedAssetCopies.Count -eq 0) -Message "Advanced settings task must not publish helper assets."
+    Assert-True -Condition ($advancedScriptBody -notlike '*VolumeControl*') -Message "Advanced settings task must not keep legacy audio tuning."
+    Assert-True -Condition (-not $resolvedAdvancedTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Advanced settings task must not publish reboot-resume metadata."
 }
 
 Write-Host ""

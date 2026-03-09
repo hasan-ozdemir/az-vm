@@ -163,7 +163,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.8.239`.
+- The current documented release is `2026.3.9.245`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.

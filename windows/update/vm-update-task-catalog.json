@@ -26,13 +26,13 @@
                       "name":  "04-windows-ux-performance-tuning",
                       "priority":  4,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  600
                   },
                   {
                       "name":  "05-windows-advanced-system-settings",
                       "priority":  5,
                       "enabled":  true,
-                      "timeout":  180
+                      "timeout":  300
                   },
                   {
                       "name":  "06-git-install-check",

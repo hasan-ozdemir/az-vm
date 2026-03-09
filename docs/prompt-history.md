@@ -3708,3 +3708,15 @@ hayır; retired/unsupported yerine, hibernate-deallocate parametresi hiç olmam�
 **Assistant Summary**
 
 Removed all live `hibernate-deallocate` traces from the current `do` command contract so runtime parsing, interactive selection, help output, README examples, changelog, release notes, and smoke tests now expose only `--vm-action=hibernate` again, while preserving the existing Azure behavior that hibernation still runs through the platform's deallocation-based hibernate path; then re-ran smoke, documentation, code-quality, and PowerShell compatibility checks successfully.
+
+### 2026-03-09 03:59 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Replaced the failing Windows interactive UX reboot/autologon path with a bounded `manager` password-logon scheduled-task helper under `tools/windows/`, removed reboot-resume metadata from isolated SSH task execution, rewrote `04-windows-ux-performance-tuning` to validate persisted `manager` UX stores including hibernate visibility, Explorer details/no-group defaults, desktop sort/auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager `settings.json`, simplified `05-windows-advanced-system-settings` to deterministic machine-level settings only with legacy audio tuning removed, hardened `20-private-local-task` with staging extraction plus hash/manifest verification, advanced the documented release to `2026.3.9.245`, and verified the work with smoke, code-quality, PowerShell compatibility, isolated live `exec` runs of tasks `04`, `05`, and `20`, an idempotent rerun of task `04`, and private local-only accessibility `version.dll` plus roaming-settings readback checks on `rg-examplevm-ate1-g1/examplevm`.

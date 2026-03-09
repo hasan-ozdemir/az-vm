@@ -270,12 +270,6 @@ function Initialize-AzVmSshHostKey {
     }
 }
 
-
-
-
-
-
-
 # Handles Convert-AzVmProcessArgument.
 function Convert-AzVmProcessArgument {
     param(
