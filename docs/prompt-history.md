@@ -3846,3 +3846,18 @@ feat: yeni bir vm-update task ekleyelim: adı "install-codex-app.ps1" olsun. şu
 **Assistant Summary**
 
 Added Windows `vm-update` task `38-install-codex-app` with the requested `winget install codex -s msstore` install path, AppX/StartApps/winget verification, and a best-effort deferred RunOnce fallback for noninteractive Store-session failures; extended `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` to include the new `a3CodexApp` public shortcut with the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target; updated the Windows update catalog, smoke contracts, changelog, and release notes; and verified the change non-live with PowerShell parse validation plus the local smoke/documentation/code-quality checks only, intentionally skipping live VM execution because an end-to-end `move` run was already active elsewhere.
+
+### 2026-03-09 22:59 TRT
+
+**User Prompt**
+
+````text
+feat: şimdi de başka bir özellik ekliyoruz:
+vm-update task'larıyla guest vm üzerine kurduğumuz uygulamaları benim şuanki yerel bilgisayarımda bulunan ve yüklü olan uygulamalarla karşılaştıralım; ben de yüklü olup windows açıldığında auto-start eden yani "startup" seçeneklerinde "enabled" olan tüm uygulamalar; lütfen guest vm üzerinde de aynen auto-run etsin; bu davranış için benim yerel bilgisayarım bir örnek teşkil etsin.
+*vm-update görevlerine bir yenisini ekleyelim o zaman: "auto-start-apps.ps1" şeklinde... guest vm üzerine kurulacak uygulamalardan benim bilgisayarıma da yüklü olanlar; benim bilgisayarımda otomatik olarak başlıyorsa, lütfen orada hedef vm üzerinde de otomatik olarak başlasın.
+***vm üzerindeki test'leri şimdilik koşmayalım; vm halen müsait değil; orada başka bir test koşturuyorum.
+````
+
+**Assistant Summary**
+
+Added host-side startup-profile helpers so `az-vm` now inspects the current local Windows machine for enabled startup apps, maps supported intersections such as Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper into a base64 task token, and feeds that profile into the new Windows `vm-update` task `39-auto-start-apps`; implemented that task to mirror the requested apps onto the guest VM through machine Startup-folder shortcuts with StartupApproved enablement, updated `29-health-snapshot` to inventory the mirrored startup launcher set, extended smoke coverage for startup-profile mapping and the new task contract, updated the Windows update catalog plus release docs, and verified everything only through non-live local checks while intentionally skipping VM execution because the guest was busy with another test.

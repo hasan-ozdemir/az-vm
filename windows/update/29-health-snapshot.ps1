@@ -349,6 +349,50 @@ foreach ($shortcutName in @($publicShortcutNames)) {
     Write-Host " hotkey => $([string]$shortcut.Hotkey)"
 }
 
+Write-Host "AUTO-START APP STATUS:"
+$hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
+$machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
+$expectedStartupShortcutNames = @()
+try {
+    $startupProfileJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string]$hostStartupProfileJsonBase64))
+    $startupProfile = @()
+    if (-not [string]::IsNullOrWhiteSpace([string]$startupProfileJson)) {
+        $startupProfile = @(ConvertFrom-Json -InputObject $startupProfileJson -ErrorAction Stop)
+    }
+
+    foreach ($entry in @($startupProfile)) {
+        switch ([string]$entry.Key) {
+            'docker-desktop' { $expectedStartupShortcutNames += 'Docker Desktop' }
+            'ollama' { $expectedStartupShortcutNames += 'Ollama' }
+            'onedrive' { $expectedStartupShortcutNames += 'OneDrive' }
+            'teams' { $expectedStartupShortcutNames += 'Teams' }
+            'private local-only accessibility' { $expectedStartupShortcutNames += 'private local-only accessibility' }
+            'itunes-helper' { $expectedStartupShortcutNames += 'iTunesHelper' }
+            'google-drive' { $expectedStartupShortcutNames += 'Google Drive' }
+            'windscribe' { $expectedStartupShortcutNames += 'Windscribe' }
+            'anydesk' { $expectedStartupShortcutNames += 'AnyDesk' }
+            'codex-app' { $expectedStartupShortcutNames += 'Codex App' }
+        }
+    }
+}
+catch {
+    Write-Warning ("startup-profile-decode-failed => {0}" -f $_.Exception.Message)
+}
+
+foreach ($startupShortcutName in @($expectedStartupShortcutNames | Select-Object -Unique)) {
+    $startupShortcutPath = Join-Path $machineStartupFolder ($startupShortcutName + ".lnk")
+    if (-not (Test-Path -LiteralPath $startupShortcutPath)) {
+        Write-Host "missing-startup-shortcut => $startupShortcutPath"
+        continue
+    }
+
+    $startupShortcut = Get-ShortcutDetails -ShortcutName $startupShortcutName -ShortcutPath $startupShortcutPath -ShellObject $wsh
+    Write-Host "startup-shortcut => $startupShortcutPath"
+    Write-Host " target => $([string]$startupShortcut.TargetPath)"
+    Write-Host " args => $([string]$startupShortcut.Arguments)"
+    Write-Host " hotkey => $([string]$startupShortcut.Hotkey)"
+}
+
 Write-Host "NOTEPAD STATUS:"
 if (Test-Path "$env:WINDIR\System32\notepad.exe") {
     Write-Host "legacy-notepad-exe-found"

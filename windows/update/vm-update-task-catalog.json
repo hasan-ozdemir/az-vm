@@ -233,6 +233,12 @@
                       "timeout":  120
                   },
                   {
+                      "name":  "39-auto-start-apps",
+                      "priority":  97,
+                      "enabled":  true,
+                      "timeout":  45
+                  },
+                  {
                       "name":  "51-local-diagnostic",
                       "priority":  10,
                       "enabled":  true,

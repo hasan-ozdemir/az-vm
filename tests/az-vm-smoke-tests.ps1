@@ -929,10 +929,11 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmDiskName = "disk-examplevm"
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
+        HostStartupProfileJsonBase64 = "W10="
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __TCP_PORTS_BASH__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -941,6 +942,30 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*W10=*") -Message "Host startup profile token was not replaced."
+}
+
+Invoke-Test -Name "Startup mirror profile resolution" -Action {
+    $entries = @(
+        [pscustomobject]@{ Name = 'Docker Desktop'; Command = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Ollama.lnk'; Command = 'C:\Users\operator\AppData\Local\Programs\Ollama\ollama app.exe'; EntryType = 'StartupFolder'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Teams'; Command = '"C:\Users\operator\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" msteams:system-initiated'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'private local-only accessibility'; Command = '"C:\Program Files\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe" /run'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
+        [pscustomobject]@{ Name = 'iTunesHelper'; Command = '"C:\Program Files\iTunes\iTunesHelper.exe"'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
+        [pscustomobject]@{ Name = 'OneDrive'; Command = '"C:\Program Files\Microsoft OneDrive\OneDrive.exe" /background'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = '1Password'; Command = 'C:\Program Files\1Password\app\8\1Password.exe --auto-start'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
+        [pscustomobject]@{ Name = 'MicrosoftEdgeAutoLaunch'; Command = 'msedge.exe --no-startup-window'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $false }
+    )
+
+    $profile = @(Resolve-AzVmHostStartupMirrorProfileFromEntries -Entries $entries)
+    $keys = @($profile | ForEach-Object { [string]$_.Key })
+
+    foreach ($requiredKey in @('docker-desktop','ollama','teams','private local-only accessibility','itunes-helper','onedrive')) {
+        Assert-True -Condition ($keys -contains $requiredKey) -Message ("Startup mirror profile must include '{0}'." -f $requiredKey)
+    }
+
+    Assert-True -Condition (-not ($keys -contains 'codex-app')) -Message "Startup mirror profile must not infer unsupported apps from unrelated entries."
+    Assert-True -Condition (-not ($keys -contains 'microsoft-edge')) -Message "Disabled startup entries must not be mirrored."
 }
 
 Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
@@ -987,6 +1012,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
         '36-install-onedrive' = 5
         '37-install-google-drive' = 103
         '38-install-codex-app' = 120
+        '39-auto-start-apps' = 45
     }
 
     Assert-True -Condition ($activeNames -contains '19-install-microsoft-azd') -Message "Renamed azd task was not discovered."
@@ -1002,6 +1028,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     Assert-True -Condition ($activeNames -contains '36-install-onedrive') -Message "OneDrive task was not discovered."
     Assert-True -Condition ($activeNames -contains '37-install-google-drive') -Message "Google Drive task was not discovered."
     Assert-True -Condition ($activeNames -contains '38-install-codex-app') -Message "Codex app task was not discovered."
+    Assert-True -Condition ($activeNames -contains '39-auto-start-apps') -Message "Auto-start apps task was not discovered."
     Assert-True -Condition (-not ($activeNames -contains '19-health-snapshot')) -Message "Legacy 19-health-snapshot entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '20-private-local-task')) -Message "Legacy 20-private-local-task entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '28-install-microsoft-azd')) -Message "Legacy 28-install-microsoft-azd entry must not remain active."
@@ -1016,6 +1043,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     Assert-True -Condition (([array]::IndexOf($activeNames, '19-install-microsoft-azd')) -lt ([array]::IndexOf($activeNames, '20-private-local-task'))) -Message "Renamed task order must keep azd before copy-private local-only accessibility-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '37-install-google-drive')) -lt ([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts'))) -Message "Install tasks must still complete before public desktop shortcut generation."
     Assert-True -Condition (([array]::IndexOf($activeNames, '38-install-codex-app')) -lt ([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts'))) -Message "Codex app install must complete before public desktop shortcut generation."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '39-auto-start-apps')) -lt ([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts'))) -Message "Auto-start mirroring must complete before public desktop shortcut generation."
     Assert-True -Condition (([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts')) -lt ([array]::IndexOf($activeNames, '28-copy-user-settings'))) -Message "Task order must keep public desktop shortcuts before copy-user-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '28-copy-user-settings')) -lt ([array]::IndexOf($activeNames, '29-health-snapshot'))) -Message "Task order must keep copy-user-settings before health snapshot."
 }
@@ -1364,7 +1392,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Resolve-StoreAppId',
         'New-StoreDeeplinkShortcut',
         'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
-        'OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\\app\\Codex.exe',
+        'OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe',
         'WhatsApp.Root.exe',
         '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
         'TaskKill -im "ollama app.exe"',
@@ -1421,6 +1449,47 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         foreach ($fragment in @($entry.Value)) {
             Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Task '{0}' must include fragment '{1}'." -f [string]$entry.Key, [string]$fragment)
         }
+    }
+}
+
+Invoke-Test -Name "Windows auto-start task mirrors host startup profile into machine startup" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\39-auto-start-apps.ps1'
+    Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
+    $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+    $healthTaskPath = Join-Path $RepoRoot 'windows\update\29-health-snapshot.ps1'
+    $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+
+    foreach ($fragment in @(
+        '__HOST_STARTUP_PROFILE_JSON_B64__',
+        'host-startup-profile =>',
+        'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp',
+        'StartupApproved\StartupFolder',
+        'Docker Desktop',
+        'Ollama',
+        'OneDrive',
+        'Teams',
+        'private local-only accessibility',
+        'iTunesHelper',
+        'msteams:system-initiated',
+        '%LOCALAPPDATA%\Programs\Ollama\ollama app.exe',
+        'auto-start-apps-completed'
+    )) {
+        Assert-True -Condition ($taskText -like ('*' + $fragment + '*')) -Message ("Auto-start task must include fragment '{0}'." -f $fragment)
+    }
+
+    foreach ($fragment in @(
+        'AUTO-START APP STATUS:',
+        '__HOST_STARTUP_PROFILE_JSON_B64__',
+        'startup-shortcut =>',
+        'missing-startup-shortcut =>',
+        'Docker Desktop',
+        'Ollama',
+        'OneDrive',
+        'Teams',
+        'private local-only accessibility',
+        'iTunesHelper'
+    )) {
+        Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
 }
 

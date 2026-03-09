@@ -2,10 +2,10 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.9.252 - 2026-03-09
+## Release 2026.3.9.253 - 2026-03-09
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract that now includes the Store-backed Codex desktop app, and live-calibrated Windows task timeouts backed by successful isolated reruns.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract that now includes the Store-backed Codex desktop app plus host-profile-driven guest auto-start mirroring, and live-calibrated Windows task timeouts backed by successful isolated reruns.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
@@ -29,8 +29,10 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now creates the refreshed public shortcut set for ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, banking links, and command-style tool launchers with canonical `a1/i0/i1/i2/z1/z2/t*` names, dynamic WhatsApp desktop resolution, and `cmd.exe` wrappers for `.cmd` launchers.
 - Windows update tasks `30` through `37` now install and verify iTunes, Be My Eyes, NVDA, Microsoft Edge, VLC, rclone, OneDrive, and Google Drive through the same bounded install-and-readback pattern used elsewhere in the repo.
 - Windows update task `38-install-codex-app` now installs the Store-backed Codex desktop app through `winget install codex -s msstore`, verifies it through AppX/StartApps/winget readback, and registers a deferred RunOnce retry when a noninteractive Store session cannot finish immediately.
+- Windows update task `39-auto-start-apps` now reads the enabled startup-app profile from the local operator machine, mirrors supported intersections such as Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper onto the guest VM, and writes the resulting launchers into the machine Startup folder.
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now also normalizes the broader Public Desktop set with social-media links, app launchers, dynamic app-path fallbacks, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, and Unicode-safe `q1EkşiSözlük` handling.
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now also adds `a3CodexApp` and keeps the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target in the public shortcut contract, while `29-health-snapshot` inventories that shortcut during late-stage validation.
+- Windows update task `29-health-snapshot` now also reads back the mirrored machine-startup shortcut set so late-stage validation can show exactly which auto-start launchers were expected and present.
 - Windows update task `29-health-snapshot` now inventories the expanded public desktop shortcut set and reads back the exact target-path, argument, hotkey, and Unicode shortcut contracts during late-stage validation.
 - Windows `vm-update` task catalog timeouts are now derived from observed successful live durations with a 30% buffer, including isolated rerun calibration for tasks `27` and `29`.
 - Windows `vm-update` task catalog timeouts are now also calibrated for tasks `30` through `37` from successful isolated live durations, with rerun-confirmed bounded values applied back into the catalog.
