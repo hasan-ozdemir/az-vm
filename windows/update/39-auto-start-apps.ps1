@@ -2,7 +2,6 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: auto-start-apps"
 
 $managerUser = "__VM_ADMIN_USER__"
-$hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
 $startupApprovedPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"
 
@@ -42,138 +41,13 @@ function Resolve-CommandPath {
         if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
             continue
         }
+
         if (Test-Path -LiteralPath $candidate) {
             return [string]$candidate
         }
     }
 
     return ""
-}
-
-function Resolve-ExecutableUnderDirectory {
-    param(
-        [string[]]$RootPaths = @(),
-        [string]$ExecutableName
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$ExecutableName)) {
-        return ""
-    }
-
-    foreach ($rootPath in @($RootPaths)) {
-        if ([string]::IsNullOrWhiteSpace([string]$rootPath) -or -not (Test-Path -LiteralPath $rootPath)) {
-            continue
-        }
-
-        $directCandidate = Join-Path $rootPath $ExecutableName
-        if (Test-Path -LiteralPath $directCandidate) {
-            return [string]$directCandidate
-        }
-
-        $match = Get-ChildItem -LiteralPath $rootPath -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -First 1
-        if ($match -and (Test-Path -LiteralPath $match.FullName)) {
-            return [string]$match.FullName
-        }
-    }
-
-    return ""
-}
-
-function Resolve-AppPackageExecutablePath {
-    param(
-        [string]$NameFragment,
-        [string[]]$PackageNameHints = @(),
-        [string]$ExecutableName
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$ExecutableName)) {
-        return ""
-    }
-
-    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
-    if (@($allPackages).Count -eq 0) {
-        return ""
-    }
-
-    $normalizedNameFragment = [string]$NameFragment
-    if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
-        $normalizedNameFragment = $normalizedNameFragment.Trim().ToLowerInvariant()
-    }
-
-    $normalizedHints = @(
-        @($PackageNameHints) |
-            ForEach-Object { [string]$_ } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-            ForEach-Object { $_.Trim().ToLowerInvariant() }
-    )
-
-    $matchingPackages = @(
-        $allPackages | Where-Object {
-            $pkgName = [string]$_.Name
-            $pkgFamily = [string]$_.PackageFamilyName
-            $installLocation = [string]$_.InstallLocation
-            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) { return $false }
-            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) { return $false }
-
-            $pkgNameLower = $pkgName.ToLowerInvariant()
-            $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
-            if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
-                if ($pkgNameLower.Contains($normalizedNameFragment) -or $pkgFamilyLower.Contains($normalizedNameFragment)) {
-                    return $true
-                }
-            }
-
-            foreach ($hint in @($normalizedHints)) {
-                if ($pkgNameLower.Contains($hint) -or $pkgFamilyLower.Contains($hint)) {
-                    return $true
-                }
-            }
-
-            return $false
-        }
-    )
-
-    foreach ($package in @($matchingPackages)) {
-        $installLocation = [string]$package.InstallLocation
-        if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
-            continue
-        }
-
-        $candidate = Join-Path $installLocation $ExecutableName
-        if (Test-Path -LiteralPath $candidate) {
-            return [string]$candidate
-        }
-
-        $match = Get-ChildItem -LiteralPath $installLocation -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($match -and (Test-Path -LiteralPath $match.FullName)) {
-            return [string]$match.FullName
-        }
-    }
-
-    return ""
-}
-
-function Convert-Base64JsonToObjectArray {
-    param([string]$Base64Text)
-
-    if ([string]::IsNullOrWhiteSpace([string]$Base64Text)) {
-        return @()
-    }
-
-    try {
-        $bytes = [Convert]::FromBase64String([string]$Base64Text)
-        $json = [System.Text.Encoding]::UTF8.GetString($bytes)
-        if ([string]::IsNullOrWhiteSpace([string]$json)) {
-            return @()
-        }
-
-        $parsed = ConvertFrom-Json -InputObject $json -ErrorAction Stop
-        return @($parsed)
-    }
-    catch {
-        Write-Warning ("Host startup profile could not be decoded: {0}" -f $_.Exception.Message)
-        return @()
-    }
 }
 
 function Ensure-StartupFolderExists {
@@ -322,41 +196,20 @@ $ollamaAppExe = Resolve-CommandPath -CommandName "ollama app.exe" -FallbackCandi
     ("C:\Users\{0}\AppData\Local\Programs\Ollama\ollama app.exe" -f $managerUser),
     (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama app.exe')
 )
-$googleDriveExe = Resolve-CommandPath -CommandName "GoogleDriveFS.exe" -FallbackCandidates @("C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe")
-if ([string]::IsNullOrWhiteSpace([string]$googleDriveExe)) {
-    $googleDriveExe = Resolve-ExecutableUnderDirectory -RootPaths @("C:\Program Files\Google\Drive File Stream") -ExecutableName "GoogleDriveFS.exe"
-}
-$windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCandidates @(
-    "C:\Program Files\Windscribe\Windscribe.exe",
-    "C:\Program Files (x86)\Windscribe\Windscribe.exe"
-)
-$anyDeskExe = Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates @(
-    "C:\Program Files\AnyDesk\AnyDesk.exe",
-    "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
-)
-$codexAppExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0") -ExecutableName "Codex.exe"
-if ([string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
-    $codexAppExe = "C:\Program Files\WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
-}
 
-$hostStartupProfile = @(Convert-Base64JsonToObjectArray -Base64Text $hostStartupProfileJsonBase64)
-$requestedKeys = @(
-    $hostStartupProfile |
-        ForEach-Object { [string]$_.Key } |
-        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-        Select-Object -Unique
+# Static startup snapshot captured from the local operator machine on 2026-03-09.
+$staticStartupAppKeys = @(
+    'docker-desktop',
+    'ollama',
+    'onedrive',
+    'teams',
+    'private local-only accessibility',
+    'itunes-helper'
 )
 
-if (@($requestedKeys).Count -eq 0) {
-    Write-Host "No enabled mirrored startup apps were found on the host profile. Skipping."
-    Write-Host "auto-start-apps-completed"
-    Write-Host "Update task completed: auto-start-apps"
-    return
-}
+Write-Host ("static-startup-snapshot => {0}" -f ($staticStartupAppKeys -join ', '))
 
-Write-Host ("host-startup-profile => {0}" -f ($requestedKeys -join ', '))
-
-$supportedSpecs = [ordered]@{
+$startupSpecs = [ordered]@{
     'docker-desktop' = [pscustomobject]@{
         Name = 'Docker Desktop'
         TargetPath = $dockerDesktopExe
@@ -399,44 +252,16 @@ $supportedSpecs = [ordered]@{
         WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$iTunesHelperExe)) { '' } else { Split-Path -Path $iTunesHelperExe -Parent }
         IconLocation = if ([string]::IsNullOrWhiteSpace([string]$iTunesHelperExe)) { '' } else { "$iTunesHelperExe,0" }
     }
-    'google-drive' = [pscustomobject]@{
-        Name = 'Google Drive'
-        TargetPath = $googleDriveExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$googleDriveExe)) { '' } else { Split-Path -Path $googleDriveExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$googleDriveExe)) { '' } else { "$googleDriveExe,0" }
-    }
-    'windscribe' = [pscustomobject]@{
-        Name = 'Windscribe'
-        TargetPath = $windscribeExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$windscribeExe)) { '' } else { Split-Path -Path $windscribeExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$windscribeExe)) { '' } else { "$windscribeExe,0" }
-    }
-    'anydesk' = [pscustomobject]@{
-        Name = 'AnyDesk'
-        TargetPath = $anyDeskExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$anyDeskExe)) { '' } else { Split-Path -Path $anyDeskExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$anyDeskExe)) { '' } else { "$anyDeskExe,0" }
-    }
-    'codex-app' = [pscustomobject]@{
-        Name = 'Codex App'
-        TargetPath = $codexAppExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$codexAppExe)) { '' } else { Split-Path -Path $codexAppExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$codexAppExe)) { '' } else { "$codexAppExe,0" }
-    }
 }
 
 $failures = @()
-foreach ($requestedKey in @($requestedKeys)) {
-    if (-not $supportedSpecs.Contains($requestedKey)) {
-        Write-Warning ("autostart-skip: unsupported host app key '{0}'." -f $requestedKey)
+foreach ($startupAppKey in @($staticStartupAppKeys)) {
+    if (-not $startupSpecs.Contains($startupAppKey)) {
+        Write-Warning ("autostart-skip: unknown static app key '{0}'." -f $startupAppKey)
         continue
     }
 
-    $spec = $supportedSpecs[$requestedKey]
+    $spec = $startupSpecs[$startupAppKey]
     $targetPath = [string]$spec.TargetPath
     if ([string]::IsNullOrWhiteSpace([string]$targetPath) -or -not (Test-Path -LiteralPath $targetPath)) {
         Write-Warning ("autostart-skip: {0} => guest target path was not found." -f [string]$spec.Name)

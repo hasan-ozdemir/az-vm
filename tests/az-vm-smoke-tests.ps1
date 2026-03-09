@@ -929,11 +929,10 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmDiskName = "disk-examplevm"
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
-        HostStartupProfileJsonBase64 = "W10="
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __TCP_PORTS_BASH__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -942,31 +941,6 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
-    Assert-True -Condition ($scriptBody -like "*W10=*") -Message "Host startup profile token was not replaced."
-}
-
-Invoke-Test -Name "Startup mirror profile resolution" -Action {
-    $entries = @(
-        [pscustomobject]@{ Name = 'Docker Desktop'; Command = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
-        [pscustomobject]@{ Name = 'Ollama.lnk'; Command = 'C:\Users\operator\AppData\Local\Programs\Ollama\ollama app.exe'; EntryType = 'StartupFolder'; Scope = 'CurrentUser'; Enabled = $true },
-        [pscustomobject]@{ Name = 'Teams'; Command = '"C:\Users\operator\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" msteams:system-initiated'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
-        [pscustomobject]@{ Name = 'private local-only accessibility'; Command = '"C:\Program Files\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe" /run'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
-        [pscustomobject]@{ Name = 'iTunesHelper'; Command = '"C:\Program Files\iTunes\iTunesHelper.exe"'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
-        [pscustomobject]@{ Name = 'OneDrive'; Command = '"C:\Program Files\Microsoft OneDrive\OneDrive.exe" /background'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
-        [pscustomobject]@{ Name = '1Password'; Command = 'C:\Program Files\1Password\app\8\1Password.exe --auto-start'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
-        [pscustomobject]@{ Name = 'MicrosoftEdgeAutoLaunch'; Command = 'msedge.exe --no-startup-window'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $false }
-    )
-
-    $profile = @(Resolve-AzVmHostStartupMirrorProfileFromEntries -Entries $entries)
-    $keys = @($profile | ForEach-Object { [string]$_.Key })
-
-    foreach ($requiredKey in @('docker-desktop','ollama','teams','private local-only accessibility','itunes-helper','onedrive')) {
-        Assert-True -Condition ($keys -contains $requiredKey) -Message ("Startup mirror profile must include '{0}'." -f $requiredKey)
-    }
-
-    Assert-True -Condition (-not ($keys -contains 'codex-app')) -Message "Startup mirror profile must not infer unsupported apps from unrelated entries."
-    Assert-True -Condition (-not ($keys -contains 'microsoft-edge')) -Message "Disabled startup entries must not be mirrored."
-}
 
 Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     $updateDir = Join-Path $RepoRoot 'windows\update'
@@ -1452,7 +1426,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
     }
 }
 
-Invoke-Test -Name "Windows auto-start task mirrors host startup profile into machine startup" -Action {
+Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Action {
     $taskPath = Join-Path $RepoRoot 'windows\update\39-auto-start-apps.ps1'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
@@ -1460,10 +1434,15 @@ Invoke-Test -Name "Windows auto-start task mirrors host startup profile into mac
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     foreach ($fragment in @(
-        '__HOST_STARTUP_PROFILE_JSON_B64__',
-        'host-startup-profile =>',
+        'static-startup-snapshot =>',
         'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp',
         'StartupApproved\StartupFolder',
+        'docker-desktop',
+        'ollama',
+        'onedrive',
+        'teams',
+        'private local-only accessibility',
+        'itunes-helper',
         'Docker Desktop',
         'Ollama',
         'OneDrive',
@@ -1476,10 +1455,10 @@ Invoke-Test -Name "Windows auto-start task mirrors host startup profile into mac
     )) {
         Assert-True -Condition ($taskText -like ('*' + $fragment + '*')) -Message ("Auto-start task must include fragment '{0}'." -f $fragment)
     }
+    Assert-True -Condition (($taskText.IndexOf('__HOST_STARTUP_PROFILE_JSON_B64__', [System.StringComparison]::Ordinal)) -lt 0) -Message "Auto-start task must not depend on runtime startup-profile tokens."
 
     foreach ($fragment in @(
         'AUTO-START APP STATUS:',
-        '__HOST_STARTUP_PROFILE_JSON_B64__',
         'startup-shortcut =>',
         'missing-startup-shortcut =>',
         'Docker Desktop',
@@ -1491,6 +1470,7 @@ Invoke-Test -Name "Windows auto-start task mirrors host startup profile into mac
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
+    Assert-True -Condition (($healthTaskText.IndexOf('__HOST_STARTUP_PROFILE_JSON_B64__', [System.StringComparison]::Ordinal)) -lt 0) -Message "Health snapshot must not depend on runtime startup-profile tokens."
 }
 
 Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {

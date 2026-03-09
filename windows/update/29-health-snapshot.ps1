@@ -350,36 +350,17 @@ foreach ($shortcutName in @($publicShortcutNames)) {
 }
 
 Write-Host "AUTO-START APP STATUS:"
-$hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-$expectedStartupShortcutNames = @()
-try {
-    $startupProfileJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String([string]$hostStartupProfileJsonBase64))
-    $startupProfile = @()
-    if (-not [string]::IsNullOrWhiteSpace([string]$startupProfileJson)) {
-        $startupProfile = @(ConvertFrom-Json -InputObject $startupProfileJson -ErrorAction Stop)
-    }
+$expectedStartupShortcutNames = @(
+    'Docker Desktop',
+    'Ollama',
+    'OneDrive',
+    'Teams',
+    'private local-only accessibility',
+    'iTunesHelper'
+)
 
-    foreach ($entry in @($startupProfile)) {
-        switch ([string]$entry.Key) {
-            'docker-desktop' { $expectedStartupShortcutNames += 'Docker Desktop' }
-            'ollama' { $expectedStartupShortcutNames += 'Ollama' }
-            'onedrive' { $expectedStartupShortcutNames += 'OneDrive' }
-            'teams' { $expectedStartupShortcutNames += 'Teams' }
-            'private local-only accessibility' { $expectedStartupShortcutNames += 'private local-only accessibility' }
-            'itunes-helper' { $expectedStartupShortcutNames += 'iTunesHelper' }
-            'google-drive' { $expectedStartupShortcutNames += 'Google Drive' }
-            'windscribe' { $expectedStartupShortcutNames += 'Windscribe' }
-            'anydesk' { $expectedStartupShortcutNames += 'AnyDesk' }
-            'codex-app' { $expectedStartupShortcutNames += 'Codex App' }
-        }
-    }
-}
-catch {
-    Write-Warning ("startup-profile-decode-failed => {0}" -f $_.Exception.Message)
-}
-
-foreach ($startupShortcutName in @($expectedStartupShortcutNames | Select-Object -Unique)) {
+foreach ($startupShortcutName in @($expectedStartupShortcutNames)) {
     $startupShortcutPath = Join-Path $machineStartupFolder ($startupShortcutName + ".lnk")
     if (-not (Test-Path -LiteralPath $startupShortcutPath)) {
         Write-Host "missing-startup-shortcut => $startupShortcutPath"

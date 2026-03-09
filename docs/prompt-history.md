@@ -3861,3 +3861,15 @@ vm-update task'larıyla guest vm üzerine kurduğumuz uygulamaları benim şuank
 **Assistant Summary**
 
 Added host-side startup-profile helpers so `az-vm` now inspects the current local Windows machine for enabled startup apps, maps supported intersections such as Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper into a base64 task token, and feeds that profile into the new Windows `vm-update` task `39-auto-start-apps`; implemented that task to mirror the requested apps onto the guest VM through machine Startup-folder shortcuts with StartupApproved enablement, updated `29-health-snapshot` to inventory the mirrored startup launcher set, extended smoke coverage for startup-profile mapping and the new task contract, updated the Windows update catalog plus release docs, and verified everything only through non-live local checks while intentionally skipping VM execution because the guest was busy with another test.
+
+### 2026-03-09 23:16 TRT
+
+**User Prompt**
+
+````text
+fix: ben bu auto-start-apps görevinin on-the-fly olarak çalışmasını yani realtime snapshot yaparak çalışmasını istemiyorum! şuan yerelimdeki startup apps durumunu snapshot etsin; bu son durumu auto-start-apps.ps1 görevine statik olarak dahil etsin; ileride başkaca enable etmemiz gereken ya da startup sürecine eklememiz gereken bir uygulama olursa; auto-start-apps.ps1 dosyasını edit'leyerek yapabilelim; ben şimdilik bu kadarını istiyorum; bu konuda geriye kalan extra implementation'ları da silip, sanki hiç dinamik local startup sync özelliği hiç eklenmemiş hale getir bizi...
+````
+
+**Assistant Summary**
+
+Removed the dynamic local-startup discovery/token plumbing from `az-vm`, rewrote `39-auto-start-apps` to carry a static snapshot of the currently approved startup set directly in the task file, reduced `29-health-snapshot` to validate that same fixed shortcut list, updated smoke coverage so it now enforces the static contract and the absence of runtime startup-profile tokens, refreshed the release docs to describe the static model instead of host-driven sync, and kept validation strictly non-live without touching the busy guest VM.
