@@ -3831,3 +3831,18 @@ Implement the plan.
 **Assistant Summary**
 
 Implemented the approved Windows shortcut-and-app expansion plan by adding bounded install-and-verify tasks `30-install-itunes`, `31-install-be-my-eyes`, `32-install-nvda`, `33-install-microsoft-edge`, `34-install-vlc`, `35-install-rclone`, `36-install-onedrive`, and `37-install-google-drive`; extending `27-windows-ux-public-desktop-shortcuts` to normalize the broader Public Desktop set with social links, new app launchers, dynamic app-path fallback resolution, `.cmd` wrappers, and `local-only-shortcut` hotkey `Ctrl+Shift+J`; and updating `29-health-snapshot` to inventory the expanded set with Unicode-safe shortcut readback for `q1EkşiSözlük` through `Shell.Application`. Recalibrated the new task-catalog timeouts from successful isolated live durations with a 30% buffer, updated smoke/contracts plus release documentation, and verified the change with local smoke, code-quality, documentation-contract, and PowerShell-compatibility checks together with isolated live `exec` validation of tasks `30` through `37`, then reruns of `27` and `29` on `rg-examplevm-ate1-g1/examplevm`.
+
+### 2026-03-09 22:26 TRT
+
+**User Prompt**
+
+````text
+feat: yeni bir vm-update task ekleyelim: adı "install-codex-app.ps1" olsun. şu komut ile uygulamayı kursun: winget install codex -s msstore
+*public-desktop-icons vm görevine de bu uygulama için şu kısayolu ve hedefini ekleyelim:
+-a3CodexApp:"%ProgramFiles%\WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
+**ömemli not: arkada başka bir pencerede az-vm move komutu çalıştırıyorum e2e şekilde. bu sebeple canlı ya da izole test yapmana gerek yok vm üzerinde. lütfen sadece böyle bir özelliği implement et; vm müsait olunca test ederiz; sen testlerin zamanı geldiğinde testlerin succeed etmesi için bu özelliği best-effort olarak güzel kodla lütfen; vm-update task'ları arasında muadil ve benzeri özellikleri ve işlevselliği olanlardan kopya çekebilirsin!
+````
+
+**Assistant Summary**
+
+Added Windows `vm-update` task `38-install-codex-app` with the requested `winget install codex -s msstore` install path, AppX/StartApps/winget verification, and a best-effort deferred RunOnce fallback for noninteractive Store-session failures; extended `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` to include the new `a3CodexApp` public shortcut with the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target; updated the Windows update catalog, smoke contracts, changelog, and release notes; and verified the change non-live with PowerShell parse validation plus the local smoke/documentation/code-quality checks only, intentionally skipping live VM execution because an end-to-end `move` run was already active elsewhere.

@@ -264,6 +264,7 @@ function Get-ShortcutDetails {
 $publicShortcutNames = @(
     "a1ChatGPT Web",
     "a2Be My Eyes",
+    "a3CodexApp",
     "a7Docker Desktop",
     "a10NVDA",
     "a11MS Edge",

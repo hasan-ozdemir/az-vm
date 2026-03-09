@@ -11,6 +11,7 @@ $chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-de
 $chromeBankArgsPrefix = ("--new-window --start-maximized --profile-directory={0}" -f $vmName)
 $beMyEyesStoreProductId = "9MSW46LTDWGF"
 $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
+$codexAppFallbackPath = Join-Path $env:ProgramFiles "WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
 $whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe"
 $q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
 
@@ -658,6 +659,7 @@ $googleDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program File
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
 $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
 $beMyEyesAppId = Resolve-StoreAppId -NameFragment "be my eyes" -PackageNameHints @("be my eyes", $beMyEyesStoreProductId)
+$codexAppResolvedExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0") -ExecutableName "Codex.exe"
 $whatsAppRootExe = Resolve-AppPackageExecutablePath -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop") -ExecutableName "WhatsApp.Root.exe"
 
 $outlookExe = Resolve-OfficeExecutable -ExeName "OUTLOOK.EXE"
@@ -667,6 +669,15 @@ $powerPointExe = Resolve-OfficeExecutable -ExeName "POWERPNT.EXE"
 $oneNoteExe = Resolve-OfficeExecutable -ExeName "ONENOTE.EXE"
 $controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 
+$codexAppExe = if (Test-Path -LiteralPath $codexAppFallbackPath) {
+    [string]$codexAppFallbackPath
+}
+elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppResolvedExe) -and (Test-Path -LiteralPath $codexAppResolvedExe)) {
+    [string]$codexAppResolvedExe
+}
+else {
+    [string]$codexAppFallbackPath
+}
 $whatsAppBusinessTarget = Resolve-ExistingOrFallbackPath -PreferredPath $whatsAppRootExe -ResolvedPath $whatsAppRootExe -FallbackPath $whatsAppFallbackPath
 $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData\chocolatey\bin\7z.exe" -ResolvedPath $sevenZipExe -FallbackPath "C:\ProgramData\chocolatey\bin\7z.exe"
 $codexCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser) -ResolvedPath $codexExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser)
@@ -712,6 +723,7 @@ Invoke-ShortcutAction -Name "a2Be My Eyes" -Action {
         New-StoreDeeplinkShortcut -Name "a2Be My Eyes" -StoreUri $beMyEyesStoreUri
     }
 }
+Invoke-ShortcutAction -Name "a3CodexApp" -Action { New-DesktopShortcut -Name "a3CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath }
 Invoke-ShortcutAction -Name "a7Docker Desktop" -Action { New-DesktopShortcut -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath }
 Invoke-ShortcutAction -Name "a10NVDA" -Action { New-DesktopShortcut -Name "a10NVDA" -TargetPath $nvdaExe -AllowMissingTargetPath }
 Invoke-ShortcutAction -Name "a11MS Edge" -Action { New-DesktopShortcut -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath }

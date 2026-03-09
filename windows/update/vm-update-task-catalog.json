@@ -227,6 +227,12 @@
                       "timeout":  103
                   },
                   {
+                      "name":  "38-install-codex-app",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  120
+                  },
+                  {
                       "name":  "51-local-diagnostic",
                       "priority":  10,
                       "enabled":  true,

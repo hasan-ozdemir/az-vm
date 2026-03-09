@@ -986,6 +986,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
         '35-install-rclone' = 13
         '36-install-onedrive' = 5
         '37-install-google-drive' = 103
+        '38-install-codex-app' = 120
     }
 
     Assert-True -Condition ($activeNames -contains '19-install-microsoft-azd') -Message "Renamed azd task was not discovered."
@@ -1000,6 +1001,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     Assert-True -Condition ($activeNames -contains '35-install-rclone') -Message "rclone task was not discovered."
     Assert-True -Condition ($activeNames -contains '36-install-onedrive') -Message "OneDrive task was not discovered."
     Assert-True -Condition ($activeNames -contains '37-install-google-drive') -Message "Google Drive task was not discovered."
+    Assert-True -Condition ($activeNames -contains '38-install-codex-app') -Message "Codex app task was not discovered."
     Assert-True -Condition (-not ($activeNames -contains '19-health-snapshot')) -Message "Legacy 19-health-snapshot entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '20-private-local-task')) -Message "Legacy 20-private-local-task entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '28-install-microsoft-azd')) -Message "Legacy 28-install-microsoft-azd entry must not remain active."
@@ -1013,6 +1015,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
 
     Assert-True -Condition (([array]::IndexOf($activeNames, '19-install-microsoft-azd')) -lt ([array]::IndexOf($activeNames, '20-private-local-task'))) -Message "Renamed task order must keep azd before copy-private local-only accessibility-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '37-install-google-drive')) -lt ([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts'))) -Message "Install tasks must still complete before public desktop shortcut generation."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '38-install-codex-app')) -lt ([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts'))) -Message "Codex app install must complete before public desktop shortcut generation."
     Assert-True -Condition (([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts')) -lt ([array]::IndexOf($activeNames, '28-copy-user-settings'))) -Message "Task order must keep public desktop shortcuts before copy-user-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '28-copy-user-settings')) -lt ([array]::IndexOf($activeNames, '29-health-snapshot'))) -Message "Task order must keep copy-user-settings before health snapshot."
 }
@@ -1219,6 +1222,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     $expectedShortcutNames = @(
         'a1ChatGPT Web',
         'a2Be My Eyes',
+        'a3CodexApp',
         'a7Docker Desktop',
         'a10NVDA',
         'a11MS Edge',
@@ -1360,6 +1364,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Resolve-StoreAppId',
         'New-StoreDeeplinkShortcut',
         'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
+        'OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\\app\\Codex.exe',
         'WhatsApp.Root.exe',
         '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
         'TaskKill -im "ollama app.exe"',
@@ -1406,6 +1411,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         '35-install-rclone.ps1' = @('Rclone.Rclone', 'rclone.exe')
         '36-install-onedrive.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '37-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
+        '38-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {
