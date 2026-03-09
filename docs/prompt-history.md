@@ -3783,3 +3783,15 @@ fix: vm-update görevlerinden docker-desktop kurulumu; waiting for another insta
 **Assistant Summary**
 
 Applied the same stale-installer recovery model to `18-docker-desktop-install-and-configure`, adding preflight installer cleanup plus bounded `winget install Docker.DockerDesktop` waits with explicit timeout diagnostics, verified the task in isolated live execution, and then reran the full `create --auto --windows --perf --from-step=vm-update` flow to completion with all 29 Windows update tasks succeeding on the rebuilt `Standard_D4as_v5` VM while confirming that RDP port `3389` is reachable.
+
+### 2026-03-09 13:09 TRT
+
+**User Prompt**
+
+````text
+test: en baştan e2e live az-vm re-create yapalım.
+````
+
+**Assistant Summary**
+
+Deleted the existing managed resource group `rg-examplevm-ate1-g1`, reran a full live `az-vm create --auto --windows --perf` from scratch using the current local `.env` configuration, and rebuilt `examplevm` in `austriaeast` on `Standard_D4as_v5`; Step 6 completed in `continue` mode with `09-install-ollama` failing on its first cold-start API readiness check and `17-wsl2-install-update` requesting a reboot, so task `09` was rerun successfully in isolated `exec` mode, the VM was restarted through `az-vm do --vm-action=restart`, final lifecycle state was verified as `started` with provisioning `Succeeded`, and RDP port `3389` was confirmed reachable before recording this otherwise non-mutating dialog in repo history at the user's request.
