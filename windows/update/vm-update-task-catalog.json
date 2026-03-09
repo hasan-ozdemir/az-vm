@@ -176,7 +176,7 @@
                       "name":  "29-health-snapshot",
                       "priority":  100,
                       "enabled":  true,
-                      "timeout":  10
+                      "timeout":  30
                   },
                   {
                       "name":  "30-install-itunes",

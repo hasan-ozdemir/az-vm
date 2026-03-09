@@ -5,16 +5,18 @@ This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit c
 ## Release 2026.3.9.254 - 2026-03-09
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract that now includes the Store-backed Codex desktop app plus a statically curated guest auto-start set, and live-calibrated Windows task timeouts backed by successful isolated reruns.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, a fully `--vm-name`-based move/set surface, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract that now includes the Store-backed Codex desktop app plus a statically curated guest auto-start set, and a hardened snapshot-based regional move path validated live from `austriaeast` to `swedencentral`.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
+- `move` and `set` now consistently use `--vm-name`; the legacy `--vm` form is no longer part of their public contract.
 - One orchestrator for Windows and Linux with parity-first step semantics.
 - Catalog-driven guest task execution with explicit priority and timeout metadata.
 - New `do` command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against managed VMs.
 - `do --vm-action=hibernate` remains the public hibernation action; Azure still executes it through the deallocation-based hibernate path, so `stop` remains the non-deallocated power-off path.
 - Corrected `resize` command syntax to use `--vm-name`, added `--windows`/`--linux` support, and kept resize interactive when parameters are omitted.
 - Direct `exec` task runs now accept `--vm-name` and skip the broader Step-1 resource inventory path so isolated task execution reaches pyssh more quickly.
+- Snapshot-based regional move now deallocates the source VM before snapshotting, validates that the source group is safe for automatic purge, creates target public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and keeps post-cutover task validation strict before old-source cleanup.
 - `ssh` and `rdp` now refuse politely unless the target VM is already running, with a direct hint to start it through `do`.
 - External `ssh` and `rdp` connection commands for managed VMs.
 - Windows update task `09-install-ollama` now short-circuits healthy existing installs, detaches `ollama serve` from the SSH transcript, clears stale installer locks before `winget`, and bounds installer wait time with explicit timeout diagnostics.
@@ -34,6 +36,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now also adds `a3CodexApp` and keeps the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target in the public shortcut contract, while `29-health-snapshot` inventories that shortcut during late-stage validation.
 - Windows update task `29-health-snapshot` now also reads back the static machine-startup shortcut set so late-stage validation can show exactly which auto-start launchers were expected and present.
 - Windows update task `29-health-snapshot` now inventories the expanded public desktop shortcut set and reads back the exact target-path, argument, hotkey, and Unicode shortcut contracts during late-stage validation.
+- Windows update task `29-health-snapshot` now uses a `30s` catalog timeout so live move cutover validation does not produce false timeout warnings on a healthy target VM.
 - Windows `vm-update` task catalog timeouts are now derived from observed successful live durations with a 30% buffer, including isolated rerun calibration for tasks `27` and `29`.
 - Windows `vm-update` task catalog timeouts are now also calibrated for tasks `30` through `37` from successful isolated live durations, with rerun-confirmed bounded values applied back into the catalog.
 - Hardened naming, env-key, and validation contracts across provisioning flows.

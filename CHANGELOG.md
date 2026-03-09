@@ -13,6 +13,10 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added Windows `vm-update` task `39-auto-start-apps` to apply a static snapshot of the current approved auto-start application set on the guest VM by creating machine startup shortcuts for Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper.
 
 ### Fixes
+- Switched both `move` and `set` to the `--vm-name` contract and removed the last public `--vm` usage from those commands.
+- Hardened the snapshot-based region-move path so it now deallocates the source VM before snapshot creation, validates that the source resource group is safe for automatic purge, creates target-region public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM.
+- Tightened the move cutover gate so the post-target `29-health-snapshot` validation now runs through strict task-outcome semantics instead of allowing warning-mode continuation to delete the old source group.
+- Increased the Windows `29-health-snapshot` catalog timeout from `10s` to `30s` after live regional-move validation on `swedencentral` showed that the old bound could produce false timeout warnings during the target health gate.
 - Restored `do --vm-action=hibernate` as the single public hibernation action while keeping the underlying Azure behavior unchanged: hibernation still runs through Azure's deallocation-based hibernate path.
 - Made `ssh` and `rdp` state-aware so they now refuse politely when the target VM is not running and point operators to `az-vm do --vm-action=start`.
 - Updated `resize` to use `--vm-name` instead of legacy `--vm`, added `--windows`/`--linux` support, and kept no-parameter invocation interactive.

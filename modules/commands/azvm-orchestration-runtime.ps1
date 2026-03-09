@@ -143,6 +143,43 @@ function Assert-AzVmManagedNameContract {
     }
 }
 
+# Handles Get-AzVmPublicIpZoneArgs.
+function Get-AzVmPublicIpZoneArgs {
+    param(
+        [string]$Location
+    )
+
+    $locationName = [string]$Location
+    if ([string]::IsNullOrWhiteSpace([string]$locationName)) {
+        return @()
+    }
+
+    $zonesJson = az account list-locations --query "[?name=='$locationName'] | [0].availabilityZoneMappings[].logicalZone" -o json --only-show-errors
+    Assert-LastExitCode "az account list-locations (public IP zones)"
+    $zones = ConvertFrom-JsonCompat -InputObject $zonesJson
+
+    $zoneList = @()
+    if ($zones -is [System.Array]) {
+        $zoneList = @($zones)
+    }
+    elseif ($null -ne $zones) {
+        $zoneList = @($zones)
+    }
+
+    $normalizedZones = @(
+        $zoneList |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { ([string]$_).Trim() } |
+            Sort-Object -Unique
+    )
+
+    if ($normalizedZones.Count -lt 1) {
+        return @()
+    }
+
+    return @('--zone') + $normalizedZones
+}
+
 # Handles Assert-AzVmManagedResourceNamesValid.
 function Assert-AzVmManagedResourceNamesValid {
     param(
@@ -1672,7 +1709,17 @@ function Invoke-AzVmNetworkStep {
     if ($createPublicIp) {
         Write-Host "Creating public IP '$($Context.IP)'..."
         Invoke-TrackedAction -Label "az network public-ip create -g $($Context.ResourceGroup) -n $($Context.IP)" -Action {
-            az network public-ip create -g $Context.ResourceGroup -n $Context.IP --allocation-method Static --sku Standard --dns-name $Context.VmName -o table
+            $publicIpCreateArgs = @(
+                "network", "public-ip", "create",
+                "-g", [string]$Context.ResourceGroup,
+                "-n", [string]$Context.IP,
+                "--allocation-method", "Static",
+                "--sku", "Standard",
+                "--dns-name", [string]$Context.VmName
+            )
+            $publicIpCreateArgs += @(Get-AzVmPublicIpZoneArgs -Location ([string]$Context.AzLocation))
+            $publicIpCreateArgs += @("-o", "table")
+            az @publicIpCreateArgs
             Assert-LastExitCode "az network public-ip create"
         } | Out-Null
     }

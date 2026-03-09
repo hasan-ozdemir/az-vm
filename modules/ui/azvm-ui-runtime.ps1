@@ -1261,9 +1261,9 @@ function Assert-AzVmCommandOptions {
         'group'  { $allowed = @('help','list','select') }
         'show'   { $allowed = @('perf','help','group') }
         'do'     { $allowed = @('perf','help','group','vm-name','vm-action') }
-        'move'   { $allowed = @('perf','help','group','vm','vm-region') }
+        'move'   { $allowed = @('perf','help','group','vm-name','vm-region') }
         'resize' { $allowed = @('perf','help','group','vm-name','vm-size','windows','linux') }
-        'set'    { $allowed = @('perf','help','group','vm','hibernation','nested-virtualization') }
+        'set'    { $allowed = @('perf','help','group','vm-name','hibernation','nested-virtualization') }
         'exec'   { $allowed = @('perf','windows','linux','help','group','vm-name','init-task','update-task') }
         'ssh'    { $allowed = @('perf','help','group','vm-name','user') }
         'rdp'    { $allowed = @('perf','help','group','vm-name','user') }
@@ -1958,13 +1958,19 @@ function Invoke-AzVmExecCommand {
         [hashtable]$Options,
         [switch]$AutoMode,
         [switch]$WindowsFlag,
-        [switch]$LinuxFlag
+        [switch]$LinuxFlag,
+        [ValidateSet('continue','strict')]
+        [string]$TaskOutcomeModeOverride = ''
     )
 
     $runtime = Initialize-AzVmExecCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
     $context = $runtime.Context
     $platform = [string]$runtime.Platform
     $platformDefaults = $runtime.PlatformDefaults
+    $effectiveTaskOutcomeMode = [string]$runtime.TaskOutcomeMode
+    if (-not [string]::IsNullOrWhiteSpace([string]$TaskOutcomeModeOverride)) {
+        $effectiveTaskOutcomeMode = [string]$TaskOutcomeModeOverride
+    }
 
     $hasInitTask = Test-AzVmCliOptionPresent -Options $Options -Name 'init-task'
     $hasUpdateTask = Test-AzVmCliOptionPresent -Options $Options -Name 'update-task'
@@ -1989,9 +1995,14 @@ function Invoke-AzVmExecCommand {
             $requested = Get-AzVmCliOptionText -Options $Options -Name 'init-task'
             $selectedTask = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) -PerfTaskCategory "exec-task" | Out-Null
+            $runCommandResult = Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -TaskOutcomeMode $effectiveTaskOutcomeMode -PerfTaskCategory "exec-task"
             Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
-            return
+            return [pscustomobject]@{
+                Stage = 'init'
+                Task = $selectedTask
+                TaskOutcomeMode = $effectiveTaskOutcomeMode
+                Result = $runCommandResult
+            }
         }
 
         $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
@@ -2008,7 +2019,7 @@ function Invoke-AzVmExecCommand {
             throw "Exec could not resolve VM SSH host (FQDN/Public IP)."
         }
 
-        Invoke-AzVmSshTaskBlocks `
+        $sshTaskResult = Invoke-AzVmSshTaskBlocks `
             -Platform $platform `
             -RepoRoot (Get-AzVmRepoRoot) `
             -SshHost $sshHost `
@@ -2018,15 +2029,20 @@ function Invoke-AzVmExecCommand {
             -ResourceGroup ([string]$context.ResourceGroup) `
             -VmName ([string]$context.VmName) `
             -TaskBlocks @($selectedTask) `
-            -TaskOutcomeMode ([string]$runtime.TaskOutcomeMode) `
+            -TaskOutcomeMode $effectiveTaskOutcomeMode `
             -PerfTaskCategory 'exec-task' `
             -SshMaxRetries 1 `
             -SshTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds) `
             -SshConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
-            -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath) | Out-Null
+            -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
 
         Write-Host ("Exec completed: update task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
-        return
+        return [pscustomobject]@{
+            Stage = 'update'
+            Task = $selectedTask
+            TaskOutcomeMode = $effectiveTaskOutcomeMode
+            Result = $sshTaskResult
+        }
     }
 
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.EffectiveConfigMap -OperationName 'exec'
@@ -2441,7 +2457,7 @@ function Invoke-AzVmSetCommand {
     if (-not [string]::IsNullOrWhiteSpace([string]$groupOption)) {
         $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOption.Trim()
     }
-    $vmOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm')
+    $vmOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     if (-not [string]::IsNullOrWhiteSpace([string]$vmOption)) {
         $runtimeConfigOverrides['VM_NAME'] = $vmOption.Trim()
     }
@@ -2551,6 +2567,373 @@ function Invoke-AzVmSetCommand {
     Write-Host ("Set command completed for VM '{0}' in resource group '{1}'." -f $vmName, $resourceGroup) -ForegroundColor Green
 }
 
+# Handles Get-AzVmMoveExpectedSourceResourceTypeCounts.
+function Get-AzVmMoveExpectedSourceResourceTypeCounts {
+    return [ordered]@{
+        'Microsoft.Compute/disks' = 1
+        'Microsoft.Compute/virtualMachines' = 1
+        'Microsoft.Network/networkInterfaces' = 1
+        'Microsoft.Network/networkSecurityGroups' = 1
+        'Microsoft.Network/publicIPAddresses' = 1
+        'Microsoft.Network/virtualNetworks' = 1
+    }
+}
+
+# Handles Test-AzVmMoveResourceSetIsPurgeSafe.
+function Test-AzVmMoveResourceSetIsPurgeSafe {
+    param(
+        [object[]]$Resources,
+        [string]$VmName,
+        [string]$OsDiskName
+    )
+
+    $expectedCounts = Get-AzVmMoveExpectedSourceResourceTypeCounts
+    $resourceRows = @($Resources | Where-Object { $null -ne $_ })
+    $actualCounts = Get-AzVmResourceTypeCountMap -Resources $resourceRows
+    $unexpectedTypes = @($actualCounts.Keys | Where-Object { $expectedCounts.Keys -notcontains [string]$_ } | Sort-Object)
+    $countMismatches = @()
+
+    foreach ($typeName in @($expectedCounts.Keys)) {
+        $expectedCount = [int]$expectedCounts[$typeName]
+        $actualCount = 0
+        if ($actualCounts.Contains([string]$typeName)) {
+            $actualCount = [int]$actualCounts[[string]$typeName]
+        }
+
+        if ($actualCount -ne $expectedCount) {
+            $countMismatches += ("{0} expected={1} actual={2}" -f [string]$typeName, $expectedCount, $actualCount)
+        }
+    }
+
+    $vmMatch = @($resourceRows | Where-Object {
+        [string]::Equals([string]$_.type, 'Microsoft.Compute/virtualMachines', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$_.name, [string]$VmName, [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1)
+
+    $diskMatch = @($resourceRows | Where-Object {
+        [string]::Equals([string]$_.type, 'Microsoft.Compute/disks', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$_.name, [string]$OsDiskName, [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1)
+
+    return [pscustomobject]@{
+        IsSafe = ($unexpectedTypes.Count -eq 0 -and $countMismatches.Count -eq 0 -and @($vmMatch).Count -gt 0 -and @($diskMatch).Count -gt 0)
+        ResourceCount = [int]$resourceRows.Count
+        CountMap = $actualCounts
+        UnexpectedTypes = @($unexpectedTypes)
+        CountMismatches = @($countMismatches)
+        VmMatched = (@($vmMatch).Count -gt 0)
+        DiskMatched = (@($diskMatch).Count -gt 0)
+    }
+}
+
+# Handles Get-AzVmMoveSourceGroupResources.
+function Get-AzVmMoveSourceGroupResources {
+    param(
+        [string]$ResourceGroup
+    )
+
+    $resourcesJson = az resource list -g $ResourceGroup -o json --only-show-errors
+    Assert-LastExitCode "az resource list (move source group)"
+    return @(ConvertFrom-JsonArrayCompat -InputObject $resourcesJson)
+}
+
+# Handles Assert-AzVmMoveSourceGroupPurgeSafe.
+function Assert-AzVmMoveSourceGroupPurgeSafe {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$OsDiskName
+    )
+
+    Assert-AzVmManagedResourceGroup -ResourceGroup $ResourceGroup -OperationName 'move'
+    $resources = @(Get-AzVmMoveSourceGroupResources -ResourceGroup $ResourceGroup)
+    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName $VmName -OsDiskName $OsDiskName
+    if ([bool]$result.IsSafe) {
+        return $result
+    }
+
+    $details = @()
+    if (@($result.UnexpectedTypes).Count -gt 0) {
+        $details += ("unexpected resource types: {0}" -f (@($result.UnexpectedTypes) -join ', '))
+    }
+    if (@($result.CountMismatches).Count -gt 0) {
+        $details += ("count mismatches: {0}" -f (@($result.CountMismatches) -join '; '))
+    }
+    if (-not [bool]$result.VmMatched) {
+        $details += ("vm '{0}' was not found in the source group inventory" -f $VmName)
+    }
+    if (-not [bool]$result.DiskMatched) {
+        $details += ("os disk '{0}' was not found in the source group inventory" -f $OsDiskName)
+    }
+
+    Throw-FriendlyError `
+        -Detail ("Source resource group '{0}' is not safe for automatic purge after move: {1}." -f $ResourceGroup, ($details -join '; ')) `
+        -Code 62 `
+        -Summary "Move command stopped before source-group deletion safety check." `
+        -Hint "Inspect the extra resources in the source group and clean them up manually, or remove only the old group yourself after the move."
+}
+
+# Handles Wait-AzVmSnapshotCopyReady.
+function Wait-AzVmSnapshotCopyReady {
+    param(
+        [string]$ResourceGroup,
+        [string]$SnapshotName,
+        [int]$MaxAttempts = 540,
+        [int]$DelaySeconds = 20,
+        [int]$NoProgressAttemptLimit = 45
+    )
+
+    if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
+    if ($NoProgressAttemptLimit -lt 1) { $NoProgressAttemptLimit = 1 }
+
+    $previousProgressKey = ''
+    $stagnantAttempts = 0
+
+    for ($copyAttempt = 1; $copyAttempt -le $MaxAttempts; $copyAttempt++) {
+        $copyStateJson = az snapshot show -g $ResourceGroup -n $SnapshotName --query "{provisioningState:provisioningState,snapshotAccessState:snapshotAccessState,completionPercent:completionPercent}" -o json --only-show-errors
+        Assert-LastExitCode "az snapshot show (target copy state)"
+        $copyState = ConvertFrom-JsonCompat -InputObject $copyStateJson
+        $prov = [string]$copyState.provisioningState
+        $acc = [string]$copyState.snapshotAccessState
+        $pct = 0.0
+        if ($null -ne $copyState.completionPercent) {
+            $pct = [double]$copyState.completionPercent
+        }
+
+        $progressKey = ("{0}|{1}|{2:N1}" -f $prov, $acc, $pct)
+        if ([string]::Equals([string]$progressKey, [string]$previousProgressKey, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $stagnantAttempts++
+        }
+        else {
+            $stagnantAttempts = 0
+            $previousProgressKey = $progressKey
+        }
+
+        Write-Host ("Target snapshot copy {0}/{1}: provisioningState={2}, accessState={3}, completionPercent={4:N1}" -f $copyAttempt, $MaxAttempts, $prov, $acc, $pct)
+
+        if ([string]::Equals($prov, "Succeeded", [System.StringComparison]::OrdinalIgnoreCase) -and [string]::Equals($acc, "Available", [System.StringComparison]::OrdinalIgnoreCase) -and $pct -ge 100.0) {
+            return $copyState
+        }
+
+        if ($stagnantAttempts -ge $NoProgressAttemptLimit) {
+            throw ("Target snapshot copy made no observable progress for {0} attempt(s)." -f $NoProgressAttemptLimit)
+        }
+
+        if ($copyAttempt -ge $MaxAttempts) {
+            throw "Target snapshot copy did not complete in expected time."
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    throw "Target snapshot copy did not complete in expected time."
+}
+
+# Handles Test-AzVmTcpPortReachable.
+function Test-AzVmTcpPortReachable {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$TimeoutSeconds = 5
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$HostName) -or $Port -lt 1 -or $Port -gt 65535) {
+        return $false
+    }
+
+    if ($TimeoutSeconds -lt 1) { $TimeoutSeconds = 1 }
+
+    $client = New-Object System.Net.Sockets.TcpClient
+    $waitHandle = $null
+    try {
+        $async = $client.BeginConnect([string]$HostName, [int]$Port, $null, $null)
+        $waitHandle = $async.AsyncWaitHandle
+        if (-not $waitHandle.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds), $false)) {
+            return $false
+        }
+
+        $client.EndConnect($async)
+        return $client.Connected
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $waitHandle) {
+            try { $waitHandle.Close() } catch { }
+        }
+        try { $client.Dispose() } catch { }
+    }
+}
+
+# Handles Wait-AzVmTcpPortReachable.
+function Wait-AzVmTcpPortReachable {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$MaxAttempts = 18,
+        [int]$DelaySeconds = 10,
+        [int]$TimeoutSeconds = 5,
+        [string]$Label = 'tcp port'
+    )
+
+    if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        Write-Host ("Connectivity check ({0}) {1}:{2} attempt {3}/{4}" -f $Label, $HostName, $Port, $attempt, $MaxAttempts)
+        if (Test-AzVmTcpPortReachable -HostName $HostName -Port $Port -TimeoutSeconds $TimeoutSeconds) {
+            return $true
+        }
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    return $false
+}
+
+# Handles Assert-AzVmMoveTargetParity.
+function Assert-AzVmMoveTargetParity {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$ExpectedRegion,
+        [string]$ExpectedVmSize,
+        [string]$ExpectedDiskSku,
+        [int]$ExpectedDiskSizeGb,
+        [bool]$ExpectedDiskSupportsHibernation,
+        [bool]$ExpectedVmHibernationEnabled
+    )
+
+    $vmJson = az vm show -g $ResourceGroup -n $VmName -o json --only-show-errors
+    Assert-LastExitCode "az vm show (move target parity)"
+    $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
+    if ($null -eq $vmObject) {
+        throw "Target VM metadata could not be parsed."
+    }
+
+    $actualRegion = [string]$vmObject.location
+    $actualVmSize = [string]$vmObject.hardwareProfile.vmSize
+    $actualVmHibernation = $false
+    if ($vmObject.PSObject.Properties.Match('additionalCapabilities').Count -gt 0 -and $null -ne $vmObject.additionalCapabilities) {
+        if ($vmObject.additionalCapabilities.PSObject.Properties.Match('hibernationEnabled').Count -gt 0 -and $null -ne $vmObject.additionalCapabilities.hibernationEnabled) {
+            $actualVmHibernation = [bool]$vmObject.additionalCapabilities.hibernationEnabled
+        }
+    }
+
+    $diskId = [string]$vmObject.storageProfile.osDisk.managedDisk.id
+    if ([string]::IsNullOrWhiteSpace([string]$diskId)) {
+        throw "Target VM OS disk id could not be resolved."
+    }
+
+    $diskJson = az disk show --ids $diskId -o json --only-show-errors
+    Assert-LastExitCode "az disk show (move target parity)"
+    $diskObject = ConvertFrom-JsonCompat -InputObject $diskJson
+    if ($null -eq $diskObject) {
+        throw "Target disk metadata could not be parsed."
+    }
+
+    $actualDiskSku = [string]$diskObject.sku.name
+    $actualDiskSizeGb = [int]$diskObject.diskSizeGb
+    $actualDiskSupportsHibernation = $false
+    if ($diskObject.PSObject.Properties.Match('supportsHibernation').Count -gt 0 -and $null -ne $diskObject.supportsHibernation) {
+        $actualDiskSupportsHibernation = [bool]$diskObject.supportsHibernation
+    }
+
+    if (-not [string]::Equals([string]$actualRegion, [string]$ExpectedRegion, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Target VM region mismatch. Expected '{0}', actual '{1}'." -f $ExpectedRegion, $actualRegion)
+    }
+    if (-not [string]::Equals([string]$actualVmSize, [string]$ExpectedVmSize, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Target VM size mismatch. Expected '{0}', actual '{1}'." -f $ExpectedVmSize, $actualVmSize)
+    }
+    if (-not [string]::Equals([string]$actualDiskSku, [string]$ExpectedDiskSku, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Target disk sku mismatch. Expected '{0}', actual '{1}'." -f $ExpectedDiskSku, $actualDiskSku)
+    }
+    if ($actualDiskSizeGb -ne $ExpectedDiskSizeGb) {
+        throw ("Target disk size mismatch. Expected '{0}', actual '{1}'." -f $ExpectedDiskSizeGb, $actualDiskSizeGb)
+    }
+    if ([bool]$ExpectedDiskSupportsHibernation -ne [bool]$actualDiskSupportsHibernation) {
+        throw ("Target disk hibernation-support mismatch. Expected '{0}', actual '{1}'." -f $ExpectedDiskSupportsHibernation, $actualDiskSupportsHibernation)
+    }
+    if ([bool]$ExpectedVmHibernationEnabled -ne [bool]$actualVmHibernation) {
+        throw ("Target VM hibernation setting mismatch. Expected '{0}', actual '{1}'." -f $ExpectedVmHibernationEnabled, $actualVmHibernation)
+    }
+
+    return [pscustomobject]@{
+        Vm = $vmObject
+        Disk = $diskObject
+    }
+}
+
+# Handles Invoke-AzVmMoveTargetHealthCheck.
+function Invoke-AzVmMoveTargetHealthCheck {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$Platform,
+        [string]$ExpectedRegion,
+        [string]$ExpectedVmSize,
+        [string]$ExpectedDiskSku,
+        [int]$ExpectedDiskSizeGb,
+        [bool]$ExpectedDiskSupportsHibernation,
+        [bool]$ExpectedVmHibernationEnabled,
+        [string]$SshPort,
+        [string]$RdpPort
+    )
+
+    $parity = Assert-AzVmMoveTargetParity `
+        -ResourceGroup $ResourceGroup `
+        -VmName $VmName `
+        -ExpectedRegion $ExpectedRegion `
+        -ExpectedVmSize $ExpectedVmSize `
+        -ExpectedDiskSku $ExpectedDiskSku `
+        -ExpectedDiskSizeGb $ExpectedDiskSizeGb `
+        -ExpectedDiskSupportsHibernation:$ExpectedDiskSupportsHibernation `
+        -ExpectedVmHibernationEnabled:$ExpectedVmHibernationEnabled
+
+    $execResult = Invoke-AzVmExecCommand `
+        -Options @{ group = $ResourceGroup; 'vm-name' = $VmName; 'update-task' = '29' } `
+        -AutoMode:$true `
+        -WindowsFlag:([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) `
+        -LinuxFlag:([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) `
+        -TaskOutcomeModeOverride 'strict'
+
+    $vmDetailContext = [ordered]@{
+        ResourceGroup = $ResourceGroup
+        VmName = $VmName
+        AzLocation = $ExpectedRegion
+        SshPort = $SshPort
+    }
+    $targetVmDetails = Get-AzVmVmDetails -Context $vmDetailContext
+    $hostName = [string]$targetVmDetails.VmFqdn
+    if ([string]::IsNullOrWhiteSpace([string]$hostName)) {
+        $hostName = [string]$targetVmDetails.PublicIP
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$hostName)) {
+        throw "Target VM connection host could not be resolved."
+    }
+
+    $probePortText = if ([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) { [string]$RdpPort } else { [string]$SshPort }
+    $probeLabel = if ([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) { 'rdp' } else { 'ssh' }
+    $probePort = 0
+    if (-not [int]::TryParse($probePortText, [ref]$probePort) -or $probePort -lt 1 -or $probePort -gt 65535) {
+        throw ("Target VM {0} port could not be resolved from configuration." -f $probeLabel)
+    }
+
+    $reachable = Wait-AzVmTcpPortReachable -HostName $hostName -Port $probePort -MaxAttempts 18 -DelaySeconds 10 -TimeoutSeconds 5 -Label $probeLabel
+    if (-not $reachable) {
+        throw ("Target VM {0} port {1} did not become reachable on host '{2}'." -f $probeLabel, $probePort, $hostName)
+    }
+
+    return [pscustomobject]@{
+        HostName = $hostName
+        ProbePort = $probePort
+        ProbeLabel = $probeLabel
+        Vm = $parity.Vm
+        Disk = $parity.Disk
+    }
+}
+
 # Handles Invoke-AzVmChangeCommand.
 function Invoke-AzVmChangeCommand {
     param(
@@ -2566,7 +2949,7 @@ function Invoke-AzVmChangeCommand {
     if (-not [string]::IsNullOrWhiteSpace([string]$groupOptionValue)) {
         $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOptionValue.Trim()
     }
-    $vmOptionValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm')
+    $vmOptionValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     if (-not [string]::IsNullOrWhiteSpace([string]$vmOptionValue)) {
         $runtimeConfigOverrides['VM_NAME'] = $vmOptionValue.Trim()
     }
@@ -2644,6 +3027,12 @@ function Invoke-AzVmChangeCommand {
     $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
     $currentRegion = [string]$vmObject.location
     $currentSize = [string]$vmObject.hardwareProfile.vmSize
+    $sourceResourceGroup = [string]$resourceGroup
+    $sourceVmName = [string]$vmName
+    $sourceLifecycleSnapshot = $null
+    if ([string]::Equals([string]$OperationLabel, 'move', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $sourceLifecycleSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $resourceGroup -VmName $vmName
+    }
     if ([string]::IsNullOrWhiteSpace($currentRegion)) { $currentRegion = [string]$context.AzLocation }
     if ([string]::IsNullOrWhiteSpace($currentSize)) { $currentSize = [string]$context.VmSize }
 
@@ -2758,11 +3147,29 @@ function Invoke-AzVmChangeCommand {
                 -Hint "Detach/migrate data disks separately, then retry."
         }
 
+        $sourceOsDiskName = [string]$vmObject.storageProfile.osDisk.name
+        if ([string]::IsNullOrWhiteSpace([string]$sourceOsDiskName)) {
+            $sourceOsDiskName = [string]($sourceOsDiskId -split '/')[-1]
+        }
+        Assert-AzVmMoveSourceGroupPurgeSafe -ResourceGroup $resourceGroup -VmName $vmName -OsDiskName $sourceOsDiskName | Out-Null
+
         $sourceDiskJson = az disk show --ids $sourceOsDiskId -o json --only-show-errors
         Assert-LastExitCode "az disk show (source os disk)"
         $sourceDisk = ConvertFrom-JsonCompat -InputObject $sourceDiskJson
         $sourceDiskSku = [string]$sourceDisk.sku.name
         $sourceOsType = [string]$sourceDisk.osType
+        $sourceDiskSizeGb = 0
+        if ($null -ne $sourceDisk.diskSizeGb) {
+            $sourceDiskSizeGb = [int]$sourceDisk.diskSizeGb
+        }
+        $sourceDiskSupportsHibernation = $false
+        if ($sourceDisk.PSObject.Properties.Match('supportsHibernation').Count -gt 0 -and $null -ne $sourceDisk.supportsHibernation) {
+            $sourceDiskSupportsHibernation = [bool]$sourceDisk.supportsHibernation
+        }
+        $sourceVmHibernationEnabled = $false
+        if ($null -ne $sourceLifecycleSnapshot) {
+            $sourceVmHibernationEnabled = [bool]$sourceLifecycleSnapshot.HibernationEnabled
+        }
         if ([string]::IsNullOrWhiteSpace([string]$sourceDiskSku)) { $sourceDiskSku = "StandardSSD_LRS" }
         if ([string]::IsNullOrWhiteSpace([string]$sourceOsType)) { $sourceOsType = "Windows" }
 
@@ -2806,6 +3213,8 @@ function Invoke-AzVmChangeCommand {
         $targetVmCreated = $false
         $targetDiskCreated = $false
         $targetNetworkAttempted = $false
+        $sourceNeedsStartRecovery = ($null -ne $sourceLifecycleSnapshot -and [string]::Equals([string]$sourceLifecycleSnapshot.NormalizedState, 'started', [System.StringComparison]::OrdinalIgnoreCase))
+        $sourceWasDeallocatedInMove = $false
 
         $cleanupTarget = {
             param([string]$Reason)
@@ -2834,6 +3243,19 @@ function Invoke-AzVmChangeCommand {
         }
 
         try {
+            $sourceAlreadyDeallocated = ($null -ne $sourceLifecycleSnapshot -and [string]$sourceLifecycleSnapshot.NormalizedState -in @('deallocated','hibernated'))
+            if (-not $sourceAlreadyDeallocated) {
+                Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+                    az vm deallocate -g $resourceGroup -n $vmName -o none --only-show-errors
+                    Assert-LastExitCode "az vm deallocate (source)"
+                } | Out-Null
+                $sourceDeallocated = Wait-AzVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM deallocated" -MaxAttempts 24 -DelaySeconds 10
+                if (-not $sourceDeallocated) {
+                    throw "Source VM did not reach deallocated state before snapshot creation."
+                }
+                $sourceWasDeallocatedInMove = $true
+            }
+
             $targetGroupExists = az group exists -n $targetResourceGroup --only-show-errors
             Assert-LastExitCode "az group exists (target)"
             if (-not [string]::Equals([string]$targetGroupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -2865,21 +3287,7 @@ function Invoke-AzVmChangeCommand {
             } | Out-Null
             $targetSnapshotCreated = $true
 
-            $copyMaxAttempts = 540
-            $copyDelaySeconds = 20
-            for ($copyAttempt = 1; $copyAttempt -le $copyMaxAttempts; $copyAttempt++) {
-                $copyStateJson = az snapshot show -g $targetResourceGroup -n $targetSnapshotName --query "{provisioningState:provisioningState,snapshotAccessState:snapshotAccessState,completionPercent:completionPercent}" -o json --only-show-errors
-                Assert-LastExitCode "az snapshot show (target copy state)"
-                $copyState = ConvertFrom-JsonCompat -InputObject $copyStateJson
-                $prov = [string]$copyState.provisioningState
-                $acc = [string]$copyState.snapshotAccessState
-                $pct = 0.0
-                if ($null -ne $copyState.completionPercent) { $pct = [double]$copyState.completionPercent }
-                Write-Host ("Target snapshot copy {0}/{1}: provisioningState={2}, accessState={3}, completionPercent={4:N1}" -f $copyAttempt, $copyMaxAttempts, $prov, $acc, $pct)
-                if ([string]::Equals($prov, "Succeeded", [System.StringComparison]::OrdinalIgnoreCase) -and [string]::Equals($acc, "Available", [System.StringComparison]::OrdinalIgnoreCase) -and $pct -ge 100.0) { break }
-                if ($copyAttempt -ge $copyMaxAttempts) { throw "Target snapshot copy did not complete in expected time." }
-                Start-Sleep -Seconds $copyDelaySeconds
-            }
+            Wait-AzVmSnapshotCopyReady -ResourceGroup $targetResourceGroup -SnapshotName $targetSnapshotName -MaxAttempts 540 -DelaySeconds 20 -NoProgressAttemptLimit 45 | Out-Null
 
             $targetSnapshotId = az snapshot show -g $targetResourceGroup -n $targetSnapshotName --query "id" -o tsv --only-show-errors
             Assert-LastExitCode "az snapshot show (target id)"
@@ -2907,8 +3315,15 @@ function Invoke-AzVmChangeCommand {
             } | Out-Null
             $targetDiskCreated = $true
 
+            if ($sourceDiskSupportsHibernation) {
+                Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --set supportsHibernation=true" -f $targetResourceGroup, $targetDiskName) -Action {
+                    az disk update -g $targetResourceGroup -n $targetDiskName --set supportsHibernation=true -o none --only-show-errors
+                    Assert-LastExitCode "az disk update (target supportsHibernation)"
+                } | Out-Null
+            }
+
             $targetCreateJson = Invoke-TrackedAction -Label ("az vm create -g {0} -n {1} --attach-os-disk" -f $targetResourceGroup, $targetVmName) -Action {
-                $vmCreateArgs = @("vm", "create", "--resource-group", $targetResourceGroup, "--name", $targetVmName, "--attach-os-disk", $targetDiskName, "--os-type", $sourceOsType, "--size", $currentSize, "--admin-username", [string]$context.VmUser, "--admin-password", [string]$context.VmPass, "--authentication-type", "password", "--nics", $targetNicName, "-o", "json", "--only-show-errors")
+                $vmCreateArgs = @("vm", "create", "--resource-group", $targetResourceGroup, "--name", $targetVmName, "--attach-os-disk", $targetDiskName, "--os-type", $sourceOsType, "--size", $currentSize, "--nics", $targetNicName, "-o", "json", "--only-show-errors")
                 az @vmCreateArgs
             }
             Assert-LastExitCode "az vm create (target attach-os-disk)"
@@ -2916,14 +3331,24 @@ function Invoke-AzVmChangeCommand {
             if (-not $targetCreateObj.id) { throw "Target VM creation returned no VM id." }
             $targetVmCreated = $true
 
-            if (-not [string]::Equals([string]$targetSize, [string]$currentSize, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $targetNeedsDeallocate = $sourceVmHibernationEnabled -or (-not [string]::Equals([string]$targetSize, [string]$currentSize, [System.StringComparison]::OrdinalIgnoreCase))
+            if ($targetNeedsDeallocate) {
                 Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $targetResourceGroup, $targetVmName) -Action {
                     az vm deallocate -g $targetResourceGroup -n $targetVmName -o none --only-show-errors
                     Assert-LastExitCode "az vm deallocate (target)"
                 } | Out-Null
                 $targetDeallocated = Wait-AzVmVmPowerState -ResourceGroup $targetResourceGroup -VmName $targetVmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
                 if (-not $targetDeallocated) { throw "Target VM did not reach deallocated state before resize." }
+            }
 
+            if ($sourceVmHibernationEnabled) {
+                Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation true" -f $targetResourceGroup, $targetVmName) -Action {
+                    az vm update -g $targetResourceGroup -n $targetVmName --enable-hibernation true -o none --only-show-errors
+                    Assert-LastExitCode "az vm update (target enable hibernation)"
+                } | Out-Null
+            }
+
+            if (-not [string]::Equals([string]$targetSize, [string]$currentSize, [System.StringComparison]::OrdinalIgnoreCase)) {
                 Invoke-TrackedAction -Label ("az vm resize -g {0} -n {1} --size {2}" -f $targetResourceGroup, $targetVmName, $targetSize) -Action {
                     az vm resize -g $targetResourceGroup -n $targetVmName --size $targetSize -o none --only-show-errors
                     Assert-LastExitCode "az vm resize (target)"
@@ -2965,8 +3390,27 @@ function Invoke-AzVmChangeCommand {
         catch {
             $innerError = $_
             & $cleanupTarget -Reason ([string]$innerError.Exception.Message)
+            $sourceRecoveryNote = ''
+            if ($sourceNeedsStartRecovery -and $sourceWasDeallocatedInMove) {
+                try {
+                    Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $sourceResourceGroup, $sourceVmName) -Action {
+                        az vm start -g $sourceResourceGroup -n $sourceVmName -o none --only-show-errors
+                        Assert-LastExitCode "az vm start (source recovery)"
+                    } | Out-Null
+                    $sourceRecovered = Wait-AzVmVmRunningState -ResourceGroup $sourceResourceGroup -VmName $sourceVmName -MaxAttempts 6 -DelaySeconds 10
+                    if ($sourceRecovered) {
+                        $sourceRecoveryNote = " Source VM was restarted after rollback."
+                    }
+                    else {
+                        $sourceRecoveryNote = " Source VM restart was attempted after rollback but running state was not confirmed."
+                    }
+                }
+                catch {
+                    $sourceRecoveryNote = (" Source VM restart failed after rollback: {0}" -f $_.Exception.Message)
+                }
+            }
             Throw-FriendlyError `
-                -Detail ("Snapshot-based region migration failed. Cleanup completed. Error: {0}" -f $innerError.Exception.Message) `
+                -Detail ("Snapshot-based region migration failed. Cleanup completed. Error: {0}.{1}" -f $innerError.Exception.Message, $sourceRecoveryNote) `
                 -Code 62 `
                 -Summary "Region move failed and target-side artifacts were rolled back." `
                 -Hint ("Review failure detail, then retry {0} command." -f $OperationLabel)
@@ -3022,6 +3466,32 @@ function Invoke-AzVmChangeCommand {
     }
 
     if ($regionMoveApplied) {
+        try {
+            $healthCheck = Invoke-AzVmMoveTargetHealthCheck `
+                -ResourceGroup $activeResourceGroup `
+                -VmName $activeVmName `
+                -Platform $platform `
+                -ExpectedRegion $targetRegion `
+                -ExpectedVmSize $currentSize `
+                -ExpectedDiskSku $sourceDiskSku `
+                -ExpectedDiskSizeGb $sourceDiskSizeGb `
+                -ExpectedDiskSupportsHibernation:$sourceDiskSupportsHibernation `
+                -ExpectedVmHibernationEnabled:$sourceVmHibernationEnabled `
+                -SshPort ([string]$context.SshPort) `
+                -RdpPort ([string]$context.RdpPort)
+
+            Write-Host ("Target move health gate passed: {0} {1}:{2}" -f [string]$healthCheck.ProbeLabel, [string]$healthCheck.HostName, [int]$healthCheck.ProbePort) -ForegroundColor Green
+        }
+        catch {
+            Throw-FriendlyError `
+                -Detail ("Target region cutover validation failed for VM '{0}' in resource group '{1}': {2}" -f $activeVmName, $activeResourceGroup, $_.Exception.Message) `
+                -Code 62 `
+                -Summary "Move command stopped before source cleanup because target validation did not pass." `
+                -Hint "Review the target VM state, rerun the health check, and only delete the old source group after the target is confirmed healthy."
+        }
+    }
+
+    if ($regionMoveApplied) {
         Set-DotEnvValue -Path $envFilePath -Key 'AZ_LOCATION' -Value $targetRegion
         Set-DotEnvValue -Path $envFilePath -Key 'RESOURCE_GROUP' -Value $activeResourceGroup
         Set-DotEnvValue -Path $envFilePath -Key 'VM_NAME' -Value ([string]$context.VmName)
@@ -3051,6 +3521,24 @@ function Invoke-AzVmChangeCommand {
     }
 
     if ($regionMoveApplied) {
+        try {
+            Invoke-TrackedAction -Label ("az group delete -n {0} --yes --no-wait" -f $sourceResourceGroup) -Action {
+                az group delete -n $sourceResourceGroup --yes --no-wait --only-show-errors
+                Assert-LastExitCode "az group delete (source cleanup)"
+            } | Out-Null
+            Invoke-TrackedAction -Label ("az group wait -n {0} --deleted" -f $sourceResourceGroup) -Action {
+                az group wait -n $sourceResourceGroup --deleted --only-show-errors
+                Assert-LastExitCode "az group wait --deleted (source cleanup)"
+            } | Out-Null
+        }
+        catch {
+            Throw-FriendlyError `
+                -Detail ("Target cutover to resource group '{0}' succeeded, but old source resource group '{1}' could not be deleted: {2}" -f $activeResourceGroup, $sourceResourceGroup, $_.Exception.Message) `
+                -Code 62 `
+                -Summary "Move command completed target cutover but old-source cleanup failed." `
+                -Hint ("Delete the old source group '{0}' manually after confirming the new target is healthy." -f $sourceResourceGroup)
+        }
+
         Write-Host ("Change completed successfully. Region='{0}', VM size='{1}', active resource group='{2}'." -f $targetRegion, $currentSize, $activeResourceGroup) -ForegroundColor Green
     }
     else {

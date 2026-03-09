@@ -374,6 +374,11 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
 }
 
+Invoke-Test -Name "Move and set commands accept vm-name" -Action {
+    Assert-AzVmCommandOptions -CommandName 'move' -Options @{ 'vm-name' = 'examplevm'; 'vm-region' = 'swedencentral'; group = 'rg-examplevm-ate1-g1' }
+    Assert-AzVmCommandOptions -CommandName 'set' -Options @{ 'vm-name' = 'examplevm'; group = 'rg-examplevm-ate1-g1'; hibernation = 'on' }
+}
+
 Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-examplevm-ate1-g1' }
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-examplevm-ate1-g1'; windows = $true }
@@ -392,8 +397,8 @@ Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
 
-Invoke-Test -Name "Resize, Do, SSH, and RDP reject legacy vm option" -Action {
-    foreach ($commandName in @('resize','do','ssh','rdp')) {
+Invoke-Test -Name "Move, Set, Resize, Do, SSH, and RDP reject legacy vm option" -Action {
+    foreach ($commandName in @('move','set','resize','do','ssh','rdp')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'examplevm' }
@@ -440,6 +445,36 @@ Invoke-Test -Name "Resize direct request detection" -Action {
     Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D4as_v5' }) -Message "Fully specified resize request must be treated as direct."
     Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm' })) -Message "Resize request without vm-size must not be treated as direct."
     Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; vm = 'examplevm'; 'vm-size' = 'Standard_D4as_v5' })) -Message "Legacy vm option must not satisfy direct resize request detection."
+}
+
+Invoke-Test -Name "Move source group purge-safety helper accepts expected resource set" -Action {
+    $resources = @(
+        [pscustomobject]@{ name = 'examplevm'; type = 'Microsoft.Compute/virtualMachines' },
+        [pscustomobject]@{ name = 'disk-examplevm-ate1-n1'; type = 'Microsoft.Compute/disks' },
+        [pscustomobject]@{ name = 'nic-examplevm-ate1-n1'; type = 'Microsoft.Network/networkInterfaces' },
+        [pscustomobject]@{ name = 'ip-examplevm-ate1-n1'; type = 'Microsoft.Network/publicIPAddresses' },
+        [pscustomobject]@{ name = 'nsg-examplevm-ate1-n1'; type = 'Microsoft.Network/networkSecurityGroups' },
+        [pscustomobject]@{ name = 'net-examplevm-ate1-n1'; type = 'Microsoft.Network/virtualNetworks' }
+    )
+
+    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName 'examplevm' -OsDiskName 'disk-examplevm-ate1-n1'
+    Assert-True -Condition ([bool]$result.IsSafe) -Message "Expected VM-bound resource set must be purge-safe."
+}
+
+Invoke-Test -Name "Move source group purge-safety helper rejects unexpected resources" -Action {
+    $resources = @(
+        [pscustomobject]@{ name = 'examplevm'; type = 'Microsoft.Compute/virtualMachines' },
+        [pscustomobject]@{ name = 'disk-examplevm-ate1-n1'; type = 'Microsoft.Compute/disks' },
+        [pscustomobject]@{ name = 'nic-examplevm-ate1-n1'; type = 'Microsoft.Network/networkInterfaces' },
+        [pscustomobject]@{ name = 'ip-examplevm-ate1-n1'; type = 'Microsoft.Network/publicIPAddresses' },
+        [pscustomobject]@{ name = 'nsg-examplevm-ate1-n1'; type = 'Microsoft.Network/networkSecurityGroups' },
+        [pscustomobject]@{ name = 'net-examplevm-ate1-n1'; type = 'Microsoft.Network/virtualNetworks' },
+        [pscustomobject]@{ name = 'vault-extra'; type = 'Microsoft.KeyVault/vaults' }
+    )
+
+    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName 'examplevm' -OsDiskName 'disk-examplevm-ate1-n1'
+    Assert-True -Condition (-not [bool]$result.IsSafe) -Message "Unexpected resource types must block automatic source-group purge."
+    Assert-True -Condition (@($result.UnexpectedTypes) -contains 'Microsoft.KeyVault/vaults') -Message "Unexpected resource type should be surfaced to the operator."
 }
 
 Invoke-Test -Name "Help --command syntax was removed" -Action {
@@ -912,6 +947,125 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
     }
 }
 
+Invoke-Test -Name "Exec command supports strict outcome override" -Action {
+    try {
+        function Initialize-AzVmExecCommandRuntimeContext {
+            param([switch]$AutoMode, [switch]$WindowsFlag, [switch]$LinuxFlag)
+            return [pscustomobject]@{
+                Context = [ordered]@{
+                    ResourceGroup = 'rg-examplevm-ate1-g1'
+                    VmName = 'examplevm'
+                    VmInitTaskDir = 'windows/init'
+                    VmUpdateTaskDir = 'windows/update'
+                    VmUser = 'manager'
+                    VmPass = 'secret'
+                    SshPort = '444'
+                    AzLocation = 'austriaeast'
+                }
+                Platform = 'windows'
+                PlatformDefaults = [pscustomobject]@{
+                    RunCommandId = 'RunPowerShellScript'
+                }
+                EffectiveConfigMap = @{}
+                TaskOutcomeMode = 'continue'
+                ConfiguredPySshClientPath = ''
+                SshTaskTimeoutSeconds = 180
+                SshConnectTimeoutSeconds = 30
+            }
+        }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-examplevm-ate1-g1'
+                VmName = 'examplevm'
+            }
+        }
+        function Get-AzVmTaskBlocksFromDirectory {
+            param([string]$DirectoryPath, [string]$Platform, [string]$Stage)
+            return [pscustomobject]@{
+                ActiveTasks = @(
+                    [pscustomobject]@{
+                        Name = '29-health-snapshot'
+                        Script = 'Write-Host ok'
+                        TimeoutSeconds = 30
+                    }
+                )
+            }
+        }
+        function Resolve-AzVmRuntimeTaskBlocks {
+            param([object[]]$TemplateTaskBlocks, [hashtable]$Context)
+            return @($TemplateTaskBlocks)
+        }
+        function Resolve-AzVmTaskSelection {
+            param([object[]]$TaskBlocks, [string]$TaskNumberOrName, [string]$Stage, [switch]$AutoMode)
+            return @($TaskBlocks)[0]
+        }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'examplevm.austriaeast.cloudapp.azure.com'
+                PublicIP = '1.2.3.4'
+            }
+        }
+        function Invoke-AzVmSshTaskBlocks {
+            param(
+                [string]$Platform,
+                [string]$RepoRoot,
+                [string]$SshHost,
+                [string]$SshUser,
+                [string]$SshPassword,
+                [string]$SshPort,
+                [string]$ResourceGroup,
+                [string]$VmName,
+                [object[]]$TaskBlocks,
+                [string]$TaskOutcomeMode,
+                [string]$PerfTaskCategory,
+                [int]$SshMaxRetries,
+                [int]$SshTaskTimeoutSeconds,
+                [int]$SshConnectTimeoutSeconds,
+                [string]$ConfiguredPySshClientPath
+            )
+
+            $script:ExecSshInvocation = [pscustomobject]@{
+                ResourceGroup = $ResourceGroup
+                VmName = $VmName
+                TaskName = [string]@($TaskBlocks)[0].Name
+                TaskOutcomeMode = $TaskOutcomeMode
+                SshHost = $SshHost
+            }
+
+            return [pscustomobject]@{
+                SuccessCount = 1
+                FailedCount = 0
+                WarningCount = 0
+                ErrorCount = 0
+            }
+        }
+
+        $result = Invoke-AzVmExecCommand -Options @{ 'update-task' = '29' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false -TaskOutcomeModeOverride 'strict'
+
+        Assert-True -Condition ($null -ne $script:ExecSshInvocation) -Message 'Exec update task must invoke SSH task runner.'
+        Assert-True -Condition ([string]$script:ExecSshInvocation.TaskName -eq '29-health-snapshot') -Message 'Exec update task must preserve selected task.'
+        Assert-True -Condition ([string]$script:ExecSshInvocation.TaskOutcomeMode -eq 'strict') -Message 'Exec strict override must flow into SSH task outcome mode.'
+        Assert-True -Condition ([string]$result.Stage -eq 'update') -Message 'Exec update task must report update stage result.'
+        Assert-True -Condition ([string]$result.TaskOutcomeMode -eq 'strict') -Message 'Exec result must expose the strict outcome override.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmExecCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmTaskBlocksFromDirectory',
+            'Resolve-AzVmRuntimeTaskBlocks',
+            'Resolve-AzVmTaskSelection',
+            'Get-AzVmVmDetails',
+            'Invoke-AzVmSshTaskBlocks'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name ExecSshInvocation -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Task token replacement" -Action {
     $context = [ordered]@{
         VmUser = "manager"
@@ -941,6 +1095,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
+}
 
 Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     $updateDir = Join-Path $RepoRoot 'windows\update'
@@ -976,7 +1131,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
         '26-install-global-npm-packages' = 363
         '27-windows-ux-public-desktop-shortcuts' = 10
         '28-copy-user-settings' = 27
-        '29-health-snapshot' = 10
+        '29-health-snapshot' = 30
         '30-install-itunes' = 57
         '31-install-be-my-eyes' = 35
         '32-install-nvda' = 54

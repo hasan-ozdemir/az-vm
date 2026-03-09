@@ -199,6 +199,12 @@ Typical workflows:
 .\az-vm.cmd resize --vm-name=examplevm --vm-size=Standard_D4as_v5 --group=rg-examplevm-ate1-g1
 .\az-vm.cmd resize --vm-name=examplevm --vm-size=Standard_D2as_v5 --group=rg-examplevm-ate1-g1 --windows
 
+# move the active VM to another Azure region with health-gated cutover
+.\az-vm.cmd move --group=rg-examplevm-ate1-g1 --vm-name=examplevm --vm-region=swedencentral
+
+# change one VM capability on the selected VM
+.\az-vm.cmd set --group=rg-examplevm-ate1-g1 --vm-name=examplevm --hibernation=off
+
 # run one guest update task
 .\az-vm.cmd exec --update-task=27 --group=rg-examplevm-ate1-g1 --vm-name=examplevm --windows
 

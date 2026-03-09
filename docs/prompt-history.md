@@ -3873,3 +3873,15 @@ fix: ben bu auto-start-apps görevinin on-the-fly olarak çalışmasını yani r
 **Assistant Summary**
 
 Removed the dynamic local-startup discovery/token plumbing from `az-vm`, rewrote `39-auto-start-apps` to carry a static snapshot of the currently approved startup set directly in the task file, reduced `29-health-snapshot` to validate that same fixed shortcut list, updated smoke coverage so it now enforces the static contract and the absence of runtime startup-profile tokens, refreshed the release docs to describe the static model instead of host-driven sync, and kept validation strictly non-live without touching the busy guest VM.
+
+### 2026-03-10 00:27 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented and live-hardened the approved `move` work for `examplevm`: `move` and `set` now use `--vm-name`, snapshot-based regional move now deallocates the source VM before snapshotting, validates that the source resource group is safe for automatic purge, creates target public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM. During live validation from `austriaeast` to `swedencentral`, fixed two real cutover bugs discovered on the wire, then tightened the move health gate so `29-health-snapshot` runs under strict outcome semantics and raised that task's catalog timeout from `10s` to `30s` after the target health snapshot proved too slow for the old bound. Final live state: `.env` now points to `rg-examplevm-sec1-g1` in `swedencentral`, target VM `examplevm` is `Standard_D4as_v5` and `running`, target disk `disk-examplevm-sec1-n1` is `StandardSSD_LRS` with `127 GB` and `supportsHibernation=true`, RDP port `3389` is reachable, isolated `exec --update-task=29` succeeds on the target, and the old source group `rg-examplevm-ate1-g1` is gone.
