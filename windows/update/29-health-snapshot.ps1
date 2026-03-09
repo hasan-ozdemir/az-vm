@@ -116,13 +116,159 @@ else {
 }
 
 Write-Host "PUBLIC DESKTOP SHORTCUT STATUS:"
+$pwshExe = Get-Command pwsh.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
+$q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
+
+if (-not ("AzVmNativePaths" -as [type])) {
+    Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class AzVmNativePaths {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
+}
+"@
+}
+
+function Convert-StringToCharCodeLiteral {
+    param([string]$Value)
+
+    $codes = @()
+    if ($null -ne $Value) {
+        $codes = @([int[]][char[]][string]$Value)
+    }
+
+    if (@($codes).Count -eq 0) {
+        return '@()'
+    }
+
+    return ('@(' + (($codes | ForEach-Object { [string]$_ }) -join ',') + ')')
+}
+
+function Get-ShortcutDetailsViaPwsh {
+    param([string]$ShortcutPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$pwshExe) -or [string]::IsNullOrWhiteSpace([string]$ShortcutPath)) {
+        return $null
+    }
+
+    $shortcutChars = Convert-StringToCharCodeLiteral -Value $ShortcutPath
+    $scriptText = @"
+`$shortcutPath = -join ($shortcutChars | ForEach-Object { [char]`$_ })
+`$shell = New-Object -ComObject WScript.Shell
+`$shortcut = `$shell.CreateShortcut(`$shortcutPath)
+[pscustomobject]@{
+    TargetPath = [string]`$shortcut.TargetPath
+    Arguments = [string]`$shortcut.Arguments
+    Hotkey = [string]`$shortcut.Hotkey
+} | ConvertTo-Json -Compress
+"@
+
+    $json = & $pwshExe -NoProfile -Command $scriptText
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$json)) {
+        return $null
+    }
+
+    return ($json | ConvertFrom-Json -ErrorAction Stop)
+}
+
+function Get-ShortcutDetailsViaShellApplication {
+    param([string]$ShortcutPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
+        return $null
+    }
+
+    $shellApp = New-Object -ComObject Shell.Application
+    $parentPath = Split-Path -Path $ShortcutPath -Parent
+    $leafName = Split-Path -Path $ShortcutPath -Leaf
+    $folder = $shellApp.Namespace($parentPath)
+    if ($null -eq $folder) {
+        return $null
+    }
+
+    $item = $folder.ParseName($leafName)
+    if ($null -eq $item) {
+        return $null
+    }
+
+    try {
+        $link = $item.GetLink()
+        return [pscustomobject]@{
+            TargetPath = [string]$link.Path
+            Arguments = [string]$link.Arguments
+            Hotkey = [string]$link.Hotkey
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+function Get-ShortPath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return ""
+    }
+
+    $builder = New-Object System.Text.StringBuilder 4096
+    $result = [AzVmNativePaths]::GetShortPathName([string]$Path, $builder, [uint32]$builder.Capacity)
+    if ($result -eq 0) {
+        return ""
+    }
+
+    return [string]$builder.ToString()
+}
+
+function Get-ShortcutDetails {
+    param(
+        [string]$ShortcutName,
+        [string]$ShortcutPath,
+        [object]$ShellObject
+    )
+
+    $details = $null
+    if ($ShortcutName -cmatch '[^\u0000-\u007F]') {
+        $details = Get-ShortcutDetailsViaShellApplication -ShortcutPath $ShortcutPath
+        if ($null -eq $details) {
+            $details = Get-ShortcutDetailsViaPwsh -ShortcutPath $ShortcutPath
+        }
+    }
+
+    if ($null -eq $details) {
+        $details = $ShellObject.CreateShortcut($ShortcutPath)
+    }
+
+    $targetPath = [string]$details.TargetPath
+    $arguments = [string]$details.Arguments
+    $hotkey = [string]$details.Hotkey
+    if (($ShortcutName -cmatch '[^\u0000-\u007F]') -and [string]::IsNullOrWhiteSpace([string]$targetPath)) {
+        $shortPath = Get-ShortPath -Path $ShortcutPath
+        if (-not [string]::IsNullOrWhiteSpace([string]$shortPath)) {
+            $fallbackDetails = $ShellObject.CreateShortcut($shortPath)
+            $targetPath = [string]$fallbackDetails.TargetPath
+            $arguments = [string]$fallbackDetails.Arguments
+            $hotkey = [string]$fallbackDetails.Hotkey
+        }
+    }
+
+    return [pscustomobject]@{
+        TargetPath = [string]$targetPath
+        Arguments = [string]$arguments
+        Hotkey = [string]$hotkey
+    }
+}
 $publicShortcutNames = @(
     "a1ChatGPT Web",
-    "i0internet",
-    "i1WhatsApp Kurumsal",
-    "i2WhatsApp Bireysel",
-    "z1google account setup",
-    "z2Office365 account setup",
+    "a2Be My Eyes",
+    "a7Docker Desktop",
+    "a10NVDA",
+    "a11MS Edge",
+    "a14VLC Player",
+    "a17Itunes",
     "b1GarantiBank Bireysel",
     "b2GarantiBank Kurumsal",
     "b3QnbBank Bireysel",
@@ -131,36 +277,60 @@ $publicShortcutNames = @(
     "b6AktifBank Kurumsal",
     "b7ZiraatBank Bireysel",
     "b8ZiraatBank Kurumsal",
-    "c0cmd",
+    "c0Cmd",
+    "d0Rclone CLI",
+    "d1One Drive",
+    "d2Google Drive",
+    "i0Internet",
+    "i1WhatsApp Kurumsal",
+    "i2WhatsApp Bireysel",
+    "i8AnyDesk",
+    "i9Windscribe",
     "local-only-shortcut",
-    "a7docker desktop",
-    "o0outlook",
-    "o1teams",
-    "o2word",
-    "o3excel",
-    "o4power point",
-    "o5onenote",
-    "t0git bash",
-    "t1python cli",
-    "t2nodejs cli",
-    "t3OllamaApp",
-    "t4pwsh",
-    "t5ps",
-    "t6azure-cli",
-    "t7wsl",
-    "t8docker cli",
-    "t9azd cli",
-    "t10gh cli",
-    "t11ffmpeg cli",
-    "t12SevenZip-cli",
-    "t13sysinternals",
-    "t14io-unlocker",
-    "t15codex-cli",
-    "t16gemini-cli",
-    "i8anydesk",
-    "i9windscribe",
-    "v5vscode",
-    "u7network and sharing"
+    "o0Outlook",
+    "o1Teams",
+    "o2Word",
+    "o3Excel",
+    "o4Power Point",
+    "o5OneNote",
+    $q1EksisozlukName,
+    "s1LinkedIn Kurumsal",
+    "s2LinkedIn Bireysel",
+    "s3YouTube Kurumsal",
+    "s4YouTube Bireysel",
+    "s5GitHub Kurumsal",
+    "s6GitHub Bireysel",
+    "s7TikTok Kurumsal",
+    "s8TikTok Bireysel",
+    "s9Instagram Kurumsal",
+    "s10Instagram Bireysel",
+    "s11Facebook Kurumsal",
+    "s12Facebook Bireysel",
+    "s13X-Twitter Kurumsal",
+    "s14X-Twitter Bireysel",
+    "s15Web Sitesi Kurumsal",
+    "s16Blog Sitesi Kurumsal",
+    "t0Git Bash",
+    "t1Python CLI",
+    "t2Nodejs CLI",
+    "t3Ollama App",
+    "t4Pwsh",
+    "t5PS",
+    "t6Azure CLI",
+    "t7WSL",
+    "t8Docker CLI",
+    "t9AZD CLI",
+    "t10GH CLI",
+    "t11FFmpeg CLI",
+    "t12SevenZip CLI",
+    "t13Sysinternals",
+    "t14Io Unlocker",
+    "t15Codex CLI",
+    "t16Gemini CLI",
+    "u7Network and Sharing",
+    "v5VS Code",
+    "z1Google Account Setup",
+    "z2Office365 Account Setup"
 )
 $publicDesktop = "C:\Users\Public\Desktop"
 $wsh = New-Object -ComObject WScript.Shell
@@ -171,10 +341,11 @@ foreach ($shortcutName in @($publicShortcutNames)) {
         continue
     }
 
-    $shortcut = $wsh.CreateShortcut($shortcutPath)
+    $shortcut = Get-ShortcutDetails -ShortcutName $shortcutName -ShortcutPath $shortcutPath -ShellObject $wsh
     Write-Host "shortcut => $shortcutPath"
     Write-Host " target => $([string]$shortcut.TargetPath)"
     Write-Host " args => $([string]$shortcut.Arguments)"
+    Write-Host " hotkey => $([string]$shortcut.Hotkey)"
 }
 
 Write-Host "NOTEPAD STATUS:"

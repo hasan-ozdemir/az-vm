@@ -977,13 +977,29 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
         '26-install-global-npm-packages' = 363
         '27-windows-ux-public-desktop-shortcuts' = 10
         '28-copy-user-settings' = 27
-        '29-health-snapshot' = 9
+        '29-health-snapshot' = 10
+        '30-install-itunes' = 57
+        '31-install-be-my-eyes' = 35
+        '32-install-nvda' = 54
+        '33-install-microsoft-edge' = 5
+        '34-install-vlc' = 58
+        '35-install-rclone' = 13
+        '36-install-onedrive' = 5
+        '37-install-google-drive' = 103
     }
 
     Assert-True -Condition ($activeNames -contains '19-install-microsoft-azd') -Message "Renamed azd task was not discovered."
     Assert-True -Condition ($activeNames -contains '20-private-local-task') -Message "Renamed private local-only accessibility task was not discovered."
     Assert-True -Condition ($activeNames -contains '28-copy-user-settings') -Message "Copy user settings task was not discovered."
     Assert-True -Condition ($activeNames -contains '29-health-snapshot') -Message "Renamed health snapshot task was not discovered."
+    Assert-True -Condition ($activeNames -contains '30-install-itunes') -Message "iTunes task was not discovered."
+    Assert-True -Condition ($activeNames -contains '31-install-be-my-eyes') -Message "Be My Eyes task was not discovered."
+    Assert-True -Condition ($activeNames -contains '32-install-nvda') -Message "NVDA task was not discovered."
+    Assert-True -Condition ($activeNames -contains '33-install-microsoft-edge') -Message "Microsoft Edge task was not discovered."
+    Assert-True -Condition ($activeNames -contains '34-install-vlc') -Message "VLC task was not discovered."
+    Assert-True -Condition ($activeNames -contains '35-install-rclone') -Message "rclone task was not discovered."
+    Assert-True -Condition ($activeNames -contains '36-install-onedrive') -Message "OneDrive task was not discovered."
+    Assert-True -Condition ($activeNames -contains '37-install-google-drive') -Message "Google Drive task was not discovered."
     Assert-True -Condition (-not ($activeNames -contains '19-health-snapshot')) -Message "Legacy 19-health-snapshot entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '20-private-local-task')) -Message "Legacy 20-private-local-task entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '28-install-microsoft-azd')) -Message "Legacy 28-install-microsoft-azd entry must not remain active."
@@ -996,6 +1012,7 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     }
 
     Assert-True -Condition (([array]::IndexOf($activeNames, '19-install-microsoft-azd')) -lt ([array]::IndexOf($activeNames, '20-private-local-task'))) -Message "Renamed task order must keep azd before copy-private local-only accessibility-settings."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '37-install-google-drive')) -lt ([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts'))) -Message "Install tasks must still complete before public desktop shortcut generation."
     Assert-True -Condition (([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts')) -lt ([array]::IndexOf($activeNames, '28-copy-user-settings'))) -Message "Task order must keep public desktop shortcuts before copy-user-settings."
     Assert-True -Condition (([array]::IndexOf($activeNames, '28-copy-user-settings')) -lt ([array]::IndexOf($activeNames, '29-health-snapshot'))) -Message "Task order must keep copy-user-settings before health snapshot."
 }
@@ -1197,14 +1214,16 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
     $healthTaskPath = Join-Path $RepoRoot 'windows\update\29-health-snapshot.ps1'
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+    $q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
 
     $expectedShortcutNames = @(
         'a1ChatGPT Web',
-        'i0internet',
-        'i1WhatsApp Kurumsal',
-        'i2WhatsApp Bireysel',
-        'z1google account setup',
-        'z2Office365 account setup',
+        'a2Be My Eyes',
+        'a7Docker Desktop',
+        'a10NVDA',
+        'a11MS Edge',
+        'a14VLC Player',
+        'a17Itunes',
         'b1GarantiBank Bireysel',
         'b2GarantiBank Kurumsal',
         'b3QnbBank Bireysel',
@@ -1213,11 +1232,59 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'b6AktifBank Kurumsal',
         'b7ZiraatBank Bireysel',
         'b8ZiraatBank Kurumsal',
-        't3OllamaApp',
-        't6azure-cli',
-        't12SevenZip-cli',
-        't15codex-cli',
-        't16gemini-cli'
+        'c0Cmd',
+        'd0Rclone CLI',
+        'd1One Drive',
+        'd2Google Drive',
+        'i0Internet',
+        'i1WhatsApp Kurumsal',
+        'i2WhatsApp Bireysel',
+        'i8AnyDesk',
+        'i9Windscribe',
+        'local-only-shortcut',
+        'o0Outlook',
+        'o1Teams',
+        'o2Word',
+        'o3Excel',
+        'o4Power Point',
+        'o5OneNote',
+        's1LinkedIn Kurumsal',
+        's2LinkedIn Bireysel',
+        's3YouTube Kurumsal',
+        's4YouTube Bireysel',
+        's5GitHub Kurumsal',
+        's6GitHub Bireysel',
+        's7TikTok Kurumsal',
+        's8TikTok Bireysel',
+        's9Instagram Kurumsal',
+        's10Instagram Bireysel',
+        's11Facebook Kurumsal',
+        's12Facebook Bireysel',
+        's13X-Twitter Kurumsal',
+        's14X-Twitter Bireysel',
+        's15Web Sitesi Kurumsal',
+        's16Blog Sitesi Kurumsal',
+        't0Git Bash',
+        't1Python CLI',
+        't2Nodejs CLI',
+        't3Ollama App',
+        't4Pwsh',
+        't5PS',
+        't6Azure CLI',
+        't7WSL',
+        't8Docker CLI',
+        't9AZD CLI',
+        't10GH CLI',
+        't11FFmpeg CLI',
+        't12SevenZip CLI',
+        't13Sysinternals',
+        't14Io Unlocker',
+        't15Codex CLI',
+        't16Gemini CLI',
+        'u7Network and Sharing',
+        'v5VS Code',
+        'z1Google Account Setup',
+        'z2Office365 Account Setup'
     )
     $legacyShortcutNames = @(
         'i7whatsapp',
@@ -1236,7 +1303,28 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         't13-sysinternals',
         't14-io-unlocker',
         't15-codex cli',
-        't16-gemini cli'
+        't16-gemini cli',
+        'i0internet',
+        'z1google account setup',
+        'z2Office365 account setup',
+        'c0cmd',
+        'local-only-shortcut',
+        'a7docker desktop',
+        'o0outlook',
+        'o1teams',
+        'o2word',
+        'o3excel',
+        'o4power point',
+        'o5onenote',
+        'i8anydesk',
+        'i9windscribe',
+        'v5vscode',
+        'u7network and sharing',
+        't3OllamaApp',
+        't6azure-cli',
+        't12SevenZip-cli',
+        't15codex-cli',
+        't16gemini-cli'
     )
     $expectedFragments = @(
         'https://chatgpt.com',
@@ -1244,6 +1332,22 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://web.whatsapp.com',
         'chrome://settings/syncSetup',
         'https://portal.office.com',
+        'https://tr.linkedin.com/company/exampleorg',
+        'https://linkedin.com/in/<social-handle>',
+        'https://www.youtube.com/@exampleorg',
+        'https://www.youtube.com/@hasanozdemir8',
+        'https://github.com/exampleorg',
+        'https://github.com/',
+        'https://www.tiktok.com/@exampleorg',
+        'https://instagram.com/exampleorg',
+        'https://instagram.com/hasanozdemirnet',
+        'https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447',
+        'https://facebook.com/ozdemirhasan',
+        'https://x.com/exampleorg',
+        'https://x.com/hasanozdemirnet',
+        'https://www.exampleorg.com',
+        'https://www.exampleorg.com/blog',
+        'https://www.eksisozluk.com',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx',
@@ -1253,6 +1357,9 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx',
         'https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp',
         'Resolve-AppPackageExecutablePath',
+        'Resolve-StoreAppId',
+        'New-StoreDeeplinkShortcut',
+        'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
         'WhatsApp.Root.exe',
         '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
         'TaskKill -im "ollama app.exe"',
@@ -1262,24 +1369,83 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         '--screen-reader --yolo',
         '$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"',
         '--user-data-dir="{0}"',
-        '--profile-directory="{1}"'
+        '--profile-directory="{1}"',
+        'Ctrl+Shift+J'
     )
 
     foreach ($shortcutName in @($expectedShortcutNames)) {
-        Assert-True -Condition ($shortcutTaskScript -like ('*' + $shortcutName + '*')) -Message ("Shortcut task must create '{0}'." -f $shortcutName)
-        Assert-True -Condition ($healthTaskScript -like ('*' + $shortcutName + '*')) -Message ("Health snapshot must inventory '{0}'." -f $shortcutName)
+        Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$shortcutName, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Shortcut task must create '{0}'." -f $shortcutName)
+        Assert-True -Condition (($healthTaskScript.IndexOf([string]$shortcutName, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Health snapshot must inventory '{0}'." -f $shortcutName)
     }
 
     foreach ($legacyShortcutName in @($legacyShortcutNames)) {
-        Assert-True -Condition ($shortcutTaskScript -notlike ('*' + $legacyShortcutName + '*')) -Message ("Shortcut task must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
-        Assert-True -Condition ($healthTaskScript -notlike ('*' + $legacyShortcutName + '*')) -Message ("Health snapshot must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
+        Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$legacyShortcutName, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Shortcut task must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
+        Assert-True -Condition (($healthTaskScript.IndexOf([string]$legacyShortcutName, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Health snapshot must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
     }
 
     foreach ($fragment in @($expectedFragments)) {
         Assert-True -Condition ($shortcutTaskScript -like ('*' + $fragment + '*')) -Message ("Shortcut task must include fragment '{0}'." -f $fragment)
     }
 
+    $q1VariableDefinition = '$q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)'
+    $q1ShortcutUsage = '@{ Name = $q1EksisozlukName; Url = "https://www.eksisozluk.com" }'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf($q1VariableDefinition, [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must declare q1EkşiSözlük through the shared Unicode-safe variable.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf($q1ShortcutUsage, [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must create q1EkşiSözlük through the shared Unicode-safe variable.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('$q1EksisozlukName,', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must inventory q1EkşiSözlük through the shared Unicode-safe variable.'
     Assert-True -Condition ($shortcutTaskScript -like '*New-CmdWrappedShortcut*') -Message 'Shortcut task must use cmd.exe wrappers for command-style shortcuts.'
+    Assert-True -Condition ($healthTaskScript -like '*hotkey =>*') -Message 'Health snapshot must read back shortcut hotkeys.'
+}
+
+Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
+    $installTaskMap = [ordered]@{
+        '30-install-itunes.ps1' = @('Apple.iTunes', 'iTunes.exe')
+        '31-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths')
+        '32-install-nvda.ps1' = @('NVAccess.NVDA', 'nvd' )
+        '33-install-microsoft-edge.ps1' = @('Microsoft.Edge', 'msedge.exe')
+        '34-install-vlc.ps1' = @('VideoLAN.VLC', 'vlc.exe')
+        '35-install-rclone.ps1' = @('Rclone.Rclone', 'rclone.exe')
+        '36-install-onedrive.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
+        '37-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
+    }
+
+    foreach ($entry in $installTaskMap.GetEnumerator()) {
+        $taskPath = Join-Path $RepoRoot ('windows\update\' + [string]$entry.Key)
+        Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message ("Expected install task file was not found: {0}" -f $taskPath)
+        $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+        foreach ($fragment in @($entry.Value)) {
+            Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Task '{0}' must include fragment '{1}'." -f [string]$entry.Key, [string]$fragment)
+        }
+    }
+}
+
+Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {
+    $updateDir = Join-Path $RepoRoot 'windows\update'
+    $context = [ordered]@{
+        VM_NAME = 'examplevm'
+        VM_ADMIN_USER = 'manager'
+        VM_ADMIN_PASS = '<runtime-secret>'
+        ASSISTANT_USER = 'assistant'
+        ASSISTANT_PASS = '<runtime-secret>'
+        SSH_PORT = '22'
+        RDP_PORT = '3389'
+    }
+
+    $taskPath = Join-Path $updateDir '31-install-be-my-eyes.ps1'
+    $templates = @(
+        [pscustomobject]@{
+            Name = '31-install-be-my-eyes'
+            Script = [string](Get-Content -LiteralPath $taskPath -Raw)
+            RelativePath = '31-install-be-my-eyes.ps1'
+            DirectoryPath = $updateDir
+            TimeoutSeconds = 300
+        }
+    )
+
+    $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context)[0]
+    $assetCopies = @($resolvedTask.AssetCopies)
+    Assert-True -Condition ($assetCopies.Count -eq 1) -Message "Be My Eyes task must publish exactly one helper asset."
+    Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "Be My Eyes helper remote path mismatch."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "Be My Eyes task must call the interactive helper."
 }
 
 Write-Host ""

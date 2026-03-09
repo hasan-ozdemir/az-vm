@@ -176,7 +176,55 @@
                       "name":  "29-health-snapshot",
                       "priority":  100,
                       "enabled":  true,
-                      "timeout":  9
+                      "timeout":  10
+                  },
+                  {
+                      "name":  "30-install-itunes",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  57
+                  },
+                  {
+                      "name":  "31-install-be-my-eyes",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  35
+                  },
+                  {
+                      "name":  "32-install-nvda",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  54
+                  },
+                  {
+                      "name":  "33-install-microsoft-edge",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  5
+                  },
+                  {
+                      "name":  "34-install-vlc",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  58
+                  },
+                  {
+                      "name":  "35-install-rclone",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  13
+                  },
+                  {
+                      "name":  "36-install-onedrive",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  5
+                  },
+                  {
+                      "name":  "37-install-google-drive",
+                      "priority":  10,
+                      "enabled":  true,
+                      "timeout":  103
                   },
                   {
                       "name":  "51-local-diagnostic",

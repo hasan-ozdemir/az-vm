@@ -3819,3 +3819,15 @@ Implement the plan.
 **Assistant Summary**
 
 Updated `27-windows-ux-public-desktop-shortcuts` to the refreshed canonical public shortcut set, adding the requested ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, bank, and command-style tool launchers; removed legacy `i7whatsapp`; wrapped `.cmd`-style launchers through `cmd.exe`; and added dynamic WhatsApp desktop executable resolution with the requested fallback path. Expanded `29-health-snapshot` to inventory the new shortcut names plus exact target-path and argument contracts, recalibrated all Windows `vm-update` task catalog timeouts from observed successful live durations with a 30% buffer, then validated the change set with isolated live `exec` reruns of tasks `27` and `29` on `rg-examplevm-ate1-g1/examplevm` before updating the smoke, changelog, and release-note contracts.
+
+### 2026-03-09 21:05 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented the approved Windows shortcut-and-app expansion plan by adding bounded install-and-verify tasks `30-install-itunes`, `31-install-be-my-eyes`, `32-install-nvda`, `33-install-microsoft-edge`, `34-install-vlc`, `35-install-rclone`, `36-install-onedrive`, and `37-install-google-drive`; extending `27-windows-ux-public-desktop-shortcuts` to normalize the broader Public Desktop set with social links, new app launchers, dynamic app-path fallback resolution, `.cmd` wrappers, and `local-only-shortcut` hotkey `Ctrl+Shift+J`; and updating `29-health-snapshot` to inventory the expanded set with Unicode-safe shortcut readback for `q1EkşiSözlük` through `Shell.Application`. Recalibrated the new task-catalog timeouts from successful isolated live durations with a 30% buffer, updated smoke/contracts plus release documentation, and verified the change with local smoke, code-quality, documentation-contract, and PowerShell-compatibility checks together with isolated live `exec` validation of tasks `30` through `37`, then reruns of `27` and `29` on `rg-examplevm-ate1-g1/examplevm`.

@@ -2,10 +2,10 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.9.250 - 2026-03-09
+## Release 2026.3.9.251 - 2026-03-09
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, and a refreshed public desktop plus timeout contract that is now calibrated from live Windows task timings.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract, and live-calibrated Windows task timeouts backed by successful isolated reruns.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
@@ -27,8 +27,11 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Windows update task `28-copy-user-settings` now propagates the repo-owned manager user settings into `assistant`, the default profile, and the logon-screen hive with explicit exclusions for volatile and identity-bound stores.
 - Windows update task `28-copy-user-settings` was further hardened so `assistant` receives its HKCU/user-class seed through a dedicated password-logon worker while default-profile seeding skips heavyweight non-settings branches such as `AppData\\Local\\Programs`, `Microsoft\\WindowsApps`, and default-profile `LocalLow`, removing the live robocopy stalls seen during repeated isolated `exec` validation.
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now creates the refreshed public shortcut set for ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, banking links, and command-style tool launchers with canonical `a1/i0/i1/i2/z1/z2/t*` names, dynamic WhatsApp desktop resolution, and `cmd.exe` wrappers for `.cmd` launchers.
-- Windows update task `29-health-snapshot` now inventories the refreshed public desktop shortcut set and reads back the exact target-path and argument contracts during late-stage validation.
+- Windows update tasks `30` through `37` now install and verify iTunes, Be My Eyes, NVDA, Microsoft Edge, VLC, rclone, OneDrive, and Google Drive through the same bounded install-and-readback pattern used elsewhere in the repo.
+- Windows update task `27-windows-ux-public-desktop-shortcuts` now also normalizes the broader Public Desktop set with social-media links, app launchers, dynamic app-path fallbacks, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, and Unicode-safe `q1EkşiSözlük` handling.
+- Windows update task `29-health-snapshot` now inventories the expanded public desktop shortcut set and reads back the exact target-path, argument, hotkey, and Unicode shortcut contracts during late-stage validation.
 - Windows `vm-update` task catalog timeouts are now derived from observed successful live durations with a 30% buffer, including isolated rerun calibration for tasks `27` and `29`.
+- Windows `vm-update` task catalog timeouts are now also calibrated for tasks `30` through `37` from successful isolated live durations, with rerun-confirmed bounded values applied back into the catalog.
 - Hardened naming, env-key, and validation contracts across provisioning flows.
 - Post-deploy feature enablement for hibernation and nested-virtualization support checks.
 - Broader Windows guest update coverage, including UX tuning and public desktop shortcut generation.
@@ -56,6 +59,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Isolated live validation now covers tasks `04`, `05`, and `20` on `rg-examplevm-ate1-g1/examplevm`, including idempotent rerun of `04` and private local-only accessibility hash/manifest readbacks.
 - Isolated live validation now also covers the repaired Windows UX/user-settings late-stage chain: task `04` succeeds after the registry-write fix, task `28` completes without hive-unload or default-profile copy hangs, and task `29` confirms the post-copy machine state on `rg-examplevm-ate1-g1/examplevm`.
 - Isolated live validation now also covers full Windows `vm-init` and `vm-update` sweeps plus a focused Ollama rerun that confirms HTTP readiness on port `11434`.
+- Isolated live validation now also covers tasks `30` through `37` plus rerun-confirmed `27` and `29`, proving the new package installs, app-backed Public Desktop shortcuts, `local-only-shortcut` hotkey assignment, and Unicode-safe `q1EkşiSözlük` readback on `rg-examplevm-ate1-g1/examplevm`.
 - Persistent SSH task parsing now strips spinner prefixes from `AZ_VM_*` protocol markers so long-running Windows installers cannot hide task-completion signals.
 - A fresh `create --auto --windows --perf --from-step=vm-update` rerun now completes successfully on `rg-examplevm-ate1-g1/examplevm` with `Standard_D4as_v5`, and the rebuilt VM answers on RDP port `3389`.
 

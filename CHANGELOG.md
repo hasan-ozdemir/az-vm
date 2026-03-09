@@ -3,11 +3,12 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.9.250] - 2026-03-09
+## [2026.3.9.251] - 2026-03-09
 
 ### Features
 - Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
 - Made the new `do` command state-aware so it inspects Azure power/provisioning/hibernation state before mutating and exits politely with a non-zero code when the requested action is not valid for the current VM state.
+- Added Windows `vm-update` install tasks `30-install-itunes`, `31-install-be-my-eyes`, `32-install-nvda`, `33-install-microsoft-edge`, `34-install-vlc`, `35-install-rclone`, `36-install-onedrive`, and `37-install-google-drive`, each following the existing repo pattern of bounded `winget` install plus explicit post-install verification.
 
 ### Fixes
 - Restored `do --vm-action=hibernate` as the single public hibernation action while keeping the underlying Azure behavior unchanged: hibernation still runs through Azure's deallocation-based hibernate path.
@@ -18,6 +19,8 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Refreshed `27-windows-ux-public-desktop-shortcuts` so the public desktop set now uses the new canonical `a1/i0/i1/i2/z1/z2/t*` naming, removes legacy `i7whatsapp`, adds shared Chrome-profile launchers for ChatGPT, internet, WhatsApp Web, and account setup, dynamically resolves the WhatsApp desktop executable with a fixed fallback path, and wraps command-style launchers through `cmd.exe` so `.cmd`-backed tools do not open in Notepad.
 - Expanded `29-health-snapshot` to inventory the refreshed public desktop shortcut set and read back the updated target-path and argument contracts during late Windows validation.
 - Recalibrated all Windows `vm-update` task catalog timeouts from live transcript data and successful isolated reruns using a `max_success_seconds * 1.3` buffer rule, including new bounded values for tasks `27` and `29` after live `exec` confirmation at `7.2s` and `6.7s`.
+- Expanded the late-stage public desktop contract again so the canonical set now also includes normalized social-media links, app launchers for Be My Eyes/NVDA/Edge/VLC/iTunes/OneDrive/Google Drive, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, dynamic app-path fallback resolution, and Unicode-safe `q1EkşiSözlük` creation plus readback through `Shell.Application`.
+- Recalibrated Windows `vm-update` catalog timeouts for the new install tasks and refreshed late-stage tasks from successful isolated live durations with a 30% buffer, including final bounded values for tasks `30` through `37`, plus rerun-confirmed `27=10s` and `29=10s`.
 - Replaced the fragile reboot/autologon path for Windows `vm-update` tasks `04` and `05` with a bounded `manager` password-logon scheduled-task helper so isolated `exec` runs no longer stall in interactive-session retry loops.
 - Reworked `04-windows-ux-performance-tuning` so it now enforces and readback-validates hibernate-menu visibility, Explorer details/no-group defaults, desktop name sort plus auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager full view through `TaskManager\settings.json`.
 - Repaired `04-windows-ux-performance-tuning` so it now verifies Task Manager can really launch before and after patching `TaskManager\settings.json`, restores the prior store on failure, and also hides the taskbar Search, Widgets, and Task View controls.
@@ -56,9 +59,11 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added smoke coverage for persistent SSH spinner-marker normalization plus the new stale-installer and bounded-timeout guards in Windows tasks `09` and `18`.
 - Added smoke coverage for the new Windows UX helper-asset model, removal of reboot-resume task metadata, `TaskManager\settings.json` validation, and removal of legacy audio tuning from task `05`.
 - Added smoke coverage for the new `28-copy-user-settings` task, taskbar-hide registry contract in task `04`, the `29-health-snapshot` rename, and the public desktop banking shortcut set.
+- Added smoke coverage for the new Windows app-install tasks `30` through `37`, the expanded canonical public desktop shortcut set, the shared Unicode-safe `q1EkşiSözlük` variable contract, Be My Eyes helper-asset publication, and `local-only-shortcut` hotkey assignment.
 - Completed isolated live `exec` validation for Windows update tasks `04`, `05`, and `20` against `rg-examplevm-ate1-g1/examplevm`, including an idempotent rerun of task `04` plus private local-only accessibility `version.dll` hash and roaming-manifest readback checks.
 - Completed additional isolated live repair validation for Windows update tasks `04`, `28`, and `29` after the Windows UX/user-settings hardening changes, including repeated interrupted-task recovery, assistant/default-profile propagation checks, and a final successful `27 -> 28 -> 29` late-stage chain on `rg-examplevm-ate1-g1/examplevm`.
 - Completed isolated live `exec` sweeps for every Windows `vm-init` and `vm-update` task against `rg-examplevm-ate1-g1/examplevm` in effective catalog priority/timeout order, then reran task `09` after the Ollama hardening change to prove `11434` API readiness.
+- Completed isolated live `exec` validation for Windows update tasks `30` through `37`, then reran `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` to confirm the expanded shortcut contract, app-target resolution, `local-only-shortcut` hotkey, and Unicode-safe `q1EkşiSözlük` readback on `rg-examplevm-ate1-g1/examplevm`.
 - Completed isolated live reruns of Windows update tasks `09` and `18`, then reran `create --auto --windows --perf --from-step=vm-update` successfully to the end on `rg-examplevm-ate1-g1/examplevm` with `WIN_VM_SIZE=Standard_D4as_v5`, confirming a running VM and reachable RDP port `3389`.
 
 ### Refactors
