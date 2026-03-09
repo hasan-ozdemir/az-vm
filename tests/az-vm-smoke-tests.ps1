@@ -951,14 +951,18 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
 
     Assert-True -Condition ($activeNames -contains '19-install-microsoft-azd') -Message "Renamed azd task was not discovered."
     Assert-True -Condition ($activeNames -contains '20-private-local-task') -Message "Renamed private local-only accessibility task was not discovered."
-    Assert-True -Condition ($activeNames -contains '28-health-snapshot') -Message "Renamed health snapshot task was not discovered."
+    Assert-True -Condition ($activeNames -contains '28-copy-user-settings') -Message "Copy user settings task was not discovered."
+    Assert-True -Condition ($activeNames -contains '29-health-snapshot') -Message "Renamed health snapshot task was not discovered."
     Assert-True -Condition (-not ($activeNames -contains '19-health-snapshot')) -Message "Legacy 19-health-snapshot entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '20-private-local-task')) -Message "Legacy 20-private-local-task entry must not remain active."
     Assert-True -Condition (-not ($activeNames -contains '28-install-microsoft-azd')) -Message "Legacy 28-install-microsoft-azd entry must not remain active."
+    Assert-True -Condition (-not ($activeNames -contains '28-health-snapshot')) -Message "Legacy 28-health-snapshot entry must not remain active."
 
     $azdTask = $active | Where-Object { [string]$_.Name -eq '19-install-microsoft-azd' } | Select-Object -First 1
     $localOnlyAccessibilityTask = $active | Where-Object { [string]$_.Name -eq '20-private-local-task' } | Select-Object -First 1
-    $healthTask = $active | Where-Object { [string]$_.Name -eq '28-health-snapshot' } | Select-Object -First 1
+    $copyUserSettingsTask = $active | Where-Object { [string]$_.Name -eq '28-copy-user-settings' } | Select-Object -First 1
+    $healthTask = $active | Where-Object { [string]$_.Name -eq '29-health-snapshot' } | Select-Object -First 1
+    $publicShortcutsTask = $active | Where-Object { [string]$_.Name -eq '27-windows-ux-public-desktop-shortcuts' } | Select-Object -First 1
     $uxTask = $active | Where-Object { [string]$_.Name -eq '04-windows-ux-performance-tuning' } | Select-Object -First 1
     $advancedTask = $active | Where-Object { [string]$_.Name -eq '05-windows-advanced-system-settings' } | Select-Object -First 1
 
@@ -966,9 +970,12 @@ Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
     Assert-True -Condition ([int]$advancedTask.TimeoutSeconds -eq 300) -Message "Windows advanced settings task timeout must be 300."
     Assert-True -Condition ([int]$azdTask.TimeoutSeconds -eq 1800) -Message "Renamed azd task timeout must remain 1800."
     Assert-True -Condition ([int]$localOnlyAccessibilityTask.TimeoutSeconds -eq 180) -Message "private local-only accessibility task timeout must remain 180."
+    Assert-True -Condition ([int]$publicShortcutsTask.TimeoutSeconds -eq 1800) -Message "Public desktop shortcut task timeout must remain 1800."
+    Assert-True -Condition ([int]$copyUserSettingsTask.TimeoutSeconds -eq 1800) -Message "Copy user settings task timeout must be 1800."
     Assert-True -Condition ([int]$healthTask.TimeoutSeconds -eq 180) -Message "Renamed health snapshot timeout must remain 180."
     Assert-True -Condition (([array]::IndexOf($activeNames, '19-install-microsoft-azd')) -lt ([array]::IndexOf($activeNames, '20-private-local-task'))) -Message "Renamed task order must keep azd before copy-private local-only accessibility-settings."
-    Assert-True -Condition (([array]::IndexOf($activeNames, '20-private-local-task')) -lt ([array]::IndexOf($activeNames, '28-health-snapshot'))) -Message "Renamed task order must keep copy-private local-only accessibility-settings before health snapshot."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '27-windows-ux-public-desktop-shortcuts')) -lt ([array]::IndexOf($activeNames, '28-copy-user-settings'))) -Message "Task order must keep public desktop shortcuts before copy-user-settings."
+    Assert-True -Condition (([array]::IndexOf($activeNames, '28-copy-user-settings')) -lt ([array]::IndexOf($activeNames, '29-health-snapshot'))) -Message "Task order must keep copy-user-settings before health snapshot."
 }
 
 Invoke-Test -Name "Windows private local-only accessibility zip asset layout" -Action {
@@ -1117,7 +1124,32 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($uxAssetCopies.Count -eq 1) -Message "UX task must publish exactly one helper asset."
     Assert-True -Condition ([string]$uxAssetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "UX task helper remote path mismatch."
     Assert-True -Condition ($uxScriptBody -like '*TaskManager\settings.json*') -Message "UX task must validate Task Manager through settings.json."
+    Assert-True -Condition ($uxScriptBody -like '*SearchboxTaskbarMode*') -Message "UX task must hide the taskbar search control."
+    Assert-True -Condition ($uxScriptBody -like '*AllowNewsAndInterests*') -Message "UX task must hide Widgets through machine policy."
+    Assert-True -Condition ($uxScriptBody -like '*ShowTaskViewButton*') -Message "UX task must hide Task View."
     Assert-True -Condition (-not $resolvedUxTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "UX task must not publish reboot-resume metadata."
+
+    $copyUserSettingsTaskPath = Join-Path $updateDir '28-copy-user-settings.ps1'
+    $copyUserSettingsTemplates = @(
+        [pscustomobject]@{
+            Name = '28-copy-user-settings'
+            Script = [string](Get-Content -LiteralPath $copyUserSettingsTaskPath -Raw)
+            RelativePath = '28-copy-user-settings.ps1'
+            DirectoryPath = $updateDir
+            TimeoutSeconds = 1800
+        }
+    )
+
+    $resolvedCopyUserSettingsTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $copyUserSettingsTemplates -Context $context)[0]
+    $copyUserSettingsAssetCopies = @($resolvedCopyUserSettingsTask.AssetCopies)
+    $copyUserSettingsBody = [string]$resolvedCopyUserSettingsTask.Script
+    Assert-True -Condition ($copyUserSettingsAssetCopies.Count -eq 1) -Message "Copy user settings task must publish exactly one helper asset."
+    Assert-True -Condition ([string]$copyUserSettingsAssetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "Copy user settings helper remote path mismatch."
+    Assert-True -Condition ($copyUserSettingsBody -like '*copy-user-settings-profile-materialized*') -Message "Copy user settings task must materialize the assistant profile."
+    Assert-True -Condition ($copyUserSettingsBody -like '*SearchboxTaskbarMode*') -Message "Copy user settings task must propagate taskbar search visibility."
+    Assert-True -Condition ($copyUserSettingsBody -like '*TaskManager\settings.json*') -Message "Copy user settings task must propagate Task Manager settings."
+    Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
+    Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
 
     $advancedTaskPath = Join-Path $updateDir '05-windows-advanced-system-settings.ps1'
     $advancedTemplates = @(
@@ -1136,6 +1168,45 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($advancedAssetCopies.Count -eq 0) -Message "Advanced settings task must not publish helper assets."
     Assert-True -Condition ($advancedScriptBody -notlike '*VolumeControl*') -Message "Advanced settings task must not keep legacy audio tuning."
     Assert-True -Condition (-not $resolvedAdvancedTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Advanced settings task must not publish reboot-resume metadata."
+}
+
+Invoke-Test -Name "Windows public desktop shortcut contract includes banking shortcuts" -Action {
+    $shortcutTaskPath = Join-Path $RepoRoot 'windows\update\27-windows-ux-public-desktop-shortcuts.ps1'
+    $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
+    $healthTaskPath = Join-Path $RepoRoot 'windows\update\29-health-snapshot.ps1'
+    $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+
+    $expectedShortcutNames = @(
+        'b1GarantiBank Bireysel',
+        'b2GarantiBank Kurumsal',
+        'b3QnbBank Bireysel',
+        'b4QnbBank Kurumsal',
+        'b5AktifBank Bireysel',
+        'b6AktifBank Kurumsal',
+        'b7ZiraatBank Bireysel',
+        'b8ZiraatBank Kurumsal'
+    )
+    $expectedUrls = @(
+        'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
+        'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
+        'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx',
+        'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true',
+        'https://online.aktifbank.com.tr/default.aspx?lang=tr-TR',
+        'https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR',
+        'https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx',
+        'https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp'
+    )
+
+    foreach ($shortcutName in @($expectedShortcutNames)) {
+        Assert-True -Condition ($shortcutTaskScript -like ('*' + $shortcutName + '*')) -Message ("Shortcut task must create '{0}'." -f $shortcutName)
+        Assert-True -Condition ($healthTaskScript -like ('*' + $shortcutName + '*')) -Message ("Health snapshot must inventory '{0}'." -f $shortcutName)
+    }
+
+    foreach ($url in @($expectedUrls)) {
+        Assert-True -Condition ($shortcutTaskScript -like ('*' + $url + '*')) -Message ("Shortcut task must include URL '{0}'." -f $url)
+    }
+
+    Assert-True -Condition ($shortcutTaskScript -like '*--new-window --start-maximized --profile-directory=*') -Message 'Shortcut task must keep the requested Chrome launch arguments for banking shortcuts.'
 }
 
 Write-Host ""

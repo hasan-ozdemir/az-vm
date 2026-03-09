@@ -14,6 +14,58 @@ function Ensure-AzVmDirectory {
     }
 }
 
+function Open-AzVmWritableRegistryKey {
+    param(
+        [string]$Path
+    )
+
+    $regPath = Convert-AzVmRegistryProviderPathToRegExePath -Path $Path
+    $baseKey = $null
+    $subKey = ''
+
+    switch -regex ($regPath) {
+        '^HKEY_CURRENT_USER(?:\\(?<sub>.*))?$' {
+            $baseKey = [Microsoft.Win32.Registry]::CurrentUser
+            $subKey = [string]$Matches['sub']
+            break
+        }
+        '^HKEY_LOCAL_MACHINE(?:\\(?<sub>.*))?$' {
+            $baseKey = [Microsoft.Win32.Registry]::LocalMachine
+            $subKey = [string]$Matches['sub']
+            break
+        }
+        '^HKEY_USERS(?:\\(?<sub>.*))?$' {
+            $baseKey = [Microsoft.Win32.Registry]::Users
+            $subKey = [string]$Matches['sub']
+            break
+        }
+        '^HKEY_CLASSES_ROOT(?:\\(?<sub>.*))?$' {
+            $baseKey = [Microsoft.Win32.Registry]::ClassesRoot
+            $subKey = [string]$Matches['sub']
+            break
+        }
+        '^HKEY_CURRENT_CONFIG(?:\\(?<sub>.*))?$' {
+            $baseKey = [Microsoft.Win32.Registry]::CurrentConfig
+            $subKey = [string]$Matches['sub']
+            break
+        }
+        default {
+            throw ("Unsupported registry hive: {0}" -f $regPath)
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$subKey)) {
+        return $baseKey
+    }
+
+    $key = $baseKey.OpenSubKey($subKey, $true)
+    if ($null -ne $key) {
+        return $key
+    }
+
+    return $baseKey.CreateSubKey($subKey)
+}
+
 function Set-AzVmRegistryValue {
     param(
         [string]$Path,
@@ -27,15 +79,118 @@ function Set-AzVmRegistryValue {
     }
 
     if ((Get-Item -LiteralPath $Path).PSProvider.Name -eq 'Registry') {
-        if ([string]::IsNullOrWhiteSpace([string]$Name) -or [string]::Equals([string]$Name, '(default)', [System.StringComparison]::OrdinalIgnoreCase)) {
-            Set-Item -Path $Path -Value $Value -Force
+        $isDefaultValue = ([string]::IsNullOrWhiteSpace([string]$Name) -or [string]::Equals([string]$Name, '(default)', [System.StringComparison]::OrdinalIgnoreCase))
+        $registryValueName = if ($isDefaultValue) { '' } else { [string]$Name }
+        $key = $null
+        try {
+            $key = Open-AzVmWritableRegistryKey -Path $Path
+            $key.SetValue($registryValueName, $Value, $Kind)
             return
         }
-        New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $Kind -Force | Out-Null
-        return
+        catch [System.UnauthorizedAccessException] {
+            Set-AzVmRegistryValueWithRegExe -Path $Path -Name $Name -Value $Value -Kind $Kind -IsDefaultValue:$isDefaultValue
+            return
+        }
+        finally {
+            if ($key -is [System.IDisposable]) {
+                $key.Dispose()
+            }
+        }
     }
 
     throw ("Unsupported registry path: {0}" -f $Path)
+}
+
+function Convert-AzVmRegistryProviderPathToRegExePath {
+    param([string]$Path)
+
+    $candidate = [string]$Path
+    if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+        throw "Registry path is empty."
+    }
+
+    if ($candidate.StartsWith('Registry::', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $candidate.Substring(10)
+    }
+
+    if ($candidate -match '^(HKLM|HKCU|HKCR|HKU|HKCC):\\') {
+        return ($candidate -replace '^(HKLM):', 'HKEY_LOCAL_MACHINE' `
+                            -replace '^(HKCU):', 'HKEY_CURRENT_USER' `
+                            -replace '^(HKCR):', 'HKEY_CLASSES_ROOT' `
+                            -replace '^(HKU):', 'HKEY_USERS' `
+                            -replace '^(HKCC):', 'HKEY_CURRENT_CONFIG')
+    }
+
+    return $candidate
+}
+
+function Convert-AzVmRegistryValueKindToRegExeType {
+    param([Microsoft.Win32.RegistryValueKind]$Kind)
+
+    switch ($Kind) {
+        ([Microsoft.Win32.RegistryValueKind]::String) { return 'REG_SZ' }
+        ([Microsoft.Win32.RegistryValueKind]::ExpandString) { return 'REG_EXPAND_SZ' }
+        ([Microsoft.Win32.RegistryValueKind]::DWord) { return 'REG_DWORD' }
+        ([Microsoft.Win32.RegistryValueKind]::QWord) { return 'REG_QWORD' }
+        ([Microsoft.Win32.RegistryValueKind]::MultiString) { return 'REG_MULTI_SZ' }
+        ([Microsoft.Win32.RegistryValueKind]::Binary) { return 'REG_BINARY' }
+        default { throw ("Unsupported registry value kind for reg.exe fallback: {0}" -f [string]$Kind) }
+    }
+}
+
+function Convert-AzVmRegistryValueToRegExeData {
+    param(
+        [object]$Value,
+        [Microsoft.Win32.RegistryValueKind]$Kind
+    )
+
+    switch ($Kind) {
+        ([Microsoft.Win32.RegistryValueKind]::String) { return [string]$Value }
+        ([Microsoft.Win32.RegistryValueKind]::ExpandString) { return [string]$Value }
+        ([Microsoft.Win32.RegistryValueKind]::DWord) { return [string]([uint32]$Value) }
+        ([Microsoft.Win32.RegistryValueKind]::QWord) { return [string]([uint64]$Value) }
+        ([Microsoft.Win32.RegistryValueKind]::MultiString) { return ((@($Value) | ForEach-Object { [string]$_ }) -join '\0') }
+        ([Microsoft.Win32.RegistryValueKind]::Binary) { return ((@($Value) | ForEach-Object { '{0:x2}' -f [byte]$_ }) -join ',') }
+        default { throw ("Unsupported registry value data for reg.exe fallback: {0}" -f [string]$Kind) }
+    }
+}
+
+function Set-AzVmRegistryValueWithRegExe {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [object]$Value,
+        [Microsoft.Win32.RegistryValueKind]$Kind,
+        [switch]$IsDefaultValue
+    )
+
+    $regPath = Convert-AzVmRegistryProviderPathToRegExePath -Path $Path
+    $regType = Convert-AzVmRegistryValueKindToRegExeType -Kind $Kind
+    $regData = Convert-AzVmRegistryValueToRegExeData -Value $Value -Kind $Kind
+
+    & reg.exe add $regPath /f | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("reg add failed while creating key '{0}'." -f $regPath)
+    }
+
+    $arguments = @('add', $regPath)
+    if ($IsDefaultValue) {
+        $arguments += '/ve'
+    }
+    else {
+        $arguments += '/v'
+        $arguments += [string]$Name
+    }
+    $arguments += '/t'
+    $arguments += $regType
+    $arguments += '/d'
+    $arguments += [string]$regData
+    $arguments += '/f'
+
+    & reg.exe @arguments | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("reg add failed for '{0}'." -f $regPath)
+    }
 }
 
 function Get-AzVmInteractivePaths {
@@ -193,9 +348,10 @@ function Remove-AzVmInteractiveScheduledTask {
 function Register-AzVmInteractiveScheduledTask {
     param(
         [string]$TaskName,
-        [string]$UserName,
+        [string]$RunAsUser,
         [string]$WorkerPath,
-        [string]$Password
+        [string]$RunAsPassword,
+        [string]$RunAsMode = 'password'
     )
 
     Remove-AzVmInteractiveScheduledTask -TaskName $TaskName
@@ -215,10 +371,27 @@ function Register-AzVmInteractiveScheduledTask {
     $definition.Settings.ExecutionTimeLimit = 'PT1H'
     $definition.Settings.MultipleInstances = 0
 
-    $principalName = Get-AzVmLocalPrincipalName -UserName $UserName
-    $definition.Principal.UserId = $principalName
-    $definition.Principal.LogonType = 1
-    $definition.Principal.RunLevel = 1
+    $runAsUserText = [string]$RunAsUser
+    $isServiceAccount = [string]::Equals($runAsUserText, 'SYSTEM', [System.StringComparison]::OrdinalIgnoreCase) -or [string]::Equals($runAsUserText, 'NT AUTHORITY\SYSTEM', [System.StringComparison]::OrdinalIgnoreCase)
+    $useInteractiveToken = [string]::Equals([string]$RunAsMode, 'interactiveToken', [System.StringComparison]::OrdinalIgnoreCase)
+    if ($isServiceAccount) {
+        $principalName = 'SYSTEM'
+        $definition.Principal.UserId = $principalName
+        $definition.Principal.LogonType = 5
+        $definition.Principal.RunLevel = 1
+    }
+    elseif ($useInteractiveToken) {
+        $principalName = Get-AzVmLocalPrincipalName -UserName $runAsUserText
+        $definition.Principal.UserId = $principalName
+        $definition.Principal.LogonType = 3
+        $definition.Principal.RunLevel = 1
+    }
+    else {
+        $principalName = Get-AzVmLocalPrincipalName -UserName $runAsUserText
+        $definition.Principal.UserId = $principalName
+        $definition.Principal.LogonType = 1
+        $definition.Principal.RunLevel = 1
+    }
 
     $action = $definition.Actions.Create(0)
     $action.Path = Get-AzVmPowerShellExePath
@@ -228,11 +401,21 @@ function Register-AzVmInteractiveScheduledTask {
     $trigger = $definition.Triggers.Create(1)
     $trigger.StartBoundary = ([DateTime]::Now.AddMinutes(10).ToString('s'))
 
-    if ([string]::IsNullOrWhiteSpace([string]$Password)) {
+    if (-not $isServiceAccount -and -not $useInteractiveToken -and [string]::IsNullOrWhiteSpace([string]$RunAsPassword)) {
         throw "Interactive scheduled task password is empty."
     }
 
-    $null = $root.RegisterTaskDefinition($TaskName, $definition, 6, $principalName, [string]$Password, 1, $null)
+    if ($isServiceAccount) {
+        $null = $root.RegisterTaskDefinition($TaskName, $definition, 6, $principalName, $null, 5, $null)
+        return
+    }
+
+    if ($useInteractiveToken) {
+        $null = $root.RegisterTaskDefinition($TaskName, $definition, 6, $null, $null, 3, $null)
+        return
+    }
+
+    $null = $root.RegisterTaskDefinition($TaskName, $definition, 6, $principalName, [string]$RunAsPassword, 1, $null)
 }
 
 function Start-AzVmInteractiveScheduledTask {
@@ -283,17 +466,21 @@ function Get-AzVmInteractiveScheduledTaskSnapshot {
 function Invoke-AzVmInteractiveDesktopAutomation {
     param(
         [string]$TaskName,
-        [string]$ManagerUser,
-        [string]$ManagerPassword,
+        [string]$RunAsUser,
+        [string]$RunAsPassword,
         [string]$WorkerScriptText,
-        [int]$WaitTimeoutSeconds = 900
+        [int]$WaitTimeoutSeconds = 900,
+        [string]$RunAsMode = 'password'
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$WorkerScriptText)) {
         throw "Interactive worker script text is empty."
     }
-    if ([string]::IsNullOrWhiteSpace([string]$ManagerPassword)) {
-        throw "Interactive worker cannot run because the manager password is empty."
+    $runAsUserText = [string]$RunAsUser
+    $isServiceAccount = [string]::Equals($runAsUserText, 'SYSTEM', [System.StringComparison]::OrdinalIgnoreCase) -or [string]::Equals($runAsUserText, 'NT AUTHORITY\SYSTEM', [System.StringComparison]::OrdinalIgnoreCase)
+    $useInteractiveToken = [string]::Equals([string]$RunAsMode, 'interactiveToken', [System.StringComparison]::OrdinalIgnoreCase)
+    if (-not $isServiceAccount -and -not $useInteractiveToken -and [string]::IsNullOrWhiteSpace([string]$RunAsPassword)) {
+        throw "Interactive worker cannot run because the run-as password is empty."
     }
 
     $paths = Get-AzVmInteractivePaths -TaskName $TaskName
@@ -308,7 +495,7 @@ function Invoke-AzVmInteractiveDesktopAutomation {
 
     [System.IO.File]::WriteAllText($paths.WorkerPath, [string]$WorkerScriptText, (New-Object System.Text.UTF8Encoding($false)))
     try {
-        Register-AzVmInteractiveScheduledTask -TaskName $paths.ScheduledTaskName -UserName $ManagerUser -WorkerPath $paths.WorkerPath -Password $ManagerPassword
+        Register-AzVmInteractiveScheduledTask -TaskName $paths.ScheduledTaskName -RunAsUser $RunAsUser -WorkerPath $paths.WorkerPath -RunAsPassword $RunAsPassword -RunAsMode $RunAsMode
         Start-AzVmInteractiveScheduledTask -TaskName $paths.ScheduledTaskName
 
         $completed = Wait-AzVmFileReady -Path $paths.ResultPath -TimeoutSeconds $WaitTimeoutSeconds -PollSeconds 2
@@ -334,7 +521,7 @@ function Invoke-AzVmInteractiveDesktopAutomation {
             throw $summary
         }
 
-        Write-Host ("interactive-session-bootstrap: password-logon scheduled task completed for {0}" -f [string]$ManagerUser)
+        Write-Host ("interactive-session-bootstrap: password-logon scheduled task completed for {0}" -f [string]$RunAsUser)
     }
     finally {
         try {

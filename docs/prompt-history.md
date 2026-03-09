@@ -3795,3 +3795,15 @@ test: en baştan e2e live az-vm re-create yapalım.
 **Assistant Summary**
 
 Deleted the existing managed resource group `rg-examplevm-ate1-g1`, reran a full live `az-vm create --auto --windows --perf` from scratch using the current local `.env` configuration, and rebuilt `examplevm` in `austriaeast` on `Standard_D4as_v5`; Step 6 completed in `continue` mode with `09-install-ollama` failing on its first cold-start API readiness check and `17-wsl2-install-update` requesting a reboot, so task `09` was rerun successfully in isolated `exec` mode, the VM was restarted through `az-vm do --vm-action=restart`, final lifecycle state was verified as `started` with provisioning `Succeeded`, and RDP port `3389` was confirmed reachable before recording this otherwise non-mutating dialog in repo history at the user's request.
+
+### 2026-03-09 14:05 TRT
+
+**User Prompt**
+
+````text
+fix: hem kaldığın yerden devam et; hem de copy-default-profile locallow kısmını düzelt; şimdi de burası bekletiyor: çünkü çok bekliyor; kitlenmiş gibi duruyor.
+````
+
+**Assistant Summary**
+
+Completed the interrupted Windows UX and user-settings repair cycle by stabilizing `04-windows-ux-performance-tuning` and `28-copy-user-settings` under isolated live `exec` runs on `rg-examplevm-ate1-g1/examplevm`: `04` now routes user-hive writes through the bounded password-logon helper, uses writable .NET registry handles, resets unsafe minimal Task Manager state instead of regenerating a synthetic `settings.json`, and hides Widgets through the supported `HKLM\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests=0` policy; `28` was reworked to stop offline assistant-hive collisions, seed assistant HKCU/user-class settings through a dedicated assistant logon worker, keep default-profile seeding on the offline main hive only, and exclude heavy non-settings branches such as `AppData\Local\Programs`, `Microsoft\WindowsApps`, and default-profile `LocalLow` so robocopy no longer stalls on binaries or alias placeholders. Verified locally with code-quality, smoke, and PowerShell compatibility checks, then live with successful isolated reruns of tasks `04`, `28`, and `29-health-snapshot`.

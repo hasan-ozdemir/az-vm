@@ -529,7 +529,7 @@ function Apply-AzVmTaskBlockReplacements {
                     }
                 }
             }
-            elseif ($taskName -eq '04-windows-ux-performance-tuning') {
+            elseif ($taskName -in @('04-windows-ux-performance-tuning', '28-copy-user-settings')) {
                 $repoRoot = Split-Path -Path (Split-Path -Path $directoryPath -Parent) -Parent
                 $helperLocalPath = Join-Path $repoRoot 'tools\windows\az-vm-interactive-session-helper.ps1'
                 if (-not (Test-Path -LiteralPath $helperLocalPath)) {

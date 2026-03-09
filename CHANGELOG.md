@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.9.247] - 2026-03-09
+## [2026.3.9.249] - 2026-03-09
 
 ### Features
 - Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
@@ -17,7 +17,11 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Streamlined isolated `exec` task runs so they now accept `--vm-name`, resolve only the selected VM/task context, and skip the broader Step-1 managed-resource inventory path before pyssh execution.
 - Replaced the fragile reboot/autologon path for Windows `vm-update` tasks `04` and `05` with a bounded `manager` password-logon scheduled-task helper so isolated `exec` runs no longer stall in interactive-session retry loops.
 - Reworked `04-windows-ux-performance-tuning` so it now enforces and readback-validates hibernate-menu visibility, Explorer details/no-group defaults, desktop name sort plus auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager full view through `TaskManager\settings.json`.
+- Repaired `04-windows-ux-performance-tuning` so it now verifies Task Manager can really launch before and after patching `TaskManager\settings.json`, restores the prior store on failure, and also hides the taskbar Search, Widgets, and Task View controls.
+- Reworked `04-windows-ux-performance-tuning` again after live `exec` failures so user-hive writes now run through the bounded password-logon helper, registry writes use writable .NET registry handles instead of `New-ItemProperty`/`reg add`, Task Manager no longer synthesizes a minimal `settings.json`, and Widgets hiding now uses the supported `HKLM\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests=0` policy path instead of the failing `TaskbarDa` value.
 - Simplified `05-windows-advanced-system-settings` down to deterministic machine-level advanced settings only and removed the unsupported audio/max-volume automation branch.
+- Added `28-copy-user-settings` to seed the repo-owned Windows user/app settings from `manager` into `assistant`, `C:\Users\Default`, and `HKU\.DEFAULT` with explicit exclusions for volatile caches, tokens, and credential stores.
+- Reworked `28-copy-user-settings` after live hang/debug cycles so `assistant` now receives repo-owned HKCU and user-class settings through its own password-logon seed step instead of conflicting offline hive mounts, while default-profile seeding keeps the offline main-hive path only and excludes non-settings-heavy branches such as `AppData\Local\Programs`, `Microsoft\WindowsApps`, and default-profile `LocalLow` to avoid long robocopy stalls on runtime binaries and alias placeholders.
 - Hardened `20-private-local-task` with staging extraction, `version.dll` hash verification, per-file roaming copy, and explicit missing-file detection after live validation exposed a false-success path.
 - Reworked `09-install-ollama` to short-circuit healthy existing installs, detach `ollama serve` stdout/stderr from the SSH session, clear stale installer locks before `winget`, and bound the `winget` wait so interrupted e2e runs no longer hang indefinitely on `waiting another install to complete`.
 - Hardened `18-docker-desktop-install-and-configure` so it now clears stale installer processes before `winget install Docker.DockerDesktop` and terminates leftover installer locks when bounded install waits time out.
@@ -48,7 +52,9 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added smoke coverage for direct `exec --vm-name` task targeting, the new minimal `exec` runtime path, and the strengthened Ollama HTTP readiness check.
 - Added smoke coverage for persistent SSH spinner-marker normalization plus the new stale-installer and bounded-timeout guards in Windows tasks `09` and `18`.
 - Added smoke coverage for the new Windows UX helper-asset model, removal of reboot-resume task metadata, `TaskManager\settings.json` validation, and removal of legacy audio tuning from task `05`.
+- Added smoke coverage for the new `28-copy-user-settings` task, taskbar-hide registry contract in task `04`, the `29-health-snapshot` rename, and the public desktop banking shortcut set.
 - Completed isolated live `exec` validation for Windows update tasks `04`, `05`, and `20` against `rg-examplevm-ate1-g1/examplevm`, including an idempotent rerun of task `04` plus private local-only accessibility `version.dll` hash and roaming-manifest readback checks.
+- Completed additional isolated live repair validation for Windows update tasks `04`, `28`, and `29` after the Windows UX/user-settings hardening changes, including repeated interrupted-task recovery, assistant/default-profile propagation checks, and a final successful `27 -> 28 -> 29` late-stage chain on `rg-examplevm-ate1-g1/examplevm`.
 - Completed isolated live `exec` sweeps for every Windows `vm-init` and `vm-update` task against `rg-examplevm-ate1-g1/examplevm` in effective catalog priority/timeout order, then reran task `09` after the Ollama hardening change to prove `11434` API readiness.
 - Completed isolated live reruns of Windows update tasks `09` and `18`, then reran `create --auto --windows --perf --from-step=vm-update` successfully to the end on `rg-examplevm-ate1-g1/examplevm` with `WIN_VM_SIZE=Standard_D4as_v5`, confirming a running VM and reachable RDP port `3389`.
 
@@ -56,7 +62,8 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Removed runtime task-catalog auto-sync/auto-write behavior; catalogs are now read-only inputs at execution time.
 - Added catalog-level default consumption (`defaults.priority`, `defaults.timeout`) with fallback `priority=1000`, `timeout=180`.
 - Renamed the Windows private local-only accessibility vm-update task to `20-private-local-task`, aligned the update catalog with the new `19/20/28` task names, and moved both private local-only accessibility assets to zip-based packaging under `windows/update/local-private-assets/`.
-- Merged the user-adjusted Windows vm-update catalog ordering back onto the renamed task set by keeping `27-windows-ux-public-desktop-shortcuts` at priority `98` and `28-health-snapshot` at priority `99`.
+- Merged the user-adjusted Windows vm-update catalog ordering back onto the renamed task set by keeping `27-windows-ux-public-desktop-shortcuts` at priority `98`, inserting `28-copy-user-settings` at priority `99`, and moving `29-health-snapshot` to priority `100`.
+- Extended `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` so the late-stage Windows UX flow now creates and inventories eight bank shortcuts that launch Chrome with the requested `examplevm` profile and URLs.
 - Replaced the Windows interactive reboot-resume plumbing with a repo-managed scheduled-task helper under `tools/windows/` and returned isolated `exec` task execution to the normal bounded SSH path.
 
 ### Chores

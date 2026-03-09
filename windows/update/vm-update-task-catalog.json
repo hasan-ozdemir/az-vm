@@ -167,8 +167,14 @@
                       "timeout":  1800
                   },
                   {
-                      "name":  "28-health-snapshot",
+                      "name":  "28-copy-user-settings",
                       "priority":  99,
+                      "enabled":  true,
+                      "timeout":  1800
+                  },
+                  {
+                      "name":  "29-health-snapshot",
+                      "priority":  100,
                       "enabled":  true,
                       "timeout":  180
                   },

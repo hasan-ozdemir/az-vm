@@ -4,6 +4,7 @@ Write-Host "Update task started: windows-ux-public-desktop-shortcuts"
 $vmName = "__VM_NAME__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $chromeArgs = "--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory=$vmName https://www.google.com"
+$chromeBankArgsPrefix = "--new-window --start-maximized --profile-directory=$vmName"
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
@@ -433,6 +434,14 @@ $oneNoteExe = Resolve-OfficeExecutable -ExeName "ONENOTE.EXE"
 $controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 
 Invoke-ShortcutAction -Name "i0internet" -Action { New-DesktopShortcut -Name "i0internet" -TargetPath $chromeExe -Arguments $chromeArgs -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b1GarantiBank Bireysel" -Action { New-DesktopShortcut -Name "b1GarantiBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b2GarantiBank Kurumsal" -Action { New-DesktopShortcut -Name "b2GarantiBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b3QnbBank Bireysel" -Action { New-DesktopShortcut -Name "b3QnbBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b4QnbBank Kurumsal" -Action { New-DesktopShortcut -Name "b4QnbBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b5AktifBank Bireysel" -Action { New-DesktopShortcut -Name "b5AktifBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b6AktifBank Kurumsal" -Action { New-DesktopShortcut -Name "b6AktifBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b7ZiraatBank Bireysel" -Action { New-DesktopShortcut -Name "b7ZiraatBank Bireysel" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx"') -IconLocation "$chromeExe,0" }
+Invoke-ShortcutAction -Name "b8ZiraatBank Kurumsal" -Action { New-DesktopShortcut -Name "b8ZiraatBank Kurumsal" -TargetPath $chromeExe -Arguments ($chromeBankArgsPrefix + ' "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp"') -IconLocation "$chromeExe,0" }
 Invoke-ShortcutAction -Name "c0cmd" -Action { New-DesktopShortcut -Name "c0cmd" -TargetPath $cmdExe }
 Invoke-ShortcutAction -Name "i7whatsapp" -Action {
     if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppAppId)) {

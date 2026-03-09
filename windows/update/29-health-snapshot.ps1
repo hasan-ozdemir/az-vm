@@ -118,6 +118,14 @@ else {
 Write-Host "PUBLIC DESKTOP SHORTCUT STATUS:"
 $publicShortcutNames = @(
     "i0internet",
+    "b1GarantiBank Bireysel",
+    "b2GarantiBank Kurumsal",
+    "b3QnbBank Bireysel",
+    "b4QnbBank Kurumsal",
+    "b5AktifBank Bireysel",
+    "b6AktifBank Kurumsal",
+    "b7ZiraatBank Bireysel",
+    "b8ZiraatBank Kurumsal",
     "c0cmd",
     "i7whatsapp",
     "local-only-shortcut",
