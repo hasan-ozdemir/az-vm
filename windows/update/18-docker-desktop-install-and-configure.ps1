@@ -30,6 +30,60 @@ function Resolve-WingetExe {
     return ""
 }
 
+function Get-StaleInstallerProcesses {
+    $nameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
+    $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $name = [string]$_.Name
+        $commandLine = [string]$_.CommandLine
+        ($name -match $nameRegex) -or ($commandLine -match 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState')
+    } | Select-Object ProcessId, Name, CommandLine
+
+    return @($processes)
+}
+
+function Format-InstallerProcessSummary {
+    param(
+        [object[]]$Processes
+    )
+
+    if ($null -eq $Processes -or @($Processes).Count -eq 0) {
+        return '(none)'
+    }
+
+    return (@($Processes) | ForEach-Object {
+        $commandLine = [string]$_.CommandLine
+        if ($commandLine.Length -gt 160) {
+            $commandLine = $commandLine.Substring(0, 160) + '...'
+        }
+
+        return ("{0}:{1}:{2}" -f [int]$_.ProcessId, [string]$_.Name, $commandLine)
+    }) -join ' | '
+}
+
+function Stop-StaleInstallerProcesses {
+    $staleProcesses = Get-StaleInstallerProcesses
+    if (@($staleProcesses).Count -eq 0) {
+        return @()
+    }
+
+    Write-Host ("Stopping stale installer processes before Docker Desktop install: {0}" -f (Format-InstallerProcessSummary -Processes $staleProcesses))
+    foreach ($proc in @($staleProcesses | Sort-Object ProcessId -Descending)) {
+        try {
+            Stop-Process -Id ([int]$proc.ProcessId) -Force -ErrorAction Stop
+        }
+        catch {
+        }
+    }
+
+    Start-Sleep -Seconds 3
+    $remaining = Get-StaleInstallerProcesses
+    if (@($remaining).Count -gt 0) {
+        throw ("Stale installer processes still active before Docker Desktop install: {0}" -f (Format-InstallerProcessSummary -Processes $remaining))
+    }
+
+    return @($staleProcesses)
+}
+
 function Ensure-MachinePathEntry {
     param([string]$Entry)
 
@@ -105,10 +159,21 @@ function Invoke-ProcessWithTimeout {
     $stderrTask = $proc.StandardError.ReadToEndAsync()
     $completed = $proc.WaitForExit([int]($TimeoutSeconds * 1000))
     if (-not $completed) {
+        $activeInstallers = Get-StaleInstallerProcesses
+        if (@($activeInstallers).Count -gt 0) {
+            Write-Host ("Stopping installer processes after timeout: {0}" -f (Format-InstallerProcessSummary -Processes $activeInstallers))
+            foreach ($installerProc in @($activeInstallers | Sort-Object ProcessId -Descending)) {
+                try {
+                    Stop-Process -Id ([int]$installerProc.ProcessId) -Force -ErrorAction Stop
+                }
+                catch {
+                }
+            }
+        }
         try { $proc.Kill() } catch { }
         try { [void]$proc.WaitForExit() } catch { }
-        Write-Warning ("{0} did not complete in time." -f $Label)
-        return [pscustomobject]@{ Success = $false; ExitCode = 124; TimedOut = $true; StdOut = ""; StdErr = "" }
+        Write-Warning ("{0} did not complete in time. Active installer processes: {1}" -f $Label, (Format-InstallerProcessSummary -Processes $activeInstallers))
+        return [pscustomobject]@{ Success = $false; ExitCode = 124; TimedOut = $true; StdOut = ""; StdErr = ""; ActiveInstallerProcesses = @($activeInstallers) }
     }
 
     [void]$proc.WaitForExit()
@@ -126,6 +191,7 @@ function Invoke-ProcessWithTimeout {
         TimedOut = $false
         StdOut = [string]$stdOut
         StdErr = [string]$stdErr
+        ActiveInstallerProcesses = @()
     }
 }
 
@@ -200,10 +266,20 @@ if ($dockerAlreadyInstalled) {
     Write-Host "Docker Desktop is already installed. Winget install step is skipped."
 }
 else {
+    Stop-StaleInstallerProcesses | Out-Null
     Write-Host "Running: winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
-    & $wingetExe install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
-    if ($LASTEXITCODE -ne 0) {
-        throw "winget install Docker.DockerDesktop failed with exit code $LASTEXITCODE."
+    $dockerInstallResult = Invoke-ProcessWithTimeout `
+        -Label "winget install Docker.DockerDesktop" `
+        -FilePath $wingetExe `
+        -Arguments @('install', '-e', '--id', 'Docker.DockerDesktop', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+        -TimeoutSeconds 900
+    if (-not $dockerInstallResult.Success) {
+        if ($dockerInstallResult.TimedOut) {
+            throw ("winget install Docker.DockerDesktop timed out after stale-installer cleanup. Active installer processes: {0}" -f `
+                (Format-InstallerProcessSummary -Processes $dockerInstallResult.ActiveInstallerProcesses))
+        }
+
+        throw ("winget install Docker.DockerDesktop failed with exit code {0}." -f $dockerInstallResult.ExitCode)
     }
 }
 

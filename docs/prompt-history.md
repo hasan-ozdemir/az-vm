@@ -6,6 +6,7 @@ Human-readable prompt ledger for the `az-vm` repository. This file is reconstruc
 
 - Primary session file: `C:\Users\operator\.codex\sessions\2026\03\02\rollout-2026-03-02T04-21-51-019cac23-2998-72c2-9151-afb00eb84061.jsonl`
 - Supplemental session file: `C:\Users\operator\.codex\sessions\2026\03\08\rollout-2026-03-08T03-25-15-019ccad5-800b-7072-b5d8-10084e6d938c.jsonl`
+- Supplemental session file: `C:\Users\operator\.codex\sessions\2026\03\09\rollout-2026-03-09T05-26-15-019cd06a-a4c1-7cb3-8d91-193f457a5689.jsonl`
 - Timestamp format: local repository time (`TRT`).
 - Entry format: raw user prompt followed by a concise assistant summary.
 
@@ -3746,3 +3747,39 @@ fix update test: 09 ollama vm-update görevi maalesef sağlıklı çalışmıyor
 **Assistant Summary**
 
 Reworked Windows update task `09-install-ollama` to install `Ollama.Ollama` through `winget`, re-resolve the executable after PATH refresh, validate `ollama --version`, and require a healthy response from `http://127.0.0.1:11434/api/version`, starting `ollama serve` when necessary; added smoke coverage for the strengthened readiness check and verified the fix with code-quality and smoke checks plus an isolated live rerun of task `09` on `rg-examplevm-ate1-g1/examplevm` that reported `ollama-api-ready` on port `11434`.
+
+### 2026-03-09 05:26 TRT
+
+**User Prompt**
+
+````text
+fix update improve test: vm-update  görevlerinden 09 ollama aşamasında takıldık; önce izole şekilde bu ollama testinin niye problem çıkardığını bulup çöz; sonra da bu e2e teste az-vm create --auto --windows --perf --from-step=vm-update aşamasından devam edersin.
+````
+
+**Assistant Summary**
+
+Diagnosed the stalled `09-install-ollama` path as a mix of interrupted installer leftovers and persistent-SSH transcript edge cases, then hardened the task so it short-circuits healthy existing installs, detaches `ollama serve` output from the SSH session, clears stale installer locks before `winget`, and bounds `winget` waits with explicit timeout diagnostics; also added spinner-marker normalization to the persistent SSH protocol parser, verified task `09` in isolated live execution, and later completed the requested `create --auto --windows --perf --from-step=vm-update` rerun successfully on `rg-examplevm-ate1-g1/examplevm`.
+
+### 2026-03-09 05:46 TRT
+
+**User Prompt**
+
+````text
+fix: waiting another install to complete mesajı verip sonsuz beklemeye girdi son işlemde... lütfen böyle yapmak yerine o son kurulum işlemini process bazında bulup iptal edip bu kitlenmeyi giderelim lütfen.
+````
+
+**Assistant Summary**
+
+Found the live lock cause on the VM by enumerating remote installer and `co-vm-task` processes, terminated the stale `winget`/installer chains instead of waiting, and folded that recovery behavior back into `09-install-ollama` so future interrupted runs proactively clear stale installer processes and fail boundedly instead of hanging on `waiting another install to complete`.
+
+### 2026-03-09 06:12 TRT
+
+**User Prompt**
+
+````text
+fix: vm-update görevlerinden docker-desktop kurulumu; waiting for another installation to finish gibi bir mesaj vererek sonsuz döngüye giriyor. lütfen bu görev çalışmadan önce, çalışan ya da bekleyen bir kurulum varsa öncelikle onu sonlandırsın; sanırım bir process açık kaldı ve devam etmeye izin vermiyor.
+````
+
+**Assistant Summary**
+
+Applied the same stale-installer recovery model to `18-docker-desktop-install-and-configure`, adding preflight installer cleanup plus bounded `winget install Docker.DockerDesktop` waits with explicit timeout diagnostics, verified the task in isolated live execution, and then reran the full `create --auto --windows --perf --from-step=vm-update` flow to completion with all 29 Windows update tasks succeeding on the rebuilt `Standard_D4as_v5` VM while confirming that RDP port `3389` is reachable.

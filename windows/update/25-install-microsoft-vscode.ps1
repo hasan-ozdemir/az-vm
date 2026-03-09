@@ -51,6 +51,15 @@ function Resolve-CodeExecutable {
 }
 
 Refresh-SessionPath
+$existingCodeExe = Resolve-CodeExecutable
+if (-not [string]::IsNullOrWhiteSpace([string]$existingCodeExe)) {
+    Write-Host ("Visual Studio Code executable already exists: {0}" -f $existingCodeExe)
+    Write-Host "Existing Visual Studio Code installation is already healthy. Skipping winget install."
+    Write-Host "install-microsoft-vscode-completed"
+    Write-Host "Update task completed: install-microsoft-vscode"
+    return
+}
+
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     throw "winget command is not available."

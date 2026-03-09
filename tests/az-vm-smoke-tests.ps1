@@ -787,6 +787,17 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
     }
 }
 
+Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" -Action {
+    $normalizedEnd = Normalize-AzVmProtocolLine -Text '   / AZ_VM_TASK_END:24-install-microsoft-teams:4294967295'
+    Assert-True -Condition ([string]$normalizedEnd -eq 'AZ_VM_TASK_END:24-install-microsoft-teams:4294967295') -Message 'Spinner-prefixed task end markers must normalize back to the protocol marker.'
+
+    $normalizedError = Normalize-AzVmProtocolLine -Text '  - [stderr] AZ_VM_SESSION_TASK_ERROR:24-install-microsoft-teams:example'
+    Assert-True -Condition ([string]$normalizedError -eq '[stderr] AZ_VM_SESSION_TASK_ERROR:24-install-microsoft-teams:example') -Message 'Spinner-prefixed stderr session markers must normalize back to the protocol marker.'
+
+    Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '0') -eq 0) -Message 'Task exit code parser must keep zero as zero.'
+    Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '4294967295') -eq -1) -Message 'Task exit code parser must normalize unsigned 32-bit -1 markers back to -1.'
+}
+
 Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
     $script:ExecMinimalRuntimeUsed = $false
     $script:ExecRunCommandInvocation = $null
@@ -1044,6 +1055,28 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     Assert-True -Condition ($taskScript -like '*127.0.0.1:11434*') -Message 'Ollama install task must check the default Ollama port.'
     Assert-True -Condition ($taskScript -like '*/api/version*') -Message 'Ollama install task must validate the Ollama HTTP API endpoint.'
     Assert-True -Condition ($taskScript -like '*ollama serve*') -Message 'Ollama install task must start ollama serve when the API is not already ready.'
+    Assert-True -Condition ($taskScript -like '*Existing Ollama installation is already healthy. Skipping winget install.*') -Message 'Ollama install task must short-circuit when an existing installation is already healthy.'
+    Assert-True -Condition ($taskScript -like '*RedirectStandardOutput*') -Message 'Ollama install task must detach ollama serve stdout from the SSH session.'
+    Assert-True -Condition ($taskScript -like '*RedirectStandardError*') -Message 'Ollama install task must detach ollama serve stderr from the SSH session.'
+    Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Ollama install*') -Message 'Ollama install task must clear stale installer locks instead of waiting indefinitely.'
+    Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'Ollama install task must bound the winget install wait time.'
+    Assert-True -Condition ($taskScript -like '*timed out after*') -Message 'Ollama install task must fail clearly when winget install exceeds the timeout.'
+}
+
+Invoke-Test -Name "Windows VS Code task short-circuits healthy installs" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\25-install-microsoft-vscode.ps1'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*Existing Visual Studio Code installation is already healthy. Skipping winget install.*') -Message 'VS Code install task must skip winget when a healthy installation already exists.'
+    Assert-True -Condition ($taskScript -like '*Resolve-CodeExecutable*') -Message 'VS Code install task must resolve the existing Code executable before reinstalling.'
+}
+
+Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\18-docker-desktop-install-and-configure.ps1'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Docker Desktop install*') -Message 'Docker Desktop task must clear stale installer locks before winget install.'
+    Assert-True -Condition ($taskScript -like '*winget install Docker.DockerDesktop*') -Message 'Docker Desktop task must install Docker Desktop through winget.'
+    Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
+    Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
 }
 
 Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
