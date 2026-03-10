@@ -1595,6 +1595,8 @@ Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Act
         'static-startup-snapshot =>',
         'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp',
         'StartupApproved\StartupFolder',
+        'Split-Path -Path $startupApprovedPath -Parent',
+        'New-Item -Path $startupApprovedParentPath -Force',
         'docker-desktop',
         'ollama',
         'onedrive',

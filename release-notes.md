@@ -2,10 +2,10 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.10.258 - 2026-03-10
+## Release 2026.3.10.259 - 2026-03-10
 
 ### Summary
-This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, a fully `--vm-name`-based move/set surface, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract that now includes the Store-backed Codex desktop app plus a statically curated guest auto-start set, and a hardened snapshot-based regional move path validated live from `austriaeast` to `swedencentral`.
+This release turns `az-vm` into a documented, process-hardened, operator-facing Azure VM toolkit with one orchestrator, explicit task catalogs, stronger documentation boundaries, formal local/CI quality gates, explicit hook enable/disable controls, a new state-aware VM power-action command, a corrected direct resize contract, a fully `--vm-name`-based move/set surface, faster isolated `exec` task runs, connection commands that now require a running VM, hardened Ollama and Docker Desktop installer recovery, a far more reliable Windows interactive UX and user-settings propagation path, an expanded public desktop/app-install contract that now includes the Store-backed Codex desktop app plus a statically curated and live-validated guest auto-start set, and a hardened snapshot-based regional move path validated live from `austriaeast` to `swedencentral`.
 
 ### Highlights
 - Unified command surface for configure, create, update, inspect, connect, power-action, move, resize, set, and delete workflows.
@@ -34,6 +34,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Windows update tasks `30` through `37` now install and verify iTunes, Be My Eyes, NVDA, Microsoft Edge, VLC, rclone, OneDrive, and Google Drive through the same bounded install-and-readback pattern used elsewhere in the repo.
 - Windows update task `38-install-codex-app` now installs the Store-backed Codex desktop app through `winget install codex -s msstore`, verifies it through AppX/StartApps/winget readback, and registers a deferred RunOnce retry when a noninteractive Store session cannot finish immediately.
 - Windows update task `39-auto-start-apps` now applies a static startup snapshot for Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper onto the guest VM and writes the resulting launchers into the machine Startup folder.
+- Windows update task `39-auto-start-apps` now also creates missing `StartupApproved` registry keys before it marks existing startup shortcuts enabled, after isolated live `exec` validation exposed that reruns on an already-provisioned VM could otherwise fail on Docker Desktop approval.
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now also normalizes the broader Public Desktop set with social-media links, app launchers, dynamic app-path fallbacks, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, and Unicode-safe `q1EkşiSözlük` handling.
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now also adds `a3CodexApp` and keeps the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target in the public shortcut contract, while `29-health-snapshot` inventories that shortcut during late-stage validation.
 - Windows update task `29-health-snapshot` now also reads back the static machine-startup shortcut set so late-stage validation can show exactly which auto-start launchers were expected and present.

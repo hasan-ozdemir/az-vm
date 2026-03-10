@@ -4,6 +4,7 @@ Write-Host "Update task started: auto-start-apps"
 $managerUser = "__VM_ADMIN_USER__"
 $machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
 $startupApprovedPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"
+$startupApprovedParentPath = Split-Path -Path $startupApprovedPath -Parent
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
@@ -55,6 +56,10 @@ function Ensure-StartupFolderExists {
         New-Item -Path $machineStartupFolder -ItemType Directory -Force | Out-Null
     }
 
+    if (-not [string]::IsNullOrWhiteSpace([string]$startupApprovedParentPath) -and -not (Test-Path -LiteralPath $startupApprovedParentPath)) {
+        New-Item -Path $startupApprovedParentPath -Force | Out-Null
+    }
+
     if (-not (Test-Path -LiteralPath $startupApprovedPath)) {
         New-Item -Path $startupApprovedPath -Force | Out-Null
     }
@@ -66,6 +71,8 @@ function Ensure-StartupShortcutApproval {
     if ([string]::IsNullOrWhiteSpace([string]$ShortcutFileName)) {
         return
     }
+
+    Ensure-StartupFolderExists
 
     $enabledValue = [byte[]](2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     New-ItemProperty -Path $startupApprovedPath -Name $ShortcutFileName -PropertyType Binary -Value $enabledValue -Force | Out-Null

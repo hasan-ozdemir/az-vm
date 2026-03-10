@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.10.258] - 2026-03-10
+## [2026.3.10.259] - 2026-03-10
 
 ### Features
 - Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
@@ -13,6 +13,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added Windows `vm-update` task `39-auto-start-apps` to apply a static snapshot of the current approved auto-start application set on the guest VM by creating machine startup shortcuts for Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper.
 
 ### Fixes
+- Hardened `39-auto-start-apps` after isolated live `exec` validation showed that existing startup shortcuts could fail approval when `HKLM\...\StartupApproved\StartupFolder` was missing: the task now creates the missing parent/leaf registry keys before marking shortcuts enabled, so reruns succeed cleanly against already-provisioned desktops.
 - Replaced the Windows public-desktop Chrome shortcut profile binding so repo-managed web shortcuts now resolve `--profile-directory` from `.env` `company_name` instead of `VM_NAME`, while still falling back to `VM_NAME` if the new key is left empty.
 - Switched both `move` and `set` to the `--vm-name` contract and removed the last public `--vm` usage from those commands.
 - Hardened the snapshot-based region-move path so it now deallocates the source VM before snapshot creation, validates that the source resource group is safe for automatic purge, creates target-region public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM.

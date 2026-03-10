@@ -3910,3 +3910,15 @@ update: bu repo boyunca; vm görevlerinde geçen her yerde; --profile-directory=
 **Assistant Summary**
 
 Reworked the Windows Chrome-based public desktop shortcut task so all repo-managed web shortcuts now resolve their default `--profile-directory` from `.env` `company_name` instead of binding it to `VM_NAME`, while keeping a safe fallback to `VM_NAME` if the key is left empty. Added `company_name` to the committed `.env.example` contract, updated the local `.env` to `company_name=exampleorg`, extended task-token runtime plumbing plus smoke coverage for the new token, and documented the feature in `README.md`, `AGENTS.md`, `CHANGELOG.md`, and `release-notes.md`.
+
+### 2026-03-10 15:28 TRT
+
+**User Prompt**
+
+````text
+test: bu sohbetimiz boyunca yaptığın tüm geliştirmeleri ve iyileştirmeleri; artık hedef vm üzerinde canlı olarak izole şekilde deneyebilirsin; bu vm-update görevlerini exec komutuyla denersin; create ya da update komutuyla e2e full step testler koşma; testler hep ilgili komutlarla izole şekilde yapılmalı.
+````
+
+**Assistant Summary**
+
+Ran live isolated `exec` validation against the target Windows VM `examplevm` in `rg-examplevm-sec1-g1` for the chat-scoped `vm-update` work: `38-install-codex-app`, `27-windows-ux-public-desktop-shortcuts`, `39-auto-start-apps`, and `29-health-snapshot`. The Codex install task succeeded with the expected noninteractive Microsoft Store `RunOnce` fallback, the public desktop contract and `a3CodexApp` shortcut validated successfully, and `29-health-snapshot` confirmed the expected public desktop and startup-shortcut readback. Live rerun of `39-auto-start-apps` initially exposed a real bug where existing startup shortcuts could fail approval if the `StartupApproved\StartupFolder` registry path was missing; fixed the task to create the missing parent and leaf registry keys before approval, updated smoke coverage, reran the task live to success, and kept the entire validation flow isolated to `exec` commands without any `create` or `update` e2e runs.
