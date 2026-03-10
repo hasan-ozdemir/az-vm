@@ -526,6 +526,11 @@ Usage patterns:
 .\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off
 ```
 
+Behavior notes:
+- `set` resolves the target VM directly and does not depend on the heavier Step-1 create/update runtime path.
+- After each successful Azure change, the command syncs the resolved `RESOURCE_GROUP`, `VM_NAME`, and the changed `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values back into the local `.env` file.
+- If one toggle succeeds and a later toggle fails, `.env` is still updated to match the successful change so local intent does not drift away from the actual VM state.
+
 ### `delete`
 Purpose: delete a selected scope from a managed resource group.
 

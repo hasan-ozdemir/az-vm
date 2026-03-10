@@ -417,6 +417,143 @@ Invoke-Test -Name "Move and set commands accept vm-name" -Action {
     Assert-AzVmCommandOptions -CommandName 'set' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; hibernation = 'on' }
 }
 
+Invoke-Test -Name "Set command applies both toggles and persists them to .env" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-set-test-" + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path $tempRoot -Force
+    $envFilePath = Join-Path $tempRoot '.env'
+    Write-TextFileNormalized -Path $envFilePath -Content @"
+RESOURCE_GROUP=rg-old
+VM_NAME=oldvm
+VM_ENABLE_HIBERNATION=false
+VM_ENABLE_NESTED_VIRTUALIZATION=true
+"@ -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
+
+    try {
+        $script:SetCommandAzCalls = @()
+
+        function Get-AzVmRepoRoot { return $tempRoot }
+        function Initialize-AzVmCommandRuntimeContext { throw 'Set command must not initialize the full command runtime context.' }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-target'
+                VmName = 'targetvm'
+            }
+        }
+        function Invoke-TrackedAction {
+            param([string]$Label, [scriptblock]$Action)
+            & $Action
+            return [pscustomobject]@{ Label = $Label }
+        }
+        function az {
+            $script:SetCommandAzCalls += ,(@($args) -join ' ')
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        Invoke-AzVmSetCommand -Options @{
+            group = 'rg-target'
+            'vm-name' = 'targetvm'
+            hibernation = 'on'
+            'nested-virtualization' = 'off'
+        } -AutoMode:$false -WindowsFlag:$false -LinuxFlag:$false
+
+        $envMap = Read-DotEnvFile -Path $envFilePath
+        Assert-True -Condition ([string]$envMap['RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must persist the resolved resource group.'
+        Assert-True -Condition ([string]$envMap['VM_NAME'] -eq 'targetvm') -Message 'Set command must persist the resolved VM name.'
+        Assert-True -Condition ([string]$envMap['VM_ENABLE_HIBERNATION'] -eq 'true') -Message 'Set command must persist VM_ENABLE_HIBERNATION=true when hibernation is turned on.'
+        Assert-True -Condition ([string]$envMap['VM_ENABLE_NESTED_VIRTUALIZATION'] -eq 'false') -Message 'Set command must persist VM_ENABLE_NESTED_VIRTUALIZATION=false when nested virtualization is turned off.'
+        Assert-True -Condition (@($script:SetCommandAzCalls).Count -eq 2) -Message 'Set command must issue one Azure update per requested toggle.'
+        Assert-True -Condition ((@($script:SetCommandAzCalls) -join "`n") -match [regex]::Escape('--enable-hibernation true')) -Message 'Set command must call Azure hibernation update.'
+        Assert-True -Condition ((@($script:SetCommandAzCalls) -join "`n") -match [regex]::Escape('additionalCapabilities.nestedVirtualization=false')) -Message 'Set command must call Azure nested virtualization update.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Initialize-AzVmCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Invoke-TrackedAction',
+            'az'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name SetCommandAzCalls -Scope Script -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Set command persists successful updates before a later toggle failure" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-set-failover-test-" + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path $tempRoot -Force
+    $envFilePath = Join-Path $tempRoot '.env'
+    Write-TextFileNormalized -Path $envFilePath -Content @"
+RESOURCE_GROUP=rg-old
+VM_NAME=oldvm
+VM_ENABLE_HIBERNATION=false
+VM_ENABLE_NESTED_VIRTUALIZATION=true
+"@ -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
+
+    try {
+        $script:SetCommandFailureAzCalls = @()
+
+        function Get-AzVmRepoRoot { return $tempRoot }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-target'
+                VmName = 'targetvm'
+            }
+        }
+        function Invoke-TrackedAction {
+            param([string]$Label, [scriptblock]$Action)
+            & $Action
+            return [pscustomobject]@{ Label = $Label }
+        }
+        function az {
+            $line = @($args) -join ' '
+            $script:SetCommandFailureAzCalls += ,$line
+            if ($line -match [regex]::Escape('additionalCapabilities.nestedVirtualization=false')) {
+                $global:LASTEXITCODE = 1
+                return ''
+            }
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        $threw = $false
+        try {
+            Invoke-AzVmSetCommand -Options @{
+                group = 'rg-target'
+                'vm-name' = 'targetvm'
+                hibernation = 'on'
+                'nested-virtualization' = 'off'
+            } -AutoMode:$false -WindowsFlag:$false -LinuxFlag:$false
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message 'Set command must fail when a later Azure update fails.'
+        $envMap = Read-DotEnvFile -Path $envFilePath
+        Assert-True -Condition ([string]$envMap['RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must still persist the resolved resource group after a partial update.'
+        Assert-True -Condition ([string]$envMap['VM_NAME'] -eq 'targetvm') -Message 'Set command must still persist the resolved VM name after a partial update.'
+        Assert-True -Condition ([string]$envMap['VM_ENABLE_HIBERNATION'] -eq 'true') -Message 'Set command must persist the successful hibernation update even if a later toggle fails.'
+        Assert-True -Condition ([string]$envMap['VM_ENABLE_NESTED_VIRTUALIZATION'] -eq 'true') -Message 'Set command must not overwrite nested virtualization in .env when the Azure update failed.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Resolve-AzVmManagedVmTarget',
+            'Invoke-TrackedAction',
+            'az'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name SetCommandFailureAzCalls -Scope Script -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-samplevm-ate1-g1' }
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-samplevm-ate1-g1'; windows = $true }

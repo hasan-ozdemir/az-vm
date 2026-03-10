@@ -540,7 +540,7 @@ function Show-AzVmCommandHelpDetailed {
         }
         'set' {
             Write-Host "Command: set"
-            Write-Host "Description: apply VM feature settings."
+            Write-Host "Description: apply VM feature settings and sync the resolved target/toggle values back to .env."
             Write-Host "Usage:"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=on|off"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=on|off"
@@ -549,6 +549,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Examples:"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=off"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off"
+            Write-Host "Notes: successful updates persist RESOURCE_GROUP, VM_NAME, and the updated VM_ENABLE_* feature toggles to .env."
             return
         }
         'exec' {

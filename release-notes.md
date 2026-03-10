@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.263 - 2026-03-10
+
+### Summary
+This release hardens the `set` command so its public parameters now map cleanly to real behavior and every successful feature-toggle change is reflected back into the local `.env` contract.
+
+### Highlights
+- Removed the `set` command's dependency on the heavier Step-1 runtime initialization path and switched it to direct managed-VM target resolution.
+- `set` now writes the resolved `RESOURCE_GROUP`, `VM_NAME`, and any successfully applied `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values back to `.env`.
+- Added smoke coverage for both the full-success and partial-success-then-failure cases so `.env` stays aligned with the actual Azure-side result.
+
 ## Release 2026.3.10.262 - 2026-03-10
 
 ### Summary

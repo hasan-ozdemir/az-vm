@@ -2454,39 +2454,12 @@ function Invoke-AzVmSetCommand {
         [switch]$LinuxFlag
     )
 
-    $runtimeConfigOverrides = @{}
-    $groupOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
-    if (-not [string]::IsNullOrWhiteSpace([string]$groupOption)) {
-        $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOption.Trim()
-    }
-    $vmOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
-    if (-not [string]::IsNullOrWhiteSpace([string]$vmOption)) {
-        $runtimeConfigOverrides['VM_NAME'] = $vmOption.Trim()
-    }
-
-    $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$true -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
-    $context = $runtime.Context
-
-    $resourceGroup = Resolve-AzVmTargetResourceGroup `
-        -Options $Options `
-        -AutoMode:$AutoMode `
-        -DefaultResourceGroup ([string]$context.ResourceGroup) `
-        -VmName ([string]$context.VmName) `
-        -OperationName 'set'
-
-    $vmName = [string]$vmOption
-    if ([string]::IsNullOrWhiteSpace([string]$vmName)) {
-        $vmName = Resolve-AzVmTargetVmName -ResourceGroup $resourceGroup -DefaultVmName ([string]$context.VmName) -AutoMode:$AutoMode -OperationName 'set'
-    }
-
-    $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
-    if (-not $vmExists) {
-        Throw-FriendlyError `
-            -Detail ("VM '{0}' was not found in resource group '{1}'." -f $vmName, $resourceGroup) `
-            -Code 62 `
-            -Summary "Set command cannot continue because VM was not found." `
-            -Hint "Select an existing VM or run create first."
-    }
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $configMap -OperationName 'set'
+    $resourceGroup = [string]$target.ResourceGroup
+    $vmName = [string]$target.VmName
 
     $hasHibernation = Test-AzVmCliOptionPresent -Options $Options -Name 'hibernation'
     $hasNested = Test-AzVmCliOptionPresent -Options $Options -Name 'nested-virtualization'
@@ -2541,28 +2514,53 @@ function Invoke-AzVmSetCommand {
         return
     }
 
-    if ($hasHibernation) {
-        $hibernationBool = if ([string]::Equals($hibernationTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
-        Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation {2}" -f $resourceGroup, $vmName, $hibernationBool) -Action {
-            az vm update -g $resourceGroup -n $vmName --enable-hibernation $hibernationBool -o none --only-show-errors
-            Assert-LastExitCode "az vm update --enable-hibernation"
-        } | Out-Null
+    $configBefore = @{}
+    foreach ($key in @($configMap.Keys)) {
+        $configBefore[[string]$key] = [string]$configMap[$key]
     }
 
-    if ($hasNested) {
-        $nestedBool = if ([string]::Equals($nestedTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
-        try {
-            Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --set additionalCapabilities.nestedVirtualization={2}" -f $resourceGroup, $vmName, $nestedBool) -Action {
-                az vm update -g $resourceGroup -n $vmName --set ("additionalCapabilities.nestedVirtualization={0}" -f $nestedBool) -o none --only-show-errors
-                Assert-LastExitCode "az vm update --set additionalCapabilities.nestedVirtualization"
+    $persistMap = [ordered]@{}
+    $envChanges = @()
+    try {
+        if ($hasHibernation) {
+            $hibernationBool = if ([string]::Equals($hibernationTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
+            Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation {2}" -f $resourceGroup, $vmName, $hibernationBool) -Action {
+                az vm update -g $resourceGroup -n $vmName --enable-hibernation $hibernationBool -o none --only-show-errors
+                Assert-LastExitCode "az vm update --enable-hibernation"
             } | Out-Null
+            $persistMap['VM_ENABLE_HIBERNATION'] = $hibernationBool
         }
-        catch {
-            Throw-FriendlyError `
-                -Detail ("Nested virtualization update failed via Azure API: {0}" -f $_.Exception.Message) `
-                -Code 62 `
-                -Summary "Nested virtualization setting could not be applied." `
-                -Hint "Check VM SKU/API support for nested virtualization, then retry."
+
+        if ($hasNested) {
+            $nestedBool = if ([string]::Equals($nestedTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
+            try {
+                Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --set additionalCapabilities.nestedVirtualization={2}" -f $resourceGroup, $vmName, $nestedBool) -Action {
+                    az vm update -g $resourceGroup -n $vmName --set ("additionalCapabilities.nestedVirtualization={0}" -f $nestedBool) -o none --only-show-errors
+                    Assert-LastExitCode "az vm update --set additionalCapabilities.nestedVirtualization"
+                } | Out-Null
+            }
+            catch {
+                Throw-FriendlyError `
+                    -Detail ("Nested virtualization update failed via Azure API: {0}" -f $_.Exception.Message) `
+                    -Code 62 `
+                    -Summary "Nested virtualization setting could not be applied." `
+                    -Hint "Check VM SKU/API support for nested virtualization, then retry."
+            }
+            $persistMap['VM_ENABLE_NESTED_VIRTUALIZATION'] = $nestedBool
+        }
+    }
+    finally {
+        if ($persistMap.Count -gt 0) {
+            $persistMap['RESOURCE_GROUP'] = $resourceGroup
+            $persistMap['VM_NAME'] = $vmName
+            $envChanges = @(Save-AzVmConfigToDotEnv -EnvFilePath $envFilePath -ConfigBefore $configBefore -PersistMap $persistMap)
+        }
+    }
+
+    if (@($envChanges).Count -gt 0) {
+        Write-Host "Saved .env changes after set:" -ForegroundColor Green
+        foreach ($change in @($envChanges)) {
+            Write-Host ("- {0} = {1}" -f [string]$change.Key, (ConvertTo-AzVmDisplayValue -Value $change.NewValue))
         }
     }
 

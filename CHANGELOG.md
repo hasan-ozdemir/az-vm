@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.263] - 2026-03-10
+
+### Fixed
+- Simplified the `set` command so it now resolves the target VM directly instead of depending on the heavier Step-1 command runtime path, which removes unrelated configuration requirements from feature-toggle updates.
+- Ensured `set` now persists the resolved `RESOURCE_GROUP`, `VM_NAME`, and any successfully applied `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` changes back into the local `.env` file.
+
+### Documentation
+- Updated `README.md` and command help text so the `set` command now explicitly documents its direct-target behavior and `.env` synchronization semantics.
+
+### Tests
+- Added smoke coverage that verifies `set` applies both Azure toggle updates, persists the changed values to `.env`, and keeps `.env` aligned even when one later toggle update fails after an earlier success.
+
 ## [2026.3.10.262] - 2026-03-10
 
 ### Changed

@@ -4301,3 +4301,15 @@ Apply these small follow-up tasks:
 **Assistant Summary**
 
 Updated the local `.env` and the committed `.env.example` so `PYSSH_CLIENT_PATH` now defaults to the repo-relative `tools/pyssh/ssh_client.py` path, standardized NSG rule naming on the `nsg-rule-` prefix across runtime defaults and tests, and added shared `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` booleans to the configuration contract. Wired those feature toggles into create/update post-deploy behavior so `false` now cleanly skips the corresponding feature path, documented the new contract in `README.md` and `AGENTS.md`, updated release docs, and verified the result with documentation, code-quality, smoke, and PowerShell compatibility checks.
+
+### 2026-03-10 19:28 TRT
+
+**User Prompt**
+
+````text
+Fix and update: make sure every parameter of the `az-vm set` command actually does its job in the code, and reflect the updated settings in the `.env` file at the end of that command.
+````
+
+**Assistant Summary**
+
+Refactored the `set` command to resolve its target VM directly instead of depending on the heavier Step-1 runtime path, which removes unrelated configuration dependencies from feature-toggle updates. Added `.env` synchronization so successful `set` runs now persist the resolved `RESOURCE_GROUP`, `VM_NAME`, and any applied `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values, updated README/help text to document that behavior, and added smoke coverage for both full-success and partial-success scenarios before re-running the local validation suite.
