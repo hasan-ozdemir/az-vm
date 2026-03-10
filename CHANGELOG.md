@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.10.256] - 2026-03-10
+## [2026.3.10.257] - 2026-03-10
 
 ### Features
 - Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
@@ -45,6 +45,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
 - Upgraded `README.md` into a fuller operator and contributor guide aligned with the current CLI, step flow, task model, and configuration contract.
+- Added move timing/process guidance to `README.md` and `az-vm help move`, using the observed live `austriaeast -> swedencentral` `Standard_D4as_v5` / `127 GB` OS-disk move as an operator reference for expected duration and cutover phases.
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
 - Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.
 - Normalized `CHANGELOG.md` and `release-notes.md` to LF line endings and pinned that expectation in `.gitattributes` so documentation-contract checks behave consistently.

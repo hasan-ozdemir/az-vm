@@ -164,7 +164,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.9.249`.
+- The current documented release is `2026.3.10.257`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.
@@ -213,6 +213,21 @@ Typical workflows:
 .\az-vm.cmd ssh --vm-name=examplevm
 .\az-vm.cmd rdp --vm-name=examplevm --user=assistant
 ```
+
+Move timing reference:
+- Observed live reference for `austriaeast -> swedencentral`, `Standard_D4as_v5`, and a `127 GB` OS disk was roughly `25-30 minutes`.
+- The longest phase was cross-region snapshot copy at about `17-19 minutes`; the rest was mostly source deallocate, target network/disk/VM rebuild, first target start, health checks, and old-group cleanup.
+- Treat this as an operator expectation, not a guarantee. Region pair, disk size, Azure background load, and target start time can shift the total noticeably.
+
+Move flow:
+1. Validate the source group, target region/SKU, and auto-delete safety rules.
+2. Deallocate the source VM so the snapshot-based cutover starts from a safe stopped state.
+3. Create the source snapshot and start the target-region snapshot copy.
+4. Wait until the target snapshot reports `Available` and `100%` copy completion.
+5. Create the target resource group, network, NIC, disk, and VM in the new region.
+6. Re-apply hibernation-related flags when required, then start the target VM.
+7. Run the target health gate, including `29-health-snapshot` and port reachability checks.
+8. Update the active target context, then delete the old source group only after the new VM is confirmed healthy.
 
 ## Troubleshooting Themes
 Recurring patterns captured in this repo's history:

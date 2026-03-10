@@ -3885,3 +3885,15 @@ Implement the plan.
 **Assistant Summary**
 
 Implemented and live-hardened the approved `move` work for `examplevm`: `move` and `set` now use `--vm-name`, snapshot-based regional move now deallocates the source VM before snapshotting, validates that the source resource group is safe for automatic purge, creates target public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM. During live validation from `austriaeast` to `swedencentral`, fixed two real cutover bugs discovered on the wire, then tightened the move health gate so `29-health-snapshot` runs under strict outcome semantics and raised that task's catalog timeout from `10s` to `30s` after the target health snapshot proved too slow for the old bound. Final live state: `.env` now points to `rg-examplevm-sec1-g1` in `swedencentral`, target VM `examplevm` is `Standard_D4as_v5` and `running`, target disk `disk-examplevm-sec1-n1` is `StandardSSD_LRS` with `127 GB` and `supportsHibernation=true`, RDP port `3389` is reachable, isolated `exec --update-task=29` succeeds on the target, and the old source group `rg-examplevm-ate1-g1` is gone.
+
+### 2026-03-10 09:15 TRT
+
+**User Prompt**
+
+````text
+update docs and help messages: move komutuyla ilgili hem readme belgesine hem de help kısmına; move komutunun taşıma işlemini yaklaşık olarak ne kadar zamanda yapabildiğini tahmini olarak yazıp, taşıma sürecinin hangi işlemlerle adım adım gerçekleştirildiğini anlatıp, kullanıcıyı bilgilendir; buradaki log'lara bakarak hazırla bu metni; örnek olarak austriaeast bölgesinden swedencenteral bölgesine 127gb'lik os disk içeren standard_d4as_v5 bir vm'in taşıma süresiyle ilgili genel bir referans bilgilendirmesi koy ki, kullanıcı taşıma süreleriyle ilgili bir öngörüye sahip olsun önceden; bu durumu ve bu gerçeği, ilgili yerlerde uygun bir dile yazıp dokümante et.
+````
+
+**Assistant Summary**
+
+Updated the `move` operator guidance in both `README.md` and `az-vm help move` to explain the live-tested cutover sequence step by step and to set a realistic timing expectation from the recorded `austriaeast -> swedencentral` move log: a `Standard_D4as_v5` VM with a `127 GB` OS disk took roughly `25-30 minutes`, with cross-region snapshot copy as the dominant `17-19 minute` phase. Also aligned the release documentation/version labels so the move timing reference is captured in the maintained project docs.

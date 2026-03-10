@@ -301,7 +301,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  group   List/select managed resource groups for active context."
     Write-Host "  show    Print system and configuration dump for resource groups and VMs."
     Write-Host "  do      Apply one VM power action or print current VM state."
-    Write-Host "  move    Move an existing VM to another Azure region."
+    Write-Host "  move    Move an existing VM to another Azure region; expect a health-gated cutover that can take tens of minutes."
     Write-Host "  resize  Change VM size for an existing VM in-place."
     Write-Host "  set     Apply VM feature flags (hibernation, nested virtualization)."
     Write-Host "  exec    Run one init/update task or open interactive remote shell."
@@ -517,7 +517,9 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Examples:"
             Write-Host "  az-vm move --group=rg-examplevm-ate1-g1 --vm-name=examplevm --vm-region=swedencentral"
             Write-Host "  az-vm move --group=rg-examplevm-ate1-g1 --vm-name=examplevm --vm-region="
-            Write-Host "Notes: region move uses a deallocate -> snapshot-copy -> target-health-check -> old-group-delete flow with rollback safeguards."
+            Write-Host "Notes: region move uses a deallocate -> snapshot-copy -> target rebuild -> target health-check -> old-group-delete flow with rollback safeguards."
+            Write-Host "Timing: observed live reference for austriaeast -> swedencentral, Standard_D4as_v5, 127 GB OS disk is roughly 25-30 minutes; cross-region snapshot copy was the longest phase at about 17-19 minutes."
+            Write-Host "Flow: validate source/target and safe-delete scope -> deallocate source VM -> create source snapshot and target copy -> wait for target snapshot Available/100% -> rebuild target network/disk/VM -> re-apply hibernation/start target -> run health gate -> delete old source group after cutover passes."
             return
         }
         'resize' {
