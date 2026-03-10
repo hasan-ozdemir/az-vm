@@ -185,16 +185,16 @@
       "timeout": 13
     },
     {
-      "name": "31-configure-apps-startup",
-      "priority": 32,
-      "enabled": true,
-      "timeout": 45
-    },
-    {
-      "name": "32-configure-unlocker-io",
+      "name": "31-configure-unlocker-io",
       "priority": 31,
       "enabled": true,
       "timeout": 23
+    },
+    {
+      "name": "32-configure-apps-startup",
+      "priority": 32,
+      "enabled": true,
+      "timeout": 45
     },
     {
       "name": "33-create-shortcuts-public-desktop",

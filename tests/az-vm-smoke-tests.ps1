@@ -1335,8 +1335,8 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '28-install-be-my-eyes' = 35
         '29-install-nvda-system' = 54
         '30-install-rclone-system' = 13
-        '32-configure-unlocker-io' = 23
-        '31-configure-apps-startup' = 45
+        '31-configure-unlocker-io' = 23
+        '32-configure-apps-startup' = 45
         '33-create-shortcuts-public-desktop' = 10
         '34-configure-ux-windows' = 13
         '35-configure-settings-advanced-system' = 5
@@ -1816,7 +1816,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 }
 
 Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Action {
-    $taskPath = Join-Path $RepoRoot 'windows\update\31-configure-apps-startup.ps1'
+    $taskPath = Join-Path $RepoRoot 'windows\update\32-configure-apps-startup.ps1'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
     $healthTaskPath = Join-Path $RepoRoot 'windows\update\37-capture-snapshot-health.ps1'

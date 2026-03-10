@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.266 - 2026-03-10
+
+### Summary
+This release completes the Windows update `31/32` correction by renaming the tracked task files and catalog entries, not just their priorities: `31` is now the Unlocker task and `32` is now the app-startup task.
+
+### Highlights
+- Renamed the tracked Windows files so `31-configure-unlocker-io.ps1` now contains the IObit Unlocker task and `32-configure-apps-startup.ps1` now contains the startup-configuration task.
+- Updated the Windows update catalog to match the new file names while keeping the existing timeout values.
+- Refreshed smoke coverage and release history so the tracked repo now consistently documents `31=unlocker`, `32=app-startup`.
+
 ## Release 2026.3.10.265 - 2026-03-10
 
 ### Summary
@@ -117,8 +127,8 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Windows update task `33-create-shortcuts-public-desktop` now creates the refreshed public shortcut set for ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, banking links, and command-style tool launchers with canonical `a1/i0/i1/i2/z1/z2/t*` names, dynamic WhatsApp desktop resolution, and `cmd.exe` wrappers for `.cmd` launchers.
 - Windows update tasks `30` through `37` now install and verify iTunes, Be My Eyes, NVDA, Microsoft Edge, VLC, rclone, OneDrive, and Google Drive through the same bounded install-and-readback pattern used elsewhere in the repo.
 - Windows update task `19-install-codex-app` now installs the Store-backed Codex desktop app through `winget install codex -s msstore`, verifies it through AppX/StartApps/winget readback, and registers a deferred RunOnce retry when a noninteractive Store session cannot finish immediately.
-- Windows update task `31-configure-apps-startup` now applies a static startup snapshot for Docker Desktop, Ollama, OneDrive, Teams, one private local-only accessibility launcher, and iTunesHelper onto the guest VM and writes the resulting launchers into the machine Startup folder.
-- Windows update task `31-configure-apps-startup` now also creates missing `StartupApproved` registry keys before it marks existing startup shortcuts enabled, after isolated live `exec` validation exposed that reruns on an already-provisioned VM could otherwise fail on Docker Desktop approval.
+- Windows update task `32-configure-apps-startup` now applies a static startup snapshot for Docker Desktop, Ollama, OneDrive, Teams, one private local-only accessibility launcher, and iTunesHelper onto the guest VM and writes the resulting launchers into the machine Startup folder.
+- Windows update task `32-configure-apps-startup` now also creates missing `StartupApproved` registry keys before it marks existing startup shortcuts enabled, after isolated live `exec` validation exposed that reruns on an already-provisioned VM could otherwise fail on Docker Desktop approval.
 - Windows update task `33-create-shortcuts-public-desktop` now also normalizes the broader Public Desktop set with social-media links, app launchers, dynamic app-path fallbacks, one private local-only accessibility hotkey, and Unicode-safe `q1Eksisozluk` handling.
 - Windows update task `33-create-shortcuts-public-desktop` now also adds `a3CodexApp` and keeps the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target in the public shortcut contract, while `37-capture-snapshot-health` inventories that shortcut during late-stage validation.
 - Windows update task `37-capture-snapshot-health` now also reads back the static machine-startup shortcut set so late-stage validation can show exactly which auto-start launchers were expected and present.

@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.266] - 2026-03-10
+
+### Fixed
+- Completed the Windows `vm-update` `31/32` swap by renaming the tracked task files as well as the catalog entries, so `31-configure-unlocker-io` now owns the IObit Unlocker task and `32-configure-apps-startup` now owns the startup-configuration task.
+
+### Documentation
+- Updated release history and prompt-history records to reflect the final `31=unlocker`, `32=app-startup` naming contract.
+
+### Tests
+- Updated smoke coverage so the tracked Windows update order and startup-task path assertions now target `31-configure-unlocker-io` and `32-configure-apps-startup`.
+
 ## [2026.3.10.265] - 2026-03-10
 
 ### Fixed
@@ -100,10 +111,10 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Made the new `do` command state-aware so it inspects Azure power/provisioning/hibernation state before mutating and exits politely with a non-zero code when the requested action is not valid for the current VM state.
 - Added Windows `vm-update` install tasks `27-install-itunes-system`, `28-install-be-my-eyes`, `29-install-nvda-system`, `13-install-edge-browser`, `26-install-vlc-system`, `30-install-rclone-system`, `21-install-onedrive-system`, and `22-install-google-drive`, each following the existing repo pattern of bounded `winget` install plus explicit post-install verification.
 - Added Windows `vm-update` task `19-install-codex-app` to install the Store-backed Codex desktop app through `winget install codex -s msstore`, verify it via AppX/StartApps/winget readback, and register a deferred RunOnce retry when the noninteractive Store session cannot complete immediately.
-- Added Windows `vm-update` task `31-configure-apps-startup` to apply a static snapshot of the current approved auto-start application set on the guest VM by creating machine startup shortcuts for Docker Desktop, Ollama, OneDrive, Teams, one private local-only accessibility launcher, and iTunesHelper.
+- Added Windows `vm-update` task `32-configure-apps-startup` to apply a static snapshot of the current approved auto-start application set on the guest VM by creating machine startup shortcuts for Docker Desktop, Ollama, OneDrive, Teams, one private local-only accessibility launcher, and iTunesHelper.
 
 ### Fixes
-- Hardened `31-configure-apps-startup` after isolated live `exec` validation showed that existing startup shortcuts could fail approval when `HKLM\...\StartupApproved\StartupFolder` was missing: the task now creates the missing parent/leaf registry keys before marking shortcuts enabled, so reruns succeed cleanly against already-provisioned desktops.
+- Hardened `32-configure-apps-startup` after isolated live `exec` validation showed that existing startup shortcuts could fail approval when `HKLM\...\StartupApproved\StartupFolder` was missing: the task now creates the missing parent/leaf registry keys before marking shortcuts enabled, so reruns succeed cleanly against already-provisioned desktops.
 - Replaced the Windows public-desktop Chrome shortcut profile binding so repo-managed web shortcuts now resolve `--profile-directory` from `.env` `company_name` instead of `VM_NAME`, while still falling back to `VM_NAME` if the new key is left empty.
 - Switched both `move` and `set` to the `--vm-name` contract and removed the last public `--vm` usage from those commands.
 - Hardened the snapshot-based region-move path so it now deallocates the source VM before snapshot creation, validates that the source resource group is safe for automatic purge, creates target-region public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM.
@@ -116,7 +127,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Streamlined isolated `exec` task runs so they now accept `--vm-name`, resolve only the selected VM/task context, and skip the broader Step-1 managed-resource inventory path before pyssh execution.
 - Refreshed `33-create-shortcuts-public-desktop` so the public desktop set now uses the new canonical `a1/i0/i1/i2/z1/z2/t*` naming, removes legacy `i7whatsapp`, adds shared Chrome-profile launchers for ChatGPT, internet, WhatsApp Web, and account setup, dynamically resolves the WhatsApp desktop executable with a fixed fallback path, and wraps command-style launchers through `cmd.exe` so `.cmd`-backed tools do not open in Notepad.
 - Extended the Windows public-desktop contract again so `33-create-shortcuts-public-desktop` now adds `a3CodexApp` with the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` target fallback, while `37-capture-snapshot-health` inventories the new shortcut during late-stage validation.
-- Extended the late Windows validation path so `37-capture-snapshot-health` now also inventories the static auto-start shortcut contract that `31-configure-apps-startup` writes under the machine Startup folder.
+- Extended the late Windows validation path so `37-capture-snapshot-health` now also inventories the static auto-start shortcut contract that `32-configure-apps-startup` writes under the machine Startup folder.
 - Expanded `37-capture-snapshot-health` to inventory the refreshed public desktop shortcut set and read back the updated target-path and argument contracts during late Windows validation.
 - Recalibrated all Windows `vm-update` task catalog timeouts from live transcript data and successful isolated reruns using a `max_success_seconds * 1.3` buffer rule, including new bounded values for tasks `27` and `29` after live `exec` confirmation at `7.2s` and `6.7s`.
 - Expanded the late-stage public desktop contract again so the canonical set now also includes normalized social-media links, app launchers for Be My Eyes/NVDA/Edge/VLC/iTunes/OneDrive/Google Drive, one private local-only accessibility shortcut hotkey, dynamic app-path fallback resolution, and Unicode-safe `q1Eksisozluk` creation plus readback through `Shell.Application`.

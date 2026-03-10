@@ -4337,3 +4337,15 @@ Minor fix: swap the execution priority of Windows `vm-update` tasks `31` and `32
 **Assistant Summary**
 
 Swapped the Windows update catalog priorities of `31-configure-apps-startup` and `32-configure-unlocker-io`, kept both timeout values unchanged, updated the smoke-test expectation to match the corrected order, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.10.265`, and re-ran the local validation suite successfully.
+
+### 2026-03-10 21:41 TRT
+
+**User Prompt**
+
+````text
+Please make task `31` the IObit Unlocker task and task `32` the app-startup task; do not change only the catalog, update the file names as well.
+````
+
+**Assistant Summary**
+
+Completed the Windows update `31/32` swap fully: renamed the tracked task files so `31-configure-unlocker-io.ps1` now contains the Unlocker task and `32-configure-apps-startup.ps1` now contains the startup task, updated the Windows update catalog and smoke-test path/order expectations accordingly, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.10.266`, and re-ran the local validation suite successfully.
