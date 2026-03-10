@@ -3897,3 +3897,16 @@ update docs and help messages: move komutuyla ilgili hem readme belgesine hem de
 **Assistant Summary**
 
 Updated the `move` operator guidance in both `README.md` and `az-vm help move` to explain the live-tested cutover sequence step by step and to set a realistic timing expectation from the recorded `austriaeast -> swedencentral` move log: a `Standard_D4as_v5` VM with a `127 GB` OS disk took roughly `25-30 minutes`, with cross-region snapshot copy as the dominant `17-19 minute` phase. Also aligned the release documentation/version labels so the move timing reference is captured in the maintained project docs.
+
+### 2026-03-10 14:17 TRT
+
+**User Prompt**
+
+````text
+update: bu repo boyunca; vm görevlerinde geçen her yerde; --profile-directory=examplevm olan yerler --profile-directory=_company_name_ şekline çevrilip; .env dosyasından gelen "company_name" değişkeninin içeriğiyle değiştirilecek; şimdilik .env içinde company_name=exampleorg olarak ayarlayalım; ileride ben istersem güncellerim; böylece tüm chrome kısayolları için varsayılan google chrome profili "exampleorg" olarak ayarlansın.
+*bu özellikten ise ilgili dokümanlarda bahsedilsin
+````
+
+**Assistant Summary**
+
+Reworked the Windows Chrome-based public desktop shortcut task so all repo-managed web shortcuts now resolve their default `--profile-directory` from `.env` `company_name` instead of binding it to `VM_NAME`, while keeping a safe fallback to `VM_NAME` if the key is left empty. Added `company_name` to the committed `.env.example` contract, updated the local `.env` to `company_name=exampleorg`, extended task-token runtime plumbing plus smoke coverage for the new token, and documented the feature in `README.md`, `AGENTS.md`, `CHANGELOG.md`, and `release-notes.md`.

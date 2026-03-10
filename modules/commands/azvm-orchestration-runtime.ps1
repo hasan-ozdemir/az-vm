@@ -555,6 +555,10 @@ function Invoke-AzVmStep1Common {
     }
 
     $vmDiskSize = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -Tokens $baseTokens
+    $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue $vmName)) -Tokens $baseTokens
+    if ([string]::IsNullOrWhiteSpace([string]$companyName)) {
+        $companyName = [string]$vmName
+    }
     $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_USER" -DefaultValue "manager")
     $vmPassRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_PASS" -DefaultValue "<runtime-secret>")
     $vmUser = Resolve-AzVmTemplate -Template $vmUserRaw -Tokens $baseTokens
@@ -614,6 +618,7 @@ function Invoke-AzVmStep1Common {
         DefaultVmSize = $defaultVmSize
         VmDiskName = $vmDiskName
         VmDiskSize = $vmDiskSize
+        CompanyName = [string]$companyName
         VmUser = $vmUser
         VmPass = $vmPass
         VmAssistantUser = $vmAssistantUser

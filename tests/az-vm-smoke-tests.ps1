@@ -211,9 +211,9 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     $envExamplePath = Join-Path $RepoRoot '.env.example'
     Assert-True -Condition (Test-Path -LiteralPath $envExamplePath) -Message ".env.example was not found."
 
-    $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
+    $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Za-z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','VM_NAME','AZ_LOCATION',
+        'VM_OS_TYPE','VM_NAME','company_name','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
@@ -1077,6 +1077,7 @@ Invoke-Test -Name "Task token replacement" -Action {
         TcpPorts = @("444","3389","11434")
         ResourceGroup = "rg-examplevm"
         VmName = "examplevm"
+        CompanyName = "exampleorg"
         AzLocation = "austriaeast"
         VmSize = "Standard_B2as_v2"
         VmImage = "example:image:urn"
@@ -1086,7 +1087,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __TCP_PORTS_BASH__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __TCP_PORTS_BASH__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -1095,6 +1096,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*exampleorg*") -Message "Company name token was not replaced."
 }
 
 Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
@@ -1529,6 +1531,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'C:\ProgramData\chocolatey\bin\7z.exe',
         '--enable multi_agent --yolo -s danger-full-access --cd "c:\users\public" --search',
         '--screen-reader --yolo',
+        '$chromeProfileDirectoryName = "__COMPANY_NAME__"',
         '$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"',
         '--user-data-dir="{0}"',
         '--profile-directory="{1}"',

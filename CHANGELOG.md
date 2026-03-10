@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.10.257] - 2026-03-10
+## [2026.3.10.258] - 2026-03-10
 
 ### Features
 - Added a new `do` operator command for `status`, `start`, `restart`, `stop`, `deallocate`, and `hibernate` actions against one managed VM.
@@ -13,6 +13,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added Windows `vm-update` task `39-auto-start-apps` to apply a static snapshot of the current approved auto-start application set on the guest VM by creating machine startup shortcuts for Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper.
 
 ### Fixes
+- Replaced the Windows public-desktop Chrome shortcut profile binding so repo-managed web shortcuts now resolve `--profile-directory` from `.env` `company_name` instead of `VM_NAME`, while still falling back to `VM_NAME` if the new key is left empty.
 - Switched both `move` and `set` to the `--vm-name` contract and removed the last public `--vm` usage from those commands.
 - Hardened the snapshot-based region-move path so it now deallocates the source VM before snapshot creation, validates that the source resource group is safe for automatic purge, creates target-region public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM.
 - Tightened the move cutover gate so the post-target `29-health-snapshot` validation now runs through strict task-outcome semantics instead of allowing warning-mode continuation to delete the old source group.
@@ -45,6 +46,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
 - Upgraded `README.md` into a fuller operator and contributor guide aligned with the current CLI, step flow, task model, and configuration contract.
+- Documented the new `.env` `company_name` key in the config contract so Windows Chrome-based public desktop shortcuts can share a company-named default profile directory such as `exampleorg`.
 - Added move timing/process guidance to `README.md` and `az-vm help move`, using the observed live `austriaeast -> swedencentral` `Standard_D4as_v5` / `127 GB` OS-disk move as an operator reference for expected duration and cutover phases.
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
 - Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.

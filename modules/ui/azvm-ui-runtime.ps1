@@ -1461,6 +1461,10 @@ function Initialize-AzVmExecCommandRuntimeContext {
     $vmImage = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmImageConfigKey -DefaultValue ([string]$platformDefaults.VmImageDefault))) -Tokens $nameTokens
     $vmDiskSize = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmDiskSizeConfigKey -DefaultValue ([string]$platformDefaults.VmDiskSizeDefault))) -Tokens $nameTokens
     $vmDiskName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_DISK_NAME' -DefaultValue '')) -Tokens $nameTokens
+    $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_name' -DefaultValue ([string]$vmName))) -Tokens $nameTokens
+    if ([string]::IsNullOrWhiteSpace([string]$companyName)) {
+        $companyName = [string]$vmName
+    }
     $vmUser = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ADMIN_USER' -DefaultValue 'manager')) -Tokens $nameTokens
     $vmPass = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ADMIN_PASS' -DefaultValue '<runtime-secret>')) -Tokens $nameTokens
     $vmAssistantUser = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ASSISTANT_USER' -DefaultValue 'assistant')) -Tokens $nameTokens
@@ -1526,6 +1530,7 @@ function Initialize-AzVmExecCommandRuntimeContext {
         VmSize = [string]$vmSize
         VmDiskName = [string]$vmDiskName
         VmDiskSize = [string]$vmDiskSize
+        CompanyName = [string]$companyName
         VmUser = [string]$vmUser
         VmPass = [string]$vmPass
         VmAssistantUser = [string]$vmAssistantUser

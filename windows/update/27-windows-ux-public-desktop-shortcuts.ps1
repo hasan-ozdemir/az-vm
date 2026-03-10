@@ -2,18 +2,23 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: windows-ux-public-desktop-shortcuts"
 
 $vmName = "__VM_NAME__"
+$chromeProfileDirectoryName = "__COMPANY_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
-$chromeRemoteArgsPrefix = ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $vmName)
-$chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $vmName)
-$chromeBankArgsPrefix = ("--new-window --start-maximized --profile-directory={0}" -f $vmName)
+$chromeRemoteArgsPrefix = ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $chromeProfileDirectoryName)
+$chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $chromeProfileDirectoryName)
+$chromeBankArgsPrefix = ('--new-window --start-maximized --profile-directory="{0}"' -f $chromeProfileDirectoryName)
 $beMyEyesStoreProductId = "9MSW46LTDWGF"
 $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
 $codexAppFallbackPath = Join-Path $env:ProgramFiles "WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
 $whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe"
 $q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
+
+if ([string]::IsNullOrWhiteSpace([string]$chromeProfileDirectoryName) -or [string]::Equals([string]$chromeProfileDirectoryName, "__COMPANY_NAME__", [System.StringComparison]::Ordinal)) {
+    $chromeProfileDirectoryName = $vmName
+}
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"

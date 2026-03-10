@@ -765,6 +765,7 @@ function Get-AzVmTaskTokenReplacements {
         TCP_PORTS_PS_ARRAY = [string]$tcpPortsPsArray
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VM_NAME = [string]$Context.VmName
+        COMPANY_NAME = [string]$Context.CompanyName
         AZ_LOCATION = [string]$Context.AzLocation
         VM_SIZE = [string]$Context.VmSize
         VM_IMAGE = [string]$Context.VmImage

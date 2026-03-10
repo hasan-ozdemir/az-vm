@@ -80,6 +80,7 @@ Key principles:
 Important current keys include:
 - `VM_OS_TYPE`
 - `VM_NAME`
+- `company_name` for the default Google Chrome `--profile-directory` used by repo-managed Windows public desktop web shortcuts such as internet, account-setup, and banking links
 - `AZ_LOCATION`
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
 - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
@@ -164,7 +165,7 @@ Hook behavior:
 ## Release Versioning
 - `CHANGELOG.md` and `release-notes.md` use `YYYY.M.D.N`.
 - `N` is the cumulative repository commit count at the documented release point.
-- The current documented release is `2026.3.10.257`.
+- The current documented release is `2026.3.10.258`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract.

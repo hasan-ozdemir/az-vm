@@ -61,6 +61,7 @@ Use these sources in this order when maintaining the repo:
 - `.env` is local-only and must remain untracked.
 - `.env.example` is the committed configuration contract and must stay current.
 - Use generic env keys whenever possible.
+- Use `company_name` for the default Windows Chrome profile directory used by repo-managed public desktop web shortcuts.
 - Use `WIN_` or `LIN_` keys only for true platform-specific settings.
 - Remove deprecated env keys instead of keeping compatibility fallbacks.
 - Validate region, VM naming, SKU, image, and other mutation-critical config before Azure create/update/delete operations.
