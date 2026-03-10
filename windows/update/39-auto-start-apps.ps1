@@ -2,8 +2,43 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: auto-start-apps"
 
 $managerUser = "__VM_ADMIN_USER__"
-$machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-$startupApprovedPath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder"
+$taskConfig = [ordered]@{
+    MachineStartupFolder = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp'
+    StartupApprovedPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder'
+    DockerDesktopExecutableCandidates = @('C:\Program Files\Docker\Docker\Docker Desktop.exe')
+    localOnlyAccessibilityExecutableCandidates = @(
+        'C:\Program Files\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe',
+        'C:\Program Files\local accessibility vendor\private local-only accessibility\2023\local-accessibility.exe',
+        'C:\Program Files (x86)\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe'
+    )
+    ITunesHelperExecutableCandidates = @(
+        'C:\Program Files\iTunes\iTunesHelper.exe',
+        'C:\Program Files (x86)\iTunes\iTunesHelper.exe'
+    )
+    OneDriveExecutableCandidates = @(
+        'C:\Program Files\Microsoft OneDrive\OneDrive.exe',
+        ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser)
+    )
+    TeamsExecutableCandidates = @(
+        'C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe',
+        ("C:\Users\{0}\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" -f $managerUser)
+    )
+    OllamaAppExecutableCandidates = @(
+        ("C:\Users\{0}\AppData\Local\Programs\Ollama\ollama app.exe" -f $managerUser),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama app.exe')
+    )
+    StaticStartupAppKeys = @(
+        'docker-desktop',
+        'ollama',
+        'onedrive',
+        'teams',
+        'private local-only accessibility',
+        'itunes-helper'
+    )
+}
+
+$machineStartupFolder = [string]$taskConfig.MachineStartupFolder
+$startupApprovedPath = [string]$taskConfig.StartupApprovedPath
 $startupApprovedParentPath = Split-Path -Path $startupApprovedPath -Parent
 
 function Refresh-SessionPath {
@@ -181,38 +216,15 @@ function Ensure-StartupShortcut {
 Refresh-SessionPath
 
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
-$dockerDesktopExe = Resolve-CommandPath -CommandName "Docker Desktop.exe" -FallbackCandidates @("C:\Program Files\Docker\Docker\Docker Desktop.exe")
-$localOnlyAccessibilityExe = Resolve-CommandPath -CommandName "local-accessibility.exe" -FallbackCandidates @(
-    "C:\Program Files\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe",
-    "C:\Program Files\local accessibility vendor\private local-only accessibility\2023\local-accessibility.exe",
-    "C:\Program Files (x86)\local accessibility vendor\private local-only accessibility\2025\local-accessibility.exe"
-)
-$iTunesHelperExe = Resolve-CommandPath -CommandName "iTunesHelper.exe" -FallbackCandidates @(
-    "C:\Program Files\iTunes\iTunesHelper.exe",
-    "C:\Program Files (x86)\iTunes\iTunesHelper.exe"
-)
-$oneDriveExe = Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @(
-    "C:\Program Files\Microsoft OneDrive\OneDrive.exe",
-    ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser)
-)
-$teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @(
-    "C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe",
-    ("C:\Users\{0}\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" -f $managerUser)
-)
-$ollamaAppExe = Resolve-CommandPath -CommandName "ollama app.exe" -FallbackCandidates @(
-    ("C:\Users\{0}\AppData\Local\Programs\Ollama\ollama app.exe" -f $managerUser),
-    (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama app.exe')
-)
+$dockerDesktopExe = Resolve-CommandPath -CommandName "Docker Desktop.exe" -FallbackCandidates @($taskConfig.DockerDesktopExecutableCandidates)
+$localOnlyAccessibilityExe = Resolve-CommandPath -CommandName "local-accessibility.exe" -FallbackCandidates @($taskConfig.localOnlyAccessibilityExecutableCandidates)
+$iTunesHelperExe = Resolve-CommandPath -CommandName "iTunesHelper.exe" -FallbackCandidates @($taskConfig.ITunesHelperExecutableCandidates)
+$oneDriveExe = Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @($taskConfig.OneDriveExecutableCandidates)
+$teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @($taskConfig.TeamsExecutableCandidates)
+$ollamaAppExe = Resolve-CommandPath -CommandName "ollama app.exe" -FallbackCandidates @($taskConfig.OllamaAppExecutableCandidates)
 
 # Static startup snapshot captured from the local operator machine on 2026-03-09.
-$staticStartupAppKeys = @(
-    'docker-desktop',
-    'ollama',
-    'onedrive',
-    'teams',
-    'private local-only accessibility',
-    'itunes-helper'
-)
+$staticStartupAppKeys = @($taskConfig.StaticStartupAppKeys)
 
 Write-Host ("static-startup-snapshot => {0}" -f ($staticStartupAppKeys -join ', '))
 

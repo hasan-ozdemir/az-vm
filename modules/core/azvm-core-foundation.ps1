@@ -261,7 +261,7 @@ function Get-AzVmPlatformDefaults {
         return [ordered]@{
             PlatformLabel = 'windows'
             WindowTitle = 'az vm'
-            VmNameDefault = 'examplevm'
+            VmNameDefault = ''
             VmImageDefault = 'MicrosoftWindowsDesktop:office-365:win11-25h2-avd-m365:latest'
             VmSizeDefault = 'Standard_B4as_v2'
             VmDiskSizeDefault = '128'
@@ -276,7 +276,7 @@ function Get-AzVmPlatformDefaults {
     return [ordered]@{
         PlatformLabel = 'linux'
         WindowTitle = 'az vm'
-        VmNameDefault = 'otherexamplevm'
+        VmNameDefault = ''
         VmImageDefault = 'Canonical:ubuntu-24_04-lts:server:latest'
         VmSizeDefault = 'Standard_B2as_v2'
         VmDiskSizeDefault = '40'
@@ -430,6 +430,88 @@ function Resolve-AzVmPlatformSelection {
 
     Write-Host ("VM OS type '{0}' will be used." -f $selected) -ForegroundColor Green
     return $selected
+}
+
+# Handles Get-AzVmDefaultTcpPortsCsv.
+function Get-AzVmDefaultSshPortText {
+    return '444'
+}
+
+# Handles Get-AzVmDefaultRdpPortText.
+function Get-AzVmDefaultRdpPortText {
+    return '3389'
+}
+
+# Handles Get-AzVmDefaultTcpPortsCsv.
+function Get-AzVmDefaultTcpPortsCsv {
+    return '80,443,8444,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434'
+}
+
+# Handles Test-AzVmConfigPlaceholderValue.
+function Test-AzVmConfigPlaceholderValue {
+    param(
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $false
+    }
+
+    $normalized = $Value.Trim().ToLowerInvariant()
+    return (
+        $normalized.Contains('change_me') -or
+        $normalized.Contains('changeme') -or
+        $normalized.Contains('replace_me') -or
+        $normalized.Contains('set_me') -or
+        $normalized.Contains('todo') -or
+        $normalized.StartsWith('<') -or
+        $normalized.EndsWith('>')
+    )
+}
+
+# Handles Get-AzVmResolvedConfigValue.
+function Get-AzVmResolvedConfigValue {
+    param(
+        [hashtable]$ConfigMap,
+        [string]$Key,
+        [hashtable]$Tokens = @{},
+        [string]$DefaultValue = ''
+    )
+
+    $rawValue = [string](Get-ConfigValue -Config $ConfigMap -Key $Key -DefaultValue $DefaultValue)
+    return [string](Resolve-AzVmTemplate -Template $rawValue -Tokens $Tokens)
+}
+
+# Handles Get-AzVmRequiredResolvedConfigValue.
+function Get-AzVmRequiredResolvedConfigValue {
+    param(
+        [hashtable]$ConfigMap,
+        [string]$Key,
+        [hashtable]$Tokens = @{},
+        [string]$Summary,
+        [string]$Hint,
+        [int]$Code = 14,
+        [string]$DefaultValue = ''
+    )
+
+    $resolvedValue = [string](Get-AzVmResolvedConfigValue -ConfigMap $ConfigMap -Key $Key -Tokens $Tokens -DefaultValue $DefaultValue)
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedValue)) {
+        Throw-FriendlyError `
+            -Detail ("Required config value '{0}' is not set." -f $Key) `
+            -Code $Code `
+            -Summary $Summary `
+            -Hint $Hint
+    }
+
+    if (Test-AzVmConfigPlaceholderValue -Value $resolvedValue) {
+        Throw-FriendlyError `
+            -Detail ("Config value '{0}' still uses a placeholder value: '{1}'." -f $Key, $resolvedValue) `
+            -Code $Code `
+            -Summary $Summary `
+            -Hint $Hint
+    }
+
+    return $resolvedValue
 }
 
 # Handles Get-AzVmTaskCatalogFileName.

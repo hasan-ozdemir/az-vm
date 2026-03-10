@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.261] - 2026-03-10
+
+### Changed
+- Removed shared runtime fallback defaults for committed VM identity and credential values such as the old sample VM names and demo passwords; non-interactive flows now fail fast when `VM_NAME`, `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, or `VM_ASSISTANT_PASS` are missing or left on placeholder values.
+- Centralized shared default resolution for SSH port, RDP port, and default TCP port lists so the orchestration and UI runtimes stop duplicating mutable network defaults.
+- Changed `tools/install-pyssh-tool.ps1` so its optional test-host derivation now depends only on real `.env` values instead of inventing a committed VM/region fallback.
+
+### Documentation
+- Clarified the configuration split across `AGENTS.md`, `README.md`, and `.env.example`: app-wide identity, secrets, and reusable operator overrides belong in `.env`, while task-only literals belong in a clearly labeled config block at the top of the owning task script.
+- Updated `.env.example` to require explicit VM identity and credential placeholders, removed the old committed password examples, and documented `company_name` with a neutral example.
+
+### Refactoring
+- Introduced shared config-validation helpers in `modules/core/azvm-core-foundation.ps1` so orchestration and UI contexts can reject empty or placeholder-sensitive values consistently.
+- Refactored key Windows update tasks to move task-specific constants into top-of-file config blocks instead of scattering mutable literals through task bodies, including private local-only accessibility install/copy, Ollama, Docker Desktop, VS Code, Be My Eyes, OneDrive, auto-start apps, and public desktop shortcuts.
+- Moved the repo-managed Windows public web-shortcut bundles into the shortcut task's local config section so company-specific and user-specific web targets are isolated from shared runtime code.
+
+### Tests
+- Expanded smoke coverage to verify the new required-config helper behavior, confirm that shared runtime modules no longer carry the old personal/demo defaults, and align Docker Desktop task assertions with the new task-local config structure.
+
 ## [2026.3.10.260] - 2026-03-10
 
 ### Documentation

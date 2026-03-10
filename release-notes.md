@@ -2,6 +2,23 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.261 - 2026-03-10
+
+### Summary
+This release hardens the repository's configuration contract by removing committed runtime identity and password defaults, making required VM identity and credential inputs fail fast when they are missing or left on placeholders, and drawing a sharper line between app-wide `.env` configuration and task-local config blocks inside guest-task scripts.
+
+### Highlights
+- Removed shared runtime fallback defaults for legacy sample VM names and demo passwords from the orchestration/UI paths; non-interactive flows now require real `VM_NAME`, `VM_ADMIN_USER`, `VM_ADMIN_PASS`, `VM_ASSISTANT_USER`, and `VM_ASSISTANT_PASS` values.
+- Added shared config-resolution helpers so placeholder-sensitive values are rejected consistently with precise remediation hints.
+- Updated `.env.example` to use neutral placeholders only, document the new config split, and keep `company_name` as the app-wide brand/profile override for repo-managed Chrome web shortcuts.
+- Refactored key Windows update tasks so mutable task-only constants live in explicit top-of-file config blocks instead of being embedded through the task body.
+- Kept user-specific shortcut bundles and similar task-only values local to their owning task instead of widening the global `.env` surface unnecessarily.
+- Expanded smoke coverage to verify the new required-config behavior and to confirm that shared runtime modules no longer carry the old personal/demo defaults.
+
+### Reliability And Process Notes
+- This change intentionally surfaces missing `.env` values earlier: auto/non-interactive orchestration no longer invents VM identity or secret defaults on the operator's behalf.
+- The repository now documents a stricter config split: use `.env` for app-wide customization and secrets, and use task-local config blocks for values that matter only to a single init/update task.
+
 ## Release 2026.3.10.260 - 2026-03-10
 
 ### Summary

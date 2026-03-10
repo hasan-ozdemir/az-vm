@@ -1,6 +1,16 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-microsoft-vscode"
 
+$taskConfig = [ordered]@{
+    PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+    VsCodePackageId = 'vscode'
+    CodeExecutableCandidates = @(
+        'C:\Program Files\Microsoft VS Code\Code.exe',
+        'C:\Users\__VM_ADMIN_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe',
+        'C:\Users\__ASSISTANT_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe'
+    )
+}
+
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
@@ -18,7 +28,7 @@ function Refresh-SessionPath {
 }
 
 function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+    $portableCandidate = [string]$taskConfig.PortableWingetPath
     if (Test-Path -LiteralPath $portableCandidate) {
         return [string]$portableCandidate
     }
@@ -37,11 +47,7 @@ function Resolve-CodeExecutable {
         return [string]$command.Source
     }
 
-    foreach ($candidate in @(
-        "C:\Program Files\Microsoft VS Code\Code.exe",
-        "C:\Users\__VM_ADMIN_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe",
-        "C:\Users\__ASSISTANT_USER__\AppData\Local\Programs\Microsoft VS Code\Code.exe"
-    )) {
+    foreach ($candidate in @($taskConfig.CodeExecutableCandidates)) {
         if (Test-Path -LiteralPath $candidate) {
             return [string]$candidate
         }
@@ -66,20 +72,20 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install vscode --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install vscode --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host ("Running: winget install {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force" -f [string]$taskConfig.VsCodePackageId)
+& $wingetExe install ([string]$taskConfig.VsCodePackageId) --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
-    throw "winget install vscode failed with exit code $installExit."
+    throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.VsCodePackageId, $installExit)
 }
 
 Refresh-SessionPath
 $codeExe = Resolve-CodeExecutable
 if ([string]::IsNullOrWhiteSpace([string]$codeExe)) {
-    Write-Host "Running: winget list vscode"
-    $listOutput = & $wingetExe list vscode
+    Write-Host ("Running: winget list {0}" -f [string]$taskConfig.VsCodePackageId)
+    $listOutput = & $wingetExe list ([string]$taskConfig.VsCodePackageId)
     $listText = [string]($listOutput | Out-String)
-    if ([string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains("vscode")) {
+    if ([string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains(([string]$taskConfig.VsCodePackageId).ToLowerInvariant())) {
         throw "Visual Studio Code install could not be verified."
     }
 }

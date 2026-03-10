@@ -1,6 +1,21 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-ollama"
 
+$taskConfig = [ordered]@{
+    PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+    OllamaPackageId = 'Ollama.Ollama'
+    OllamaExecutableFallbackCandidates = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'),
+        'C:\Program Files\Ollama\ollama.exe'
+    )
+    OllamaApiVersionUri = 'http://127.0.0.1:11434/api/version'
+    OllamaApiPort = 11434
+    InstallerCommandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState|Docker\.DockerDesktop|Ollama\.Ollama|Microsoft Teams|microsoft\.azd|windscribe|whatsapp|anydesk|vscode'
+    InstallerNameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
+    WingetInstallTimeoutSeconds = 600
+    OllamaApiWaitTimeoutSeconds = 90
+}
+
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
@@ -18,7 +33,7 @@ function Refresh-SessionPath {
 }
 
 function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+    $portableCandidate = [string]$taskConfig.PortableWingetPath
     if (Test-Path -LiteralPath $portableCandidate) {
         return $portableCandidate
     }
@@ -40,10 +55,7 @@ function Resolve-OllamaExe {
         }
     }
 
-    $pathCandidates = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'),
-        'C:\Program Files\Ollama\ollama.exe'
-    )
+    $pathCandidates = @($taskConfig.OllamaExecutableFallbackCandidates)
     foreach ($candidate in @($pathCandidates)) {
         if (Test-Path -LiteralPath $candidate) {
             return [string]$candidate
@@ -59,7 +71,7 @@ function Get-OllamaApiVersion {
     )
 
     try {
-        $response = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec $TimeoutSeconds -ErrorAction Stop
+        $response = Invoke-RestMethod -Method Get -Uri ([string]$taskConfig.OllamaApiVersionUri) -TimeoutSec $TimeoutSeconds -ErrorAction Stop
         if ($null -ne $response -and -not [string]::IsNullOrWhiteSpace([string]$response.version)) {
             return [string]$response.version
         }
@@ -89,8 +101,8 @@ function Wait-OllamaApiReady {
 }
 
 function Get-StaleInstallerProcesses {
-    $commandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState|Docker\.DockerDesktop|Ollama\.Ollama|Microsoft Teams|microsoft\.azd|windscribe|whatsapp|anydesk|vscode'
-    $nameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
+    $commandLineRegex = [string]$taskConfig.InstallerCommandLineRegex
+    $nameRegex = [string]$taskConfig.InstallerNameRegex
 
     $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $name = [string]$_.Name
@@ -251,7 +263,7 @@ function Ensure-OllamaApiReady {
     param(
         [Parameter(Mandatory = $true)]
         [string]$OllamaExe,
-        [string]$Reason = 'Ollama API is not responding on 127.0.0.1:11434 yet.'
+        [string]$Reason = ("Ollama API is not responding on 127.0.0.1:{0} yet." -f [int]$taskConfig.OllamaApiPort)
     )
 
     $ollamaVersion = Get-OllamaApiVersion -TimeoutSeconds 5
@@ -259,7 +271,7 @@ function Ensure-OllamaApiReady {
     if ([string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
         Write-Host ("{0} Starting 'ollama serve'." -f $Reason)
         $serveLaunch = Start-OllamaServeDetached -OllamaExe $OllamaExe
-        $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds 90
+        $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds ([int]$taskConfig.OllamaApiWaitTimeoutSeconds)
     }
 
     return [pscustomobject]@{
@@ -276,17 +288,18 @@ if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
     & $ollamaExe --version
     $existingVersionExit = [int]$LASTEXITCODE
     if ($existingVersionExit -eq 0) {
-        $existingReadiness = Ensure-OllamaApiReady -OllamaExe $ollamaExe -Reason 'Existing Ollama API is not responding on 127.0.0.1:11434 yet.'
+        $existingReadiness = Ensure-OllamaApiReady -OllamaExe $ollamaExe -Reason ("Existing Ollama API is not responding on 127.0.0.1:{0} yet." -f [int]$taskConfig.OllamaApiPort)
         if (-not [string]::IsNullOrWhiteSpace([string]$existingReadiness.Version)) {
             if ($null -ne $existingReadiness.ServeLaunch) {
-                Write-Host ("ollama-api-ready: version={0}; port=11434; startedPid={1}; stdoutLog={2}; stderrLog={3}" -f `
+                Write-Host ("ollama-api-ready: version={0}; port={1}; startedPid={2}; stdoutLog={3}; stderrLog={4}" -f `
                     [string]$existingReadiness.Version, `
+                    [int]$taskConfig.OllamaApiPort, `
                     [int]$existingReadiness.ServeLaunch.Process.Id, `
                     [string]$existingReadiness.ServeLaunch.StdoutLog, `
                     [string]$existingReadiness.ServeLaunch.StderrLog)
             }
             else {
-                Write-Host ("ollama-api-ready: version={0}; port=11434" -f [string]$existingReadiness.Version)
+                Write-Host ("ollama-api-ready: version={0}; port={1}" -f [string]$existingReadiness.Version, [int]$taskConfig.OllamaApiPort)
             }
 
             Write-Host "Existing Ollama installation is already healthy. Skipping winget install."
@@ -310,18 +323,19 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     throw "winget command is not available."
 }
 
-Stop-StaleInstallerProcesses -CurrentPackageId 'Ollama.Ollama' | Out-Null
+Stop-StaleInstallerProcesses -CurrentPackageId ([string]$taskConfig.OllamaPackageId) | Out-Null
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install --id Ollama.Ollama --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
+Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force" -f [string]$taskConfig.OllamaPackageId)
 $wingetResult = Invoke-ProcessWithTimeout `
     -FilePath $wingetExe `
-    -ArgumentList @('install', '--id', 'Ollama.Ollama', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity', '--force') `
-    -TimeoutSeconds 600 `
+    -ArgumentList @('install', '--id', ([string]$taskConfig.OllamaPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity', '--force') `
+    -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
     -Label 'winget-install-ollama'
 $wingetExit = [int]$wingetResult.ExitCode
 if ($wingetExit -ne 0 -and $wingetExit -ne -1978335189) {
-    throw ("winget install Ollama.Ollama failed with exit code {0}. stdoutLog={1}; stderrLog={2}" -f `
+    throw ("winget install {0} failed with exit code {1}. stdoutLog={2}; stderrLog={3}" -f `
+        [string]$taskConfig.OllamaPackageId, `
         $wingetExit, `
         [string]$wingetResult.StdoutLog, `
         [string]$wingetResult.StderrLog)
@@ -356,18 +370,19 @@ if ([string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
     if ($null -ne $serveLaunch) {
         $logHint = (" stdoutLog={0}; stderrLog={1}" -f [string]$serveLaunch.StdoutLog, [string]$serveLaunch.StderrLog)
     }
-    throw ("Ollama API did not respond on 127.0.0.1:11434 after install.{0}" -f $logHint)
+    throw ("Ollama API did not respond on 127.0.0.1:{0} after install.{1}" -f [int]$taskConfig.OllamaApiPort, $logHint)
 }
 
 if ($null -ne $serveLaunch) {
-    Write-Host ("ollama-api-ready: version={0}; port=11434; startedPid={1}; stdoutLog={2}; stderrLog={3}" -f `
+    Write-Host ("ollama-api-ready: version={0}; port={1}; startedPid={2}; stdoutLog={3}; stderrLog={4}" -f `
         $ollamaVersion, `
+        [int]$taskConfig.OllamaApiPort, `
         [int]$serveLaunch.Process.Id, `
         [string]$serveLaunch.StdoutLog, `
         [string]$serveLaunch.StderrLog)
 }
 else {
-    Write-Host ("ollama-api-ready: version={0}; port=11434" -f $ollamaVersion)
+    Write-Host ("ollama-api-ready: version={0}; port={1}" -f $ollamaVersion, [int]$taskConfig.OllamaApiPort)
 }
 
 Write-Host "Update task completed: install-ollama"

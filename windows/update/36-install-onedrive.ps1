@@ -3,6 +3,15 @@ Write-Host "Update task started: install-onedrive"
 
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
+$taskConfig = [ordered]@{
+    PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+    OneDrivePackageId = 'Microsoft.OneDrive'
+    OneDriveExecutableCandidates = @(
+        'C:\Program Files\Microsoft OneDrive\OneDrive.exe',
+        ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser),
+        ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $assistantUser)
+    )
+}
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
@@ -21,7 +30,7 @@ function Refresh-SessionPath {
 }
 
 function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+    $portableCandidate = [string]$taskConfig.PortableWingetPath
     if (Test-Path -LiteralPath $portableCandidate) {
         return [string]$portableCandidate
     }
@@ -35,11 +44,7 @@ function Resolve-WingetExe {
 }
 
 function Resolve-OneDriveExe {
-    foreach ($candidate in @(
-        "C:\Program Files\Microsoft OneDrive\OneDrive.exe",
-        ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser),
-        ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $assistantUser)
-    )) {
+    foreach ($candidate in @($taskConfig.OneDriveExecutableCandidates)) {
         if (Test-Path -LiteralPath $candidate) {
             return [string]$candidate
         }
@@ -63,18 +68,18 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install --id Microsoft.OneDrive --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install --id Microsoft.OneDrive --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force" -f [string]$taskConfig.OneDrivePackageId)
+& $wingetExe install --id ([string]$taskConfig.OneDrivePackageId) --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
-    throw "winget install Microsoft.OneDrive failed with exit code $installExit."
+    throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.OneDrivePackageId, $installExit)
 }
 
 Refresh-SessionPath
 $installedExe = Resolve-OneDriveExe
 if ([string]::IsNullOrWhiteSpace([string]$installedExe)) {
-    Write-Host "Running: winget list --id Microsoft.OneDrive"
-    $listOutput = & $wingetExe list --id Microsoft.OneDrive
+    Write-Host ("Running: winget list --id {0}" -f [string]$taskConfig.OneDrivePackageId)
+    $listOutput = & $wingetExe list --id ([string]$taskConfig.OneDrivePackageId)
     $listText = [string]($listOutput | Out-String)
     if ([string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains("onedrive")) {
         throw "OneDrive install could not be verified."

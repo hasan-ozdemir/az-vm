@@ -1,11 +1,22 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-be-my-eyes"
 
-$taskName = '31-install-be-my-eyes'
-$managerUser = "__VM_ADMIN_USER__"
-$managerPassword = "__VM_ADMIN_PASS__"
-$helperPath = "C:\Windows\Temp\az-vm-interactive-session-helper.ps1"
-$storeProductId = "9MSW46LTDWGF"
+$taskConfig = [ordered]@{
+    TaskName = '31-install-be-my-eyes'
+    ManagerUser = '__VM_ADMIN_USER__'
+    ManagerPassword = '__VM_ADMIN_PASS__'
+    HelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
+    PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+    StoreProductId = '9MSW46LTDWGF'
+    InteractiveTaskSuffix = 'interactive-install'
+    WaitTimeoutSeconds = 300
+}
+
+$taskName = [string]$taskConfig.TaskName
+$managerUser = [string]$taskConfig.ManagerUser
+$managerPassword = [string]$taskConfig.ManagerPassword
+$helperPath = [string]$taskConfig.HelperPath
+$storeProductId = [string]$taskConfig.StoreProductId
 
 if (-not (Test-Path -LiteralPath $helperPath)) {
     throw ("Interactive session helper was not found: {0}" -f $helperPath)
@@ -30,7 +41,7 @@ function Refresh-SessionPath {
 }
 
 function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+    $portableCandidate = [string]$taskConfig.PortableWingetPath
     if (Test-Path -LiteralPath $portableCandidate) {
         return [string]$portableCandidate
     }
@@ -71,7 +82,7 @@ if (Test-BeMyEyesInstalled) {
     return
 }
 
-$workerTaskName = "{0}-manager-install" -f $taskName
+$workerTaskName = "{0}-{1}" -f $taskName, ([string]$taskConfig.InteractiveTaskSuffix)
 $paths = Get-AzVmInteractivePaths -TaskName $workerTaskName
 $workerScript = @'
 $ErrorActionPreference = "Stop"
@@ -99,7 +110,7 @@ function Refresh-SessionPath {
 }
 
 function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+    $portableCandidate = "__PORTABLE_WINGET_PATH__"
     if (Test-Path -LiteralPath $portableCandidate) {
         return [string]$portableCandidate
     }
@@ -160,13 +171,14 @@ $workerScript = $workerScript.Replace('__HELPER_PATH__', $helperPath)
 $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
 $workerScript = $workerScript.Replace('__TASK_NAME__', $workerTaskName)
 $workerScript = $workerScript.Replace('__STORE_PRODUCT_ID__', $storeProductId)
+$workerScript = $workerScript.Replace('__PORTABLE_WINGET_PATH__', [string]$taskConfig.PortableWingetPath)
 
 $null = Invoke-AzVmInteractiveDesktopAutomation `
     -TaskName $workerTaskName `
     -RunAsUser $managerUser `
     -RunAsPassword $managerPassword `
     -WorkerScriptText $workerScript `
-    -WaitTimeoutSeconds 300
+    -WaitTimeoutSeconds ([int]$taskConfig.WaitTimeoutSeconds)
 
 Refresh-SessionPath
 if (-not (Test-BeMyEyesInstalled)) {

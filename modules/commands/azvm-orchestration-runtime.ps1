@@ -274,14 +274,26 @@ function Invoke-AzVmStep1Common {
         [hashtable]$ConfigOverrides
     )
 
-    $vmNameDefaultResolved = Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue $VmNameDefault
+    $vmNameDefaultResolved = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue $VmNameDefault)
     $vmName = $vmNameDefaultResolved
     do {
         if ($AutoMode) {
+            if ([string]::IsNullOrWhiteSpace([string]$vmNameDefaultResolved)) {
+                Throw-FriendlyError `
+                    -Detail "VM_NAME is required for this non-interactive command flow." `
+                    -Code 2 `
+                    -Summary "VM name is required." `
+                    -Hint "Set VM_NAME in .env, or pass --vm-name where the command supports it."
+            }
             $userInput = $vmNameDefaultResolved
         }
         else {
-            $userInput = Read-Host "Enter VM name (actual Azure VM name; default=$vmNameDefaultResolved)"
+            if ([string]::IsNullOrWhiteSpace([string]$vmNameDefaultResolved)) {
+                $userInput = Read-Host "Enter VM name (actual Azure VM name)"
+            }
+            else {
+                $userInput = Read-Host "Enter VM name (actual Azure VM name; default=$vmNameDefaultResolved)"
+            }
         }
 
         if ([string]::IsNullOrWhiteSpace($userInput)) {
@@ -559,22 +571,20 @@ function Invoke-AzVmStep1Common {
     if ([string]::IsNullOrWhiteSpace([string]$companyName)) {
         $companyName = [string]$vmName
     }
-    $vmUserRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_USER" -DefaultValue "manager")
-    $vmPassRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_ADMIN_PASS" -DefaultValue "<runtime-secret>")
-    $vmUser = Resolve-AzVmTemplate -Template $vmUserRaw -Tokens $baseTokens
-    $vmPass = Resolve-AzVmTemplate -Template $vmPassRaw -Tokens $baseTokens
-    $vmAssistantUser = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_USER" -DefaultValue "assistant") -Tokens $baseTokens
-    $vmAssistantPass = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_ASSISTANT_PASS" -DefaultValue "<runtime-secret>") -Tokens $baseTokens
-    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_SSH_PORT" -DefaultValue "444")
+    $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_USER' -Tokens $baseTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
+    $vmPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_PASS' -Tokens $baseTokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
+    $vmAssistantUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ASSISTANT_USER' -Tokens $baseTokens -Summary 'VM assistant user is required.' -Hint 'Set VM_ASSISTANT_USER in .env to the secondary VM username.'
+    $vmAssistantPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ASSISTANT_PASS' -Tokens $baseTokens -Summary 'VM assistant password is required.' -Hint 'Set VM_ASSISTANT_PASS in .env to a non-placeholder password.'
+    $sshPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_SSH_PORT" -DefaultValue (Get-AzVmDefaultSshPortText))
     $sshPort = Resolve-AzVmTemplate -Template $sshPortValue -Tokens $baseTokens
-    $rdpPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_RDP_PORT" -DefaultValue "3389")
+    $rdpPortValue = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_RDP_PORT" -DefaultValue (Get-AzVmDefaultRdpPortText))
     $rdpPort = Resolve-AzVmTemplate -Template $rdpPortValue -Tokens $baseTokens
     $vmInitTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmInitTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmInitTaskDirDefault))) -Tokens $baseTokens
     $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmUpdateTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmUpdateTaskDirDefault))) -Tokens $baseTokens
     $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $ScriptRoot
     $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $ScriptRoot
 
-    $defaultPortsCsv = "80,443,8444,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434"
+    $defaultPortsCsv = Get-AzVmDefaultTcpPortsCsv
     $tcpPortsConfiguredCsv = Get-ConfigValue -Config $ConfigMap -Key "TCP_PORTS" -DefaultValue $defaultPortsCsv
     $tcpPorts = @($tcpPortsConfiguredCsv -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' })
 

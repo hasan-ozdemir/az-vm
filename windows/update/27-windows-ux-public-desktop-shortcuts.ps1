@@ -15,6 +15,42 @@ $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
 $codexAppFallbackPath = Join-Path $env:ProgramFiles "WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
 $whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe"
 $q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
+$commonWebShortcuts = @(
+    @{ Name = 'a1ChatGPT Web'; Url = 'https://chatgpt.com'; Profile = 'remote' },
+    @{ Name = 'i0Internet'; Url = 'https://www.google.com'; Profile = 'remote' },
+    @{ Name = 'i2WhatsApp Bireysel'; Url = 'https://web.whatsapp.com'; Profile = 'remote' },
+    @{ Name = 'z1Google Account Setup'; Url = 'chrome://settings/syncSetup'; Profile = 'setup' },
+    @{ Name = 'z2Office365 Account Setup'; Url = 'https://portal.office.com'; Profile = 'setup' }
+)
+$socialWebShortcuts = @(
+    @{ Name = "s1LinkedIn Kurumsal"; Url = "https://tr.linkedin.com/company/exampleorg" },
+    @{ Name = "s2LinkedIn Bireysel"; Url = "https://linkedin.com/in/<social-handle>" },
+    @{ Name = "s3YouTube Kurumsal"; Url = "https://www.youtube.com/@exampleorg" },
+    @{ Name = "s4YouTube Bireysel"; Url = "https://www.youtube.com/@hasanozdemir8" },
+    @{ Name = "s5GitHub Kurumsal"; Url = "https://github.com/exampleorg" },
+    @{ Name = "s6GitHub Bireysel"; Url = "https://github.com/" },
+    @{ Name = "s7TikTok Kurumsal"; Url = "https://www.tiktok.com/@exampleorg" },
+    @{ Name = "s8TikTok Bireysel"; Url = "https://www.tiktok.com/@exampleorg" },
+    @{ Name = "s9Instagram Kurumsal"; Url = "https://instagram.com/exampleorg" },
+    @{ Name = "s10Instagram Bireysel"; Url = "https://instagram.com/hasanozdemirnet" },
+    @{ Name = "s11Facebook Kurumsal"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447" },
+    @{ Name = "s12Facebook Bireysel"; Url = "https://facebook.com/ozdemirhasan" },
+    @{ Name = "s13X-Twitter Kurumsal"; Url = "https://x.com/exampleorg" },
+    @{ Name = "s14X-Twitter Bireysel"; Url = "https://x.com/hasanozdemirnet" },
+    @{ Name = "s15Web Sitesi Kurumsal"; Url = "https://www.exampleorg.com" },
+    @{ Name = "s16Blog Sitesi Kurumsal"; Url = "https://www.exampleorg.com/blog" },
+    @{ Name = $q1EksisozlukName; Url = "https://www.eksisozluk.com" }
+)
+$bankShortcuts = @(
+    @{ Name = "b1GarantiBank Bireysel"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr" },
+    @{ Name = "b2GarantiBank Kurumsal"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr" },
+    @{ Name = "b3QnbBank Bireysel"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx" },
+    @{ Name = "b4QnbBank Kurumsal"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true" },
+    @{ Name = "b5AktifBank Bireysel"; Url = "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR" },
+    @{ Name = "b6AktifBank Kurumsal"; Url = "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR" },
+    @{ Name = "b7ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" },
+    @{ Name = "b8ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" }
+)
 
 if ([string]::IsNullOrWhiteSpace([string]$chromeProfileDirectoryName) -or [string]::Equals([string]$chromeProfileDirectoryName, "__COMPANY_NAME__", [System.StringComparison]::Ordinal)) {
     $chromeProfileDirectoryName = $vmName
@@ -688,38 +724,6 @@ $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData
 $codexCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser) -ResolvedPath $codexExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser)
 $geminiCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser) -ResolvedPath $geminiExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser)
 
-$socialWebShortcuts = @(
-    @{ Name = "s1LinkedIn Kurumsal"; Url = "https://tr.linkedin.com/company/exampleorg" },
-    @{ Name = "s2LinkedIn Bireysel"; Url = "https://linkedin.com/in/<social-handle>" },
-    @{ Name = "s3YouTube Kurumsal"; Url = "https://www.youtube.com/@exampleorg" },
-    @{ Name = "s4YouTube Bireysel"; Url = "https://www.youtube.com/@hasanozdemir8" },
-    @{ Name = "s5GitHub Kurumsal"; Url = "https://github.com/exampleorg" },
-    @{ Name = "s6GitHub Bireysel"; Url = "https://github.com/" },
-    @{ Name = "s7TikTok Kurumsal"; Url = "https://www.tiktok.com/@exampleorg" },
-    @{ Name = "s8TikTok Bireysel"; Url = "https://www.tiktok.com/@exampleorg" },
-    @{ Name = "s9Instagram Kurumsal"; Url = "https://instagram.com/exampleorg" },
-    @{ Name = "s10Instagram Bireysel"; Url = "https://instagram.com/hasanozdemirnet" },
-    @{ Name = "s11Facebook Kurumsal"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447" },
-    @{ Name = "s12Facebook Bireysel"; Url = "https://facebook.com/ozdemirhasan" },
-    @{ Name = "s13X-Twitter Kurumsal"; Url = "https://x.com/exampleorg" },
-    @{ Name = "s14X-Twitter Bireysel"; Url = "https://x.com/hasanozdemirnet" },
-    @{ Name = "s15Web Sitesi Kurumsal"; Url = "https://www.exampleorg.com" },
-    @{ Name = "s16Blog Sitesi Kurumsal"; Url = "https://www.exampleorg.com/blog" },
-    @{ Name = $q1EksisozlukName; Url = "https://www.eksisozluk.com" }
-)
-
-$bankShortcuts = @(
-    @{ Name = "b1GarantiBank Bireysel"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr" },
-    @{ Name = "b2GarantiBank Kurumsal"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr" },
-    @{ Name = "b3QnbBank Bireysel"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx" },
-    @{ Name = "b4QnbBank Kurumsal"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true" },
-    @{ Name = "b5AktifBank Bireysel"; Url = "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR" },
-    @{ Name = "b6AktifBank Kurumsal"; Url = "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR" },
-    @{ Name = "b7ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" },
-    @{ Name = "b8ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" }
-)
-
-Invoke-ShortcutAction -Name "a1ChatGPT Web" -Action { New-DesktopShortcut -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://chatgpt.com"') -IconLocation "$chromeTarget,0" }
 Invoke-ShortcutAction -Name "a2Be My Eyes" -Action {
     if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
         New-DesktopShortcutFromAppId -Name "a2Be My Eyes" -AppId $beMyEyesAppId
@@ -734,11 +738,23 @@ Invoke-ShortcutAction -Name "a10NVDA" -Action { New-DesktopShortcut -Name "a10NV
 Invoke-ShortcutAction -Name "a11MS Edge" -Action { New-DesktopShortcut -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath }
 Invoke-ShortcutAction -Name "a14VLC Player" -Action { New-DesktopShortcut -Name "a14VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath }
 Invoke-ShortcutAction -Name "a17Itunes" -Action { New-DesktopShortcut -Name "a17Itunes" -TargetPath $itunesExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "i0Internet" -Action { New-DesktopShortcut -Name "i0Internet" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://www.google.com"') -IconLocation "$chromeTarget,0" }
 Invoke-ShortcutAction -Name "i1WhatsApp Kurumsal" -Action { New-DesktopShortcut -Name "i1WhatsApp Kurumsal" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "i2WhatsApp Bireysel" -Action { New-DesktopShortcut -Name "i2WhatsApp Bireysel" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://web.whatsapp.com"') -IconLocation "$chromeTarget,0" }
-Invoke-ShortcutAction -Name "z1Google Account Setup" -Action { New-DesktopShortcut -Name "z1Google Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "chrome://settings/syncSetup"') -IconLocation "$chromeTarget,0" }
-Invoke-ShortcutAction -Name "z2Office365 Account Setup" -Action { New-DesktopShortcut -Name "z2Office365 Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "https://portal.office.com"') -IconLocation "$chromeTarget,0" }
+
+foreach ($spec in @($commonWebShortcuts)) {
+    $shortcutName = [string]$spec.Name
+    $shortcutUrl = [string]$spec.Url
+    $profileMode = [string]$spec.Profile
+    $argumentsPrefix = if ([string]::Equals($profileMode, 'setup', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $chromeSetupArgsPrefix
+    }
+    else {
+        $chromeRemoteArgsPrefix
+    }
+
+    Invoke-ShortcutAction -Name $shortcutName -Action {
+        New-DesktopShortcut -Name $shortcutName -TargetPath $chromeTarget -Arguments ($argumentsPrefix + ' "' + $shortcutUrl + '"') -IconLocation "$chromeTarget,0"
+    }
+}
 
 foreach ($spec in @($socialWebShortcuts)) {
     $shortcutName = [string]$spec.Name

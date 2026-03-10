@@ -572,7 +572,7 @@ if ($WorkerMode) {
     try {
         Invoke-WindowsUxPerformanceTuning
         if (-not [string]::IsNullOrWhiteSpace([string]$ResultPath)) {
-            Write-AzVmInteractiveResult -ResultPath $ResultPath -TaskName $TaskName -Success $true -Summary 'Windows UX tuning applied and validated for manager.' -Details @($details)
+            Write-AzVmInteractiveResult -ResultPath $ResultPath -TaskName $TaskName -Success $true -Summary ('Windows UX tuning applied and validated for admin user {0}.' -f $managerUser) -Details @($details)
         }
     }
     catch {

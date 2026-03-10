@@ -1431,10 +1431,7 @@ function Initialize-AzVmExecCommandRuntimeContext {
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
     $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
 
-    $vmName = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_NAME' -DefaultValue ([string]$platformDefaults.VmNameDefault))
-    if ([string]::IsNullOrWhiteSpace([string]$vmName)) {
-        $vmName = [string]$platformDefaults.VmNameDefault
-    }
+    $vmName = [string](Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_NAME' -Summary 'VM name is required.' -Hint 'Set VM_NAME in .env, or pass --vm-name where the command supports it.')
 
     $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_LOCATION' -DefaultValue '')
     $regionCode = ''
@@ -1465,19 +1462,19 @@ function Initialize-AzVmExecCommandRuntimeContext {
     if ([string]::IsNullOrWhiteSpace([string]$companyName)) {
         $companyName = [string]$vmName
     }
-    $vmUser = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ADMIN_USER' -DefaultValue 'manager')) -Tokens $nameTokens
-    $vmPass = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ADMIN_PASS' -DefaultValue '<runtime-secret>')) -Tokens $nameTokens
-    $vmAssistantUser = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ASSISTANT_USER' -DefaultValue 'assistant')) -Tokens $nameTokens
-    $vmAssistantPass = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_ASSISTANT_PASS' -DefaultValue '<runtime-secret>')) -Tokens $nameTokens
-    $sshPort = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_SSH_PORT' -DefaultValue '444')) -Tokens $nameTokens
-    $rdpPort = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_RDP_PORT' -DefaultValue '3389')) -Tokens $nameTokens
+    $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ADMIN_USER' -Tokens $nameTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
+    $vmPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ADMIN_PASS' -Tokens $nameTokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
+    $vmAssistantUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ASSISTANT_USER' -Tokens $nameTokens -Summary 'VM assistant user is required.' -Hint 'Set VM_ASSISTANT_USER in .env to the secondary VM username.'
+    $vmAssistantPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ASSISTANT_PASS' -Tokens $nameTokens -Summary 'VM assistant password is required.' -Hint 'Set VM_ASSISTANT_PASS in .env to a non-placeholder password.'
+    $sshPort = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_SSH_PORT' -DefaultValue (Get-AzVmDefaultSshPortText))) -Tokens $nameTokens
+    $rdpPort = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_RDP_PORT' -DefaultValue (Get-AzVmDefaultRdpPortText))) -Tokens $nameTokens
 
     $vmInitTaskDirName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key (Get-AzVmPlatformTaskCatalogConfigKey -Platform $platform -Stage 'init') -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault))) -Tokens $nameTokens
     $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key (Get-AzVmPlatformTaskCatalogConfigKey -Platform $platform -Stage 'update') -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault))) -Tokens $nameTokens
     $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $repoRoot
     $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $repoRoot
 
-    $defaultPortsCsv = '80,443,8444,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434'
+    $defaultPortsCsv = Get-AzVmDefaultTcpPortsCsv
     $tcpPortsConfiguredCsv = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'TCP_PORTS' -DefaultValue $defaultPortsCsv)
     $tcpPorts = @($tcpPortsConfiguredCsv -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^\d+$' })
     if (-not [string]::IsNullOrWhiteSpace([string]$sshPort) -and ($sshPort -match '^\d+$') -and $tcpPorts -notcontains $sshPort) {
@@ -5301,8 +5298,8 @@ function Initialize-AzVmConnectionCommandContext {
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $configMap -OperationName $OperationName
     $lifecycleSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup ([string]$target.ResourceGroup) -VmName ([string]$target.VmName)
     Assert-AzVmConnectionVmRunning -OperationName $OperationName -Snapshot $lifecycleSnapshot
-    $vmSshPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_SSH_PORT' -DefaultValue '444' -Label 'SSH'
-    $vmRdpPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_RDP_PORT' -DefaultValue '3389' -Label 'RDP'
+    $vmSshPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_SSH_PORT' -DefaultValue (Get-AzVmDefaultSshPortText) -Label 'SSH'
+    $vmRdpPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_RDP_PORT' -DefaultValue (Get-AzVmDefaultRdpPortText) -Label 'RDP'
     $logicalRole = Resolve-AzVmConnectionRoleName -Options $Options
     $credentials = Resolve-AzVmConnectionCredentials -RoleName $logicalRole -ConfigMap $configMap -EnvFilePath $envFilePath
 
@@ -5310,9 +5307,9 @@ function Initialize-AzVmConnectionCommandContext {
         ResourceGroup = [string]$target.ResourceGroup
         VmName = [string]$target.VmName
         AzLocation = ''
-        VmUser = [string](Get-ConfigValue -Config $configMap -Key 'VM_ADMIN_USER' -DefaultValue 'manager')
+        VmUser = [string](Get-ConfigValue -Config $configMap -Key 'VM_ADMIN_USER' -DefaultValue '')
         VmPass = [string](Get-ConfigValue -Config $configMap -Key 'VM_ADMIN_PASS' -DefaultValue '')
-        VmAssistantUser = [string](Get-ConfigValue -Config $configMap -Key 'VM_ASSISTANT_USER' -DefaultValue 'assistant')
+        VmAssistantUser = [string](Get-ConfigValue -Config $configMap -Key 'VM_ASSISTANT_USER' -DefaultValue '')
         VmAssistantPass = [string](Get-ConfigValue -Config $configMap -Key 'VM_ASSISTANT_PASS' -DefaultValue '')
         SshPort = [string]$vmSshPort
         RdpPort = [string]$vmRdpPort

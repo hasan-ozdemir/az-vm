@@ -132,23 +132,25 @@
    - `VM_NAME`
    - `AZ_LOCATION`
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
+   - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
    - platform-specific image and size keys as needed
 3. Optionally set `company_name` to control the default Google Chrome `--profile-directory` used by repo-managed Windows public desktop web shortcuts.
+4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### First End-To-End Run
 ```powershell
 .\az-vm.cmd configure
 .\az-vm.cmd create --auto --windows
-.\az-vm.cmd do --vm-action=status --vm-name=examplevm
-.\az-vm.cmd rdp --vm-name=examplevm
+.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
+.\az-vm.cmd rdp --vm-name=<vm-name>
 ```
 
 ### Daily Operator Shortcuts
 ```powershell
-.\az-vm.cmd show --group=rg-examplevm-sec1-g1
-.\az-vm.cmd do --vm-action=start --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd exec --update-task=27 --group=rg-examplevm-sec1-g1 --vm-name=examplevm --windows
-.\az-vm.cmd resize --group=rg-examplevm-sec1-g1 --vm-name=examplevm --vm-size=Standard_D4as_v5 --windows
+.\az-vm.cmd show --group=<resource-group>
+.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd exec --update-task=27 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
 ## Core Mental Model
@@ -256,6 +258,7 @@ The same mental model applies to `update`, except that existing managed resource
 - CLI override wins over everything else.
 - `.env` is the main local working configuration file.
 - Hard-coded defaults are the last fallback and should not be treated as the main operator contract.
+- Sensitive values such as VM passwords must be set explicitly. Placeholder values are treated as invalid configuration.
 
 ### High-Value `.env` Keys
 - `VM_OS_TYPE`: default platform for auto flows.
@@ -289,6 +292,11 @@ The same mental model applies to `update`, except that existing managed resource
 - `SSH_MAX_RETRIES`
 - `PYSSH_CLIENT_PATH`
 - `TCP_PORTS`
+
+### Global Versus Task-Local Configuration
+- Put app-wide identity, secrets, reusable ports, and cross-command overrides in `.env`.
+- Put task-only constants such as package IDs, product-specific fallback paths, shortcut bundles, and task-local URLs in the owning `vm-init` or `vm-update` script's top config block.
+- Keep the committed repo portable and brand-neutral. Avoid embedding personal, company-specific, or secret fallback values in shared runtime code.
 
 ## Command Guide
 
@@ -353,8 +361,8 @@ Purpose: list or select managed resource groups.
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd group --list=examplevm
-.\az-vm.cmd group --select=rg-examplevm-sec1-g1
+.\az-vm.cmd group --list=<vm-name>
+.\az-vm.cmd group --select=<resource-group>
 ```
 
 What users see:
@@ -367,7 +375,7 @@ Purpose: print a readable system/configuration inventory for managed resources a
 Usage patterns:
 ```powershell
 .\az-vm.cmd show
-.\az-vm.cmd show --group=rg-examplevm-sec1-g1
+.\az-vm.cmd show --group=<resource-group>
 ```
 
 Good for:
@@ -388,10 +396,10 @@ Supported actions:
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd do --vm-action=status --vm-name=examplevm
-.\az-vm.cmd do --vm-action=start --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd do --vm-action=deallocate --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd do --vm-action=hibernate --group=rg-examplevm-sec1-g1 --vm-name=examplevm
+.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=deallocate --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=hibernate --group=<resource-group> --vm-name=<vm-name>
 ```
 
 Behavior notes:
@@ -409,8 +417,8 @@ Purpose: run one init task, one update task, or open an interactive remote shell
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd exec --init-task=01 --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd exec --update-task=27 --group=rg-examplevm-sec1-g1 --vm-name=examplevm --windows
+.\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd exec --update-task=27 --group=<resource-group> --vm-name=<vm-name> --windows
 .\az-vm.cmd exec --linux
 ```
 
@@ -430,8 +438,8 @@ Purpose: launch the local Windows OpenSSH client for a managed VM.
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd ssh --vm-name=examplevm
-.\az-vm.cmd ssh --group=rg-examplevm-sec1-g1 --vm-name=examplevm --user=assistant
+.\az-vm.cmd ssh --vm-name=<vm-name>
+.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
 
 Behavior notes:
@@ -444,8 +452,8 @@ Purpose: launch the local Remote Desktop client for a managed Windows VM.
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd rdp --vm-name=examplevm
-.\az-vm.cmd rdp --group=rg-examplevm-sec1-g1 --vm-name=examplevm --user=assistant
+.\az-vm.cmd rdp --vm-name=<vm-name>
+.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
 
 Behavior notes:
@@ -458,7 +466,7 @@ Purpose: move a managed VM to another Azure region with a health-gated cutover.
 
 Usage pattern:
 ```powershell
-.\az-vm.cmd move --group=rg-examplevm-ate1-g1 --vm-name=examplevm --vm-region=swedencentral
+.\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral
 ```
 
 Observed reference timing:
@@ -486,8 +494,8 @@ Purpose: change the VM size in-place within the current region.
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd resize --group=rg-examplevm-sec1-g1 --vm-name=examplevm --vm-size=Standard_D4as_v5
-.\az-vm.cmd resize --group=rg-examplevm-sec1-g1 --vm-name=examplevm --vm-size=Standard_D2as_v5 --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D2as_v5 --windows
 .\az-vm.cmd resize
 ```
 
@@ -506,9 +514,9 @@ Supported flags:
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd set --group=rg-examplevm-sec1-g1 --vm-name=examplevm --hibernation=off
-.\az-vm.cmd set --group=rg-examplevm-sec1-g1 --vm-name=examplevm --nested-virtualization=off
-.\az-vm.cmd set --group=rg-examplevm-sec1-g1 --vm-name=examplevm --hibernation=on --nested-virtualization=off
+.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off
+.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off
+.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off
 ```
 
 ### `delete`
@@ -522,8 +530,8 @@ Supported targets:
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd delete --target=group --group=rg-examplevm-sec1-g1 --yes
-.\az-vm.cmd delete --target=vm --group=rg-examplevm-sec1-g1 --yes
+.\az-vm.cmd delete --target=group --group=<resource-group> --yes
+.\az-vm.cmd delete --target=vm --group=<resource-group> --yes
 ```
 
 Behavior notes:
@@ -567,39 +575,39 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 ### Provision A New Windows VM
 ```powershell
 .\az-vm.cmd create --auto --windows
-.\az-vm.cmd do --vm-action=status --vm-name=examplevm
-.\az-vm.cmd rdp --vm-name=examplevm
+.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
+.\az-vm.cmd rdp --vm-name=<vm-name>
 ```
 
 ### Rerun Update Tasks On An Existing VM
 ```powershell
 .\az-vm.cmd update --single-step=vm-update --auto --windows
-.\az-vm.cmd exec --update-task=20 --group=rg-examplevm-sec1-g1 --vm-name=examplevm --windows
+.\az-vm.cmd exec --update-task=20 --group=<resource-group> --vm-name=<vm-name> --windows
 ```
 
 ### Resize In Place
 ```powershell
-.\az-vm.cmd resize --group=rg-examplevm-sec1-g1 --vm-name=examplevm --vm-size=Standard_D4as_v5 --windows
-.\az-vm.cmd resize --group=rg-examplevm-sec1-g1 --vm-name=examplevm --vm-size=Standard_D2as_v5 --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D2as_v5 --windows
 ```
 
 ### Move To Another Region
 ```powershell
-.\az-vm.cmd move --group=rg-examplevm-ate1-g1 --vm-name=examplevm --vm-region=swedencentral
+.\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral
 ```
 
 ### Inspect And Control Power State
 ```powershell
-.\az-vm.cmd do --vm-action=status --vm-name=examplevm
-.\az-vm.cmd do --vm-action=start --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd do --vm-action=stop --group=rg-examplevm-sec1-g1 --vm-name=examplevm
+.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=stop --group=<resource-group> --vm-name=<vm-name>
 ```
 
 ### Connect With SSH Or RDP
 ```powershell
-.\az-vm.cmd do --vm-action=start --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd ssh --group=rg-examplevm-sec1-g1 --vm-name=examplevm
-.\az-vm.cmd rdp --group=rg-examplevm-sec1-g1 --vm-name=examplevm --user=assistant
+.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
 
 ## Troubleshooting Guide

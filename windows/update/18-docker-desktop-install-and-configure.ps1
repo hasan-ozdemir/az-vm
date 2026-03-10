@@ -1,6 +1,22 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: docker-desktop-install-and-configure"
 
+$taskConfig = [ordered]@{
+    PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+    DockerDesktopPackageId = 'Docker.DockerDesktop'
+    DockerDesktopExecutablePath = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
+    DockerServiceName = 'com.docker.service'
+    DockerUsersGroupName = 'docker-users'
+    DockerUsersGroupDescription = 'Docker Desktop Users'
+    DockerMachinePathEntry = 'C:\Program Files\Docker\Docker\resources\bin'
+    DockerStartupShortcutPath = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk'
+    DockerInstallTimeoutSeconds = 900
+    DockerVersionTimeoutSeconds = 20
+    DockerInfoTimeoutSeconds = 25
+    DockerDaemonReadyTimeoutSeconds = 60
+    DockerLocalUsers = @('__VM_ADMIN_USER__', '__ASSISTANT_USER__')
+}
+
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
@@ -17,7 +33,7 @@ function Refresh-SessionPath {
 }
 
 function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
+    $portableCandidate = [string]$taskConfig.PortableWingetPath
     if (Test-Path -LiteralPath $portableCandidate) {
         return [string]$portableCandidate
     }
@@ -115,7 +131,7 @@ function Ensure-LocalGroupMembership {
     )
 
     if (-not (Get-LocalGroup -Name $GroupName -ErrorAction SilentlyContinue)) {
-        New-LocalGroup -Name $GroupName -Description "Docker Desktop Users" -ErrorAction Stop | Out-Null
+        New-LocalGroup -Name $GroupName -Description ([string]$taskConfig.DockerUsersGroupDescription) -ErrorAction Stop | Out-Null
     }
 
     try {
@@ -252,8 +268,8 @@ if ([string]::IsNullOrWhiteSpace($wingetExe)) {
 }
 Write-Host "Resolved winget executable: $wingetExe"
 
-$dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-$dockerServiceExists = $null -ne (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue)
+$dockerDesktopExe = [string]$taskConfig.DockerDesktopExecutablePath
+$dockerServiceExists = $null -ne (Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue)
 $dockerAlreadyInstalled = (Test-Path -LiteralPath $dockerDesktopExe) -or $dockerServiceExists
 
 Write-Host "Running: winget source list"
@@ -267,37 +283,38 @@ if ($dockerAlreadyInstalled) {
 }
 else {
     Stop-StaleInstallerProcesses | Out-Null
-    Write-Host "Running: winget install -e --id Docker.DockerDesktop --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+    Write-Host ("Running: winget install -e --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.DockerDesktopPackageId)
     $dockerInstallResult = Invoke-ProcessWithTimeout `
-        -Label "winget install Docker.DockerDesktop" `
+        -Label ("winget install {0}" -f [string]$taskConfig.DockerDesktopPackageId) `
         -FilePath $wingetExe `
-        -Arguments @('install', '-e', '--id', 'Docker.DockerDesktop', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
-        -TimeoutSeconds 900
+        -Arguments @('install', '-e', '--id', ([string]$taskConfig.DockerDesktopPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+        -TimeoutSeconds ([int]$taskConfig.DockerInstallTimeoutSeconds)
     if (-not $dockerInstallResult.Success) {
         if ($dockerInstallResult.TimedOut) {
-            throw ("winget install Docker.DockerDesktop timed out after stale-installer cleanup. Active installer processes: {0}" -f `
+            throw ("winget install {0} timed out after stale-installer cleanup. Active installer processes: {1}" -f `
+                [string]$taskConfig.DockerDesktopPackageId, `
                 (Format-InstallerProcessSummary -Processes $dockerInstallResult.ActiveInstallerProcesses))
         }
 
-        throw ("winget install Docker.DockerDesktop failed with exit code {0}." -f $dockerInstallResult.ExitCode)
+        throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.DockerDesktopPackageId, $dockerInstallResult.ExitCode)
     }
 }
 
 Refresh-SessionPath
-Ensure-MachinePathEntry -Entry "C:\Program Files\Docker\Docker\resources\bin"
+Ensure-MachinePathEntry -Entry ([string]$taskConfig.DockerMachinePathEntry)
 Refresh-SessionPath
 
-if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
-    Set-Service -Name "com.docker.service" -StartupType Automatic
-    Start-Service -Name "com.docker.service" -ErrorAction SilentlyContinue
+if (Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue) {
+    Set-Service -Name ([string]$taskConfig.DockerServiceName) -StartupType Automatic
+    Start-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
     Write-Host "docker-step-ok: service-config"
 }
 else {
-    throw "com.docker.service was not found after installation."
+    throw ("{0} was not found after installation." -f [string]$taskConfig.DockerServiceName)
 }
 
 if (Test-Path -LiteralPath $dockerDesktopExe) {
-    $startupPath = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk"
+    $startupPath = [string]$taskConfig.DockerStartupShortcutPath
     $shell = New-Object -ComObject WScript.Shell
     $shortcut = $shell.CreateShortcut($startupPath)
     $shortcut.TargetPath = $dockerDesktopExe
@@ -311,15 +328,15 @@ else {
     throw "Docker Desktop executable not found at expected path."
 }
 
-foreach ($localUser in @("__VM_ADMIN_USER__", "__ASSISTANT_USER__")) {
-    Ensure-LocalGroupMembership -GroupName "docker-users" -MemberName $localUser
+foreach ($localUser in @($taskConfig.DockerLocalUsers)) {
+    Ensure-LocalGroupMembership -GroupName ([string]$taskConfig.DockerUsersGroupName) -MemberName $localUser
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "docker command is not available after installation."
 }
 
-$dockerVersionResult = Invoke-ProcessWithTimeout -Label "docker --version" -FilePath "docker" -Arguments @("--version") -TimeoutSeconds 20
+$dockerVersionResult = Invoke-ProcessWithTimeout -Label "docker --version" -FilePath "docker" -Arguments @("--version") -TimeoutSeconds ([int]$taskConfig.DockerVersionTimeoutSeconds)
 if ($dockerVersionResult.Success) {
     Write-Host "docker-step-ok: docker-client-version"
 }
@@ -328,8 +345,8 @@ else {
 }
 
 Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
-if (Wait-DockerDaemonReady -DockerExe "docker" -TimeoutSeconds 60) {
-    $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds 25
+if (Wait-DockerDaemonReady -DockerExe "docker" -TimeoutSeconds ([int]$taskConfig.DockerDaemonReadyTimeoutSeconds)) {
+    $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds ([int]$taskConfig.DockerInfoTimeoutSeconds)
     if (-not $dockerInfoResult.Success) {
         throw ("docker info did not complete successfully (exit={0})." -f $dockerInfoResult.ExitCode)
     }

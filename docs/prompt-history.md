@@ -4274,3 +4274,15 @@ task: before every git commit, guarantee that `CHANGELOG.md` and `release-notes.
 **Assistant Summary**
 
 Created and switched to the local `dev` branch, then completed the repository-wide documentation and developer-environment refresh. Rewrote `README.md` into a much broader operator/developer manual, rewrote `roadmap.md` around business value and a more relaxed delivery rhythm, added a root custom non-commercial `LICENSE`, tightened `AGENTS.md` with the English-only maintained-doc/help/runtime contract plus the non-recursive changelog/release-notes-before-commit rule, translated the full historical `docs/prompt-history.md` into an English-normalized ledger, added `tests/pre-commit-release-doc-check.ps1` and wired it into `.githooks/pre-commit`, fixed `.github/workflows/quality-gate.yml` to use the current PowerShell compatibility script, updated `CHANGELOG.md` and `release-notes.md`, and verified the result with documentation contract, code-quality, smoke, and PowerShell compatibility checks.
+
+### 2026-03-10 18:37 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Audited the repo for env-worthy hardcoded values, removed shared runtime fallbacks for legacy VM-name and password defaults, added shared helpers that fail fast on missing or placeholder-sensitive `VM_NAME` and VM credential settings, clarified the `.env` versus task-local config-block policy in the docs, and moved mutable task-only constants in the main Windows update tasks into explicit top-of-file config blocks. Updated `.env.example`, `README.md`, `AGENTS.md`, `CHANGELOG.md`, `release-notes.md`, and smoke coverage accordingly, then verified the change with documentation, code-quality, smoke, and PowerShell compatibility checks.

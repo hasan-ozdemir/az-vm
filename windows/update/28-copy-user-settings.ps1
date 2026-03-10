@@ -701,7 +701,7 @@ if ([string](Get-ItemProperty -Path $allFoldersShell -Name 'GroupView' -ErrorAct
     throw 'Assistant HKCU validation failed for GroupView.'
 }
 
-Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Assistant HKCU settings seeded.' -Details @('assistant-hkcu-seeded')
+Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary ("HKCU settings seeded for secondary user '{0}'." -f $assistantUser) -Details @('assistant-hkcu-seeded')
 '@
 
     $workerScript = $workerScript.Replace('__HELPER_PATH__', $helperPath)

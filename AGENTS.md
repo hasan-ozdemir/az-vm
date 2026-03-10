@@ -60,6 +60,9 @@ Use these sources in this order when maintaining the repo:
 - Runtime precedence is: CLI override > `.env` value > hard-coded default.
 - `.env` is local-only and must remain untracked.
 - `.env.example` is the committed configuration contract and must stay current.
+- Keep app-wide customization, secrets, operator identity, and reusable overrides in `.env`.
+- Keep task-only customization in a clearly labeled config block at the top of the owning `vm-init` or `vm-update` script.
+- Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.
 - Use generic env keys whenever possible.
 - Use `company_name` for the default Windows Chrome profile directory used by repo-managed public desktop web shortcuts.
 - Use `WIN_` or `LIN_` keys only for true platform-specific settings.

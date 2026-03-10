@@ -92,29 +92,29 @@ Invoke-Test -Name "Azure location picker resolver contract" -Action {
 }
 
 Invoke-Test -Name "VM name format contract" -Action {
-    Assert-True -Condition (Test-AzVmVmNameFormat -VmName "examplevm") -Message "Expected valid VM name to pass."
-    Assert-True -Condition (Test-AzVmVmNameFormat -VmName "otherexamplevm-1") -Message "Expected valid VM name with hyphen to pass."
-    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "1examplevm")) -Message "VM name starting with digit should fail."
+    Assert-True -Condition (Test-AzVmVmNameFormat -VmName "samplevm") -Message "Expected valid VM name to pass."
+    Assert-True -Condition (Test-AzVmVmNameFormat -VmName "samplelinux-1") -Message "Expected valid VM name with hyphen to pass."
+    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "1samplevm")) -Message "VM name starting with digit should fail."
     Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "ab")) -Message "Too-short VM name should fail."
-    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "examplevm_name")) -Message "VM name with underscore should fail."
+    Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "samplevm_name")) -Message "VM name with underscore should fail."
 }
 
 Invoke-Test -Name "Managed resource naming contract" -Action {
     Assert-AzVmManagedResourceNamesValid -NameMap @{
-        RESOURCE_GROUP = 'rg-examplevm-ate1-g1'
-        VNET_NAME = 'net-examplevm-ate1-n1'
-        SUBNET_NAME = 'subnet-examplevm-ate1-n1'
-        NSG_NAME = 'nsg-examplevm-ate1-n1'
-        NSG_RULE_NAME = 'nsgrule-examplevm-ate1-n1'
-        PUBLIC_IP_NAME = 'ip-examplevm-ate1-n1'
-        NIC_NAME = 'nic-examplevm-ate1-n1'
-        VM_DISK_NAME = 'disk-examplevm-ate1-n1'
+        RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+        VNET_NAME = 'net-samplevm-ate1-n1'
+        SUBNET_NAME = 'subnet-samplevm-ate1-n1'
+        NSG_NAME = 'nsg-samplevm-ate1-n1'
+        NSG_RULE_NAME = 'nsgrule-samplevm-ate1-n1'
+        PUBLIC_IP_NAME = 'ip-samplevm-ate1-n1'
+        NIC_NAME = 'nic-samplevm-ate1-n1'
+        VM_DISK_NAME = 'disk-samplevm-ate1-n1'
     }
 
     $invalidCases = @(
-        @{ Key = 'RESOURCE_GROUP'; Value = 'rg-examplevm-ate1-g1.' },
-        @{ Key = 'VNET_NAME'; Value = 'net examplevm' },
-        @{ Key = 'NIC_NAME'; Value = 'nic/examplevm' }
+        @{ Key = 'RESOURCE_GROUP'; Value = 'rg-samplevm-ate1-g1.' },
+        @{ Key = 'VNET_NAME'; Value = 'net samplevm' },
+        @{ Key = 'NIC_NAME'; Value = 'nic/samplevm' }
     )
     foreach ($case in @($invalidCases)) {
         $threw = $false
@@ -233,6 +233,25 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     Assert-True -Condition (-not ($envExampleKeys -contains $legacyInitTaskDirKey)) -Message ".env.example must not contain the legacy generic init task dir key."
     Assert-True -Condition (-not ($envExampleKeys -contains $legacyUpdateTaskDirKey)) -Message ".env.example must not contain the legacy generic update task dir key."
     Assert-True -Condition (-not ($envExampleKeys -contains $legacySshPortKey)) -Message ".env.example must not contain the legacy SSH_PORT key."
+
+    $envExampleText = Get-Content -LiteralPath $envExamplePath -Raw
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ADMIN_PASS=<CHANGE_ME_STRONG_ADMIN_PASSWORD>')) -Message '.env.example must keep the admin password as a placeholder.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ASSISTANT_PASS=<CHANGE_ME_STRONG_ASSISTANT_PASSWORD>')) -Message '.env.example must keep the assistant password as a placeholder.'
+    Assert-True -Condition (-not ($envExampleText -match [regex]::Escape('<runtime-secret>'))) -Message '.env.example must not keep the old committed assistant password.'
+}
+
+Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {
+    foreach ($relativePath in @(
+        'modules\core\azvm-core-foundation.ps1',
+        'modules\commands\azvm-orchestration-runtime.ps1',
+        'modules\ui\azvm-ui-runtime.ps1',
+        'tools\install-pyssh-tool.ps1'
+    )) {
+        $text = Get-Content -LiteralPath (Join-Path $RepoRoot $relativePath) -Raw
+        foreach ($forbiddenFragment in @('examplevm','otherexamplevm','<runtime-secret>','<runtime-secret>')) {
+            Assert-True -Condition (($text.IndexOf($forbiddenFragment, [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message ("Runtime file '{0}' must not contain '{1}'." -f $relativePath, $forbiddenFragment)
+        }
+    }
 }
 
 Invoke-Test -Name "Task outcome mode is not platform-forced" -Action {
@@ -370,30 +389,30 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
 }
 
 Invoke-Test -Name "Create and update accept vm-name override" -Action {
-    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
-    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'examplevm'; auto = $true }
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'vm-name' = 'samplevm'; auto = $true }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'samplevm'; auto = $true }
 }
 
 Invoke-Test -Name "Move and set commands accept vm-name" -Action {
-    Assert-AzVmCommandOptions -CommandName 'move' -Options @{ 'vm-name' = 'examplevm'; 'vm-region' = 'swedencentral'; group = 'rg-examplevm-ate1-g1' }
-    Assert-AzVmCommandOptions -CommandName 'set' -Options @{ 'vm-name' = 'examplevm'; group = 'rg-examplevm-ate1-g1'; hibernation = 'on' }
+    Assert-AzVmCommandOptions -CommandName 'move' -Options @{ 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; group = 'rg-samplevm-ate1-g1' }
+    Assert-AzVmCommandOptions -CommandName 'set' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; hibernation = 'on' }
 }
 
 Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
-    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-examplevm-ate1-g1' }
-    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-examplevm-ate1-g1'; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-examplevm-ate1-g1'; linux = $true }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-samplevm-ate1-g1' }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-samplevm-ate1-g1'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-samplevm-ate1-g1'; linux = $true }
 }
 
 Invoke-Test -Name "Exec command accepts vm-name for direct task targeting" -Action {
-    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'init-task' = '01'; group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'update-task' = '28'; group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'init-task' = '01'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'update-task' = '28'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
 }
 
 Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
-    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'examplevm'; 'vm-action' = 'status' }
-    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'deallocate' }
-    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-action' = 'hibernate' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'samplevm'; 'vm-action' = 'status' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'deallocate' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
 
@@ -401,7 +420,7 @@ Invoke-Test -Name "Move, Set, Resize, Do, SSH, and RDP reject legacy vm option" 
     foreach ($commandName in @('move','set','resize','do','ssh','rdp')) {
         $threw = $false
         try {
-            Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'examplevm' }
+            Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'samplevm' }
         }
         catch {
             $threw = $true
@@ -442,37 +461,37 @@ Invoke-Test -Name "Auto option scope contract" -Action {
 }
 
 Invoke-Test -Name "Resize direct request detection" -Action {
-    Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm'; 'vm-size' = 'Standard_D4as_v5' }) -Message "Fully specified resize request must be treated as direct."
-    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; 'vm-name' = 'examplevm' })) -Message "Resize request without vm-size must not be treated as direct."
-    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-examplevm-ate1-g1'; vm = 'examplevm'; 'vm-size' = 'Standard_D4as_v5' })) -Message "Legacy vm option must not satisfy direct resize request detection."
+    Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D4as_v5' }) -Message "Fully specified resize request must be treated as direct."
+    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' })) -Message "Resize request without vm-size must not be treated as direct."
+    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; vm = 'samplevm'; 'vm-size' = 'Standard_D4as_v5' })) -Message "Legacy vm option must not satisfy direct resize request detection."
 }
 
 Invoke-Test -Name "Move source group purge-safety helper accepts expected resource set" -Action {
     $resources = @(
-        [pscustomobject]@{ name = 'examplevm'; type = 'Microsoft.Compute/virtualMachines' },
-        [pscustomobject]@{ name = 'disk-examplevm-ate1-n1'; type = 'Microsoft.Compute/disks' },
-        [pscustomobject]@{ name = 'nic-examplevm-ate1-n1'; type = 'Microsoft.Network/networkInterfaces' },
-        [pscustomobject]@{ name = 'ip-examplevm-ate1-n1'; type = 'Microsoft.Network/publicIPAddresses' },
-        [pscustomobject]@{ name = 'nsg-examplevm-ate1-n1'; type = 'Microsoft.Network/networkSecurityGroups' },
-        [pscustomobject]@{ name = 'net-examplevm-ate1-n1'; type = 'Microsoft.Network/virtualNetworks' }
+        [pscustomobject]@{ name = 'samplevm'; type = 'Microsoft.Compute/virtualMachines' },
+        [pscustomobject]@{ name = 'disk-samplevm-ate1-n1'; type = 'Microsoft.Compute/disks' },
+        [pscustomobject]@{ name = 'nic-samplevm-ate1-n1'; type = 'Microsoft.Network/networkInterfaces' },
+        [pscustomobject]@{ name = 'ip-samplevm-ate1-n1'; type = 'Microsoft.Network/publicIPAddresses' },
+        [pscustomobject]@{ name = 'nsg-samplevm-ate1-n1'; type = 'Microsoft.Network/networkSecurityGroups' },
+        [pscustomobject]@{ name = 'net-samplevm-ate1-n1'; type = 'Microsoft.Network/virtualNetworks' }
     )
 
-    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName 'examplevm' -OsDiskName 'disk-examplevm-ate1-n1'
+    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName 'samplevm' -OsDiskName 'disk-samplevm-ate1-n1'
     Assert-True -Condition ([bool]$result.IsSafe) -Message "Expected VM-bound resource set must be purge-safe."
 }
 
 Invoke-Test -Name "Move source group purge-safety helper rejects unexpected resources" -Action {
     $resources = @(
-        [pscustomobject]@{ name = 'examplevm'; type = 'Microsoft.Compute/virtualMachines' },
-        [pscustomobject]@{ name = 'disk-examplevm-ate1-n1'; type = 'Microsoft.Compute/disks' },
-        [pscustomobject]@{ name = 'nic-examplevm-ate1-n1'; type = 'Microsoft.Network/networkInterfaces' },
-        [pscustomobject]@{ name = 'ip-examplevm-ate1-n1'; type = 'Microsoft.Network/publicIPAddresses' },
-        [pscustomobject]@{ name = 'nsg-examplevm-ate1-n1'; type = 'Microsoft.Network/networkSecurityGroups' },
-        [pscustomobject]@{ name = 'net-examplevm-ate1-n1'; type = 'Microsoft.Network/virtualNetworks' },
+        [pscustomobject]@{ name = 'samplevm'; type = 'Microsoft.Compute/virtualMachines' },
+        [pscustomobject]@{ name = 'disk-samplevm-ate1-n1'; type = 'Microsoft.Compute/disks' },
+        [pscustomobject]@{ name = 'nic-samplevm-ate1-n1'; type = 'Microsoft.Network/networkInterfaces' },
+        [pscustomobject]@{ name = 'ip-samplevm-ate1-n1'; type = 'Microsoft.Network/publicIPAddresses' },
+        [pscustomobject]@{ name = 'nsg-samplevm-ate1-n1'; type = 'Microsoft.Network/networkSecurityGroups' },
+        [pscustomobject]@{ name = 'net-samplevm-ate1-n1'; type = 'Microsoft.Network/virtualNetworks' },
         [pscustomobject]@{ name = 'vault-extra'; type = 'Microsoft.KeyVault/vaults' }
     )
 
-    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName 'examplevm' -OsDiskName 'disk-examplevm-ate1-n1'
+    $result = Test-AzVmMoveResourceSetIsPurgeSafe -Resources $resources -VmName 'samplevm' -OsDiskName 'disk-samplevm-ate1-n1'
     Assert-True -Condition (-not [bool]$result.IsSafe) -Message "Unexpected resource types must block automatic source-group purge."
     Assert-True -Condition (@($result.UnexpectedTypes) -contains 'Microsoft.KeyVault/vaults') -Message "Unexpected resource type should be surfaced to the operator."
 }
@@ -508,8 +527,8 @@ Invoke-Test -Name "Do lifecycle snapshot normalization" -Action {
     }
 
     $stoppedSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
-        -ResourceGroup 'rg-examplevm-ate1-g1' `
-        -VmName 'examplevm' `
+        -ResourceGroup 'rg-samplevm-ate1-g1' `
+        -VmName 'samplevm' `
         -VmObject $vmObject `
         -InstanceViewObject ([pscustomobject]@{
             instanceView = [pscustomobject]@{
@@ -522,8 +541,8 @@ Invoke-Test -Name "Do lifecycle snapshot normalization" -Action {
     Assert-True -Condition ([string]$stoppedSnapshot.NormalizedState -eq 'stopped') -Message "Stopped VM state normalization failed."
 
     $deallocatedSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
-        -ResourceGroup 'rg-examplevm-ate1-g1' `
-        -VmName 'examplevm' `
+        -ResourceGroup 'rg-samplevm-ate1-g1' `
+        -VmName 'samplevm' `
         -VmObject $vmObject `
         -InstanceViewObject ([pscustomobject]@{
             instanceView = [pscustomobject]@{
@@ -536,8 +555,8 @@ Invoke-Test -Name "Do lifecycle snapshot normalization" -Action {
     Assert-True -Condition ([string]$deallocatedSnapshot.NormalizedState -eq 'deallocated') -Message "Deallocated VM state normalization failed."
 
     $hibernatedSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
-        -ResourceGroup 'rg-examplevm-ate1-g1' `
-        -VmName 'examplevm' `
+        -ResourceGroup 'rg-samplevm-ate1-g1' `
+        -VmName 'samplevm' `
         -VmObject $vmObject `
         -InstanceViewObject ([pscustomobject]@{
             instanceView = [pscustomobject]@{
@@ -551,8 +570,8 @@ Invoke-Test -Name "Do lifecycle snapshot normalization" -Action {
     Assert-True -Condition ([string]$hibernatedSnapshot.NormalizedState -eq 'hibernated') -Message "Hibernated VM state normalization failed."
 
     $otherSnapshot = ConvertTo-AzVmVmLifecycleSnapshot `
-        -ResourceGroup 'rg-examplevm-ate1-g1' `
-        -VmName 'examplevm' `
+        -ResourceGroup 'rg-samplevm-ate1-g1' `
+        -VmName 'samplevm' `
         -VmObject $vmObject `
         -InstanceViewObject ([pscustomobject]@{
             instanceView = [pscustomobject]@{
@@ -600,8 +619,8 @@ Invoke-Test -Name "Resize target size selection stays in current region" -Action
 }
 
 Invoke-Test -Name "Resize platform expectation" -Action {
-    Assert-AzVmResizePlatformExpectation -ActualPlatform 'windows' -WindowsFlag -VmName 'examplevm' -ResourceGroup 'rg-examplevm-ate1-g1'
-    Assert-AzVmResizePlatformExpectation -ActualPlatform 'linux' -LinuxFlag -VmName 'examplevm' -ResourceGroup 'rg-examplevm-ate1-g1'
+    Assert-AzVmResizePlatformExpectation -ActualPlatform 'windows' -WindowsFlag -VmName 'samplevm' -ResourceGroup 'rg-samplevm-ate1-g1'
+    Assert-AzVmResizePlatformExpectation -ActualPlatform 'linux' -LinuxFlag -VmName 'samplevm' -ResourceGroup 'rg-samplevm-ate1-g1'
 
     $invalidCases = @(
         @{ ActualPlatform = 'windows'; UseLinux = $true },
@@ -615,8 +634,8 @@ Invoke-Test -Name "Resize platform expectation" -Action {
                 -ActualPlatform ([string]$case.ActualPlatform) `
                 -WindowsFlag:([bool]$case.UseWindows) `
                 -LinuxFlag:([bool]$case.UseLinux) `
-                -VmName 'examplevm' `
-                -ResourceGroup 'rg-examplevm-ate1-g1'
+                -VmName 'samplevm' `
+                -ResourceGroup 'rg-samplevm-ate1-g1'
         }
         catch {
             $threw = $true
@@ -638,8 +657,8 @@ Invoke-Test -Name "Do action eligibility contract" -Action {
         )
 
         return [pscustomobject]@{
-            ResourceGroup = 'rg-examplevm-ate1-g1'
-            VmName = 'examplevm'
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
             NormalizedState = $NormalizedState
             PowerStateDisplay = $PowerStateDisplay
             PowerStateCode = ''
@@ -676,8 +695,8 @@ Invoke-Test -Name "Do action eligibility contract" -Action {
 
 Invoke-Test -Name "Do interactive action selection" -Action {
     $snapshot = [pscustomobject]@{
-        ResourceGroup = 'rg-examplevm-ate1-g1'
-        VmName = 'examplevm'
+        ResourceGroup = 'rg-samplevm-ate1-g1'
+        VmName = 'samplevm'
         NormalizedState = 'stopped'
         PowerStateDisplay = 'VM stopped'
         PowerStateCode = 'PowerState/stopped'
@@ -717,8 +736,8 @@ Invoke-Test -Name "Connection command running-state guard" -Action {
         )
 
         return [pscustomobject]@{
-            ResourceGroup = 'rg-examplevm-ate1-g1'
-            VmName = 'examplevm'
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
             NormalizedState = $NormalizedState
             PowerStateDisplay = $PowerStateDisplay
             PowerStateCode = ''
@@ -759,8 +778,8 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
         function Resolve-AzVmManagedVmTarget {
             param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
             return [pscustomobject]@{
-                ResourceGroup = 'rg-examplevm-ate1-g1'
-                VmName = 'examplevm'
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
             }
         }
         function Get-AzVmVmLifecycleSnapshot {
@@ -843,13 +862,13 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
             $script:ExecMinimalRuntimeUsed = $true
             return [pscustomobject]@{
                 EnvFilePath = (Join-Path $RepoRoot '.env')
-                ConfigMap = @{ RESOURCE_GROUP = 'rg-examplevm-ate1-g1'; VM_NAME = 'examplevm' }
-                EffectiveConfigMap = @{ RESOURCE_GROUP = 'rg-examplevm-ate1-g1'; VM_NAME = 'examplevm' }
+                ConfigMap = @{ RESOURCE_GROUP = 'rg-samplevm-ate1-g1'; VM_NAME = 'samplevm' }
+                EffectiveConfigMap = @{ RESOURCE_GROUP = 'rg-samplevm-ate1-g1'; VM_NAME = 'samplevm' }
                 Platform = 'windows'
                 PlatformDefaults = [pscustomobject]@{ RunCommandId = 'RunPowerShellScript' }
                 Context = [ordered]@{
-                    ResourceGroup = 'rg-examplevm-ate1-g1'
-                    VmName = 'examplevm'
+                    ResourceGroup = 'rg-samplevm-ate1-g1'
+                    VmName = 'samplevm'
                     VmInitTaskDir = 'windows/init'
                     VmUpdateTaskDir = 'windows/update'
                     VmUser = 'manager'
@@ -862,7 +881,7 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
                     AzLocation = 'austriaeast'
                     VmSize = 'Standard_D2as_v5'
                     VmImage = 'example:image:urn'
-                    VmDiskName = 'disk-examplevm'
+                    VmDiskName = 'disk-samplevm'
                     VmDiskSize = '128'
                     VmStorageSku = 'StandardSSD_LRS'
                 }
@@ -875,8 +894,8 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
         function Resolve-AzVmManagedVmTarget {
             param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
             return [pscustomobject]@{
-                ResourceGroup = 'rg-examplevm-ate1-g1'
-                VmName = 'examplevm'
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
             }
         }
         function Get-AzVmTaskBlocksFromDirectory {
@@ -925,8 +944,8 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
 
         Assert-True -Condition $script:ExecMinimalRuntimeUsed -Message 'Exec command must use the minimal exec runtime context.'
         Assert-True -Condition ($null -ne $script:ExecRunCommandInvocation) -Message 'Exec init task must invoke run-command blocks.'
-        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.ResourceGroup -eq 'rg-examplevm-ate1-g1') -Message 'Exec init task must preserve target resource group.'
-        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.VmName -eq 'examplevm') -Message 'Exec init task must preserve target VM name.'
+        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.ResourceGroup -eq 'rg-samplevm-ate1-g1') -Message 'Exec init task must preserve target resource group.'
+        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.VmName -eq 'samplevm') -Message 'Exec init task must preserve target VM name.'
         Assert-True -Condition ([string]$script:ExecRunCommandInvocation.CommandId -eq 'RunPowerShellScript') -Message 'Exec init task must preserve platform run-command id.'
         Assert-True -Condition ([string]$script:ExecRunCommandInvocation.TaskName -eq '01-ensure-local-admin-users') -Message 'Exec init task must preserve selected task.'
     }
@@ -953,8 +972,8 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
             param([switch]$AutoMode, [switch]$WindowsFlag, [switch]$LinuxFlag)
             return [pscustomobject]@{
                 Context = [ordered]@{
-                    ResourceGroup = 'rg-examplevm-ate1-g1'
-                    VmName = 'examplevm'
+                    ResourceGroup = 'rg-samplevm-ate1-g1'
+                    VmName = 'samplevm'
                     VmInitTaskDir = 'windows/init'
                     VmUpdateTaskDir = 'windows/update'
                     VmUser = 'manager'
@@ -976,8 +995,8 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
         function Resolve-AzVmManagedVmTarget {
             param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
             return [pscustomobject]@{
-                ResourceGroup = 'rg-examplevm-ate1-g1'
-                VmName = 'examplevm'
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
             }
         }
         function Get-AzVmTaskBlocksFromDirectory {
@@ -1003,7 +1022,7 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
         function Get-AzVmVmDetails {
             param([hashtable]$Context)
             return [pscustomobject]@{
-                VmFqdn = 'examplevm.austriaeast.cloudapp.azure.com'
+                VmFqdn = 'samplevm.austriaeast.cloudapp.azure.com'
                 PublicIP = '1.2.3.4'
             }
         }
@@ -1075,13 +1094,13 @@ Invoke-Test -Name "Task token replacement" -Action {
         SshPort = "444"
         RdpPort = "3389"
         TcpPorts = @("444","3389","11434")
-        ResourceGroup = "rg-examplevm"
-        VmName = "examplevm"
-        CompanyName = "exampleorg"
+        ResourceGroup = "rg-samplevm"
+        VmName = "samplevm"
+        CompanyName = "orgprofile"
         AzLocation = "austriaeast"
         VmSize = "Standard_B2as_v2"
         VmImage = "example:image:urn"
-        VmDiskName = "disk-examplevm"
+        VmDiskName = "disk-samplevm"
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
     }
@@ -1095,8 +1114,32 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*manager*") -Message "VM user token was not replaced."
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
-    Assert-True -Condition ($scriptBody -like "*examplevm*") -Message "VM name token was not replaced."
-    Assert-True -Condition ($scriptBody -like "*exampleorg*") -Message "Company name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*samplevm*") -Message "VM name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*orgprofile*") -Message "Company name token was not replaced."
+}
+
+Invoke-Test -Name "Required config helper rejects empty and placeholder values" -Action {
+    $tokens = @{ VM_NAME = 'samplevm' }
+
+    $missingFailed = $false
+    try {
+        $null = Get-AzVmRequiredResolvedConfigValue -ConfigMap @{} -Key 'VM_ADMIN_PASS' -Tokens $tokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
+    }
+    catch {
+        $missingFailed = $true
+        Assert-True -Condition ($_.Exception.Data['Hint'] -like '*VM_ADMIN_PASS*') -Message 'Missing required config must point to the missing key.'
+    }
+    Assert-True -Condition $missingFailed -Message 'Missing required config must fail.'
+
+    $placeholderFailed = $false
+    try {
+        $null = Get-AzVmRequiredResolvedConfigValue -ConfigMap @{ VM_ADMIN_PASS = '<CHANGE_ME_STRONG_ADMIN_PASSWORD>' } -Key 'VM_ADMIN_PASS' -Tokens $tokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
+    }
+    catch {
+        $placeholderFailed = $true
+        Assert-True -Condition ($_.Exception.Message -like '*placeholder*') -Message 'Placeholder config must fail with a placeholder-specific message.'
+    }
+    Assert-True -Condition $placeholderFailed -Message 'Placeholder config must fail.'
 }
 
 Invoke-Test -Name "Windows vm-update renamed task catalog entries" -Action {
@@ -1220,12 +1263,12 @@ Invoke-Test -Name "Windows private local-only accessibility task asset copies" -
         SshPort = "444"
         RdpPort = "3389"
         TcpPorts = @("444","3389","11434")
-        ResourceGroup = "rg-examplevm"
-        VmName = "examplevm"
+        ResourceGroup = "rg-samplevm"
+        VmName = "samplevm"
         AzLocation = "austriaeast"
         VmSize = "Standard_B2as_v2"
         VmImage = "example:image:urn"
-        VmDiskName = "disk-examplevm"
+        VmDiskName = "disk-samplevm"
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
     }
@@ -1282,7 +1325,9 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     $taskPath = Join-Path $RepoRoot 'windows\update\18-docker-desktop-install-and-configure.ps1'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Docker Desktop install*') -Message 'Docker Desktop task must clear stale installer locks before winget install.'
-    Assert-True -Condition ($taskScript -like '*winget install Docker.DockerDesktop*') -Message 'Docker Desktop task must install Docker Desktop through winget.'
+    Assert-True -Condition ($taskScript -like "*DockerDesktopPackageId = 'Docker.DockerDesktop'*") -Message 'Docker Desktop task must keep the Docker Desktop winget package id in its task-local config block.'
+    Assert-True -Condition ($taskScript -match 'winget install \{0\}" -f \[string\]\$taskConfig\.DockerDesktopPackageId') -Message 'Docker Desktop task must label the install step as a winget Docker Desktop install.'
+    Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
 }
@@ -1296,12 +1341,12 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
         SshPort = "444"
         RdpPort = "3389"
         TcpPorts = @("444","3389","11434")
-        ResourceGroup = "rg-examplevm"
-        VmName = "examplevm"
+        ResourceGroup = "rg-samplevm"
+        VmName = "samplevm"
         AzLocation = "austriaeast"
         VmSize = "Standard_B2as_v2"
         VmImage = "example:image:urn"
-        VmDiskName = "disk-examplevm"
+        VmDiskName = "disk-samplevm"
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
     }
@@ -1636,7 +1681,7 @@ Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Act
 Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {
     $updateDir = Join-Path $RepoRoot 'windows\update'
     $context = [ordered]@{
-        VM_NAME = 'examplevm'
+        VM_NAME = 'samplevm'
         VM_ADMIN_USER = 'manager'
         VM_ADMIN_PASS = '<runtime-secret>'
         ASSISTANT_USER = 'assistant'
