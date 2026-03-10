@@ -384,8 +384,8 @@ Invoke-Test -Name "Task catalog fallback defaults" -Action {
 
         $initialTask = $active | Where-Object { [string]$_.Name -eq "01-initial-default" } | Select-Object -First 1
         $normalTask = $active | Where-Object { [string]$_.Name -eq "101-normal-default" } | Select-Object -First 1
-        Assert-True -Condition ([int]$initialTask.Priority -eq 1) -Message "Missing tracked catalog entry must derive initial-task priority from the task-number band."
-        Assert-True -Condition ([int]$normalTask.Priority -eq 101) -Message "Tracked catalog entry without explicit priority must derive normal-task priority from the task-number band."
+        Assert-True -Condition ([int]$initialTask.Priority -eq 1000) -Message "Missing tracked catalog entry must default to priority 1000."
+        Assert-True -Condition ([int]$normalTask.Priority -eq 1000) -Message "Tracked catalog entry without explicit priority must default to priority 1000."
         Assert-True -Condition ([int]$initialTask.TimeoutSeconds -eq 180) -Message "Missing tracked catalog entry timeout must default to 180."
         Assert-True -Condition ([int]$normalTask.TimeoutSeconds -eq 180) -Message "Tracked catalog entry without explicit timeout must default to 180."
     }
@@ -1462,6 +1462,7 @@ Invoke-Test -Name "Task script metadata controls local-only task discovery" -Act
         $localDisabledDir = Join-Path $localDir 'disabled'
         New-Item -Path $localDisabledDir -ItemType Directory -Force | Out-Null
         $scriptBeta = Join-Path $localDir '1002-beta-task.ps1'
+        $scriptDelta = Join-Path $localDir '101-delta-task.ps1'
         $scriptGamma = Join-Path $localDisabledDir '1004-gamma-task.ps1'
 
         Set-Content -Path $scriptAlpha -Encoding UTF8 -Value @'
@@ -1471,6 +1472,10 @@ Write-Host "alpha"
         Set-Content -Path $scriptBeta -Encoding UTF8 -Value @'
 # az-vm-task-meta: {"priority":1002,"timeout":44,"enabled":true}
 Write-Host "beta"
+'@
+        Set-Content -Path $scriptDelta -Encoding UTF8 -Value @'
+# az-vm-task-meta: {"enabled":true}
+Write-Host "delta"
 '@
         Set-Content -Path $scriptGamma -Encoding UTF8 -Value @'
 # az-vm-task-meta: {"priority":1004,"timeout":99,"enabled":false}
@@ -1501,18 +1506,22 @@ Write-Host "gamma"
         $activeNames = @($active | ForEach-Object { [string]$_.Name })
         $disabled = @($catalog.DisabledTasks)
 
-        Assert-True -Condition ($active.Count -eq 2) -Message 'Tracked root tasks and local-only tasks must both be discoverable.'
+        Assert-True -Condition ($active.Count -eq 3) -Message 'Tracked root tasks and local-only tasks must both be discoverable.'
         Assert-True -Condition ($disabled.Count -eq 1) -Message 'Tasks under local/disabled must be discovered as disabled.'
         Assert-True -Condition ([string]$activeNames[0] -eq '101-alpha-task') -Message 'Catalog override must win over tracked script metadata priority.'
-        Assert-True -Condition ([string]$activeNames[1] -eq '1002-beta-task') -Message 'Script metadata priority must order local-only tasks discovered from local/.'
+        Assert-True -Condition ([string]$activeNames[1] -eq '101-delta-task') -Message 'Local-only tasks without metadata priority or local-band filename must fall back to deterministic auto-detect ordering.'
+        Assert-True -Condition ([string]$activeNames[2] -eq '1002-beta-task') -Message 'Script metadata priority must order local-only tasks discovered from local/ once auto-detected priorities are applied.'
 
         $alphaTask = $active | Where-Object { [string]$_.Name -eq '101-alpha-task' } | Select-Object -First 1
         $betaTask = $active | Where-Object { [string]$_.Name -eq '1002-beta-task' } | Select-Object -First 1
+        $deltaTask = $active | Where-Object { [string]$_.Name -eq '101-delta-task' } | Select-Object -First 1
 
         Assert-True -Condition ([int]$alphaTask.TimeoutSeconds -eq 90) -Message 'Catalog timeout must override script metadata timeout.'
         Assert-True -Condition ([int]$betaTask.TimeoutSeconds -eq 44) -Message 'Script metadata timeout must drive local-only tasks.'
+        Assert-True -Condition ([int]$deltaTask.TimeoutSeconds -eq 180) -Message 'Local-only tasks without metadata timeout must default to 180.'
         Assert-True -Condition ([int]$alphaTask.Priority -eq 101) -Message 'Tracked task priority must come from the catalog entry.'
         Assert-True -Condition ([int]$betaTask.Priority -eq 1002) -Message 'Script metadata priority must drive local-only tasks.'
+        Assert-True -Condition ([int]$deltaTask.Priority -eq 1001) -Message 'Local-only tasks without metadata priority or numbered filename must auto-detect the next free local priority.'
         Assert-True -Condition ([string]$betaTask.RelativePath -eq 'local/1002-beta-task.ps1') -Message 'Local-only active task must preserve its relative path.'
         Assert-True -Condition ([string]$disabled[0].RelativePath -eq 'local/disabled/1004-gamma-task.ps1') -Message 'Local-only disabled task must preserve its relative path.'
     }

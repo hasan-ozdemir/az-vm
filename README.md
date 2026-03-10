@@ -214,7 +214,7 @@ Each task directory has a catalog JSON file that owns:
 - timeout per task
 
 The runtime never auto-writes or auto-syncs catalog files. Missing entries fall back to:
-- task-number band priority for tracked tasks
+- `priority=1000` for tracked tasks
 - `enabled=true`
 - `timeout=180`
 
@@ -601,10 +601,10 @@ Catalog JSON files are the source of truth for task ordering, enable state, and 
 - local-only tasks under `local/disabled/` remain disabled by location even if their metadata says `enabled=true`
 - local-only asset paths are resolved relative to the local task file directory
 - if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
-- tracked missing `priority`: derived from the task-number band
+- tracked missing `priority`: default to `1000`
 - local missing `priority`: script metadata first, then filename task number, then deterministic auto-detect from the `1001+` band
 - missing `timeout`: default to `180`
-- missing tracked entry entirely: band-derived priority, `enabled=true`, `timeout=180`
+- missing tracked entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
 
 ### Direct Task Execution With `exec`
 Direct `exec --init-task` and `exec --update-task` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.

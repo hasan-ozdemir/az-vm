@@ -92,8 +92,8 @@ Use these sources in this order when maintaining the repo:
 - Task priority is catalog-driven for tracked tasks and metadata-driven first for intentionally local-only tasks.
 - Local-only task priority precedence is: script metadata `priority` -> filename task number -> deterministic auto-detect in the `1001+` band.
 - Runtime code must not auto-write, auto-sync, or auto-reconcile catalog JSON files.
-- For tracked tasks that are missing from catalog entries, runtime derives priority from the task-number band and still defaults `enabled=true`, `timeout=180`.
-- For catalog entries missing `priority`, runtime derives the priority from the task-number band.
+- For tracked tasks that are missing from catalog entries, runtime defaults to `priority=1000`, `enabled=true`, `timeout=180`.
+- For catalog entries missing `priority`, default to `1000`.
 - For catalog entries missing `timeout`, default to `180`.
 - Disabled tasks belong under `disabled/` and must be ignored by execution logic.
 - Init and update catalogs may diverge by platform, but the orchestration model should remain parallel in concept.

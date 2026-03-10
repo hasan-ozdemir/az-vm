@@ -653,18 +653,12 @@ function Convert-AzVmTaskCatalogType {
     throw ("Invalid taskType value '{0}'. Expected one of: initial, normal, final." -f $text)
 }
 
-function Get-AzVmTaskTypeDefaultPriority {
-    param(
-        [string]$TaskType
-    )
+function Get-AzVmTrackedTaskDefaultPriority {
+    return 1000
+}
 
-    switch ([string]$TaskType) {
-        'initial' { return 1 }
-        'normal' { return 101 }
-        'local' { return 1001 }
-        'final' { return 10001 }
-        default { return 1000 }
-    }
+function Get-AzVmTaskDefaultTimeoutSeconds {
+    return 180
 }
 
 function Test-AzVmTaskPriorityFitsType {
@@ -722,8 +716,8 @@ function Get-AzVmTaskCatalogStateMap {
     $taskMap = @{}
     if (-not (Test-Path -LiteralPath $catalogPath)) {
         return [pscustomobject]@{
-            DefaultPriority = 100
-            DefaultTimeoutSeconds = 180
+            DefaultPriority = (Get-AzVmTrackedTaskDefaultPriority)
+            DefaultTimeoutSeconds = (Get-AzVmTaskDefaultTimeoutSeconds)
             TaskMap = $taskMap
         }
     }
@@ -731,8 +725,8 @@ function Get-AzVmTaskCatalogStateMap {
     $catalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
     if ([string]::IsNullOrWhiteSpace([string]$catalogText)) {
         return [pscustomobject]@{
-            DefaultPriority = 100
-            DefaultTimeoutSeconds = 180
+            DefaultPriority = (Get-AzVmTrackedTaskDefaultPriority)
+            DefaultTimeoutSeconds = (Get-AzVmTaskDefaultTimeoutSeconds)
             TaskMap = $taskMap
         }
     }
@@ -746,21 +740,21 @@ function Get-AzVmTaskCatalogStateMap {
     }
     if ($null -eq $catalog -or $catalog.PSObject.Properties.Match('tasks').Count -eq 0) {
         return [pscustomobject]@{
-            DefaultPriority = 100
-            DefaultTimeoutSeconds = 180
+            DefaultPriority = (Get-AzVmTrackedTaskDefaultPriority)
+            DefaultTimeoutSeconds = (Get-AzVmTaskDefaultTimeoutSeconds)
             TaskMap = $taskMap
         }
     }
 
-    $catalogDefaultPriority = 100
-    $catalogDefaultTimeout = 180
+    $catalogDefaultPriority = Get-AzVmTrackedTaskDefaultPriority
+    $catalogDefaultTimeout = Get-AzVmTaskDefaultTimeoutSeconds
     if ($catalog.PSObject.Properties.Match('defaults').Count -gt 0 -and $null -ne $catalog.defaults) {
         $defaults = $catalog.defaults
         if ($defaults.PSObject.Properties.Match('priority').Count -gt 0) {
-            $catalogDefaultPriority = Convert-AzVmTaskCatalogPriority -Value $defaults.priority -DefaultValue 100
+            $catalogDefaultPriority = Convert-AzVmTaskCatalogPriority -Value $defaults.priority -DefaultValue (Get-AzVmTrackedTaskDefaultPriority)
         }
         if ($defaults.PSObject.Properties.Match('timeout').Count -gt 0) {
-            $catalogDefaultTimeout = Convert-AzVmTaskCatalogTimeout -Value $defaults.timeout -DefaultValue 180
+            $catalogDefaultTimeout = Convert-AzVmTaskCatalogTimeout -Value $defaults.timeout -DefaultValue (Get-AzVmTaskDefaultTimeoutSeconds)
         }
     }
 
@@ -1056,7 +1050,11 @@ function Get-AzVmTaskBlocksFromDirectory {
     if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('TaskMap').Count -gt 0) {
         $taskMap = $catalogState.TaskMap
     }
-    $catalogDefaultTimeout = 180
+    $catalogDefaultPriority = Get-AzVmTrackedTaskDefaultPriority
+    if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('DefaultPriority').Count -gt 0) {
+        $catalogDefaultPriority = [int]$catalogState.DefaultPriority
+    }
+    $catalogDefaultTimeout = Get-AzVmTaskDefaultTimeoutSeconds
     if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('DefaultTimeoutSeconds').Count -gt 0) {
         $catalogDefaultTimeout = [int]$catalogState.DefaultTimeoutSeconds
     }
@@ -1105,14 +1103,14 @@ function Get-AzVmTaskBlocksFromDirectory {
         $taskName = [string]$row.Name
         $metadata = $row.Metadata
         $taskType = [string]$row.TaskType
-        $taskPriority = Get-AzVmTaskTypeDefaultPriority -TaskType $taskType
-        $taskTimeoutSeconds = 180
+        $taskPriority = $catalogDefaultPriority
+        $taskTimeoutSeconds = Get-AzVmTaskDefaultTimeoutSeconds
         $isEnabled = $true
         $disabledReason = ''
 
         if ([bool]$row.IsLocalOnly) {
             $taskPriority = [int]$row.EffectiveLocalPriority
-            $taskTimeoutSeconds = 180
+            $taskTimeoutSeconds = Get-AzVmTaskDefaultTimeoutSeconds
             if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0 -and $null -ne $metadata.TimeoutSeconds) {
                 $taskTimeoutSeconds = [int]$metadata.TimeoutSeconds
             }
@@ -1122,6 +1120,7 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
         else {
             $taskTimeoutSeconds = [int]$catalogDefaultTimeout
+            $hasExplicitTrackedPriority = $false
             if ($taskMap.ContainsKey($taskName)) {
                 $entry = $taskMap[$taskName]
                 if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasTaskType').Count -gt 0 -and [bool]$entry.HasTaskType) {
@@ -1131,6 +1130,7 @@ function Get-AzVmTaskBlocksFromDirectory {
                 }
                 if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasPriority').Count -gt 0 -and [bool]$entry.HasPriority) {
                     $taskPriority = [int]$entry.Priority
+                    $hasExplicitTrackedPriority = $true
                 }
                 if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasTimeout').Count -gt 0 -and [bool]$entry.HasTimeout) {
                     $taskTimeoutSeconds = [int]$entry.TimeoutSeconds
@@ -1140,7 +1140,7 @@ function Get-AzVmTaskBlocksFromDirectory {
                 }
             }
 
-            if (-not (Test-AzVmTaskPriorityFitsType -TaskType $taskType -Priority ([int]$taskPriority))) {
+            if ($hasExplicitTrackedPriority -and -not (Test-AzVmTaskPriorityFitsType -TaskType $taskType -Priority ([int]$taskPriority))) {
                 throw ("Tracked task '{0}' resolved invalid priority '{1}' for taskType '{2}'." -f $taskName, $taskPriority, $taskType)
             }
         }

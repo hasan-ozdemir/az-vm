@@ -4385,3 +4385,15 @@ Update: please make task `10006-capture-snapshot-health.ps1` become `10099-captu
 **Assistant Summary**
 
 Shifted the Windows late health task from `10006-capture-snapshot-health` to `10099-capture-snapshot-health` across the tracked file name, catalog priority, move-cutover health gate, task listing/runtime selectors, help text, and smoke coverage so the final health snapshot now lives at the requested `10099` slot.
+
+### 2026-03-11 02:55 TRT
+
+**User Prompt**
+
+````text
+Please record this dialog in prompt history as well, and fully resolve the default-timeout inconsistency end to end so `vm-init` and `vm-update` become fully consistent and reliable for both local tasks and built-in catalog tasks.
+````
+
+**Assistant Summary**
+
+Recorded this turn in `docs/prompt-history.md`, standardized tracked task fallback defaults end to end so missing tracked catalog entries and tracked entries without explicit priority now resolve to `priority=1000`, kept the shared default timeout at `180` across tracked and local task paths, updated all four task catalogs plus `AGENTS.md`, `README.md`, changelog/release notes, and tightened smoke/documentation coverage to verify the new fallback contract and local timeout behavior. Re-ran smoke, documentation-contract, code-quality, and PowerShell compatibility checks successfully.

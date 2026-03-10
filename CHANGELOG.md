@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.11.268] - 2026-03-11
+## [2026.3.11.269] - 2026-03-11
 
 ### Added
 - Added the read-only `task` command so operators can list the real discovered `vm-init` and `vm-update` inventory in execution order, filter by stage, and inspect disabled tracked/local tasks before running orchestration.
@@ -13,6 +13,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Renamed the tracked Linux init/update files and the tracked Windows update files to the new banded numbering scheme, including moving the Windows health snapshot task to `10099-capture-snapshot-health`.
 - Updated tracked task catalogs on all four stage roots so they now carry explicit `taskType` values alongside the new band-aligned priorities and existing timeout values.
 - Updated task discovery so local-only priority resolution now follows `script metadata -> filename task number -> deterministic auto-detect`, instead of treating local metadata as the only ordering source.
+- Standardized tracked task fallback defaults end to end so missing catalog entries and catalog entries without explicit priority now resolve to `priority=1000`, while all missing timeout values continue to resolve to `180` for both tracked and local task paths.
 - Updated runtime help, `exec` task selection, and the regional move health gate so variable-length task numbers now work consistently across direct execution, diagnostics, and move cutover validation.
 
 ### Documentation
