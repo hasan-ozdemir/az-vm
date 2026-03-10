@@ -2,6 +2,25 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.260 - 2026-03-10
+
+### Summary
+This release focuses on the developer-facing contract and documentation set. It adds a custom non-commercial `LICENSE`, rewrites the README into a much broader operator/developer manual, rewrites the roadmap around business value and a more sustainable delivery rhythm, converts prompt-history recording to an English-normalized model, tightens the engineering contract in `AGENTS.md`, and adds a pre-commit release-document gate so repo-changing prompts cannot be committed without aligned changelog and release-notes updates.
+
+### Highlights
+- Added a root `LICENSE` file with the repository's custom non-commercial terms, including learning/teaching/evaluation allowances, private non-commercial modification allowance, and a clear commercial licensing and sponsorship contact path.
+- Expanded `README.md` into a much more detailed guide covering purpose, target audience, quick start, architecture, configuration, full command guide, task model, troubleshooting, developer workflow, and licensing.
+- Reworked `roadmap.md` around business value, relaxed planning horizons, promotion rules, and concrete done criteria.
+- Updated `AGENTS.md` so maintained docs, help text, comments, and operator-facing runtime wording must stay in English.
+- Changed `docs/prompt-history.md` to an English-normalized contract and translated the existing historical entries into English while preserving structure and chronology.
+- Added `tests/pre-commit-release-doc-check.ps1` and wired it into `.githooks/pre-commit`, so repo-changing staged work must include `CHANGELOG.md` and `release-notes.md` in the same final change set.
+- Fixed `.github/workflows/quality-gate.yml` so the PowerShell compatibility job now calls the current `tests/powershell-compatibility-check.ps1` entrypoint.
+
+### Reliability And Process Notes
+- The stronger release-doc gate is intentionally non-recursive: release-history-only staged changes are exempt, but any other staged repo change must include both `CHANGELOG.md` and `release-notes.md`.
+- The English-only documentation rule still allows explicit literal display-label exceptions where the repository intentionally preserves a user-defined non-English shortcut or product/site name.
+- No Azure runtime behavior changed in this release; the work is contract, documentation, and developer-workflow hardening.
+
 ## Release 2026.3.10.259 - 2026-03-10
 
 ### Summary
@@ -35,7 +54,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Windows update task `38-install-codex-app` now installs the Store-backed Codex desktop app through `winget install codex -s msstore`, verifies it through AppX/StartApps/winget readback, and registers a deferred RunOnce retry when a noninteractive Store session cannot finish immediately.
 - Windows update task `39-auto-start-apps` now applies a static startup snapshot for Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper onto the guest VM and writes the resulting launchers into the machine Startup folder.
 - Windows update task `39-auto-start-apps` now also creates missing `StartupApproved` registry keys before it marks existing startup shortcuts enabled, after isolated live `exec` validation exposed that reruns on an already-provisioned VM could otherwise fail on Docker Desktop approval.
-- Windows update task `27-windows-ux-public-desktop-shortcuts` now also normalizes the broader Public Desktop set with social-media links, app launchers, dynamic app-path fallbacks, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, and Unicode-safe `q1EkşiSözlük` handling.
+- Windows update task `27-windows-ux-public-desktop-shortcuts` now also normalizes the broader Public Desktop set with social-media links, app launchers, dynamic app-path fallbacks, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, and Unicode-safe `q1Eksisozluk` handling.
 - Windows update task `27-windows-ux-public-desktop-shortcuts` now also adds `a3CodexApp` and keeps the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target in the public shortcut contract, while `29-health-snapshot` inventories that shortcut during late-stage validation.
 - Windows update task `29-health-snapshot` now also reads back the static machine-startup shortcut set so late-stage validation can show exactly which auto-start launchers were expected and present.
 - Windows update task `29-health-snapshot` now inventories the expanded public desktop shortcut set and reads back the exact target-path, argument, hotkey, and Unicode shortcut contracts during late-stage validation.
@@ -69,7 +88,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Isolated live validation now covers tasks `04`, `05`, and `20` on `rg-examplevm-ate1-g1/examplevm`, including idempotent rerun of `04` and private local-only accessibility hash/manifest readbacks.
 - Isolated live validation now also covers the repaired Windows UX/user-settings late-stage chain: task `04` succeeds after the registry-write fix, task `28` completes without hive-unload or default-profile copy hangs, and task `29` confirms the post-copy machine state on `rg-examplevm-ate1-g1/examplevm`.
 - Isolated live validation now also covers full Windows `vm-init` and `vm-update` sweeps plus a focused Ollama rerun that confirms HTTP readiness on port `11434`.
-- Isolated live validation now also covers tasks `30` through `37` plus rerun-confirmed `27` and `29`, proving the new package installs, app-backed Public Desktop shortcuts, `local-only-shortcut` hotkey assignment, and Unicode-safe `q1EkşiSözlük` readback on `rg-examplevm-ate1-g1/examplevm`.
+- Isolated live validation now also covers tasks `30` through `37` plus rerun-confirmed `27` and `29`, proving the new package installs, app-backed Public Desktop shortcuts, `local-only-shortcut` hotkey assignment, and Unicode-safe `q1Eksisozluk` readback on `rg-examplevm-ate1-g1/examplevm`.
 - Persistent SSH task parsing now strips spinner prefixes from `AZ_VM_*` protocol markers so long-running Windows installers cannot hide task-completion signals.
 - A fresh `create --auto --windows --perf --from-step=vm-update` rerun now completes successfully on `rg-examplevm-ate1-g1/examplevm` with `Standard_D4as_v5`, and the rebuilt VM answers on RDP port `3389`.
 

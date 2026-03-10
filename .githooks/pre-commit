@@ -13,3 +13,4 @@ else
 fi
 
 "$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/code-quality-check.ps1" -RepoRoot "$REPO_ROOT"
+"$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/pre-commit-release-doc-check.ps1" -RepoRoot "$REPO_ROOT"

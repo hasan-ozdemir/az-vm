@@ -33,10 +33,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Run PowerShell compatibility matrix
+      - name: Run PowerShell compatibility check
         shell: powershell
         run: |
-          .\tests\powershell-matrix.ps1 -RepoRoot $PWD.Path
+          .\tests\powershell-compatibility-check.ps1 -RepoRoot $PWD.Path
 
   linux-shell-syntax:
     runs-on: ubuntu-latest

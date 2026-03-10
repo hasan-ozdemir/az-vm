@@ -1,47 +1,78 @@
 # Roadmap
 
-## Vision
-Keep `az-vm` as a high-signal, parity-first Azure VM orchestration toolkit where operator workflows are explicit, recoverable, well-documented, and testable without relying on hidden guest-side behavior.
+## Direction
+Keep `az-vm` as a pragmatic Azure VM operator toolkit with one clear mental model, strong validation before mutation, deterministic guest task execution, and documentation that is detailed enough for both operators and maintainers to work from the repository alone.
 
-## Guiding Principles
-- Preserve one orchestrator and one mental model across Windows and Linux.
-- Prefer validation before mutation.
-- Prefer deterministic task catalogs over implicit sequencing.
-- Prefer process clarity over convenience fallbacks.
-- Keep docs, tests, and runtime contracts synchronized.
+## Working Style
+- Prefer business value over feature count.
+- Prefer safer operator workflows over convenience shortcuts.
+- Prefer explicit contracts over compatibility clutter.
+- Prefer a relaxed, sustainable delivery rhythm over calendar pressure.
+- Promote work only when docs, tests, and runtime behavior can stay aligned in the same change.
 
-## Now
-- Finish documentation freshness workflows so README, changelog, release notes, roadmap, and prompt history stay aligned as commands evolve.
-- Expand static contract checks for current CLI examples, docs wording drift, and env-key drift.
-- Tighten Windows deferred-install verification flows so post-sign-in completions are easier to inspect and rerun.
-- Keep quality gates fast enough for daily use while still covering PowerShell compatibility and doc integrity.
-- Continue reducing duplicate logging and ambiguous operator messages.
+## Near-Term Value
 
-## Next
-- Improve `move` and `resize` safety reporting with clearer rollback-state visibility and operator summaries.
-- Extend `show`, `set`, and `group` workflows with richer but still human-readable VM/resource metadata.
-- Add more structured task metadata such as reboot expectations, connection prerequisites, or platform-specific warnings.
-- Make isolated `exec` workflows easier to discover by showing task catalogs and descriptions more clearly.
-- Harden Linux parity for newer operator-facing capabilities introduced first on the Windows side.
+### Operator Reliability
+- Keep tightening validation around Azure mutation paths such as create, update, move, resize, set, and delete.
+- Continue reducing ambiguous runtime output so operators can tell what happened, why it happened, and what to do next.
+- Keep isolated `exec` flows fast and dependable so failed guest tasks can be rerun without broad rebuild loops.
 
-## Later
-- Introduce a tag-driven release process with versioned release notes and reproducible packaged artifacts.
-- Add richer non-destructive smoke harnesses for selected Azure read-only validation scenarios.
-- Add per-resource-group or per-VM credential/profile separation where it improves operator safety.
-- Generate more of the historical and release documentation from repo-owned tooling instead of one-off reconstruction work.
-- Improve task-state persistence so deferred or partially completed guest-side work is easier to inspect and replay.
+### Windows And Linux Parity
+- Close the most important parity gaps whenever a feature lands first on one platform.
+- Preserve one command surface and one set of operator expectations even when guest implementation differs.
+- Keep task-catalog semantics identical across platforms even when the task bodies diverge.
 
-## Exploratory
-- Optional drift reporting or export paths for Bicep/Terraform-oriented infrastructure consumers.
-- Optional remote diagnostics bundle collection for failed guest task runs.
-- Optional dashboard or web summary for managed resource groups and VM health inventory.
-- More formal policy checks for naming, logging, task-catalog quality, and command-surface evolution.
-- Optional scenario-based test harnesses for change, repair, and rollback workflows without requiring destructive live loops.
+### Documentation As A Real Interface
+- Keep README, help text, AGENTS, changelog, release notes, roadmap, and prompt history synchronized.
+- Make the command guide and architecture documentation complete enough that new contributors do not need hidden chat context to understand the system.
+- Keep English-only maintained documentation and user-facing messaging as a first-class contract.
 
-## Exit Criteria for Future Work
-A roadmap item is considered complete only when the change includes:
-- code or configuration updates where applicable
-- matching test or audit coverage
-- matching documentation updates
-- changelog entry coverage
-- prompt-history continuity for the interaction that delivered it
+## Next Value Band
+
+### Safer Change Operations
+- Improve move and resize observability with clearer progress checkpoints, cutover summaries, and post-action state snapshots.
+- Make rollback-state visibility more obvious when a long-running Azure action fails mid-flight.
+- Expand state-aware diagnostics for power, connection, and guest-task related failures.
+
+### Richer Inspection
+- Improve `show`, `group`, and related inspection paths so they expose more useful metadata without becoming noisy.
+- Make task catalogs easier to inspect directly from the CLI, especially for isolated init/update reruns.
+- Add more actionable status summaries for managed resource groups and current VM context.
+
+### Better Maintainer Ergonomics
+- Keep local hooks fast and focused.
+- Tighten static contract checks when command/help/docs/config drift appears.
+- Continue removing stale references and legacy names as soon as the repo has fully cut over.
+
+## Later Value Band
+
+### Release And Distribution
+- Introduce a cleaner release packaging story once the command surface and documentation stabilize further.
+- Improve release-note generation and historical reporting with more repo-owned helpers and less manual reconstruction.
+- Make versioned release artifacts easier to consume without weakening the current local-first workflow.
+
+### Task Metadata And Replayability
+- Add richer task metadata where it has operational value, such as reboot expectations, prerequisites, or task intent summaries.
+- Improve historical task-result and deferred-work visibility so post-failure diagnosis is faster.
+- Consider lightweight replay or diagnostic bundles that help reproduce guest-task problems without destructive live loops.
+
+## Opportunistic Work
+- Read-only reporting or export paths for teams that also manage Azure resources with other tooling.
+- Optional policy-style checks for naming, logging, docs, and task-catalog hygiene.
+- Optional UI or dashboard layers only if they preserve the current repo-first, script-first operating model.
+
+## Promotion Rules
+An item is ready to move from idea to implementation only when:
+- the operator value is clear
+- the contract impact is understood
+- the validation story is non-destructive or intentionally bounded
+- docs, tests, and runtime updates can land together
+
+## Done Criteria
+Work is complete only when it includes:
+- runtime or configuration changes where applicable
+- aligned docs
+- aligned tests or contract checks
+- updated `CHANGELOG.md`
+- updated `release-notes.md`
+- prompt-history continuity for the delivered prompt

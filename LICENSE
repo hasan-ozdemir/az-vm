@@ -1,0 +1,46 @@
+Custom Non-Commercial License for az-vm
+
+Copyright (c) the az-vm developer.
+All rights reserved except as expressly granted below.
+
+1. Purpose
+
+This repository is published to support learning, teaching, evaluation, and private non-commercial experimentation around the `az-vm` project.
+
+2. Permitted Use
+
+You may, without separate written permission from the developer:
+
+- view, clone, and study the source code
+- use the source code for personal learning, teaching, training, and evaluation
+- make private, internal, non-commercial modifications for your own research or experimentation
+
+3. Prohibited Use Without Prior Written Permission
+
+You may not, without prior written permission from the developer:
+
+- use this software or any substantial part of it for commercial purposes
+- sell, sublicense, host, bundle, or monetize this software
+- use this software in a paid service, consulting delivery, internal commercial platform, or customer-facing offering
+- publicly redistribute modified or unmodified copies of this software
+- publish public forks or derivative distributions of this software
+
+4. Commercial Licensing
+
+Commercial licensing requires explicit permission from the developer. If you want to use this project commercially, discuss sponsorship, or explore a broader license grant, contact the developer before use.
+
+5. Ownership
+
+This license does not transfer ownership of the software, its source code, its documentation, or its branding.
+
+6. No Warranty
+
+This software is provided "as is", without warranty of any kind, express or implied, including but not limited to merchantability, fitness for a particular purpose, and non-infringement. The developer is not liable for any claim, damages, or other liability arising from or related to the software or the use of the software.
+
+7. Termination
+
+Any use that violates this license automatically terminates the rights granted here.
+
+8. Contact
+
+For commercial licensing or sponsorship discussions, contact the developer or repository maintainer.

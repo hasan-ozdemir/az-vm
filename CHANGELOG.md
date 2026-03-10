@@ -3,6 +3,23 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.260] - 2026-03-10
+
+### Documentation
+- Rewrote `README.md` into a much broader operator and contributor manual with a hierarchical table of contents, quick-start flow, architecture narrative, command guide, task model, troubleshooting guidance, developer workflow notes, and license/sponsorship coverage.
+- Reworked `roadmap.md` around business value, relaxed delivery horizons, explicit promotion rules, and concrete done criteria.
+- Added a root `LICENSE` file with the repository's custom non-commercial terms, including learning/teaching/evaluation allowance, private non-commercial modification allowance, commercial-use restrictions, and sponsorship/contact language.
+- Updated `AGENTS.md` so maintained docs, help text, comments, and user-facing runtime wording must stay in English, while explicit literal display-label exceptions remain allowed.
+- Switched `docs/prompt-history.md` from a raw-language ledger to an English-normalized ledger and translated the existing historical entries into English while preserving structure and chronology.
+
+### Tests
+- Added `tests/pre-commit-release-doc-check.ps1` and wired it into `.githooks/pre-commit` so repo-changing staged work now requires `CHANGELOG.md` and `release-notes.md` in the same final change set, without recursing on release-history-only updates.
+- Expanded `tests/documentation-contract-check.ps1` to require `LICENSE`, enforce the English documentation contract, validate the English-normalized prompt-history rule, and confirm the pre-commit release-doc gate plus the current GitHub Actions PowerShell compatibility entrypoint.
+
+### Chores
+- Updated `tools/enable-git-hooks.ps1` to describe the stronger pre-commit gate accurately.
+- Fixed `.github/workflows/quality-gate.yml` to use `tests/powershell-compatibility-check.ps1` instead of the removed `tests/powershell-matrix.ps1`.
+
 ## [2026.3.10.259] - 2026-03-10
 
 ### Features
@@ -29,7 +46,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Extended the late Windows validation path so `29-health-snapshot` now also inventories the static auto-start shortcut contract that `39-auto-start-apps` writes under the machine Startup folder.
 - Expanded `29-health-snapshot` to inventory the refreshed public desktop shortcut set and read back the updated target-path and argument contracts during late Windows validation.
 - Recalibrated all Windows `vm-update` task catalog timeouts from live transcript data and successful isolated reruns using a `max_success_seconds * 1.3` buffer rule, including new bounded values for tasks `27` and `29` after live `exec` confirmation at `7.2s` and `6.7s`.
-- Expanded the late-stage public desktop contract again so the canonical set now also includes normalized social-media links, app launchers for Be My Eyes/NVDA/Edge/VLC/iTunes/OneDrive/Google Drive, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, dynamic app-path fallback resolution, and Unicode-safe `q1EkşiSözlük` creation plus readback through `Shell.Application`.
+- Expanded the late-stage public desktop contract again so the canonical set now also includes normalized social-media links, app launchers for Be My Eyes/NVDA/Edge/VLC/iTunes/OneDrive/Google Drive, a `Ctrl+Shift+J` hotkey on `local-only-shortcut`, dynamic app-path fallback resolution, and Unicode-safe `q1Eksisozluk` creation plus readback through `Shell.Application`.
 - Recalibrated Windows `vm-update` catalog timeouts for the new install tasks and refreshed late-stage tasks from successful isolated live durations with a 30% buffer, including final bounded values for tasks `30` through `37`, plus rerun-confirmed `27=10s` and `29=10s`.
 - Replaced the fragile reboot/autologon path for Windows `vm-update` tasks `04` and `05` with a bounded `manager` password-logon scheduled-task helper so isolated `exec` runs no longer stall in interactive-session retry loops.
 - Reworked `04-windows-ux-performance-tuning` so it now enforces and readback-validates hibernate-menu visibility, Explorer details/no-group defaults, desktop name sort plus auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager full view through `TaskManager\settings.json`.
@@ -71,11 +88,11 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Added smoke coverage for persistent SSH spinner-marker normalization plus the new stale-installer and bounded-timeout guards in Windows tasks `09` and `18`.
 - Added smoke coverage for the new Windows UX helper-asset model, removal of reboot-resume task metadata, `TaskManager\settings.json` validation, and removal of legacy audio tuning from task `05`.
 - Added smoke coverage for the new `28-copy-user-settings` task, taskbar-hide registry contract in task `04`, the `29-health-snapshot` rename, and the public desktop banking shortcut set.
-- Added smoke coverage for the new Windows app-install tasks `30` through `37`, the expanded canonical public desktop shortcut set, the shared Unicode-safe `q1EkşiSözlük` variable contract, Be My Eyes helper-asset publication, and `local-only-shortcut` hotkey assignment.
+- Added smoke coverage for the new Windows app-install tasks `30` through `37`, the expanded canonical public desktop shortcut set, the shared Unicode-safe `q1Eksisozluk` variable contract, Be My Eyes helper-asset publication, and `local-only-shortcut` hotkey assignment.
 - Completed isolated live `exec` validation for Windows update tasks `04`, `05`, and `20` against `rg-examplevm-ate1-g1/examplevm`, including an idempotent rerun of task `04` plus private local-only accessibility `version.dll` hash and roaming-manifest readback checks.
 - Completed additional isolated live repair validation for Windows update tasks `04`, `28`, and `29` after the Windows UX/user-settings hardening changes, including repeated interrupted-task recovery, assistant/default-profile propagation checks, and a final successful `27 -> 28 -> 29` late-stage chain on `rg-examplevm-ate1-g1/examplevm`.
 - Completed isolated live `exec` sweeps for every Windows `vm-init` and `vm-update` task against `rg-examplevm-ate1-g1/examplevm` in effective catalog priority/timeout order, then reran task `09` after the Ollama hardening change to prove `11434` API readiness.
-- Completed isolated live `exec` validation for Windows update tasks `30` through `37`, then reran `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` to confirm the expanded shortcut contract, app-target resolution, `local-only-shortcut` hotkey, and Unicode-safe `q1EkşiSözlük` readback on `rg-examplevm-ate1-g1/examplevm`.
+- Completed isolated live `exec` validation for Windows update tasks `30` through `37`, then reran `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` to confirm the expanded shortcut contract, app-target resolution, `local-only-shortcut` hotkey, and Unicode-safe `q1Eksisozluk` readback on `rg-examplevm-ate1-g1/examplevm`.
 - Completed isolated live reruns of Windows update tasks `09` and `18`, then reran `create --auto --windows --perf --from-step=vm-update` successfully to the end on `rg-examplevm-ate1-g1/examplevm` with `WIN_VM_SIZE=Standard_D4as_v5`, confirming a running VM and reachable RDP port `3389`.
 
 ### Refactors

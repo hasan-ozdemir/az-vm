@@ -96,7 +96,9 @@ Use these sources in this order when maintaining the repo:
 - Prefer isolated diagnosis and targeted reruns over destructive full rebuild loops unless the user explicitly wants a rebuild.
 
 ## Logging and UX Rules
-- Keep user-facing strings, comments, and UI wording in English.
+- Keep user-facing strings, comments, help text, and UI wording in English.
+- Keep maintained repository documentation in English.
+- The only allowed language exception is for literal user-defined display labels or product/site names that are intentionally preserved as-is, such as specific desktop shortcut titles.
 - Keep Linux and Windows wording aligned for equivalent behavior.
 - Keep logs contextual, singular, and readable.
 - Do not emit duplicate informational lines without a real state change.
@@ -124,10 +126,11 @@ Use these sources in this order when maintaining the repo:
 ## Documentation Responsibilities
 - `AGENTS.md`: engineering contract and collaboration rules.
 - `README.md`: operator and contributor guide.
+- `LICENSE`: repository licensing terms.
 - `CHANGELOG.md`: full project history from first day to today.
 - `release-notes.md`: current release-oriented summary.
 - `roadmap.md`: forward-looking project plan.
-- `docs/prompt-history.md`: human-readable prompt ledger with raw prompts and assistant summaries.
+- `docs/prompt-history.md`: human-readable prompt ledger with English-normalized user prompts and assistant summaries.
 
 ## Release Versioning Rule
 - `CHANGELOG.md` and `release-notes.md` must use `YYYY.M.D.N`.
@@ -135,13 +138,16 @@ Use these sources in this order when maintaining the repo:
 - Keep changelog and release-notes version labels aligned for the current documented release.
 
 ## Prompt-History Rule
-- For every completed user prompt that causes code or repo file changes, append the user's raw prompt and the assistant's final summary to `docs/prompt-history.md`.
+- For every completed user prompt that causes code or repo file changes, append the user prompt and the assistant's final summary to `docs/prompt-history.md`.
 - For user prompts that do not cause any repo file changes, do not update `docs/prompt-history.md` automatically.
 - For non-mutating prompts, the assistant must answer normally and then ask whether the user wants that prompt recorded in the repo history.
 - If the user replies yes or gives another clearly positive confirmation, append the most recent user-assistant dialog to `docs/prompt-history.md` and create the corresponding git commit as a special exception.
 - Maintain full two-way dialog continuity for recorded turns.
 - Do not omit completed turns that changed repo files.
 - Keep the file appendable, chronologically ordered, and human-readable.
+- Record prompt-history entries in English.
+- If the original user prompt or assistant summary is not English, translate it to English before recording it in `docs/prompt-history.md`.
+- If the original user prompt or assistant summary is already English, record it unchanged.
 - Use the relevant `.codex` JSONL files as the primary source when reconstructing past turns.
 
 ## Commit and Change Discipline
@@ -149,6 +155,8 @@ Use these sources in this order when maintaining the repo:
 - Use prefixes such as `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`.
 - Reflect the real scope of the change.
 - Do not batch unrelated changes into one commit.
+- Before creating the final commit for a repo-changing prompt, update `CHANGELOG.md` and `release-notes.md` in the same final change set whenever the prompt changed shipped behavior, docs, configuration contract, workflow, or engineering process.
+- Treat that changelog/release-notes update as part of the same prompt deliverable, not as a new follow-up change that triggers another recursive documentation pass.
 - Before presenting the final summary to the user, create the commit for the completed prompt.
 - Use `tools/enable-git-hooks.ps1` and `tools/disable-git-hooks.ps1` for local hook management; do not reintroduce one-way hook installers.
 
