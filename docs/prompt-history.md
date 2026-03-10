@@ -4286,3 +4286,18 @@ Implement the plan.
 **Assistant Summary**
 
 Audited the repo for env-worthy hardcoded values, removed shared runtime fallbacks for legacy VM-name and password defaults, added shared helpers that fail fast on missing or placeholder-sensitive `VM_NAME` and VM credential settings, clarified the `.env` versus task-local config-block policy in the docs, and moved mutable task-only constants in the main Windows update tasks into explicit top-of-file config blocks. Updated `.env.example`, `README.md`, `AGENTS.md`, `CHANGELOG.md`, `release-notes.md`, and smoke coverage accordingly, then verified the change with documentation, code-quality, smoke, and PowerShell compatibility checks.
+
+### 2026-03-10 19:01 TRT
+
+**User Prompt**
+
+````text
+Apply these small follow-up tasks:
+- Set `.env` `PYSSH_CLIENT_PATH=` to the current pyssh client path. The default must not stay empty; update `.env.example` as well.
+- I manually changed the NSG rule naming prefix in `.env` to `nsg-rule-`; update the related implementation accordingly.
+- Add shared `.env` keys `VM_ENABLE_HIBERNATION=true` and `VM_ENABLE_NESTED_VIRTUALIZATION=true`, support both `true` and `false`, and update implementation and documentation across the repo.
+````
+
+**Assistant Summary**
+
+Updated the local `.env` and the committed `.env.example` so `PYSSH_CLIENT_PATH` now defaults to the repo-relative `tools/pyssh/ssh_client.py` path, standardized NSG rule naming on the `nsg-rule-` prefix across runtime defaults and tests, and added shared `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` booleans to the configuration contract. Wired those feature toggles into create/update post-deploy behavior so `false` now cleanly skips the corresponding feature path, documented the new contract in `README.md` and `AGENTS.md`, updated release docs, and verified the result with documentation, code-quality, smoke, and PowerShell compatibility checks.

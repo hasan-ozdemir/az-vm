@@ -105,7 +105,7 @@ Invoke-Test -Name "Managed resource naming contract" -Action {
         VNET_NAME = 'net-samplevm-ate1-n1'
         SUBNET_NAME = 'subnet-samplevm-ate1-n1'
         NSG_NAME = 'nsg-samplevm-ate1-n1'
-        NSG_RULE_NAME = 'nsgrule-samplevm-ate1-n1'
+        NSG_RULE_NAME = 'nsg-rule-samplevm-ate1-n1'
         PUBLIC_IP_NAME = 'ip-samplevm-ate1-n1'
         NIC_NAME = 'nic-samplevm-ate1-n1'
         VM_DISK_NAME = 'disk-samplevm-ate1-n1'
@@ -216,7 +216,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
         'VM_OS_TYPE','VM_NAME','company_name','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
-        'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
+        'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
         'AZ_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
         'WIN_VM_IMAGE','WIN_VM_SIZE','WIN_VM_DISK_SIZE_GB','LIN_VM_IMAGE','LIN_VM_SIZE','LIN_VM_DISK_SIZE_GB',
         'WIN_VM_INIT_TASK_DIR','WIN_VM_UPDATE_TASK_DIR','LIN_VM_INIT_TASK_DIR','LIN_VM_UPDATE_TASK_DIR',
@@ -237,7 +237,26 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     $envExampleText = Get-Content -LiteralPath $envExamplePath -Raw
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ADMIN_PASS=<CHANGE_ME_STRONG_ADMIN_PASSWORD>')) -Message '.env.example must keep the admin password as a placeholder.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ASSISTANT_PASS=<CHANGE_ME_STRONG_ASSISTANT_PASSWORD>')) -Message '.env.example must keep the assistant password as a placeholder.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_HIBERNATION=true')) -Message '.env.example must expose VM_ENABLE_HIBERNATION as a shared feature toggle.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=true')) -Message '.env.example must expose VM_ENABLE_NESTED_VIRTUALIZATION as a shared feature toggle.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
     Assert-True -Condition (-not ($envExampleText -match [regex]::Escape('<runtime-secret>'))) -Message '.env.example must not keep the old committed assistant password.'
+}
+
+Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime defaults" -Action {
+    $foundationText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\azvm-core-foundation.ps1') -Raw
+    $orchestrationText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\azvm-orchestration-runtime.ps1') -Raw
+    $uiText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\ui\azvm-ui-runtime.ps1') -Raw
+    $mainText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\azvm-command-main.ps1') -Raw
+
+    Assert-True -Condition ($foundationText -match [regex]::Escape("return 'tools/pyssh/ssh_client.py'")) -Message 'Foundation defaults must publish a non-empty PYSSH client path.'
+    Assert-True -Condition ($orchestrationText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'Orchestration runtime must read VM_ENABLE_HIBERNATION.'
+    Assert-True -Condition ($orchestrationText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'Orchestration runtime must read VM_ENABLE_NESTED_VIRTUALIZATION.'
+    Assert-True -Condition ($orchestrationText -match [regex]::Escape('disabled by VM_ENABLE_HIBERNATION=false')) -Message 'Orchestration runtime must support disabling hibernation by config.'
+    Assert-True -Condition ($orchestrationText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Orchestration runtime must support disabling nested virtualization by config.'
+    Assert-True -Condition ($uiText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'UI runtime must use the nsg-rule naming prefix.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Command main must consume the shared PYSSH client default.'
 }
 
 Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {

@@ -373,7 +373,7 @@ function Invoke-AzVmMain {
             if ($platform -eq 'windows') {
                 $sshMaxRetries = 1
             }
-            $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
+            $configuredPySshClientPath = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue (Get-AzVmDefaultPySshClientPathText))
             $sshTaskTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_TASK_TIMEOUT_SECONDS' -DefaultValue ([string]$script:SshTaskTimeoutSeconds))
             $sshTaskTimeoutSeconds = $script:SshTaskTimeoutSeconds
             if ($sshTaskTimeoutText -match '^\d+$') {

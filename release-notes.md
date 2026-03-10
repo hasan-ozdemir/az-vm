@@ -2,6 +2,21 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.262 - 2026-03-10
+
+### Summary
+This release tightens three shared configuration contracts at once: the repo-managed pyssh client path now has a non-empty default, NSG rule naming now consistently uses the `nsg-rule-` prefix, and create/update flows now honor shared `.env` booleans for hibernation and nested-virtualization intent.
+
+### Highlights
+- Set the committed `PYSSH_CLIENT_PATH` default to `tools/pyssh/ssh_client.py` and updated runtime call sites to use that shared default consistently.
+- Standardized `NSG_RULE_NAME_TEMPLATE` and related defaults/tests on the `nsg-rule-` prefix.
+- Added shared `VM_ENABLE_HIBERNATION=true|false` and `VM_ENABLE_NESTED_VIRTUALIZATION=true|false` keys to the `.env` contract and wired them into create/update post-deploy feature handling.
+- Updated `README.md`, `AGENTS.md`, `.env.example`, and validation coverage so the new config contract is documented and enforced together.
+
+### Reliability And Process Notes
+- Setting `VM_ENABLE_HIBERNATION=false` now skips create/update hibernation enablement cleanly, even when the chosen SKU supports it.
+- Setting `VM_ENABLE_NESTED_VIRTUALIZATION=false` now suppresses the create/update nested-virtualization enablement/validation path without changing the separate `set` command surface.
+
 ## Release 2026.3.10.261 - 2026-03-10
 
 ### Summary

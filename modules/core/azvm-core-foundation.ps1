@@ -447,6 +447,11 @@ function Get-AzVmDefaultTcpPortsCsv {
     return '80,443,8444,389,5173,3000,3001,8080,5432,3306,6837,4000,4001,5000,5001,6000,6001,6060,7000,7001,7070,8000,8001,9000,9001,9090,2222,3333,4444,5555,6666,7777,8888,9999,11434'
 }
 
+# Handles Get-AzVmDefaultPySshClientPathText.
+function Get-AzVmDefaultPySshClientPathText {
+    return 'tools/pyssh/ssh_client.py'
+}
+
 # Handles Test-AzVmConfigPlaceholderValue.
 function Test-AzVmConfigPlaceholderValue {
     param(

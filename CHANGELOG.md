@@ -3,6 +3,23 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.262] - 2026-03-10
+
+### Changed
+- Changed the committed pyssh client default so `PYSSH_CLIENT_PATH` now resolves to the repo-relative `tools/pyssh/ssh_client.py` path instead of starting empty in the `.env` contract.
+- Standardized the default NSG rule naming prefix across the repo on `nsg-rule-`, including the committed template defaults and sample/test contracts.
+- Added shared `.env` feature-intent keys `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION` so create/update flows can explicitly enable or skip those post-deploy feature paths with `true` or `false`.
+
+### Refactoring
+- Updated orchestration and UI runtime defaults to consume the shared non-empty pyssh client default instead of duplicating empty `PYSSH_CLIENT_PATH` fallbacks.
+- Extended post-deploy feature enablement so hibernation and nested virtualization can now be skipped cleanly when the shared `.env` feature toggles are set to `false`, while preserving the current Azure enablement path when they are `true`.
+
+### Documentation
+- Updated `README.md`, `AGENTS.md`, and `.env.example` to document the new shared VM feature toggles, the non-empty pyssh client default, and the `nsg-rule-` naming contract.
+
+### Tests
+- Expanded smoke and documentation checks to enforce the new pyssh default path, the shared feature-toggle env keys, and the `nsg-rule-` template contract.
+
 ## [2026.3.10.261] - 2026-03-10
 
 ### Changed

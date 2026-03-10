@@ -237,6 +237,7 @@ The runtime never auto-writes or auto-syncs catalog files. Missing entries fall 
 8. Print a final VM/resource summary.
 
 The same mental model applies to `update`, except that existing managed resources are reconciled instead of always starting from empty state.
+Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION`; set them to `false` when you want create/update to skip those feature paths even if the SKU supports them.
 
 ### Safety Model And Failure Handling
 - Validation happens before destructive Azure work.
@@ -266,6 +267,12 @@ The same mental model applies to `update`, except that existing managed resource
 - `company_name`: default Chrome `--profile-directory` for repo-managed Windows web shortcuts.
 - `AZ_LOCATION`: default Azure region.
 - `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`, `VM_DISK_NAME`: optional explicit resource-name overrides.
+- `NSG_RULE_NAME`, `NSG_RULE_NAME_TEMPLATE`: explicit override or template for inbound-rule naming. The default template prefix is `nsg-rule-`.
+
+### Shared VM Feature Toggles
+- `VM_ENABLE_HIBERNATION`: `true` or `false`. Controls whether create/update flows should attempt post-deploy Azure hibernation enablement when the target SKU supports it.
+- `VM_ENABLE_NESTED_VIRTUALIZATION`: `true` or `false`. Controls whether create/update flows should treat nested virtualization as a desired capability during post-deploy feature validation.
+- These are common keys, not platform-specific keys. Keep them in `.env` unless you are deliberately overriding them on the CLI/runtime side.
 
 ### Platform-Specific Settings
 - Windows:
@@ -290,7 +297,7 @@ The same mental model applies to `update`, except that existing managed resource
 - `SSH_TASK_TIMEOUT_SECONDS`
 - `VM_TASK_OUTCOME_MODE`
 - `SSH_MAX_RETRIES`
-- `PYSSH_CLIENT_PATH`
+- `PYSSH_CLIENT_PATH`: defaults to the repo-relative client path `tools/pyssh/ssh_client.py`
 - `TCP_PORTS`
 
 ### Global Versus Task-Local Configuration
