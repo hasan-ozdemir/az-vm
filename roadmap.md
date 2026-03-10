@@ -52,7 +52,7 @@ Keep `az-vm` as a pragmatic Azure VM operator toolkit with one clear mental mode
 - Make versioned release artifacts easier to consume without weakening the current local-first workflow.
 
 ### Task Metadata And Replayability
-- Add richer task metadata where it has operational value, such as reboot expectations, prerequisites, or task intent summaries.
+- Extend the new script-local task metadata model only where it creates real operator value, such as explicit prerequisites, reboot expectations, or task intent summaries.
 - Improve historical task-result and deferred-work visibility so post-failure diagnosis is faster.
 - Consider lightweight replay or diagnostic bundles that help reproduce guest-task problems without destructive live loops.
 

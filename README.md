@@ -149,7 +149,7 @@
 ```powershell
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd exec --update-task=27 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd exec --update-task=33 --group=<resource-group> --vm-name=<vm-name> --windows
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
@@ -425,7 +425,7 @@ Purpose: run one init task, one update task, or open an interactive remote shell
 Usage patterns:
 ```powershell
 .\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd exec --update-task=27 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd exec --update-task=33 --group=<resource-group> --vm-name=<vm-name> --windows
 .\az-vm.cmd exec --linux
 ```
 
@@ -567,14 +567,16 @@ Usage patterns:
 Catalog JSON files are the source of truth for task ordering, enable state, and timeouts. Runtime code must not rewrite them automatically.
 
 ### Task Naming Rules
-- `NN-verb-topic.ext`
+- `NN-verb-noun-target.ext`
 - `NN` is two digits
 - 2-5 English words in kebab-case
 - `.ps1` for Windows
 - `.sh` for Linux
 
 ### Timeouts, Priority, And Enable Flags
-- catalog entry present: use catalog values
+- tracked task with catalog entry: use catalog values
+- local-only task may declare `# az-vm-task-meta: {...}` on the first non-empty comment line for `priority`, `enabled`, `timeout`, and `assets`
+- if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
 - missing `priority`: default to `1000`
 - missing `timeout`: default to `180`
 - missing entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
@@ -594,7 +596,7 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 ### Rerun Update Tasks On An Existing VM
 ```powershell
 .\az-vm.cmd update --single-step=vm-update --auto --windows
-.\az-vm.cmd exec --update-task=20 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd exec --update-task=37 --group=<resource-group> --vm-name=<vm-name> --windows
 ```
 
 ### Resize In Place

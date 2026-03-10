@@ -5,37 +5,37 @@
   },
   "tasks": [
     {
-      "name": "01-ensure-local-admin-users",
+      "name": "01-ensure-users-local",
       "priority": 1,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "02-choco-bootstrap",
+      "name": "02-bootstrap-choco-system",
       "priority": 2,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "03-openssh-install-service",
+      "name": "03-install-openssh-service",
       "priority": 3,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "04-sshd-config-port",
+      "name": "04-configure-sshd-port",
       "priority": 4,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "05-rdp-configure",
+      "name": "05-configure-rdp-system",
       "priority": 5,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "06-firewall-open-ports",
+      "name": "06-open-ports-firewall",
       "priority": 6,
       "enabled": true,
       "timeout": 180

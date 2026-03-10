@@ -78,10 +78,12 @@ Use these sources in this order when maintaining the repo:
 - If naming rules change, update README, tests, and any naming-related summaries in the same change.
 
 ## Task Catalog Rules
-- Task files use `NN-verb-topic.ext`.
+- Task files use `NN-verb-noun-target.ext`.
 - `NN` is a two-digit task number.
-- The task catalog JSON files are the execution-order and timeout source of truth.
-- Task priority is catalog-driven, not inferred from directory scans at runtime.
+- The task catalog JSON files are the execution-order and timeout source of truth for tracked tasks.
+- Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets` for intentionally local-only tasks that stay out of source control.
+- When both a task catalog entry and script metadata exist, the catalog entry wins for `priority`, `enabled`, and `timeout`.
+- Task priority is catalog-driven for tracked tasks and metadata-driven only for intentionally local-only tasks.
 - Runtime code must not auto-write, auto-sync, or auto-reconcile catalog JSON files.
 - For discovered tasks that are missing from catalog entries, use defaults: `priority=1000`, `enabled=true`, `timeout=180`.
 - For catalog entries missing `priority`, default to `1000`.

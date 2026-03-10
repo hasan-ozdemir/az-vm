@@ -14,6 +14,12 @@ _tmp_test.txt
 tmp/
 tmp-logs/
 
+# Ignore local-only Windows task extensions and assets
+windows/update/8[01]-*.ps1
+windows/update/90-*.ps1
+windows/update/disabled/99-*.ps1
+windows/update/local-private-assets/
+
 # Ignore downloaded SSH helper binaries/vendors
 tools/putty/*.exe
 tools/winscp/*.exe

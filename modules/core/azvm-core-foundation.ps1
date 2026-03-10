@@ -707,6 +707,93 @@ function Get-AzVmTaskCatalogStateMap {
     return $taskMap
 }
 
+# Handles Get-AzVmTaskScriptMetadata.
+function Get-AzVmTaskScriptMetadata {
+    param(
+        [string]$ScriptText,
+        [string]$TaskPath = ''
+    )
+
+    $result = [ordered]@{
+        Priority = $null
+        Enabled = $null
+        TimeoutSeconds = $null
+        AssetSpecs = @()
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$ScriptText)) {
+        return [pscustomobject]$result
+    }
+
+    foreach ($lineRaw in @($ScriptText -split "`r?`n")) {
+        $line = [string]$lineRaw
+        if ([string]::IsNullOrWhiteSpace([string]$line)) {
+            continue
+        }
+
+        $trimmed = $line.Trim()
+        if (-not $trimmed.StartsWith('#')) {
+            return [pscustomobject]$result
+        }
+
+        if ($trimmed -notmatch '^#\s*az-vm-task-meta\s*:\s*(.+)$') {
+            return [pscustomobject]$result
+        }
+
+        $metadataText = [string]$Matches[1]
+        $metadata = $null
+        try {
+            $metadata = ConvertFrom-JsonCompat -InputObject $metadataText
+        }
+        catch {
+            $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata' } else { ("task script metadata for '{0}'" -f $TaskPath) }
+            throw ("Invalid {0}: {1}" -f $label, $_.Exception.Message)
+        }
+
+        if ($null -eq $metadata) {
+            return [pscustomobject]$result
+        }
+
+        if ($metadata.PSObject.Properties.Match('priority').Count -gt 0) {
+            $result.Priority = Convert-AzVmTaskCatalogPriority -Value $metadata.priority -DefaultValue 1000
+        }
+        if ($metadata.PSObject.Properties.Match('enabled').Count -gt 0) {
+            $result.Enabled = Convert-AzVmTaskCatalogBool -Value $metadata.enabled -DefaultValue $true
+        }
+        if ($metadata.PSObject.Properties.Match('timeout').Count -gt 0) {
+            $result.TimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $metadata.timeout -DefaultValue 180
+        }
+
+        $assetSpecs = @()
+        if ($metadata.PSObject.Properties.Match('assets').Count -gt 0 -and $null -ne $metadata.assets) {
+            foreach ($asset in @(ConvertTo-ObjectArrayCompat -InputObject $metadata.assets)) {
+                $localPath = ''
+                $remotePath = ''
+                if ($null -ne $asset -and $asset.PSObject.Properties.Match('local').Count -gt 0) {
+                    $localPath = [string]$asset.local
+                }
+                if ($null -ne $asset -and $asset.PSObject.Properties.Match('remote').Count -gt 0) {
+                    $remotePath = [string]$asset.remote
+                }
+                if ([string]::IsNullOrWhiteSpace([string]$localPath) -or [string]::IsNullOrWhiteSpace([string]$remotePath)) {
+                    $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata asset' } else { ("task script metadata asset for '{0}'" -f $TaskPath) }
+                    throw ("Invalid {0}: each asset requires non-empty 'local' and 'remote' values." -f $label)
+                }
+
+                $assetSpecs += [pscustomobject]@{
+                    LocalPath = [string]$localPath
+                    RemotePath = [string]$remotePath
+                }
+            }
+        }
+
+        $result.AssetSpecs = @($assetSpecs)
+        return [pscustomobject]$result
+    }
+
+    return [pscustomobject]$result
+}
+
 # Handles Get-AzVmTaskBlocksFromDirectory.
 function Get-AzVmTaskBlocksFromDirectory {
     param(
@@ -745,7 +832,7 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
 
         if (-not ($name -match $namePattern)) {
-            throw ("Invalid task filename '{0}'. Expected NN-verb-topic format with 2-5 words." -f $name)
+            throw ("Invalid task filename '{0}'. Expected NN-verb-noun-target format with 2-5 words." -f $name)
         }
 
         $ext = [string]$Matches.ext
@@ -766,11 +853,16 @@ function Get-AzVmTaskBlocksFromDirectory {
             throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files and disabled/* are allowed." -f $name, $relativePath)
         }
 
+        $content = Get-Content -Path $file.FullName -Raw
+        $metadata = Get-AzVmTaskScriptMetadata -ScriptText ([string]$content) -TaskPath ([string]$relativePath)
+
         $row = [pscustomobject]@{
             Order = [int]$Matches.n
             Name = [System.IO.Path]::GetFileNameWithoutExtension($name)
             Path = [string]$file.FullName
             RelativePath = [string]$relativePath
+            Script = [string]$content
+            Metadata = $metadata
         }
 
         if ($isDisabled) {
@@ -786,32 +878,68 @@ function Get-AzVmTaskBlocksFromDirectory {
     $activeTasks = @()
     $sortedActiveRows = @(
         $activeRows | Sort-Object `
-            @{ Expression = { if ($taskMap.ContainsKey([string]$_.Name)) { [int]$taskMap[[string]$_.Name].Priority } else { 1000 } } }, `
+            @{ Expression = {
+                if ($taskMap.ContainsKey([string]$_.Name)) {
+                    return [int]$taskMap[[string]$_.Name].Priority
+                }
+
+                $metadataPriority = $null
+                if ($null -ne $_.Metadata -and $_.Metadata.PSObject.Properties.Match('Priority').Count -gt 0) {
+                    $metadataPriority = $_.Metadata.Priority
+                }
+                return (Convert-AzVmTaskCatalogPriority -Value $metadataPriority -DefaultValue 1000)
+            } }, `
             @{ Expression = { [int]$_.Order } }, `
             @{ Expression = { [string]$_.Name } }
     )
     foreach ($row in @($sortedActiveRows)) {
         $taskName = [string]$row.Name
-        $isEnabled = $true
-        if ($taskMap.ContainsKey($taskName)) {
-            $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskMap[$taskName].Enabled -DefaultValue $true)
+        $content = [string]$row.Script
+        $metadata = $row.Metadata
+
+        $taskPriority = 1000
+        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Priority').Count -gt 0 -and $null -ne $metadata.Priority) {
+            $taskPriority = Convert-AzVmTaskCatalogPriority -Value $metadata.Priority -DefaultValue 1000
         }
+
+        $isEnabled = $true
+        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Enabled').Count -gt 0 -and $null -ne $metadata.Enabled) {
+            $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $metadata.Enabled -DefaultValue $true)
+        }
+        if (-not $isEnabled) {
+            Write-Host ("Task skipped (disabled in script metadata): {0}" -f $taskName) -ForegroundColor DarkYellow
+            continue
+        }
+
+        $taskTimeoutSeconds = 180
+        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0 -and $null -ne $metadata.TimeoutSeconds) {
+            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $metadata.TimeoutSeconds -DefaultValue 180
+        }
+
+        if ($taskMap.ContainsKey($taskName)) {
+            $taskPriority = Convert-AzVmTaskCatalogPriority -Value $taskMap[$taskName].Priority -DefaultValue $taskPriority
+            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
+            $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskMap[$taskName].Enabled -DefaultValue $isEnabled)
+        }
+
         if (-not $isEnabled) {
             Write-Host ("Task skipped (disabled in catalog): {0}" -f $taskName) -ForegroundColor DarkYellow
             continue
         }
 
-        $content = Get-Content -Path $row.Path -Raw
-        $taskTimeoutSeconds = 180
-        if ($taskMap.ContainsKey($taskName)) {
-            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
+        $assetSpecs = @()
+        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('AssetSpecs').Count -gt 0 -and $null -ne $metadata.AssetSpecs) {
+            $assetSpecs = @(ConvertTo-ObjectArrayCompat -InputObject $metadata.AssetSpecs)
         }
+
         $activeTasks += [pscustomobject]@{
             Name = $taskName
             Script = [string]$content
             RelativePath = [string]$row.RelativePath
             DirectoryPath = [string](Split-Path -Path $row.Path -Parent)
             TimeoutSeconds = [int]$taskTimeoutSeconds
+            Priority = [int]$taskPriority
+            AssetSpecs = @($assetSpecs)
         }
     }
 

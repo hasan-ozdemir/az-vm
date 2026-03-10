@@ -326,7 +326,7 @@ test: can you confirm that the Windows side, with the `--auto` and `--step` para
 
 **Assistant Summary**
 
-I tested the current code **without changing it**; result: 1. The win e2e setup with `-Auto -Step` **could not be completed**. 2. Failure point: `02-openssh-install-service` within `Adim 8/9`. 3. Error: `VM step '02-openssh-install-service' run-command output is empty.` 4. Because of this, `Adim 9/9` did not run, meaning the script's end-to-end “co...
+I tested the current code **without changing it**; result: 1. The win e2e setup with `-Auto -Step` **could not be completed**. 2. Failure point: `02-install-openssh-service` within `Adim 8/9`. 3. Error: `VM step '02-install-openssh-service' run-command output is empty.` 4. Because of this, `Adim 9/9` did not run, meaning the script's end-to-end “co...
 
 ### 2026-03-02 20:12 TRT
 
@@ -639,7 +639,7 @@ fix nit: also, right after installing choco, there's a choco setting like allow 
 
 **Assistant Summary**
 
-Fixed. - On the `win-vm` side, in the step-mode `02-openssh-install-service` flow, I added the following line immediately after `choco` was found and the installation was verified: - `& $chocoExe feature enable -n allowGlobalConfirmation | Out-Null` - This way, both: - `02-openssh-install-service` (early `choco` usage) - the `05-choco-bootstrap` flow...
+Fixed. - On the `win-vm` side, in the step-mode `02-install-openssh-service` flow, I added the following line immediately after `choco` was found and the installation was verified: - `& $chocoExe feature enable -n allowGlobalConfirmation | Out-Null` - This way, both: - `02-install-openssh-service` (early `choco` usage) - the `05-bootstrap-choco-system` flow...
 
 ### 2026-03-03 02:49 TRT
 
@@ -1329,7 +1329,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-I implemented the plan. - A new comprehensive UX/performance task was added to the Windows VM update flow: `09-windows-ux-performance-tuning` - File: [az-vm-co-guest.ps1](/C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-guest.ps1:515) - The following headings were added within this task: - Explorer: `This PC`, hidden+protected files, extensions visible...
+I implemented the plan. - A new comprehensive UX/performance task was added to the Windows VM update flow: `09-configure-ux-windows` - File: [az-vm-co-guest.ps1](/C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-guest.ps1:515) - The following headings were added within this task: - Explorer: `This PC`, hidden+protected files, extensions visible...
 
 ### 2026-03-03 21:42 TRT
 
@@ -1337,9 +1337,9 @@ I implemented the plan. - A new comprehensive UX/performance task was added to t
 
 ````text
 feat: on the Windows side, add fully unattended installation and configuration commands for these tasks as well to the VM update script:
-*private local-only accessibility for Windows installation:
--install it using this command: winget install -e --id private.local.accessibility.package
--please also perform this private local-only accessibility installation immediately after the Python installation.
+*private local-only accessibility package installation:
+-install it using the requested `winget` command
+-please also perform this private local-only package installation immediately after the Python installation.
 *google chrome installation:
 -install it with this command: winget install -e --id Google.Chrome
 -then definitely append these parameters to the end of the target application path of its desktop icon: --new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --profile-directory={server_name} https://www.google.com
@@ -1366,7 +1366,7 @@ feat: on the Windows side, add fully unattended installation and configuration c
 
 **Assistant Summary**
 
-<proposed_plan> # Plan: Extend Windows VM Update Flow for Accessibility, Browser, Docker/WSL2, Classic UI, and Performance Hardening ## Summary Add a new set of unattended Windows guest tasks in the `win` Step 8 update-script flow to install/configure: - private local-only accessibility 2025 (immediately after Python install), - Google Chrome ...
+<proposed_plan> # Plan: Extend Windows VM Update Flow for Accessibility, Browser, Docker/WSL2, Classic UI, and Performance Hardening ## Summary Add a new set of unattended Windows guest tasks in the `win` Step 8 update-script flow to install/configure: - one private local-only accessibility package (immediately after Python install), - Google Chrome ...
 
 ### 2026-03-03 21:55 TRT
 
@@ -1395,7 +1395,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Plan implemented and committed. - Windows Step 8 task catalog was expanded in [co-vm/az-vm-co-guest.ps1](C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-guest.ps1): - Added private local-only accessibility, extra Chocolatey packages (`ollama`, `sysinternals`, `powershell-core`, `io-unlocker`, `gh`, `ffmpeg`, `7zip`, `azure-cli`), Chrome install ...
+Plan implemented and committed. - Windows Step 8 task catalog was expanded in [co-vm/az-vm-co-guest.ps1](C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-guest.ps1): - Added one private local-only accessibility package, extra Chocolatey packages (`ollama`, `sysinternals`, `powershell-core`, `io-unlocker`, `gh`, `ffmpeg`, `7zip`, `azure-cli`), Chrome install ...
 
 ### 2026-03-03 22:13 TRT
 
@@ -1575,13 +1575,13 @@ I ran the `win` side live for a few rounds with `--auto`, patched the errors, an
 **User Prompt**
 
 ````text
-fix: let's successfully complete the winget installation with the `choco upgrade winget` command and then run the `refreshenv` command so that winget can work via PATH. Let's also install private local-only accessibility not with winget's full path, but with the `winget install xxx` command.
+fix: let's successfully complete the winget installation with the `choco upgrade winget` command and then run the `refreshenv` command so that winget can work via PATH. Let's also install the private local-only accessibility package not with winget's full path, but with the `winget install xxx` command.
 
 ````
 
 **Assistant Summary**
 
-Implemented. - In `05-choco-bootstrap`, `winget` installation is now: - `choco upgrade winget -y --no-progress` - then `refreshenv.cmd` - then checking `winget --version` (via PATH) - In `08-private-local-task`, private local-only accessibility installation now without using the full path: - `winget install -e --id private.local.accessibility.package ..."
+Implemented. - In `05-bootstrap-choco-system`, `winget` installation is now: - `choco upgrade winget -y --no-progress` - then `refreshenv.cmd` - then checking `winget --version` (via PATH) - In the private local-only accessibility check task, installation now runs without using the full path: - `winget install -e --id ...`
 
 ### 2026-03-04 13:24 TRT
 
@@ -1645,7 +1645,7 @@ test: now let's do a trial run with az-vm --auto: using the preconfigured Window
 **User Prompt**
 
 ````text
-you are on the right track: we need to solve the winget problem and also manage to complete the private local-only accessibility installation; but first, while running the vm init and vm update tasks, please do not redirect the messages written to stdout and stderr; because whatever problem choco encounters while installing winget, we need to see that as console output; since our console screen is also being transcripted by PowerShell, we are automatically collecting logs; please remove all existing redirection code from all scripts that run during vm init and vm update: let's delete redirection operators such as `>`, `>>`, `&`!
+you are on the right track: we need to solve the winget problem and also manage to complete the private local-only accessibility package installation; but first, while running the vm init and vm update tasks, please do not redirect the messages written to stdout and stderr; because whatever problem choco encounters while installing winget, we need to see that as console output; since our console screen is also being transcripted by PowerShell, we are automatically collecting logs; please remove all existing redirection code from all scripts that run during vm init and vm update: let's delete redirection operators such as `>`, `>>`, `&`!
 *on the other hand, do not use `Write-Output` anywhere: use `Write-Host` everywhere; I think the `Write-Output` command also seems problematic...
 *I have one more request: please do not run the `choco-extra-packages` task as a single block either! Split it into separate tasks under `windows/update` and run them one by one.
 *another issue just came to mind: do not keep rerunning in vm update the things you already did during vm init, the code you already executed there: please check for this and do not try to rerun with vm update tasks the choco installation, SSH server, firewall settings, RDP connection configuration, and similar work that you already completed during vm init; please remove these kinds of duplications!
@@ -1655,7 +1655,7 @@ you are on the right track: we need to solve the winget problem and also manage 
 
 **Assistant Summary**
 
-<proposed_plan> # Windows VM Init/Update Refactor Plan (No Output Suppression + Winget/private local-only accessibility Reliability) ## Summary The goal of this plan is to make the VM init/update flow on the Windows side fully unattended and diagnosable, resolve the `winget` visibility issue, make the `private local-only accessibility` installation run reliably, init/update dup...
+<proposed_plan> # Windows VM Init/Update Refactor Plan (No Output Suppression + Winget/Accessibility Reliability) ## Summary The goal of this plan is to make the VM init/update flow on the Windows side fully unattended and diagnosable, resolve the `winget` visibility issue, make the private local-only accessibility installation run reliably, init/update dup...
 
 ### 2026-03-04 15:42 TRT
 
@@ -1695,7 +1695,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented and committed. Commit: - `8d8416a` — `refactor(win): split init/update tasks, remove output suppression, and optimize docker/wsl checks` What I changed: - Split Windows init into standalone tasks under `windows/init`: - [00-ensure-local-admin-users.ps1](C:\Users\operator\source\az\az-vm\windows\init\00-ensu...
+Implemented and committed. Commit: - `8d8416a` — `refactor(win): split init/update tasks, remove output suppression, and optimize docker/wsl checks` What I changed: - Split Windows init into standalone tasks under `windows/init`: - [00-ensure-users-local.ps1](C:\Users\operator\source\az\az-vm\windows\init\00-ensu...
 
 ### 2026-03-04 16:38 TRT
 
@@ -1717,8 +1717,8 @@ I implemented it, tested it, and committed it. - Commit: `23d6e44` - Main change
 
 ````text
 fix and update: let's also fix these on the Windows side:
-*in `vm init` and `vm update` tasks, please do not have any fallback mechanism or retry policy. For example, private local-only accessibility should only be attempted to be installed with `winget`, it should not fall back to `choco`; remove all fallbacks like that.
-*there is one task you need to move from the `vm init` tasks to the `vm update` tasks: "02-winget-bootstrap.ps1"
+*in `vm init` and `vm update` tasks, please do not have any fallback mechanism or retry policy. For example, the private local-only accessibility package should only be attempted with `winget`, it should not fall back to `choco`; remove all fallbacks like that.
+*there is one task you need to move from the `vm init` tasks to the `vm update` tasks: "02-bootstrap-winget-system.ps1"
 -both `vm init` and `vm update` tasks should please start from `01`.
 *for the scripts that handle opening the `ssh` and `rdp` ports; automatically starting the `ssh` and `rdp` servers; and repeating the same behavior every time the VM starts; is it possible to run them when the VM is first created with a technology like cloud-init? `az vm run-command` is somewhat cumbersome; if you can manage it, can you also run these operations not from `vm init` but under a mechanism like cloud-init right after the VM is first created? I think they were using something like a `.yaml` file there; research it, learn it, and apply it carefully...
 
@@ -1726,7 +1726,7 @@ fix and update: let's also fix these on the Windows side:
 
 **Assistant Summary**
 
-<proposed_plan> ## Windows Init/Update Strict Mode + First-Boot Init Refactor (No Fallback / No Retry) ### Summary This change set will transform the Windows flow as follows: 1. The fallback and retry behavior in `vm init` and `vm update` will be removed. 2. `02-winget-bootstrap.ps1` will be moved from init to update....
+<proposed_plan> ## Windows Init/Update Strict Mode + First-Boot Init Refactor (No Fallback / No Retry) ### Summary This change set will transform the Windows flow as follows: 1. The fallback and retry behavior in `vm init` and `vm update` will be removed. 2. `02-bootstrap-winget-system.ps1` will be moved from init to update....
 
 ### 2026-03-04 19:25 TRT
 
@@ -1739,7 +1739,7 @@ I accept this plan; I want you to add one more feature: create another folder na
 
 **Assistant Summary**
 
-<proposed_plan> ## Windows Strict Execution Refactor + Disabled Task Catalog Support ### Summary Three main goals will be implemented together in the Windows flow: 1. Fallback and retry mechanisms will be removed from `init/update` tasks (fail-fast). 2. `02-winget-bootstrap` will be moved from init to update, file numbering from `01` ...
+<proposed_plan> ## Windows Strict Execution Refactor + Disabled Task Catalog Support ### Summary Three main goals will be implemented together in the Windows flow: 1. Fallback and retry mechanisms will be removed from `init/update` tasks (fail-fast). 2. `02-bootstrap-winget-system` will be moved from init to update, file numbering from `01` ...
 
 ### 2026-03-04 19:29 TRT
 
@@ -1752,7 +1752,7 @@ Add this to the plan as well: there are still concepts in the code that existed 
 
 **Assistant Summary**
 
-<proposed_plan> ## Windows Strict Refactor + Disabled Task Catalog + Legacy Concept Cleanup (Repo-wide) ### Summary This plan preserves the previous scope you accepted and also includes the following additions: 1. Fallback and retry will be completely removed from Windows init/update tasks (fail-fast strict). 2. `02-winget-bootstrap` from init u...
+<proposed_plan> ## Windows Strict Refactor + Disabled Task Catalog + Legacy Concept Cleanup (Repo-wide) ### Summary This plan preserves the previous scope you accepted and also includes the following additions: 1. Fallback and retry will be completely removed from Windows init/update tasks (fail-fast strict). 2. `02-bootstrap-winget-system` from init u...
 
 ### 2026-03-04 23:49 TRT
 
@@ -2076,13 +2076,13 @@ The test was successful. Executed command: - `az-vm.cmd update --single-action=g
 **User Prompt**
 
 ````text
-test: now let's create the `51-local-diagnostic.ps1` task under `vm update`; let it print only "hello world!" to the screen; then let's run this task with `exec`.
+test: now let's create one temporary diagnostic task under `vm update`; let it print only "hello world!" to the screen; then let's run this task with `exec`.
 
 ````
 
 **Assistant Summary**
 
-Completed. Changes made: - New task file added: [51-local-diagnostic.ps1](C:\Users\operator\source\az\az-vm\windows\update\51-local-diagnostic.ps1) - Contents: `Write-Host "hello world!"` Test run: - `az-vm.cmd exec --update-task=51 --auto` Result: - The task ran successfully. - The expected line appeared in the console output:...
+Completed. Changes made: - New temporary diagnostic task file added under `windows/update` - Contents: `Write-Host "hello world!"` Test run: - `az-vm.cmd exec --update-task=51 --auto` Result: - The task ran successfully. - The expected line appeared in the console output:...
 
 ### 2026-03-05 14:40 TRT
 
@@ -2613,7 +2613,7 @@ test fix test: set the `vm-update` task number to 10 and run the `exec` command 
 
 **Assistant Summary**
 
-I ran the `exec --update-task=10 --auto --perf` flow, fixed the error, and tested it again. 1. First run failure: - Task: `10-install-sysinternals` - Error: Chocolatey checksum mismatch (`sysinternals` package), the flow stopped due to the strict policy. 2. Applied fix: - File: [10-install-sysinternals.ps1](C:\...
+I ran the `exec --update-task=10 --auto --perf` flow, fixed the error, and tested it again. 1. First run failure: - Task: `10-install-sysinternals-suite` - Error: Chocolatey checksum mismatch (`sysinternals` package), the flow stopped due to the strict policy. 2. Applied fix: - File: [10-install-sysinternals-suite.ps1](C:\...
 
 ### 2026-03-06 03:52 TRT
 
@@ -2626,7 +2626,7 @@ task: remove the --force parameters from the winget calls in the vm-update tasks
 
 **Assistant Summary**
 
-The update you requested has been made: `--force` was removed from all `winget` calls in the `vm-update` tasks. Places where `--force` was present (before): 1. [01-winget-bootstrap.ps1](C:\Users\operator\source\az\az-vm\windows\update\01-winget-bootstrap.ps1) lines 161-162 `winget source reset --force` 2. [02-private-local-task.ps1](C:\Use...
+The update you requested has been made: `--force` was removed from all `winget` calls in the `vm-update` tasks. Places where `--force` was present (before): 1. [01-bootstrap-winget-system.ps1](C:\Users\operator\source\az\az-vm\windows\update\01-bootstrap-winget-system.ps1) lines 161-162 `winget source reset --force` 2. one private local-only accessibility check task ...
 
 ### 2026-03-06 03:54 TRT
 
@@ -2639,7 +2639,7 @@ task: restore the --force parameters in the winget bootstrap; if there are any o
 
 **Assistant Summary**
 
-Completed. Change I made: - I restored the following call in [01-winget-bootstrap.ps1](C:\Users\operator\source\az\az-vm\windows\update\01-winget-bootstrap.ps1): - `winget source reset --force` Report: - Among the `winget` calls in this file, the only call that supports `--force` is `winget source reset`. - `winget sourc...
+Completed. Change I made: - I restored the following call in [01-bootstrap-winget-system.ps1](C:\Users\operator\source\az\az-vm\windows\update\01-bootstrap-winget-system.ps1): - `winget source reset --force` Report: - Among the `winget` calls in this file, the only call that supports `--force` is `winget source reset`. - `winget sourc...
 
 ### 2026-03-06 03:56 TRT
 
@@ -2653,7 +2653,7 @@ task: in the `vm-init` task, right after Chocolatey is installed, do we make a c
 **Assistant Summary**
 
 Yes, we do. In Windows `vm-init`, in the Chocolatey bootstrap task, immediately after installation, there is this call:
-- [02-choco-bootstrap.ps1](C:\Users\operator\source\az\az-vm\windows\init\02-choco-bootstrap.ps1:17) `& $chocoExe feature enable -n allowGlobalConfirmation`
+- [02-bootstrap-choco-system.ps1](C:\Users\operator\source\az\az-vm\windows\init\02-bootstrap-choco-system.ps1:17) `& $chocoExe feature enable -n allowGlobalConfirmation`
 This setting enables **global confirmation**. However, despite this, s...
 
 ### 2026-03-06 12:28 TRT
@@ -2721,8 +2721,8 @@ I have more important additions to the plan again:
 
 ````text
 one more addition to the plan:
-task: add a task like this on the Windows vm-update side: first, take the file at this path and save it somewhere appropriate under `windows/update`: "C:\Program Files\local accessibility vendor\private local-only accessibility\2025\version.dll"
-then create a task with this name: "xx-set-private local-only accessibility-version.ps1". Its job should be this; take this file from here and copy it to the `"C:\Program Files\local accessibility vendor\private local-only accessibility\2025"` folder on the target VM; and of course do this with the help of the pyssh connection.
+task: add a task like this on the Windows vm-update side: first, take the requested private local-only `version.dll` file and save it somewhere appropriate under `windows/update`
+then create a task whose job is to copy that file into the requested private local-only target folder on the target VM; and of course do this with the help of the pyssh connection.
 -important note: the `version.dll` file and the ps1 task file should live in the same place.
 
 ````
@@ -2792,12 +2792,12 @@ The delete command was sent and returned without waiting: `az group delete -n rg
 develop improve fix test: we are now going to make some improvements and fixes together; first, let's plan:
 fix: while in exec REPL mode; when I type the `cmd` command; command prompt starts on the other side, but stdin and stderr redirection gets disabled; as a result, the application also hangs; it does not accept the `exit` command either; it may be freezing in pyssh; let's fix it and test it.
 *feat: among the vm-update tasks, let the google chrome task only handle google chrome installation; let's move the chrome shortcut update operation to the windows ux twiques task.
-*feat: please add an install-whatsapp task under vm-update; let it install with the `winget install whatsapp` command; and make sure it is installed.
-*feat: please add an install-anydesk task under vm-update; let it install with the `winget install anydesk.anydesk` command; and make sure it is installed.
-*feat: please add an install-windscribe task under vm-update; let it install with the `winget install windscribe` command; and make sure it is installed.
-*feat: please add an install-microsoft-teams task under vm-update; let it install with the `winget install "Microsoft Teams" -s msstore` command; and make sure it is installed.
-*feat: please add an install-microsoft-vscode task under vm-update; let it install with the `winget install vscode` command; and make sure it is installed.
-*feat: please add an install-global-npm-packages task under vm-update; let this task run the following commands in order; and report the success status of all of them:
+*feat: please add an install-whatsapp-system task under vm-update; let it install with the `winget install whatsapp` command; and make sure it is installed.
+*feat: please add an install-anydesk-system task under vm-update; let it install with the `winget install anydesk.anydesk` command; and make sure it is installed.
+*feat: please add an install-windscribe-system task under vm-update; let it install with the `winget install windscribe` command; and make sure it is installed.
+*feat: please add an install-teams-system task under vm-update; let it install with the `winget install "Microsoft Teams" -s msstore` command; and make sure it is installed.
+*feat: please add an install-vscode-system task under vm-update; let it install with the `winget install vscode` command; and make sure it is installed.
+*feat: please add an install-npm-packages-global task under vm-update; let this task run the following commands in order; and report the success status of all of them:
 -`npm -g install @openai/codex@latest`
 -`npm -g install @google/gemini-cli@latest`
 !important: this vm-update task must run after the NodeJS installation task); otherwise the `npm` application cannot be found on the system!
@@ -2822,7 +2822,7 @@ fix: while in exec REPL mode; when I type the `cmd` command; command prompt star
 **User Prompt**
 
 ````text
-the plan looks good; I’m adding one more `vm-update` task: name: `install-microsoft-azd` task: install the Microsoft Azure Developer CLI application; installation command to run: `winget install microsoft.azd`; make sure the installation is guaranteed.
+the plan looks good; I’m adding one more `vm-update` task: name: `install-azd-cli` task: install the Microsoft Azure Developer CLI application; installation command to run: `winget install microsoft.azd`; make sure the installation is guaranteed.
 
 ````
 
@@ -3224,7 +3224,7 @@ update: ensure that the name of the desktop shortcut created for VSCode in the p
 
 **Assistant Summary**
 
-VS Code public desktop shortcut name updated. Change: - [windows/update/27-windows-ux-public-desktop-shortcuts.ps1](C:\Users\operator\source\az\az-vm\windows\update\27-windows-ux-public-desktop-shortcuts.ps1) - `i6vscode` -> `v5vscode` Verification: - File parse check passed. - Repo is clean. Commit: - `d97...
+VS Code public desktop shortcut name updated. Change: - [windows/update/33-create-shortcuts-public-desktop.ps1](C:\Users\operator\source\az\az-vm\windows\update\33-create-shortcuts-public-desktop.ps1) - `i6vscode` -> `v5vscode` Verification: - File parse check passed. - Repo is clean. Commit: - `d97...
 
 ### 2026-03-06 22:50 TRT
 
@@ -3237,7 +3237,7 @@ check: okay, within the same task, is there also a `u7network and sharing` short
 
 **Assistant Summary**
 
-Yes. - The shortcut is defined in the same task: [27-windows-ux-public-desktop-shortcuts.ps1](C:\Users\operator\source\az\az-vm\windows\update\27-windows-ux-public-desktop-shortcuts.ps1:295) - The target executable resolves to `control.exe`: [27-windows-ux-public-desktop-shortcuts.ps1](C:\Users\operator\source\az\az-vm\windows\...
+Yes. - The shortcut is defined in the same task: [33-create-shortcuts-public-desktop.ps1](C:\Users\operator\source\az\az-vm\windows\update\33-create-shortcuts-public-desktop.ps1:295) - The target executable resolves to `control.exe`: [33-create-shortcuts-public-desktop.ps1](C:\Users\operator\source\az\az-vm\windows\...
 
 ### 2026-03-06 22:52 TRT
 
@@ -3659,7 +3659,7 @@ test: then run this public desktop vm-update task individually and share the res
 
 **Assistant Summary**
 
-Public desktop shortcut task was updated and tested. **What was done** - The public desktop task was moved to the end: - `27-windows-ux-public-desktop-shortcuts` priority was set to `99`. - The shortcut scope was expanded: - existing names were preserved - added: - `t9-azd cli` - `t10-gh cli` - `t11-ffmpeg cli` - `t12-7zip cli` - `t13-...
+Public desktop shortcut task was updated and tested. **What was done** - The public desktop task was moved to the end: - `33-create-shortcuts-public-desktop` priority was set to `99`. - The shortcut scope was expanded: - existing names were preserved - added: - `t9-azd cli` - `t10-gh cli` - `t11-ffmpeg cli` - `t12-7zip cli` - `t13-...
 
 ### 2026-03-07 15:01 TRT
 
@@ -3945,7 +3945,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented the approved Windows `vm-update` private local-only accessibility task plan by aligning the renamed `19/20/28` task entries in `windows/update/vm-update-task-catalog.json`, converting the private local-only accessibility asset flow to repo-managed zip packages under `windows/update/local-private-assets/`, updating `20-private-local-task.ps1` to extract `private local-only accessibility-version.zip` into `C:\Program Files\local accessibility vendor\private local-only accessibility\2025` and `private local-only accessibility-roaming-settings.zip` into `C:\Users\<VM_ADMIN_USER>\AppData\Roaming\local accessibility vendor\private local-only accessibility\2025\Settings`, extending runtime asset-copy resolution for the new zip assets, adding smoke coverage for renamed catalog entries plus private local-only accessibility zip layout/asset resolution, advancing the documented release to `2026.3.8.238`, and re-running smoke, code-quality, and PowerShell compatibility checks successfully.
+Implemented the approved Windows `vm-update` private local-only task plan by aligning the renamed `19/20/28` task entries in `windows/update/vm-update-task-catalog.json`, converting the private local-only asset flow to repo-managed zip packages under the local asset folder, updating the private local-only settings task to extract one version payload into the requested program folder and one roaming-settings payload into the requested user roaming folder, extending runtime asset-copy resolution for the new zip assets, adding smoke coverage for renamed catalog entries plus zip layout/asset resolution, advancing the documented release to `2026.3.8.238`, and re-running smoke, code-quality, and PowerShell compatibility checks successfully.
 
 ### 2026-03-08 22:17 TRT
 
@@ -3958,7 +3958,7 @@ Compare the modified version with the latest version; merge it in the most optim
 
 **Assistant Summary**
 
-Compared the committed and re-modified `windows/update/vm-update-task-catalog.json` variants, merged them by keeping the renamed `19-install-microsoft-azd`, `20-private-local-task`, and `28-health-snapshot` task names while preserving the user-adjusted late ordering intent with `27-windows-ux-public-desktop-shortcuts` at priority `98` and `28-health-snapshot` at priority `99`, then advanced the documented release to `2026.3.8.239`.
+Compared the committed and re-modified `windows/update/vm-update-task-catalog.json` variants, merged them by keeping the renamed `14-install-azd-cli`, one private local-only late-stage task, and `28-capture-snapshot-health` task names while preserving the user-adjusted late ordering intent with `33-create-shortcuts-public-desktop` at priority `98` and `28-capture-snapshot-health` at priority `99`, then advanced the documented release to `2026.3.8.239`.
 
 ### 2026-03-08 23:08 TRT
 
@@ -4036,7 +4036,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Replaced the failing Windows interactive UX reboot/autologon path with a bounded `manager` password-logon scheduled-task helper under `tools/windows/`, removed reboot-resume metadata from isolated SSH task execution, rewrote `04-windows-ux-performance-tuning` to validate persisted `manager` UX stores including hibernate visibility, Explorer details/no-group defaults, desktop sort/auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager `settings.json`, simplified `05-windows-advanced-system-settings` to deterministic machine-level settings only with legacy audio tuning removed, hardened `20-private-local-task` with staging extraction plus hash/manifest verification, advanced the documented release to `2026.3.9.245`, and verified the work with smoke, code-quality, PowerShell compatibility, isolated live `exec` runs of tasks `04`, `05`, and `20`, an idempotent rerun of task `04`, and private local-only accessibility `version.dll` plus roaming-settings readback checks on `rg-examplevm-ate1-g1/examplevm`.
+Replaced the failing Windows interactive UX reboot/autologon path with a bounded `manager` password-logon scheduled-task helper under `tools/windows/`, removed reboot-resume metadata from isolated SSH task execution, rewrote `34-configure-ux-windows` to validate persisted `manager` UX stores including hibernate visibility, Explorer details/no-group defaults, desktop sort/auto-arrange/grid alignment, Control Panel small icons, file-copy details, keyboard repeat delay, and Task Manager `settings.json`, simplified `35-configure-settings-advanced-system` to deterministic machine-level settings only with legacy audio tuning removed, hardened one private local-only settings task with staging extraction plus hash/manifest verification, advanced the documented release to `2026.3.9.245`, and verified the work with smoke, code-quality, PowerShell compatibility, isolated live `exec` runs of tasks `04`, `05`, and one private local-only late-stage task, an idempotent rerun of task `04`, and private local-only `version.dll` plus roaming-settings readback checks on `rg-examplevm-ate1-g1/examplevm`.
 
 ### 2026-03-09 04:11 TRT
 
@@ -4063,7 +4063,7 @@ fix update test: unfortunately, the 09 ollama vm-update task is not working prop
 
 **Assistant Summary**
 
-Reworked Windows update task `09-install-ollama` to install `Ollama.Ollama` through `winget`, re-resolve the executable after PATH refresh, validate `ollama --version`, and require a healthy response from `http://127.0.0.1:11434/api/version`, starting `ollama serve` when necessary; added smoke coverage for the strengthened readiness check and verified the fix with code-quality and smoke checks plus an isolated live rerun of task `09` on `rg-examplevm-ate1-g1/examplevm` that reported `ollama-api-ready` on port `11434`.
+Reworked Windows update task `18-install-ollama-system` to install `Ollama.Ollama` through `winget`, re-resolve the executable after PATH refresh, validate `ollama --version`, and require a healthy response from `http://127.0.0.1:11434/api/version`, starting `ollama serve` when necessary; added smoke coverage for the strengthened readiness check and verified the fix with code-quality and smoke checks plus an isolated live rerun of task `09` on `rg-examplevm-ate1-g1/examplevm` that reported `ollama-api-ready` on port `11434`.
 
 ### 2026-03-09 05:26 TRT
 
@@ -4076,7 +4076,7 @@ fix update improve test: we got stuck at stage 09 ollama in the vm-update tasks;
 
 **Assistant Summary**
 
-Diagnosed the stalled `09-install-ollama` path as a mix of interrupted installer leftovers and persistent-SSH transcript edge cases, then hardened the task so it short-circuits healthy existing installs, detaches `ollama serve` output from the SSH session, clears stale installer locks before `winget`, and bounds `winget` waits with explicit timeout diagnostics; also added spinner-marker normalization to the persistent SSH protocol parser, verified task `09` in isolated live execution, and later completed the requested `create --auto --windows --perf --from-step=vm-update` rerun successfully on `rg-examplevm-ate1-g1/examplevm`.
+Diagnosed the stalled `18-install-ollama-system` path as a mix of interrupted installer leftovers and persistent-SSH transcript edge cases, then hardened the task so it short-circuits healthy existing installs, detaches `ollama serve` output from the SSH session, clears stale installer locks before `winget`, and bounds `winget` waits with explicit timeout diagnostics; also added spinner-marker normalization to the persistent SSH protocol parser, verified task `09` in isolated live execution, and later completed the requested `create --auto --windows --perf --from-step=vm-update` rerun successfully on `rg-examplevm-ate1-g1/examplevm`.
 
 ### 2026-03-09 05:46 TRT
 
@@ -4089,7 +4089,7 @@ fix: it displayed the message waiting another install to complete and then enter
 
 **Assistant Summary**
 
-Found the live lock cause on the VM by enumerating remote installer and `co-vm-task` processes, terminated the stale `winget`/installer chains instead of waiting, and folded that recovery behavior back into `09-install-ollama` so future interrupted runs proactively clear stale installer processes and fail boundedly instead of hanging on `waiting another install to complete`.
+Found the live lock cause on the VM by enumerating remote installer and `co-vm-task` processes, terminated the stale `winget`/installer chains instead of waiting, and folded that recovery behavior back into `18-install-ollama-system` so future interrupted runs proactively clear stale installer processes and fail boundedly instead of hanging on `waiting another install to complete`.
 
 ### 2026-03-09 06:12 TRT
 
@@ -4102,7 +4102,7 @@ fix: Docker Desktop installation from the `vm-update` tasks enters an infinite l
 
 **Assistant Summary**
 
-Applied the same stale-installer recovery model to `18-docker-desktop-install-and-configure`, adding preflight installer cleanup plus bounded `winget install Docker.DockerDesktop` waits with explicit timeout diagnostics, verified the task in isolated live execution, and then reran the full `create --auto --windows --perf --from-step=vm-update` flow to completion with all 29 Windows update tasks succeeding on the rebuilt `Standard_D4as_v5` VM while confirming that RDP port `3389` is reachable.
+Applied the same stale-installer recovery model to `16-install-docker-desktop`, adding preflight installer cleanup plus bounded `winget install Docker.DockerDesktop` waits with explicit timeout diagnostics, verified the task in isolated live execution, and then reran the full `create --auto --windows --perf --from-step=vm-update` flow to completion with all 29 Windows update tasks succeeding on the rebuilt `Standard_D4as_v5` VM while confirming that RDP port `3389` is reachable.
 
 ### 2026-03-09 13:09 TRT
 
@@ -4115,7 +4115,7 @@ test: let's do an e2e live az-vm re-create from scratch.
 
 **Assistant Summary**
 
-Deleted the existing managed resource group `rg-examplevm-ate1-g1`, reran a full live `az-vm create --auto --windows --perf` from scratch using the current local `.env` configuration, and rebuilt `examplevm` in `austriaeast` on `Standard_D4as_v5`; Step 6 completed in `continue` mode with `09-install-ollama` failing on its first cold-start API readiness check and `17-wsl2-install-update` requesting a reboot, so task `09` was rerun successfully in isolated `exec` mode, the VM was restarted through `az-vm do --vm-action=restart`, final lifecycle state was verified as `started` with provisioning `Succeeded`, and RDP port `3389` was confirmed reachable before recording this otherwise non-mutating dialog in repo history at the user's request.
+Deleted the existing managed resource group `rg-examplevm-ate1-g1`, reran a full live `az-vm create --auto --windows --perf` from scratch using the current local `.env` configuration, and rebuilt `examplevm` in `austriaeast` on `Standard_D4as_v5`; Step 6 completed in `continue` mode with `18-install-ollama-system` failing on its first cold-start API readiness check and `15-install-wsl2-system` requesting a reboot, so task `09` was rerun successfully in isolated `exec` mode, the VM was restarted through `az-vm do --vm-action=restart`, final lifecycle state was verified as `started` with provisioning `Succeeded`, and RDP port `3389` was confirmed reachable before recording this otherwise non-mutating dialog in repo history at the user's request.
 
 ### 2026-03-09 14:05 TRT
 
@@ -4128,7 +4128,7 @@ fix: continue from where you left off, and also fix the copy-default-profile Loc
 
 **Assistant Summary**
 
-Completed the interrupted Windows UX and user-settings repair cycle by stabilizing `04-windows-ux-performance-tuning` and `28-copy-user-settings` under isolated live `exec` runs on `rg-examplevm-ate1-g1/examplevm`: `04` now routes user-hive writes through the bounded password-logon helper, uses writable .NET registry handles, resets unsafe minimal Task Manager state instead of regenerating a synthetic `settings.json`, and hides Widgets through the supported `HKLM\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests=0` policy; `28` was reworked to stop offline assistant-hive collisions, seed assistant HKCU/user-class settings through a dedicated assistant logon worker, keep default-profile seeding on the offline main hive only, and exclude heavy non-settings branches such as `AppData\Local\Programs`, `Microsoft\WindowsApps`, and default-profile `LocalLow` so robocopy no longer stalls on binaries or alias placeholders. Verified locally with code-quality, smoke, and PowerShell compatibility checks, then live with successful isolated reruns of tasks `04`, `28`, and `29-health-snapshot`.
+Completed the interrupted Windows UX and user-settings repair cycle by stabilizing `34-configure-ux-windows` and `36-copy-settings-user` under isolated live `exec` runs on `rg-examplevm-ate1-g1/examplevm`: `04` now routes user-hive writes through the bounded password-logon helper, uses writable .NET registry handles, resets unsafe minimal Task Manager state instead of regenerating a synthetic `settings.json`, and hides Widgets through the supported `HKLM\SOFTWARE\Policies\Microsoft\Dsh\AllowNewsAndInterests=0` policy; `28` was reworked to stop offline assistant-hive collisions, seed assistant HKCU/user-class settings through a dedicated assistant logon worker, keep default-profile seeding on the offline main hive only, and exclude heavy non-settings branches such as `AppData\Local\Programs`, `Microsoft\WindowsApps`, and default-profile `LocalLow` so robocopy no longer stalls on binaries or alias placeholders. Verified locally with code-quality, smoke, and PowerShell compatibility checks, then live with successful isolated reruns of tasks `04`, `28`, and `37-capture-snapshot-health`.
 
 ### 2026-03-09 18:59 TRT
 
@@ -4141,7 +4141,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Updated `27-windows-ux-public-desktop-shortcuts` to the refreshed canonical public shortcut set, adding the requested ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, bank, and command-style tool launchers; removed legacy `i7whatsapp`; wrapped `.cmd`-style launchers through `cmd.exe`; and added dynamic WhatsApp desktop executable resolution with the requested fallback path. Expanded `29-health-snapshot` to inventory the new shortcut names plus exact target-path and argument contracts, recalibrated all Windows `vm-update` task catalog timeouts from observed successful live durations with a 30% buffer, then validated the change set with isolated live `exec` reruns of tasks `27` and `29` on `rg-examplevm-ate1-g1/examplevm` before updating the smoke, changelog, and release-note contracts.
+Updated `33-create-shortcuts-public-desktop` to the refreshed canonical public shortcut set, adding the requested ChatGPT, internet, WhatsApp desktop/web, Google and Office account setup, bank, and command-style tool launchers; removed legacy `i7whatsapp`; wrapped `.cmd`-style launchers through `cmd.exe`; and added dynamic WhatsApp desktop executable resolution with the requested fallback path. Expanded `37-capture-snapshot-health` to inventory the new shortcut names plus exact target-path and argument contracts, recalibrated all Windows `vm-update` task catalog timeouts from observed successful live durations with a 30% buffer, then validated the change set with isolated live `exec` reruns of tasks `27` and `29` on `rg-examplevm-ate1-g1/examplevm` before updating the smoke, changelog, and release-note contracts.
 
 ### 2026-03-09 21:05 TRT
 
@@ -4154,7 +4154,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented the approved Windows shortcut-and-app expansion plan by adding bounded install-and-verify tasks `30-install-itunes`, `31-install-be-my-eyes`, `32-install-nvda`, `33-install-microsoft-edge`, `34-install-vlc`, `35-install-rclone`, `36-install-onedrive`, and `37-install-google-drive`; extending `27-windows-ux-public-desktop-shortcuts` to normalize the broader Public Desktop set with social links, new app launchers, dynamic app-path fallback resolution, `.cmd` wrappers, and `local-only-shortcut` hotkey `Ctrl+Shift+J`; and updating `29-health-snapshot` to inventory the expanded set with Unicode-safe shortcut readback for `q1EksiSozluk` through `Shell.Application`. Recalibrated the new task-catalog timeouts from successful isolated live durations with a 30% buffer, updated smoke/contracts plus release documentation, and verified the change with local smoke, code-quality, documentation-contract, and PowerShell-compatibility checks together with isolated live `exec` validation of tasks `30` through `37`, then reruns of `27` and `29` on `rg-examplevm-ate1-g1/examplevm`.
+Implemented the approved Windows shortcut-and-app expansion plan by adding bounded install-and-verify tasks `27-install-itunes-system`, `28-install-be-my-eyes`, `29-install-nvda-system`, `13-install-edge-browser`, `26-install-vlc-system`, `30-install-rclone-system`, `21-install-onedrive-system`, and `22-install-google-drive`; extending `33-create-shortcuts-public-desktop` to normalize the broader Public Desktop set with social links, new app launchers, dynamic app-path fallback resolution, `.cmd` wrappers, and one private local-only accessibility hotkey; and updating `37-capture-snapshot-health` to inventory the expanded set with Unicode-safe shortcut readback for `q1EksiSozluk` through `Shell.Application`. Recalibrated the new task-catalog timeouts from successful isolated live durations with a 30% buffer, updated smoke/contracts plus release documentation, and verified the change with local smoke, code-quality, documentation-contract, and PowerShell-compatibility checks together with isolated live `exec` validation of tasks `30` through `37`, then reruns of `27` and `29` on `rg-examplevm-ate1-g1/examplevm`.
 
 ### 2026-03-09 22:26 TRT
 
@@ -4170,7 +4170,7 @@ feat: let's add a new vm-update task: let its name be `install-codex-app.ps1`. L
 
 **Assistant Summary**
 
-Added Windows `vm-update` task `38-install-codex-app` with the requested `winget install codex -s msstore` install path, AppX/StartApps/winget verification, and a best-effort deferred RunOnce fallback for noninteractive Store-session failures; extended `27-windows-ux-public-desktop-shortcuts` and `29-health-snapshot` to include the new `a3CodexApp` public shortcut with the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target; updated the Windows update catalog, smoke contracts, changelog, and release notes; and verified the change non-live with PowerShell parse validation plus the local smoke/documentation/code-quality checks only, intentionally skipping live VM execution because an end-to-end `move` run was already active elsewhere.
+Added Windows `vm-update` task `19-install-codex-app` with the requested `winget install codex -s msstore` install path, AppX/StartApps/winget verification, and a best-effort deferred RunOnce fallback for noninteractive Store-session failures; extended `33-create-shortcuts-public-desktop` and `37-capture-snapshot-health` to include the new `a3CodexApp` public shortcut with the requested `OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe` fallback target; updated the Windows update catalog, smoke contracts, changelog, and release notes; and verified the change non-live with PowerShell parse validation plus the local smoke/documentation/code-quality checks only, intentionally skipping live VM execution because an end-to-end `move` run was already active elsewhere.
 
 ### 2026-03-09 22:59 TRT
 
@@ -4179,27 +4179,27 @@ Added Windows `vm-update` task `38-install-codex-app` with the requested `winget
 ````text
 feat: now we are adding another feature:
 let's compare the applications we install on the guest VM through the `vm-update` tasks with the applications that are currently present and installed on my local computer; for all applications that are also installed on my machine and auto-start when Windows opens, meaning they are `enabled` in the "startup" options, please make them auto-run on the guest VM as well; let my local computer serve as the example for this behavior.
-*then let's add a new one to the `vm-update` tasks: `auto-start-apps.ps1`... among the applications to be installed on the guest VM, if they are also installed on my computer and start automatically on my computer, please make them also start automatically there on the target VM.
+*then let's add a new one to the `vm-update` tasks: `configure-apps-startup.ps1`... among the applications to be installed on the guest VM, if they are also installed on my computer and start automatically on my computer, please make them also start automatically there on the target VM.
 ***for now, let's not run the tests on the VM; the VM is still not available; I am running another test there.
 
 ````
 
 **Assistant Summary**
 
-Added host-side startup-profile helpers so `az-vm` now inspects the current local Windows machine for enabled startup apps, maps supported intersections such as Docker Desktop, Ollama, OneDrive, Teams, private local-only accessibility, and iTunesHelper into a base64 task token, and feeds that profile into the new Windows `vm-update` task `39-auto-start-apps`; implemented that task to mirror the requested apps onto the guest VM through machine Startup-folder shortcuts with StartupApproved enablement, updated `29-health-snapshot` to inventory the mirrored startup launcher set, extended smoke coverage for startup-profile mapping and the new task contract, updated the Windows update catalog plus release docs, and verified everything only through non-live local checks while intentionally skipping VM execution because the guest was busy with another test.
+Added host-side startup-profile helpers so `az-vm` now inspects the current local Windows machine for enabled startup apps, maps supported intersections such as Docker Desktop, Ollama, OneDrive, Teams, one private local-only accessibility launcher, and iTunesHelper into a base64 task token, and feeds that profile into the new Windows `vm-update` task `31-configure-apps-startup`; implemented that task to mirror the requested apps onto the guest VM through machine Startup-folder shortcuts with StartupApproved enablement, updated `37-capture-snapshot-health` to inventory the mirrored startup launcher set, extended smoke coverage for startup-profile mapping and the new task contract, updated the Windows update catalog plus release docs, and verified everything only through non-live local checks while intentionally skipping VM execution because the guest was busy with another test.
 
 ### 2026-03-09 23:16 TRT
 
 **User Prompt**
 
 ````text
-fix: I don't want this auto-start-apps task to work on-the-fly, meaning by taking a realtime snapshot! Let it snapshot the current state of startup apps on my local machine right now; include that latest state statically in the auto-start-apps.ps1 task; if in the future there is another app we need to enable or add to the startup process, we should be able to do it by editing the auto-start-apps.ps1 file; for now, this is all I want; also remove the remaining extra implementations on this topic and take us back to a state as if no dynamic local startup sync feature had ever been added...
+fix: I don't want this configure-apps-startup task to work on-the-fly, meaning by taking a realtime snapshot! Let it snapshot the current state of startup apps on my local machine right now; include that latest state statically in the configure-apps-startup.ps1 task; if in the future there is another app we need to enable or add to the startup process, we should be able to do it by editing the configure-apps-startup.ps1 file; for now, this is all I want; also remove the remaining extra implementations on this topic and take us back to a state as if no dynamic local startup sync feature had ever been added...
 
 ````
 
 **Assistant Summary**
 
-Removed the dynamic local-startup discovery/token plumbing from `az-vm`, rewrote `39-auto-start-apps` to carry a static snapshot of the currently approved startup set directly in the task file, reduced `29-health-snapshot` to validate that same fixed shortcut list, updated smoke coverage so it now enforces the static contract and the absence of runtime startup-profile tokens, refreshed the release docs to describe the static model instead of host-driven sync, and kept validation strictly non-live without touching the busy guest VM.
+Removed the dynamic local-startup discovery/token plumbing from `az-vm`, rewrote `31-configure-apps-startup` to carry a static snapshot of the currently approved startup set directly in the task file, reduced `37-capture-snapshot-health` to validate that same fixed shortcut list, updated smoke coverage so it now enforces the static contract and the absence of runtime startup-profile tokens, refreshed the release docs to describe the static model instead of host-driven sync, and kept validation strictly non-live without touching the busy guest VM.
 
 ### 2026-03-10 00:27 TRT
 
@@ -4212,7 +4212,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented and live-hardened the approved `move` work for `examplevm`: `move` and `set` now use `--vm-name`, snapshot-based regional move now deallocates the source VM before snapshotting, validates that the source resource group is safe for automatic purge, creates target public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM. During live validation from `austriaeast` to `swedencentral`, fixed two real cutover bugs discovered on the wire, then tightened the move health gate so `29-health-snapshot` runs under strict outcome semantics and raised that task's catalog timeout from `10s` to `30s` after the target health snapshot proved too slow for the old bound. Final live state: `.env` now points to `rg-examplevm-sec1-g1` in `swedencentral`, target VM `examplevm` is `Standard_D4as_v5` and `running`, target disk `disk-examplevm-sec1-n1` is `StandardSSD_LRS` with `127 GB` and `supportsHibernation=true`, RDP port `3389` is reachable, isolated `exec --update-task=29` succeeds on the target, and the old source group `rg-examplevm-ate1-g1` is gone.
+Implemented and live-hardened the approved `move` work for `examplevm`: `move` and `set` now use `--vm-name`, snapshot-based regional move now deallocates the source VM before snapshotting, validates that the source resource group is safe for automatic purge, creates target public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and preserves hibernation flags on the target disk and VM. During live validation from `austriaeast` to `swedencentral`, fixed two real cutover bugs discovered on the wire, then tightened the move health gate so `37-capture-snapshot-health` runs under strict outcome semantics and raised that task's catalog timeout from `10s` to `30s` after the target health snapshot proved too slow for the old bound. Final live state: `.env` now points to `rg-examplevm-sec1-g1` in `swedencentral`, target VM `examplevm` is `Standard_D4as_v5` and `running`, target disk `disk-examplevm-sec1-n1` is `StandardSSD_LRS` with `127 GB` and `supportsHibernation=true`, RDP port `3389` is reachable, isolated `exec --update-task=29` succeeds on the target, and the old source group `rg-examplevm-ate1-g1` is gone.
 
 ### 2026-03-10 09:15 TRT
 
@@ -4252,7 +4252,7 @@ test: throughout this conversation, all the developments and improvements you ma
 
 **Assistant Summary**
 
-Ran live isolated `exec` validation against the target Windows VM `examplevm` in `rg-examplevm-sec1-g1` for the chat-scoped `vm-update` work: `38-install-codex-app`, `27-windows-ux-public-desktop-shortcuts`, `39-auto-start-apps`, and `29-health-snapshot`. The Codex install task succeeded with the expected noninteractive Microsoft Store `RunOnce` fallback, the public desktop contract and `a3CodexApp` shortcut validated successfully, and `29-health-snapshot` confirmed the expected public desktop and startup-shortcut readback. Live rerun of `39-auto-start-apps` initially exposed a real bug where existing startup shortcuts could fail approval if the `StartupApproved\StartupFolder` registry path was missing; fixed the task to create the missing parent and leaf registry keys before approval, updated smoke coverage, reran the task live to success, and kept the entire validation flow isolated to `exec` commands without any `create` or `update` e2e runs.
+Ran live isolated `exec` validation against the target Windows VM `examplevm` in `rg-examplevm-sec1-g1` for the chat-scoped `vm-update` work: `19-install-codex-app`, `33-create-shortcuts-public-desktop`, `31-configure-apps-startup`, and `37-capture-snapshot-health`. The Codex install task succeeded with the expected noninteractive Microsoft Store `RunOnce` fallback, the public desktop contract and `a3CodexApp` shortcut validated successfully, and `37-capture-snapshot-health` confirmed the expected public desktop and startup-shortcut readback. Live rerun of `31-configure-apps-startup` initially exposed a real bug where existing startup shortcuts could fail approval if the `StartupApproved\StartupFolder` registry path was missing; fixed the task to create the missing parent and leaf registry keys before approval, updated smoke coverage, reran the task live to success, and kept the entire validation flow isolated to `exec` commands without any `create` or `update` e2e runs.
 
 ### 2026-03-10 17:04 TRT
 
