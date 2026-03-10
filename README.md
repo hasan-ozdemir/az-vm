@@ -42,6 +42,7 @@
   - [`group`](#group)
   - [`show`](#show)
   - [`do`](#do)
+  - [`task`](#task)
   - [`exec`](#exec)
   - [`ssh`](#ssh)
   - [`rdp`](#rdp)
@@ -149,7 +150,7 @@
 ```powershell
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd exec --update-task=33 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd task --list --vm-update --windows
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
@@ -213,7 +214,7 @@ Each task directory has a catalog JSON file that owns:
 - timeout per task
 
 The runtime never auto-writes or auto-syncs catalog files. Missing entries fall back to:
-- `priority=1000`
+- task-number band priority for tracked tasks
 - `enabled=true`
 - `timeout=180`
 
@@ -419,13 +420,29 @@ Friendly refusal examples:
 - trying `hibernate` when the VM is not running
 - trying a mutating action while the VM is in a transitional Azure state
 
+### `task`
+Purpose: list the real discovered task inventory and execution order without mutating Azure or the guest VM.
+
+Usage patterns:
+```powershell
+.\az-vm.cmd task --list
+.\az-vm.cmd task --list --vm-init
+.\az-vm.cmd task --list --vm-update --disabled --windows
+```
+
+Behavior notes:
+- uses the same discovery pipeline as real init/update execution
+- lists tracked catalog-driven tasks and local metadata-driven tasks together
+- shows stage, source, task type, priority, timeout, enabled state, disabled reason, task name, and relative path
+- `--disabled` filters the output to disabled tasks only
+
 ### `exec`
 Purpose: run one init task, one update task, or open an interactive remote shell path.
 
 Usage patterns:
 ```powershell
 .\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd exec --update-task=33 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd exec --update-task=10002 --group=<resource-group> --vm-name=<vm-name> --windows
 .\az-vm.cmd exec --linux
 ```
 
@@ -567,8 +584,12 @@ Usage patterns:
 Catalog JSON files are the source of truth for task ordering, enable state, and timeouts. Runtime code must not rewrite them automatically.
 
 ### Task Naming Rules
-- `NN-verb-noun-target.ext`
-- `NN` is two digits
+- `<task-number>-verb-noun-target.ext`
+- task-number bands:
+  - `01-99` = `initial`
+  - `101-999` = `normal`
+  - `1001-9999` = local-only
+  - `10001-10099` = `final`
 - 2-5 English words in kebab-case
 - `.ps1` for Windows
 - `.sh` for Linux
@@ -580,9 +601,10 @@ Catalog JSON files are the source of truth for task ordering, enable state, and 
 - local-only tasks under `local/disabled/` remain disabled by location even if their metadata says `enabled=true`
 - local-only asset paths are resolved relative to the local task file directory
 - if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
-- missing `priority`: default to `1000`
+- tracked missing `priority`: derived from the task-number band
+- local missing `priority`: script metadata first, then filename task number, then deterministic auto-detect from the `1001+` band
 - missing `timeout`: default to `180`
-- missing entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
+- missing tracked entry entirely: band-derived priority, `enabled=true`, `timeout=180`
 
 ### Direct Task Execution With `exec`
 Direct `exec --init-task` and `exec --update-task` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
@@ -599,7 +621,7 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 ### Rerun Update Tasks On An Existing VM
 ```powershell
 .\az-vm.cmd update --single-step=vm-update --auto --windows
-.\az-vm.cmd exec --update-task=37 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd exec --update-task=10099 --group=<resource-group> --vm-name=<vm-name> --windows
 ```
 
 ### Resize In Place

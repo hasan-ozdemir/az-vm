@@ -77,7 +77,7 @@ $preCommitCheckText = Get-Content -LiteralPath $preCommitCheckPath -Raw
 $preCommitText = Get-Content -LiteralPath $preCommitPath -Raw
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
 
-$requiredCommandTokens = @('configure','create','update','group','show','do','exec','ssh','rdp','move','resize','set','delete','help')
+$requiredCommandTokens = @('configure','create','update','group','show','do','task','exec','ssh','rdp','move','resize','set','delete','help')
 foreach ($token in $requiredCommandTokens) {
     $commandNeedle = ([string][char]96) + $token + ([string][char]96)
     Assert-True -Condition ($readmeText.Contains($commandNeedle)) -Message ("README.md must mention command '{0}'." -f $token)
@@ -102,10 +102,15 @@ Assert-True -Condition ($agentsText -match [regex]::Escape('Keep task-only custo
 Assert-True -Condition ($agentsText -match [regex]::Escape('Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.')) -Message 'AGENTS.md must forbid hard-coded personal/company/secret fallbacks.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'AGENTS.md must mention the shared VM_ENABLE_HIBERNATION config key.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'AGENTS.md must mention the shared VM_ENABLE_NESTED_VIRTUALIZATION config key.'
-Assert-True -Condition ($agentsText -match [regex]::Escape('NN-verb-noun-target.ext')) -Message 'AGENTS.md must define the normalized task filename contract.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('<task-number>-verb-noun-target.ext')) -Message 'AGENTS.md must define the normalized task filename contract.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('01-99')) -Message 'AGENTS.md must describe the initial task-number band.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('101-999')) -Message 'AGENTS.md must describe the normal task-number band.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('1001-9999')) -Message 'AGENTS.md must describe the local task-number band.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('10001-10099')) -Message 'AGENTS.md must describe the final task-number band.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets`')) -Message 'AGENTS.md must define the local-only task metadata contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Intentionally local-only tasks live under `local/`, are discovered from disk at runtime, and use script metadata only.')) -Message 'AGENTS.md must define the local-only task directory contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Intentionally local-only disabled tasks live under `local/disabled/` and remain disabled by location.')) -Message 'AGENTS.md must define the local-only disabled task directory contract.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('Local-only task priority precedence is: script metadata `priority` -> filename task number -> deterministic auto-detect in the `1001+` band.')) -Message 'AGENTS.md must define the local-only priority precedence rule.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Before creating the final commit for a repo-changing prompt, update `CHANGELOG.md` and `release-notes.md`')) -Message 'AGENTS.md must require changelog and release-notes updates before the final commit.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('YYYY.M.D.N')) -Message 'AGENTS.md must define the release versioning format.'
 Assert-True -Condition ($licenseText -match [regex]::Escape('Commercial licensing requires explicit permission from the developer.')) -Message 'LICENSE must define the commercial licensing rule.'
@@ -117,10 +122,15 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('Task-only constants 
 Assert-True -Condition ($readmeText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'README.md must document VM_ENABLE_HIBERNATION.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'README.md must document VM_ENABLE_NESTED_VIRTUALIZATION.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('tools/pyssh/ssh_client.py')) -Message 'README.md must document the default PYSSH client path.'
-Assert-True -Condition ($readmeText -match [regex]::Escape('NN-verb-noun-target.ext')) -Message 'README.md must define the normalized task filename contract.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('<task-number>-verb-noun-target.ext')) -Message 'README.md must define the normalized task filename contract.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('01-99')) -Message 'README.md must describe the initial task-number band.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('101-999')) -Message 'README.md must describe the normal task-number band.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('1001-9999')) -Message 'README.md must describe the local task-number band.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('10001-10099')) -Message 'README.md must describe the final task-number band.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('# az-vm-task-meta: {...}')) -Message 'README.md must document the local-only task metadata comment contract.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('local-only tasks under `local/` are discovered from disk dynamically and do not consume catalog entries')) -Message 'README.md must document local-only disk discovery.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('local-only tasks under `local/disabled/` remain disabled by location')) -Message 'README.md must document local-only disabled placement.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('local missing `priority`: script metadata first, then filename task number, then deterministic auto-detect from the `1001+` band')) -Message 'README.md must document local priority precedence.'
 Assert-True -Condition ($roadmapText -match [regex]::Escape('business value')) -Message 'roadmap.md must be framed around business value.'
 Assert-True -Condition ($preCommitText -match [regex]::Escape('tests/pre-commit-release-doc-check.ps1')) -Message '.githooks/pre-commit must run the release-doc pre-commit check.'
 Assert-True -Condition ($preCommitCheckText -match [regex]::Escape('CHANGELOG.md')) -Message 'pre-commit-release-doc-check.ps1 must require CHANGELOG.md.'

@@ -286,7 +286,7 @@ function Convert-AzVmCliTextToTokens {
 
 # Handles Get-AzVmValidCommandList.
 function Get-AzVmValidCommandList {
-    return @('create', 'update', 'configure', 'group', 'show', 'do', 'move', 'resize', 'set', 'exec', 'ssh', 'rdp', 'delete', 'help')
+    return @('create', 'update', 'configure', 'group', 'show', 'do', 'task', 'move', 'resize', 'set', 'exec', 'ssh', 'rdp', 'delete', 'help')
 }
 
 # Handles Show-AzVmCommandHelpOverview.
@@ -301,6 +301,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  group   List/select managed resource groups for active context."
     Write-Host "  show    Print system and configuration dump for resource groups and VMs."
     Write-Host "  do      Apply one VM power action or print current VM state."
+    Write-Host "  task    List discovered init/update tasks in real execution order."
     Write-Host "  move    Move an existing VM to another Azure region; expect a health-gated cutover that can take tens of minutes."
     Write-Host "  resize  Change VM size for an existing VM in-place."
     Write-Host "  set     Apply VM feature flags (hibernation, nested virtualization)."
@@ -332,7 +333,8 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm move --vm-region=swedencentral --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=<resource-group> --vm-name=<vm-name>"
-    Write-Host "  az-vm exec --update-task=01 --group=<resource-group> --vm-name=<vm-name>"
+    Write-Host "  az-vm task --list --vm-update"
+    Write-Host "  az-vm exec --update-task=10001 --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm ssh --vm-name=<vm-name>"
     Write-Host "  az-vm rdp --vm-name=<vm-name> --user=assistant"
     Write-Host "  az-vm show --group=<resource-group>"
@@ -378,6 +380,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  group   : list/select active managed resource group"
         Write-Host "  show    : print system and configuration dump for resource groups and VMs"
         Write-Host "  do      : supports --group, --vm-name, --vm-action"
+        Write-Host "  task    : supports --list, --vm-init, --vm-update, --disabled, --windows, --linux"
         Write-Host "  move    : supports --group, --vm-name, --vm-region"
         Write-Host "  resize  : supports --group, --vm-name, --vm-size, --windows, --linux"
         Write-Host "  set     : supports --group, --vm-name, --hibernation, --nested-virtualization"
@@ -398,13 +401,14 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm move --vm-region=swedencentral --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm set --hibernation=off --nested-virtualization=off --group=<resource-group> --vm-name=<vm-name>"
+        Write-Host "  az-vm task --list --vm-init"
         Write-Host "  az-vm exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm ssh --vm-name=<vm-name>"
         Write-Host "  az-vm rdp --vm-name=<vm-name> --user=assistant"
         Write-Host "  az-vm show --group=<resource-group>"
         Write-Host "  az-vm delete --target=vm --group=<resource-group> --yes"
         Write-Host ""
-        Write-Host "For per-command docs: az-vm help <create|update|configure|group|show|do|move|resize|set|exec|ssh|rdp|delete>"
+        Write-Host "For per-command docs: az-vm help <create|update|configure|group|show|do|task|move|resize|set|exec|ssh|rdp|delete>"
         return
     }
 
@@ -413,7 +417,7 @@ function Show-AzVmCommandHelpDetailed {
             -Detail ("Unknown help topic '{0}'." -f $topicText) `
             -Code 2 `
             -Summary "Unknown help topic." `
-            -Hint "Use az-vm help or az-vm help <create|update|configure|group|show|do|move|resize|set|exec|ssh|rdp|delete>."
+            -Hint "Use az-vm help or az-vm help <create|update|configure|group|show|do|task|move|resize|set|exec|ssh|rdp|delete>."
     }
 
     switch ($topicName) {
@@ -507,6 +511,19 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Notes: Azure hibernation deallocates the VM; use stop to keep the VM provisioned. If target parameters are omitted, the command selects the managed group, VM, and action interactively."
             return
         }
+        'task' {
+            Write-Host "Command: task"
+            Write-Host "Description: list discovered init/update tasks exactly as the runtime would order them."
+            Write-Host "Usage:"
+            Write-Host "  az-vm task --list [--vm-init] [--vm-update] [--disabled] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm task --help"
+            Write-Host "Examples:"
+            Write-Host "  az-vm task --list"
+            Write-Host "  az-vm task --list --vm-init"
+            Write-Host "  az-vm task --list --vm-update --disabled --windows"
+            Write-Host "Notes: the command scans tracked and local task trees, applies the same discovery rules used by init/update execution, and prints the real execution order or disabled inventory."
+            return
+        }
         'move' {
             Write-Host "Command: move"
             Write-Host "Description: move VM deployment to a target Azure region."
@@ -557,12 +574,12 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: execute a single init/update task or open interactive remote shell."
             Write-Host "Usage:"
             Write-Host "  az-vm exec [--group=<resource-group>] [--vm-name=<vm-name>] [--windows|--linux] [--perf]"
-            Write-Host "  az-vm exec --init-task=<NN> [--group=<resource-group>] [--vm-name=<vm-name>]"
-            Write-Host "  az-vm exec --update-task=<NN> [--group=<resource-group>] [--vm-name=<vm-name>]"
+            Write-Host "  az-vm exec --init-task=<task-number> [--group=<resource-group>] [--vm-name=<vm-name>]"
+            Write-Host "  az-vm exec --update-task=<task-number> [--group=<resource-group>] [--vm-name=<vm-name>]"
             Write-Host "  az-vm exec --help"
             Write-Host "Examples:"
             Write-Host "  az-vm exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>"
-            Write-Host "  az-vm exec --update-task=15 --group=<resource-group> --vm-name=<vm-name> --windows"
+            Write-Host "  az-vm exec --update-task=10001 --group=<resource-group> --vm-name=<vm-name> --windows"
             Write-Host "  az-vm exec --linux      # opens interactive remote shell session"
             Write-Host "Notes: use --vm-name for direct one-VM task execution without interactive VM selection."
             return
@@ -752,7 +769,7 @@ function Parse-AzVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | configure | group | show | do | move | resize | set | exec | ssh | rdp | delete | help."
+                -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -763,7 +780,7 @@ function Parse-AzVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | configure | group | show | do | move | resize | set | exec | ssh | rdp | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete | help. Example: az-vm create --auto"
     }
 
     $helpTopic = ''

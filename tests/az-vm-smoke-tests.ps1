@@ -354,12 +354,12 @@ Invoke-Test -Name "Task catalog fallback defaults" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-catalog-test-" + [Guid]::NewGuid().ToString("N"))
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
     try {
-        $task01 = Join-Path $tempRoot "01-default-fallback.ps1"
-        $task02 = Join-Path $tempRoot "02-priority-override.ps1"
+        $task01 = Join-Path $tempRoot "01-initial-default.ps1"
+        $task101 = Join-Path $tempRoot "101-normal-default.ps1"
         Set-Content -Path $task01 -Value "Write-Host 'task01'" -Encoding UTF8
-        Set-Content -Path $task02 -Value "Write-Host 'task02'" -Encoding UTF8
+        Set-Content -Path $task101 -Value "Write-Host 'task101'" -Encoding UTF8
 
-        $catalogPath = Join-Path $tempRoot "vm-init-task-catalog.json"
+        $catalogPath = Join-Path $tempRoot "vm-update-task-catalog.json"
         $catalogJson = @'
 {
   "defaults": {
@@ -368,8 +368,7 @@ Invoke-Test -Name "Task catalog fallback defaults" -Action {
   },
   "tasks": [
     {
-      "name": "02-priority-override",
-      "priority": 5,
+      "name": "101-normal-default",
       "enabled": true
     }
   ]
@@ -377,13 +376,18 @@ Invoke-Test -Name "Task catalog fallback defaults" -Action {
 '@
         Set-Content -Path $catalogPath -Value $catalogJson -Encoding UTF8
 
-        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage init
+        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage update
         $active = @($catalog.ActiveTasks)
         Assert-True -Condition ($active.Count -eq 2) -Message "Expected 2 active tasks."
-        Assert-True -Condition ([string]$active[0].Name -eq "02-priority-override") -Message "Catalog priority override must be applied before filename order."
-        Assert-True -Condition ([string]$active[1].Name -eq "01-default-fallback") -Message "Missing catalog entry must fall back to default priority."
-        Assert-True -Condition ([int]$active[0].TimeoutSeconds -eq 180) -Message "Missing catalog timeout must default to 180."
-        Assert-True -Condition ([int]$active[1].TimeoutSeconds -eq 180) -Message "Missing catalog entry timeout must default to 180."
+        Assert-True -Condition ([string]$active[0].Name -eq "01-initial-default") -Message "Initial tracked task must keep its initial-band order."
+        Assert-True -Condition ([string]$active[1].Name -eq "101-normal-default") -Message "Normal tracked task must keep its normal-band order."
+
+        $initialTask = $active | Where-Object { [string]$_.Name -eq "01-initial-default" } | Select-Object -First 1
+        $normalTask = $active | Where-Object { [string]$_.Name -eq "101-normal-default" } | Select-Object -First 1
+        Assert-True -Condition ([int]$initialTask.Priority -eq 1) -Message "Missing tracked catalog entry must derive initial-task priority from the task-number band."
+        Assert-True -Condition ([int]$normalTask.Priority -eq 101) -Message "Tracked catalog entry without explicit priority must derive normal-task priority from the task-number band."
+        Assert-True -Condition ([int]$initialTask.TimeoutSeconds -eq 180) -Message "Missing tracked catalog entry timeout must default to 180."
+        Assert-True -Condition ([int]$normalTask.TimeoutSeconds -eq 180) -Message "Tracked catalog entry without explicit timeout must default to 180."
     }
     finally {
         if (Test-Path -LiteralPath $tempRoot) {
@@ -398,6 +402,7 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "configure" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "do" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "task" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "move" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "resize" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "set" -Options @{ help = $true }
@@ -415,6 +420,91 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
 Invoke-Test -Name "Move and set commands accept vm-name" -Action {
     Assert-AzVmCommandOptions -CommandName 'move' -Options @{ 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; group = 'rg-samplevm-ate1-g1' }
     Assert-AzVmCommandOptions -CommandName 'set' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; hibernation = 'on' }
+}
+
+Invoke-Test -Name "Task command accepts list filters" -Action {
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ list = $true }
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ list = $true; 'vm-init' = $true; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ list = $true; 'vm-update' = $true; disabled = $true; linux = $true }
+}
+
+Invoke-Test -Name "Task command lists discovered tasks in runtime order" -Action {
+    try {
+        function Initialize-AzVmTaskCommandRuntimeContext {
+            param([switch]$AutoMode, [switch]$WindowsFlag, [switch]$LinuxFlag)
+            return [pscustomobject]@{
+                Platform = 'windows'
+                VmInitTaskDir = 'windows/init'
+                VmUpdateTaskDir = 'windows/update'
+            }
+        }
+        function Get-AzVmTaskBlocksFromDirectory {
+            param([string]$DirectoryPath, [string]$Platform, [string]$Stage, [switch]$SuppressSkipMessages)
+            if ($Stage -eq 'init') {
+                return [ordered]@{
+                    InventoryTasks = @(
+                        [pscustomobject]@{
+                            Name = '01-ensure-users-local'
+                            RelativePath = '01-ensure-users-local.ps1'
+                            TimeoutSeconds = 180
+                            Priority = 1
+                            TaskType = 'initial'
+                            Source = 'tracked'
+                            TaskNumber = 1
+                            Enabled = $true
+                            DisabledReason = ''
+                        },
+                        [pscustomobject]@{
+                            Name = '1004-disabled-local-task'
+                            RelativePath = 'local/disabled/1004-disabled-local-task.ps1'
+                            TimeoutSeconds = 180
+                            Priority = 1004
+                            TaskType = 'local'
+                            Source = 'local'
+                            TaskNumber = 1004
+                            Enabled = $false
+                            DisabledReason = 'disabled-by-location'
+                        }
+                    )
+                }
+            }
+
+            return [ordered]@{
+                InventoryTasks = @(
+                    [pscustomobject]@{
+                        Name = '10099-capture-snapshot-health'
+                        RelativePath = '10099-capture-snapshot-health.ps1'
+                        TimeoutSeconds = 30
+                        Priority = 10099
+                        TaskType = 'final'
+                        Source = 'tracked'
+                        TaskNumber = 10099
+                        Enabled = $true
+                        DisabledReason = ''
+                    }
+                )
+            }
+        }
+
+        $updateResult = Invoke-AzVmTaskCommand -Options @{ list = $true; 'vm-update' = $true } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
+        Assert-True -Condition ($null -ne $updateResult) -Message 'Task command must return a result object.'
+        Assert-True -Condition ($updateResult.Rows.Count -eq 1) -Message 'Task command vm-update filter must return only update-stage rows.'
+        Assert-True -Condition ([string]$updateResult.Rows[0].Name -eq '10099-capture-snapshot-health') -Message 'Task command must preserve discovered update task names.'
+        Assert-True -Condition ([string]$updateResult.Rows[0].Stage -eq 'vm-update') -Message 'Task command must label update-stage rows.'
+
+        $disabledResult = Invoke-AzVmTaskCommand -Options @{ list = $true; disabled = $true } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
+        Assert-True -Condition ($disabledResult.Rows.Count -eq 1) -Message 'Task command disabled filter must return only disabled rows.'
+        Assert-True -Condition ([string]$disabledResult.Rows[0].Status -eq 'disabled') -Message 'Task command disabled filter must label disabled tasks correctly.'
+        Assert-True -Condition ([string]$disabledResult.Rows[0].Source -eq 'local') -Message 'Task command must preserve local/builtin source labels.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmTaskCommandRuntimeContext',
+            'Get-AzVmTaskBlocksFromDirectory'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+    }
 }
 
 Invoke-Test -Name "Set command applies both toggles and persists them to .env" -Action {
@@ -998,11 +1088,11 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
 }
 
 Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" -Action {
-    $normalizedEnd = Normalize-AzVmProtocolLine -Text '   / AZ_VM_TASK_END:20-install-teams-system:4294967295'
-    Assert-True -Condition ([string]$normalizedEnd -eq 'AZ_VM_TASK_END:20-install-teams-system:4294967295') -Message 'Spinner-prefixed task end markers must normalize back to the protocol marker.'
+    $normalizedEnd = Normalize-AzVmProtocolLine -Text '   / AZ_VM_TASK_END:118-install-teams-system:4294967295'
+    Assert-True -Condition ([string]$normalizedEnd -eq 'AZ_VM_TASK_END:118-install-teams-system:4294967295') -Message 'Spinner-prefixed task end markers must normalize back to the protocol marker.'
 
-    $normalizedError = Normalize-AzVmProtocolLine -Text '  - [stderr] AZ_VM_SESSION_TASK_ERROR:20-install-teams-system:example'
-    Assert-True -Condition ([string]$normalizedError -eq '[stderr] AZ_VM_SESSION_TASK_ERROR:20-install-teams-system:example') -Message 'Spinner-prefixed stderr session markers must normalize back to the protocol marker.'
+    $normalizedError = Normalize-AzVmProtocolLine -Text '  - [stderr] AZ_VM_SESSION_TASK_ERROR:118-install-teams-system:example'
+    Assert-True -Condition ([string]$normalizedError -eq '[stderr] AZ_VM_SESSION_TASK_ERROR:118-install-teams-system:example') -Message 'Spinner-prefixed stderr session markers must normalize back to the protocol marker.'
 
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '0') -eq 0) -Message 'Task exit code parser must keep zero as zero.'
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '4294967295') -eq -1) -Message 'Task exit code parser must normalize unsigned 32-bit -1 markers back to -1.'
@@ -1160,7 +1250,7 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
             return [pscustomobject]@{
                 ActiveTasks = @(
                     [pscustomobject]@{
-                        Name = '37-capture-snapshot-health'
+                        Name = '10099-capture-snapshot-health'
                         Script = 'Write-Host ok'
                         TimeoutSeconds = 30
                     }
@@ -1217,10 +1307,10 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
             }
         }
 
-        $result = Invoke-AzVmExecCommand -Options @{ 'update-task' = '29' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false -TaskOutcomeModeOverride 'strict'
+        $result = Invoke-AzVmExecCommand -Options @{ 'update-task' = '10099' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false -TaskOutcomeModeOverride 'strict'
 
         Assert-True -Condition ($null -ne $script:ExecSshInvocation) -Message 'Exec update task must invoke SSH task runner.'
-        Assert-True -Condition ([string]$script:ExecSshInvocation.TaskName -eq '37-capture-snapshot-health') -Message 'Exec update task must preserve selected task.'
+        Assert-True -Condition ([string]$script:ExecSshInvocation.TaskName -eq '10099-capture-snapshot-health') -Message 'Exec update task must preserve selected task.'
         Assert-True -Condition ([string]$script:ExecSshInvocation.TaskOutcomeMode -eq 'strict') -Message 'Exec strict override must flow into SSH task outcome mode.'
         Assert-True -Condition ([string]$result.Stage -eq 'update') -Message 'Exec update task must report update stage result.'
         Assert-True -Condition ([string]$result.TaskOutcomeMode -eq 'strict') -Message 'Exec result must expose the strict outcome override.'
@@ -1307,41 +1397,41 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $expectedTrackedTimeouts = [ordered]@{
         '01-bootstrap-winget-system' = 70
         '02-check-install-chrome' = 128
-        '03-install-powershell-core' = 37
-        '04-install-git-system' = 131
-        '05-install-python-system' = 105
-        '06-install-node-system' = 27
-        '07-install-azure-cli' = 139
-        '08-install-gh-cli' = 11
-        '09-install-7zip-system' = 13
-        '10-install-sysinternals-suite' = 82
-        '11-install-ffmpeg-system' = 34
-        '12-install-vscode-system' = 104
-        '13-install-edge-browser' = 5
-        '14-install-azd-cli' = 88
-        '15-install-wsl2-system' = 137
-        '16-install-docker-desktop' = 1649
-        '17-install-npm-packages-global' = 363
-        '18-install-ollama-system' = 376
-        '19-install-codex-app' = 120
-        '20-install-teams-system' = 60
-        '21-install-onedrive-system' = 5
-        '22-install-google-drive' = 103
-        '23-install-whatsapp-system' = 10
-        '24-install-anydesk-system' = 20
-        '25-install-windscribe-system' = 63
-        '26-install-vlc-system' = 58
-        '27-install-itunes-system' = 57
-        '28-install-be-my-eyes' = 35
-        '29-install-nvda-system' = 54
-        '30-install-rclone-system' = 13
-        '31-configure-unlocker-io' = 23
-        '32-configure-apps-startup' = 45
-        '33-create-shortcuts-public-desktop' = 10
-        '34-configure-ux-windows' = 13
-        '35-configure-settings-advanced-system' = 5
-        '36-copy-settings-user' = 27
-        '37-capture-snapshot-health' = 30
+        '101-install-powershell-core' = 37
+        '102-install-git-system' = 131
+        '103-install-python-system' = 105
+        '104-install-node-system' = 27
+        '105-install-azure-cli' = 139
+        '106-install-gh-cli' = 11
+        '107-install-7zip-system' = 13
+        '108-install-sysinternals-suite' = 82
+        '109-install-ffmpeg-system' = 34
+        '110-install-vscode-system' = 104
+        '111-install-edge-browser' = 5
+        '112-install-azd-cli' = 88
+        '113-install-wsl2-system' = 137
+        '114-install-docker-desktop' = 1649
+        '115-install-npm-packages-global' = 363
+        '116-install-ollama-system' = 376
+        '117-install-codex-app' = 120
+        '118-install-teams-system' = 60
+        '119-install-onedrive-system' = 5
+        '120-install-google-drive' = 103
+        '121-install-whatsapp-system' = 10
+        '122-install-anydesk-system' = 20
+        '123-install-windscribe-system' = 63
+        '124-install-vlc-system' = 58
+        '125-install-itunes-system' = 57
+        '126-install-be-my-eyes' = 35
+        '127-install-nvda-system' = 54
+        '128-install-rclone-system' = 13
+        '129-configure-unlocker-io' = 23
+        '10001-configure-apps-startup' = 45
+        '10002-create-shortcuts-public-desktop' = 10
+        '10003-configure-ux-windows' = 13
+        '10004-configure-settings-advanced-system' = 5
+        '10005-copy-settings-user' = 27
+        '10099-capture-snapshot-health' = 30
     }
     $expectedTrackedOrder = @($expectedTrackedTimeouts.Keys)
 
@@ -1367,23 +1457,23 @@ Invoke-Test -Name "Task script metadata controls local-only task discovery" -Act
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-task-meta-test-" + [Guid]::NewGuid().ToString("N"))
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
     try {
-        $scriptAlpha = Join-Path $tempRoot '10-alpha-task.ps1'
+        $scriptAlpha = Join-Path $tempRoot '101-alpha-task.ps1'
         $localDir = Join-Path $tempRoot 'local'
         $localDisabledDir = Join-Path $localDir 'disabled'
         New-Item -Path $localDisabledDir -ItemType Directory -Force | Out-Null
-        $scriptBeta = Join-Path $localDir '20-beta-task.ps1'
-        $scriptGamma = Join-Path $localDisabledDir '30-gamma-task.ps1'
+        $scriptBeta = Join-Path $localDir '1002-beta-task.ps1'
+        $scriptGamma = Join-Path $localDisabledDir '1004-gamma-task.ps1'
 
         Set-Content -Path $scriptAlpha -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":30,"timeout":41,"enabled":true}
+# az-vm-task-meta: {"priority":777,"timeout":41,"enabled":true}
 Write-Host "alpha"
 '@
         Set-Content -Path $scriptBeta -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":5,"timeout":44,"enabled":true}
+# az-vm-task-meta: {"priority":1002,"timeout":44,"enabled":true}
 Write-Host "beta"
 '@
         Set-Content -Path $scriptGamma -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":1,"timeout":99,"enabled":false}
+# az-vm-task-meta: {"priority":1004,"timeout":99,"enabled":false}
 Write-Host "gamma"
 '@
 
@@ -1395,8 +1485,9 @@ Write-Host "gamma"
   },
   "tasks": [
     {
-      "name": "10-alpha-task",
-      "priority": 2,
+      "name": "101-alpha-task",
+      "taskType": "normal",
+      "priority": 101,
       "enabled": true,
       "timeout": 90
     }
@@ -1412,17 +1503,18 @@ Write-Host "gamma"
 
         Assert-True -Condition ($active.Count -eq 2) -Message 'Tracked root tasks and local-only tasks must both be discoverable.'
         Assert-True -Condition ($disabled.Count -eq 1) -Message 'Tasks under local/disabled must be discovered as disabled.'
-        Assert-True -Condition ([string]$activeNames[0] -eq '10-alpha-task') -Message 'Catalog override must win over script metadata priority.'
-        Assert-True -Condition ([string]$activeNames[1] -eq '20-beta-task') -Message 'Script metadata priority must order local-only tasks discovered from local/.'
+        Assert-True -Condition ([string]$activeNames[0] -eq '101-alpha-task') -Message 'Catalog override must win over tracked script metadata priority.'
+        Assert-True -Condition ([string]$activeNames[1] -eq '1002-beta-task') -Message 'Script metadata priority must order local-only tasks discovered from local/.'
 
-        $alphaTask = $active | Where-Object { [string]$_.Name -eq '10-alpha-task' } | Select-Object -First 1
-        $betaTask = $active | Where-Object { [string]$_.Name -eq '20-beta-task' } | Select-Object -First 1
+        $alphaTask = $active | Where-Object { [string]$_.Name -eq '101-alpha-task' } | Select-Object -First 1
+        $betaTask = $active | Where-Object { [string]$_.Name -eq '1002-beta-task' } | Select-Object -First 1
 
         Assert-True -Condition ([int]$alphaTask.TimeoutSeconds -eq 90) -Message 'Catalog timeout must override script metadata timeout.'
         Assert-True -Condition ([int]$betaTask.TimeoutSeconds -eq 44) -Message 'Script metadata timeout must drive local-only tasks.'
-        Assert-True -Condition ([int]$betaTask.Priority -eq 5) -Message 'Script metadata priority must drive local-only tasks.'
-        Assert-True -Condition ([string]$betaTask.RelativePath -eq 'local/20-beta-task.ps1') -Message 'Local-only active task must preserve its relative path.'
-        Assert-True -Condition ([string]$disabled[0].RelativePath -eq 'local/disabled/30-gamma-task.ps1') -Message 'Local-only disabled task must preserve its relative path.'
+        Assert-True -Condition ([int]$alphaTask.Priority -eq 101) -Message 'Tracked task priority must come from the catalog entry.'
+        Assert-True -Condition ([int]$betaTask.Priority -eq 1002) -Message 'Script metadata priority must drive local-only tasks.'
+        Assert-True -Condition ([string]$betaTask.RelativePath -eq 'local/1002-beta-task.ps1') -Message 'Local-only active task must preserve its relative path.'
+        Assert-True -Condition ([string]$disabled[0].RelativePath -eq 'local/disabled/1004-gamma-task.ps1') -Message 'Local-only disabled task must preserve its relative path.'
     }
     finally {
         if (Test-Path -LiteralPath $tempRoot) {
@@ -1441,9 +1533,9 @@ Invoke-Test -Name "Generic task metadata assets resolve into asset copies" -Acti
         $assetPath = Join-Path $assetDir 'profile.zip'
         Set-Content -Path $assetPath -Value 'payload' -Encoding UTF8
 
-        $taskPath = Join-Path $localDir '81-local-config-task.ps1'
+        $taskPath = Join-Path $localDir '1002-local-config-task.ps1'
         Set-Content -Path $taskPath -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":32,"timeout":7,"enabled":true,"assets":[{"local":"local-accessibility-files/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
+# az-vm-task-meta: {"priority":1002,"timeout":7,"enabled":true,"assets":[{"local":"local-accessibility-files/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
 Write-Host "__VM_ADMIN_USER__"
 '@
 
@@ -1497,8 +1589,11 @@ Invoke-Test -Name "Duplicate task names across tracked and local-only tasks fail
     try {
         $localDir = Join-Path $tempRoot 'local'
         New-Item -Path $localDir -ItemType Directory -Force | Out-Null
-        Set-Content -Path (Join-Path $tempRoot '10-alpha-task.ps1') -Encoding UTF8 -Value 'Write-Host "tracked"'
-        Set-Content -Path (Join-Path $localDir '10-alpha-task.ps1') -Encoding UTF8 -Value 'Write-Host "local"'
+        Set-Content -Path (Join-Path $tempRoot '101-alpha-task.ps1') -Encoding UTF8 -Value 'Write-Host "tracked"'
+        Set-Content -Path (Join-Path $localDir '101-alpha-task.ps1') -Encoding UTF8 -Value @'
+# az-vm-task-meta: {"priority":1001,"enabled":true,"timeout":180}
+Write-Host "local"
+'@
         Set-Content -Path (Join-Path $tempRoot 'vm-update-task-catalog.json') -Encoding UTF8 -Value '{"tasks":[]}'
 
         $threw = $false
@@ -1523,7 +1618,7 @@ Invoke-Test -Name "Unsupported nested local script directories fail fast" -Actio
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-task-nesting-test-" + [Guid]::NewGuid().ToString("N"))
     New-Item -Path (Join-Path $tempRoot 'local\subdir') -ItemType Directory -Force | Out-Null
     try {
-        Set-Content -Path (Join-Path $tempRoot 'local\subdir\40-bad-task.ps1') -Encoding UTF8 -Value 'Write-Host "bad"'
+        Set-Content -Path (Join-Path $tempRoot 'local\subdir\1001-bad-task.ps1') -Encoding UTF8 -Value 'Write-Host "bad"'
         Set-Content -Path (Join-Path $tempRoot 'vm-update-task-catalog.json') -Encoding UTF8 -Value '{"tasks":[]}'
 
         $threw = $false
@@ -1545,7 +1640,7 @@ Invoke-Test -Name "Unsupported nested local script directories fail fast" -Actio
 }
 
 Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
-    $taskPath = Join-Path $RepoRoot 'windows\update\18-install-ollama-system.ps1'
+    $taskPath = Join-Path $RepoRoot 'windows\update\116-install-ollama-system.ps1'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Ollama.Ollama*') -Message 'Ollama install task must use the Ollama.Ollama winget package id.'
     Assert-True -Condition ($taskScript -like '*127.0.0.1:11434*') -Message 'Ollama install task must check the default Ollama port.'
@@ -1560,14 +1655,14 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
 }
 
 Invoke-Test -Name "Windows VS Code task short-circuits healthy installs" -Action {
-    $taskPath = Join-Path $RepoRoot 'windows\update\12-install-vscode-system.ps1'
+    $taskPath = Join-Path $RepoRoot 'windows\update\110-install-vscode-system.ps1'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Existing Visual Studio Code installation is already healthy. Skipping winget install.*') -Message 'VS Code install task must skip winget when a healthy installation already exists.'
     Assert-True -Condition ($taskScript -like '*Resolve-CodeExecutable*') -Message 'VS Code install task must resolve the existing Code executable before reinstalling.'
 }
 
 Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Action {
-    $taskPath = Join-Path $RepoRoot 'windows\update\16-install-docker-desktop.ps1'
+    $taskPath = Join-Path $RepoRoot 'windows\update\114-install-docker-desktop.ps1'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Docker Desktop install*') -Message 'Docker Desktop task must clear stale installer locks before winget install.'
     Assert-True -Condition ($taskScript -like "*DockerDesktopPackageId = 'Docker.DockerDesktop'*") -Message 'Docker Desktop task must keep the Docker Desktop winget package id in its task-local config block.'
@@ -1598,12 +1693,12 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
 
     $updateDir = Join-Path $RepoRoot 'windows\update'
 
-    $uxTaskPath = Join-Path $updateDir '34-configure-ux-windows.ps1'
+    $uxTaskPath = Join-Path $updateDir '10003-configure-ux-windows.ps1'
     $uxTemplates = @(
         [pscustomobject]@{
-            Name = '34-configure-ux-windows'
+            Name = '10003-configure-ux-windows'
             Script = [string](Get-Content -LiteralPath $uxTaskPath -Raw)
-            RelativePath = '34-configure-ux-windows.ps1'
+            RelativePath = '10003-configure-ux-windows.ps1'
             DirectoryPath = $updateDir
             TimeoutSeconds = 600
         }
@@ -1620,12 +1715,12 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($uxScriptBody -like '*ShowTaskViewButton*') -Message "UX task must hide Task View."
     Assert-True -Condition (-not $resolvedUxTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "UX task must not publish reboot-resume metadata."
 
-    $copyUserSettingsTaskPath = Join-Path $updateDir '36-copy-settings-user.ps1'
+    $copyUserSettingsTaskPath = Join-Path $updateDir '10005-copy-settings-user.ps1'
     $copyUserSettingsTemplates = @(
         [pscustomobject]@{
-            Name = '36-copy-settings-user'
+            Name = '10005-copy-settings-user'
             Script = [string](Get-Content -LiteralPath $copyUserSettingsTaskPath -Raw)
-            RelativePath = '36-copy-settings-user.ps1'
+            RelativePath = '10005-copy-settings-user.ps1'
             DirectoryPath = $updateDir
             TimeoutSeconds = 1800
         }
@@ -1642,12 +1737,12 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
 
-    $advancedTaskPath = Join-Path $updateDir '35-configure-settings-advanced-system.ps1'
+    $advancedTaskPath = Join-Path $updateDir '10004-configure-settings-advanced-system.ps1'
     $advancedTemplates = @(
         [pscustomobject]@{
-            Name = '35-configure-settings-advanced-system'
+            Name = '10004-configure-settings-advanced-system'
             Script = [string](Get-Content -LiteralPath $advancedTaskPath -Raw)
-            RelativePath = '35-configure-settings-advanced-system.ps1'
+            RelativePath = '10004-configure-settings-advanced-system.ps1'
             DirectoryPath = $updateDir
             TimeoutSeconds = 300
         }
@@ -1662,9 +1757,9 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
 }
 
 Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed public shortcuts" -Action {
-    $shortcutTaskPath = Join-Path $RepoRoot 'windows\update\33-create-shortcuts-public-desktop.ps1'
+    $shortcutTaskPath = Join-Path $RepoRoot 'windows\update\10002-create-shortcuts-public-desktop.ps1'
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
-    $healthTaskPath = Join-Path $RepoRoot 'windows\update\37-capture-snapshot-health.ps1'
+    $healthTaskPath = Join-Path $RepoRoot 'windows\update\10099-capture-snapshot-health.ps1'
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
     $q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
 
@@ -1850,15 +1945,15 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
     $installTaskMap = [ordered]@{
-        '27-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
-        '28-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths')
-        '29-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd' )
-        '13-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
-        '26-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
-        '30-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '21-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
-        '22-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
-        '19-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
+        '125-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
+        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths')
+        '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd' )
+        '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
+        '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
+        '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
+        '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
+        '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
+        '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {
@@ -1872,10 +1967,10 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 }
 
 Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Action {
-    $taskPath = Join-Path $RepoRoot 'windows\update\32-configure-apps-startup.ps1'
+    $taskPath = Join-Path $RepoRoot 'windows\update\10001-configure-apps-startup.ps1'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
-    $healthTaskPath = Join-Path $RepoRoot 'windows\update\37-capture-snapshot-health.ps1'
+    $healthTaskPath = Join-Path $RepoRoot 'windows\update\10099-capture-snapshot-health.ps1'
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     foreach ($fragment in @(
@@ -1929,12 +2024,12 @@ Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {
         RDP_PORT = '3389'
     }
 
-    $taskPath = Join-Path $updateDir '28-install-be-my-eyes.ps1'
+    $taskPath = Join-Path $updateDir '126-install-be-my-eyes.ps1'
     $templates = @(
         [pscustomobject]@{
-            Name = '28-install-be-my-eyes'
+            Name = '126-install-be-my-eyes'
             Script = [string](Get-Content -LiteralPath $taskPath -Raw)
-            RelativePath = '28-install-be-my-eyes.ps1'
+            RelativePath = '126-install-be-my-eyes.ps1'
             DirectoryPath = $updateDir
             TimeoutSeconds = 300
         }
@@ -1952,3 +2047,5 @@ Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $passCo
 if ($failCount -gt 0) {
     exit 1
 }
+
+

@@ -629,6 +629,87 @@ function Convert-AzVmTaskCatalogTimeout {
     return [int]$timeoutSeconds
 }
 
+function Convert-AzVmTaskCatalogType {
+    param(
+        [AllowNull()]
+        [object]$Value,
+        [string]$DefaultValue = ''
+    )
+
+    if ($null -eq $Value) {
+        return [string]$DefaultValue
+    }
+
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace([string]$text)) {
+        return [string]$DefaultValue
+    }
+
+    $normalized = $text.Trim().ToLowerInvariant()
+    if ($normalized -in @('initial','normal','final')) {
+        return [string]$normalized
+    }
+
+    throw ("Invalid taskType value '{0}'. Expected one of: initial, normal, final." -f $text)
+}
+
+function Get-AzVmTaskTypeDefaultPriority {
+    param(
+        [string]$TaskType
+    )
+
+    switch ([string]$TaskType) {
+        'initial' { return 1 }
+        'normal' { return 101 }
+        'local' { return 1001 }
+        'final' { return 10001 }
+        default { return 1000 }
+    }
+}
+
+function Test-AzVmTaskPriorityFitsType {
+    param(
+        [string]$TaskType,
+        [int]$Priority
+    )
+
+    switch ([string]$TaskType) {
+        'initial' { return ($Priority -ge 1 -and $Priority -le 99) }
+        'normal' { return ($Priority -ge 101 -and $Priority -le 999) }
+        'local' { return ($Priority -ge 1001 -and $Priority -le 9999) }
+        'final' { return ($Priority -ge 10001 -and $Priority -le 10099) }
+        default { return $false }
+    }
+}
+
+function Test-AzVmTaskNumberFitsLocalBand {
+    param(
+        [int]$TaskNumber
+    )
+
+    return ($TaskNumber -ge 1001 -and $TaskNumber -le 9999)
+}
+
+function Get-AzVmTrackedTaskTypeFromNumber {
+    param(
+        [int]$TaskNumber,
+        [string]$TaskName = ''
+    )
+
+    if ($TaskNumber -ge 1 -and $TaskNumber -le 99) {
+        return 'initial'
+    }
+    if ($TaskNumber -ge 101 -and $TaskNumber -le 999) {
+        return 'normal'
+    }
+    if ($TaskNumber -ge 10001 -and $TaskNumber -le 10099) {
+        return 'final'
+    }
+
+    $label = if ([string]::IsNullOrWhiteSpace([string]$TaskName)) { [string]$TaskNumber } else { [string]$TaskName }
+    throw ("Tracked task '{0}' must use an initial (01-99), normal (101-999), or final (10001-10099) task number." -f $label)
+}
+
 # Handles Get-AzVmTaskCatalogStateMap.
 function Get-AzVmTaskCatalogStateMap {
     param(
@@ -640,12 +721,20 @@ function Get-AzVmTaskCatalogStateMap {
     $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
     $taskMap = @{}
     if (-not (Test-Path -LiteralPath $catalogPath)) {
-        return $taskMap
+        return [pscustomobject]@{
+            DefaultPriority = 100
+            DefaultTimeoutSeconds = 180
+            TaskMap = $taskMap
+        }
     }
 
     $catalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
     if ([string]::IsNullOrWhiteSpace([string]$catalogText)) {
-        return $taskMap
+        return [pscustomobject]@{
+            DefaultPriority = 100
+            DefaultTimeoutSeconds = 180
+            TaskMap = $taskMap
+        }
     }
 
     $catalog = $null
@@ -656,15 +745,19 @@ function Get-AzVmTaskCatalogStateMap {
         throw ("Task catalog parse failed for '{0}': {1}" -f $catalogPath, $_.Exception.Message)
     }
     if ($null -eq $catalog -or $catalog.PSObject.Properties.Match('tasks').Count -eq 0) {
-        return $taskMap
+        return [pscustomobject]@{
+            DefaultPriority = 100
+            DefaultTimeoutSeconds = 180
+            TaskMap = $taskMap
+        }
     }
 
-    $catalogDefaultPriority = 1000
+    $catalogDefaultPriority = 100
     $catalogDefaultTimeout = 180
     if ($catalog.PSObject.Properties.Match('defaults').Count -gt 0 -and $null -ne $catalog.defaults) {
         $defaults = $catalog.defaults
         if ($defaults.PSObject.Properties.Match('priority').Count -gt 0) {
-            $catalogDefaultPriority = Convert-AzVmTaskCatalogPriority -Value $defaults.priority -DefaultValue 1000
+            $catalogDefaultPriority = Convert-AzVmTaskCatalogPriority -Value $defaults.priority -DefaultValue 100
         }
         if ($defaults.PSObject.Properties.Match('timeout').Count -gt 0) {
             $catalogDefaultTimeout = Convert-AzVmTaskCatalogTimeout -Value $defaults.timeout -DefaultValue 180
@@ -697,14 +790,30 @@ function Get-AzVmTaskCatalogStateMap {
             $timeoutValue = $entry.timeout
         }
 
+        $taskTypeValue = ''
+        $hasTaskType = $false
+        if ($entry.PSObject.Properties.Match('taskType').Count -gt 0) {
+            $hasTaskType = $true
+            $taskTypeValue = Convert-AzVmTaskCatalogType -Value $entry.taskType -DefaultValue ''
+        }
+
         $taskMap[[string]$entryName] = [pscustomobject]@{
+            HasPriority = ($null -ne $priorityValue)
             Priority = (Convert-AzVmTaskCatalogPriority -Value $priorityValue -DefaultValue $catalogDefaultPriority)
+            HasEnabled = ($null -ne $enabledValue)
             Enabled = (Convert-AzVmTaskCatalogBool -Value $enabledValue -DefaultValue $true)
+            HasTimeout = ($null -ne $timeoutValue)
             TimeoutSeconds = (Convert-AzVmTaskCatalogTimeout -Value $timeoutValue -DefaultValue $catalogDefaultTimeout)
+            HasTaskType = [bool]$hasTaskType
+            TaskType = [string]$taskTypeValue
         }
     }
 
-    return $taskMap
+    return [pscustomobject]@{
+        DefaultPriority = [int]$catalogDefaultPriority
+        DefaultTimeoutSeconds = [int]$catalogDefaultTimeout
+        TaskMap = $taskMap
+    }
 }
 
 # Handles Get-AzVmTaskScriptMetadata.
@@ -755,7 +864,18 @@ function Get-AzVmTaskScriptMetadata {
         }
 
         if ($metadata.PSObject.Properties.Match('priority').Count -gt 0) {
-            $result.Priority = Convert-AzVmTaskCatalogPriority -Value $metadata.priority -DefaultValue 1000
+            try {
+                $parsedPriority = [int]$metadata.priority
+            }
+            catch {
+                $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata priority' } else { ("task script metadata priority for '{0}'" -f $TaskPath) }
+                throw ("Invalid {0}: priority must be an integer." -f $label)
+            }
+            if ($parsedPriority -lt 1) {
+                $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata priority' } else { ("task script metadata priority for '{0}'" -f $TaskPath) }
+                throw ("Invalid {0}: priority must be >= 1." -f $label)
+            }
+            $result.Priority = [int]$parsedPriority
         }
         if ($metadata.PSObject.Properties.Match('enabled').Count -gt 0) {
             $result.Enabled = Convert-AzVmTaskCatalogBool -Value $metadata.enabled -DefaultValue $true
@@ -801,7 +921,8 @@ function Get-AzVmTaskBlocksFromDirectory {
         [ValidateSet('windows','linux')]
         [string]$Platform,
         [ValidateSet('init','update')]
-        [string]$Stage
+        [string]$Stage,
+        [switch]$SuppressSkipMessages
     )
 
     if ([string]::IsNullOrWhiteSpace($DirectoryPath)) {
@@ -813,13 +934,12 @@ function Get-AzVmTaskBlocksFromDirectory {
     }
 
     $expectedExt = if ($Platform -eq 'windows') { '.ps1' } else { '.sh' }
-    $namePattern = '^(?<n>\d{2})-(?<words>[a-z0-9]+(?:-[a-z0-9]+){1,4})(?<ext>\.(ps1|sh))$'
+    $namePattern = '^(?<n>\d{2,5})-(?<words>[a-z0-9]+(?:-[a-z0-9]+){1,4})(?<ext>\.(ps1|sh))$'
 
     $rootPath = (Resolve-Path -LiteralPath $DirectoryPath).Path.TrimEnd('\', '/')
     $files = @(Get-ChildItem -LiteralPath $DirectoryPath -File -Recurse | Sort-Object FullName)
 
-    $activeRows = @()
-    $disabledRows = @()
+    $allRows = @()
     $trackedTaskPathByName = @{}
     $localTaskPathByName = @{}
     foreach ($file in $files) {
@@ -834,7 +954,7 @@ function Get-AzVmTaskBlocksFromDirectory {
         }
 
         if (-not ($name -match $namePattern)) {
-            throw ("Invalid task filename '{0}'. Expected NN-verb-noun-target format with 2-5 words." -f $name)
+            throw ("Invalid task filename '{0}'. Expected 2-5 digit task number plus verb-noun-target format with 2-5 words." -f $name)
         }
 
         $taskOrder = [int]$Matches.n
@@ -891,6 +1011,7 @@ function Get-AzVmTaskBlocksFromDirectory {
         $content = Get-Content -Path $file.FullName -Raw
         $metadata = Get-AzVmTaskScriptMetadata -ScriptText ([string]$content) -TaskPath ([string]$relativePath)
         $taskName = [System.IO.Path]::GetFileNameWithoutExtension($name)
+        $taskType = if ($isLocalOnly) { 'local' } else { Get-AzVmTrackedTaskTypeFromNumber -TaskNumber $taskOrder -TaskName $taskName }
 
         if ($isLocalOnly) {
             if ($trackedTaskPathByName.ContainsKey($taskName)) {
@@ -922,68 +1043,119 @@ function Get-AzVmTaskBlocksFromDirectory {
             Metadata = $metadata
             IsLocalOnly = [bool]$isLocalOnly
             IsDisabled = [bool]$isDisabled
+            TaskType = [string]$taskType
+            TaskNumber = [int]$taskOrder
+            Source = $(if ($isLocalOnly) { 'local' } else { 'tracked' })
         }
 
-        if ($isDisabled) {
-            $disabledRows += $row
+        $allRows += $row
+    }
+
+    $catalogState = Get-AzVmTaskCatalogStateMap -DirectoryPath $DirectoryPath -Stage $Stage
+    $taskMap = @{}
+    if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('TaskMap').Count -gt 0) {
+        $taskMap = $catalogState.TaskMap
+    }
+    $catalogDefaultTimeout = 180
+    if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('DefaultTimeoutSeconds').Count -gt 0) {
+        $catalogDefaultTimeout = [int]$catalogState.DefaultTimeoutSeconds
+    }
+
+    $localRows = @($allRows | Where-Object { [bool]$_.IsLocalOnly } | Sort-Object RelativePath, Name)
+    $usedLocalPriorities = @{}
+    foreach ($row in @($localRows)) {
+        $metadata = $row.Metadata
+        $localPriority = $null
+        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Priority').Count -gt 0 -and $null -ne $metadata.Priority) {
+            $localPriority = [int]$metadata.Priority
+            if (-not (Test-AzVmTaskPriorityFitsType -TaskType 'local' -Priority $localPriority)) {
+                throw ("Local task '{0}' metadata priority '{1}' must stay in the local band 1001-9999." -f [string]$row.Name, $localPriority)
+            }
         }
-        else {
-            $activeRows += $row
+        elseif (Test-AzVmTaskNumberFitsLocalBand -TaskNumber ([int]$row.TaskNumber)) {
+            $localPriority = [int]$row.TaskNumber
+        }
+
+        if ($null -ne $localPriority) {
+            if ($usedLocalPriorities.ContainsKey([string]$localPriority)) {
+                throw ("Local tasks '{0}' and '{1}' resolve to the same priority '{2}'." -f [string]$usedLocalPriorities[[string]$localPriority], [string]$row.Name, $localPriority)
+            }
+
+            $usedLocalPriorities[[string]$localPriority] = [string]$row.Name
+            Add-Member -InputObject $row -MemberType NoteProperty -Name EffectiveLocalPriority -Value ([int]$localPriority) -Force
         }
     }
 
-    $taskMap = Get-AzVmTaskCatalogStateMap -DirectoryPath $DirectoryPath -Stage $Stage
+    $nextLocalPriority = 1001
+    foreach ($row in @($localRows | Where-Object { $_.PSObject.Properties.Match('EffectiveLocalPriority').Count -eq 0 })) {
+        while ($usedLocalPriorities.ContainsKey([string]$nextLocalPriority)) {
+            $nextLocalPriority++
+            if ($nextLocalPriority -gt 9999) {
+                throw "Local task priority auto-detection exhausted the supported 1001-9999 range."
+            }
+        }
 
-    $activeTasks = @()
-    $sortedActiveRows = @(
-        $activeRows | Sort-Object `
-            @{ Expression = {
-                if ((-not [bool]$_.IsLocalOnly) -and $taskMap.ContainsKey([string]$_.Name)) {
-                    return [int]$taskMap[[string]$_.Name].Priority
-                }
+        $usedLocalPriorities[[string]$nextLocalPriority] = [string]$row.Name
+        Add-Member -InputObject $row -MemberType NoteProperty -Name EffectiveLocalPriority -Value ([int]$nextLocalPriority) -Force
+        $nextLocalPriority++
+    }
 
-                $metadataPriority = $null
-                if ($null -ne $_.Metadata -and $_.Metadata.PSObject.Properties.Match('Priority').Count -gt 0) {
-                    $metadataPriority = $_.Metadata.Priority
-                }
-                return (Convert-AzVmTaskCatalogPriority -Value $metadataPriority -DefaultValue 1000)
-            } }, `
-            @{ Expression = { [int]$_.Order } }, `
-            @{ Expression = { [string]$_.Name } }
-    )
-    foreach ($row in @($sortedActiveRows)) {
+    $inventoryTasks = @()
+    foreach ($row in @($allRows)) {
         $taskName = [string]$row.Name
-        $content = [string]$row.Script
         $metadata = $row.Metadata
-
-        $taskPriority = 1000
-        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Priority').Count -gt 0 -and $null -ne $metadata.Priority) {
-            $taskPriority = Convert-AzVmTaskCatalogPriority -Value $metadata.Priority -DefaultValue 1000
-        }
-
-        $isEnabled = $true
-        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Enabled').Count -gt 0 -and $null -ne $metadata.Enabled) {
-            $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $metadata.Enabled -DefaultValue $true)
-        }
-        if (-not $isEnabled) {
-            Write-Host ("Task skipped (disabled in script metadata): {0}" -f $taskName) -ForegroundColor DarkYellow
-            continue
-        }
-
+        $taskType = [string]$row.TaskType
+        $taskPriority = Get-AzVmTaskTypeDefaultPriority -TaskType $taskType
         $taskTimeoutSeconds = 180
-        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0 -and $null -ne $metadata.TimeoutSeconds) {
-            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $metadata.TimeoutSeconds -DefaultValue 180
+        $isEnabled = $true
+        $disabledReason = ''
+
+        if ([bool]$row.IsLocalOnly) {
+            $taskPriority = [int]$row.EffectiveLocalPriority
+            $taskTimeoutSeconds = 180
+            if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0 -and $null -ne $metadata.TimeoutSeconds) {
+                $taskTimeoutSeconds = [int]$metadata.TimeoutSeconds
+            }
+            if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Enabled').Count -gt 0 -and $null -ne $metadata.Enabled) {
+                $isEnabled = [bool]$metadata.Enabled
+            }
+        }
+        else {
+            $taskTimeoutSeconds = [int]$catalogDefaultTimeout
+            if ($taskMap.ContainsKey($taskName)) {
+                $entry = $taskMap[$taskName]
+                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasTaskType').Count -gt 0 -and [bool]$entry.HasTaskType) {
+                    if (-not [string]::Equals([string]$entry.TaskType, $taskType, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        throw ("Tracked task '{0}' is classified as '{1}' by filename but catalog taskType is '{2}'." -f $taskName, $taskType, [string]$entry.TaskType)
+                    }
+                }
+                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasPriority').Count -gt 0 -and [bool]$entry.HasPriority) {
+                    $taskPriority = [int]$entry.Priority
+                }
+                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasTimeout').Count -gt 0 -and [bool]$entry.HasTimeout) {
+                    $taskTimeoutSeconds = [int]$entry.TimeoutSeconds
+                }
+                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasEnabled').Count -gt 0 -and [bool]$entry.HasEnabled) {
+                    $isEnabled = [bool]$entry.Enabled
+                }
+            }
+
+            if (-not (Test-AzVmTaskPriorityFitsType -TaskType $taskType -Priority ([int]$taskPriority))) {
+                throw ("Tracked task '{0}' resolved invalid priority '{1}' for taskType '{2}'." -f $taskName, $taskPriority, $taskType)
+            }
         }
 
-        if ((-not [bool]$row.IsLocalOnly) -and $taskMap.ContainsKey($taskName)) {
-            $taskPriority = Convert-AzVmTaskCatalogPriority -Value $taskMap[$taskName].Priority -DefaultValue $taskPriority
-            $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
-            $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskMap[$taskName].Enabled -DefaultValue $isEnabled)
+        if ([bool]$row.IsDisabled) {
+            $isEnabled = $false
+            $disabledReason = 'disabled-by-location'
         }
-
-        if (-not $isEnabled) {
-            Write-Host ("Task skipped (disabled in catalog): {0}" -f $taskName) -ForegroundColor DarkYellow
-            continue
+        elseif (-not $isEnabled) {
+            if ([bool]$row.IsLocalOnly) {
+                $disabledReason = 'disabled-in-script-metadata'
+            }
+            else {
+                $disabledReason = 'disabled-in-catalog'
+            }
         }
 
         $assetSpecs = @()
@@ -991,28 +1163,71 @@ function Get-AzVmTaskBlocksFromDirectory {
             $assetSpecs = @(ConvertTo-ObjectArrayCompat -InputObject $metadata.AssetSpecs)
         }
 
-        $activeTasks += [pscustomobject]@{
-            Name = $taskName
-            Script = [string]$content
+        $inventoryTasks += [pscustomobject]@{
+            Name = [string]$taskName
+            Script = [string]$row.Script
             RelativePath = [string]$row.RelativePath
             DirectoryPath = [string](Split-Path -Path $row.Path -Parent)
             TimeoutSeconds = [int]$taskTimeoutSeconds
             Priority = [int]$taskPriority
             AssetSpecs = @($assetSpecs)
+            TaskType = [string]$taskType
+            Source = [string]$row.Source
+            TaskNumber = [int]$row.TaskNumber
+            Enabled = [bool]$isEnabled
+            DisabledReason = [string]$disabledReason
         }
     }
 
+    $sortedInventory = @($inventoryTasks | Sort-Object `
+        @{ Expression = { [int]$_.Priority } }, `
+        @{ Expression = { [int]$_.TaskNumber } }, `
+        @{ Expression = { [string]$_.Name } })
+
+    $activeTasks = @()
     $disabledTasks = @()
-    foreach ($row in @($disabledRows | Sort-Object Order, Name)) {
-        $disabledTasks += [pscustomobject]@{
-            Name = [string]$row.Name
-            RelativePath = [string]$row.RelativePath
+    foreach ($task in @($sortedInventory)) {
+        if (-not [bool]$task.Enabled) {
+            if (-not $SuppressSkipMessages) {
+                if ([string]::Equals([string]$task.DisabledReason, 'disabled-in-script-metadata', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    Write-Host ("Task skipped (disabled in script metadata): {0}" -f [string]$task.Name) -ForegroundColor DarkYellow
+                }
+                elseif ([string]::Equals([string]$task.DisabledReason, 'disabled-in-catalog', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    Write-Host ("Task skipped (disabled in catalog): {0}" -f [string]$task.Name) -ForegroundColor DarkYellow
+                }
+            }
+
+            $disabledTasks += [pscustomobject]@{
+                Name = [string]$task.Name
+                RelativePath = [string]$task.RelativePath
+                Priority = [int]$task.Priority
+                TimeoutSeconds = [int]$task.TimeoutSeconds
+                TaskType = [string]$task.TaskType
+                Source = [string]$task.Source
+                DisabledReason = [string]$task.DisabledReason
+                TaskNumber = [int]$task.TaskNumber
+            }
+            continue
+        }
+
+        $activeTasks += [pscustomobject]@{
+            Name = [string]$task.Name
+            Script = [string]$task.Script
+            RelativePath = [string]$task.RelativePath
+            DirectoryPath = [string]$task.DirectoryPath
+            TimeoutSeconds = [int]$task.TimeoutSeconds
+            Priority = [int]$task.Priority
+            AssetSpecs = @($task.AssetSpecs)
+            TaskType = [string]$task.TaskType
+            Source = [string]$task.Source
+            TaskNumber = [int]$task.TaskNumber
         }
     }
 
     return [ordered]@{
         ActiveTasks = $activeTasks
         DisabledTasks = $disabledTasks
+        InventoryTasks = $sortedInventory
     }
 }
 

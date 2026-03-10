@@ -3,6 +3,24 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.268] - 2026-03-11
+
+### Added
+- Added the read-only `task` command so operators can list the real discovered `vm-init` and `vm-update` inventory in execution order, filter by stage, and inspect disabled tracked/local tasks before running orchestration.
+
+### Changed
+- Reworked the task-number contract across Windows and Linux so tracked tasks now use the shared bands `01-99` (`initial`), `101-999` (`normal`), and `10001-10099` (`final`), while intentionally local-only tasks use `1001-9999`.
+- Renamed the tracked Linux init/update files and the tracked Windows update files to the new banded numbering scheme, including moving the Windows health snapshot task to `10099-capture-snapshot-health`.
+- Updated tracked task catalogs on all four stage roots so they now carry explicit `taskType` values alongside the new band-aligned priorities and existing timeout values.
+- Updated task discovery so local-only priority resolution now follows `script metadata -> filename task number -> deterministic auto-detect`, instead of treating local metadata as the only ordering source.
+- Updated runtime help, `exec` task selection, and the regional move health gate so variable-length task numbers now work consistently across direct execution, diagnostics, and move cutover validation.
+
+### Documentation
+- Updated `AGENTS.md` and `README.md` to document the new 2-5 digit task-number bands, the `task` command, and the revised tracked/local task-priority rules.
+
+### Tests
+- Refreshed smoke coverage for variable-length task selection, the new `task` command listing path, the new tracked Windows/Linux task names, and the updated local-task priority precedence.
+
 ## [2026.3.10.267] - 2026-03-10
 
 ### Changed

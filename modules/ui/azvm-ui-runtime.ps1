@@ -1261,6 +1261,7 @@ function Assert-AzVmCommandOptions {
         'group'  { $allowed = @('help','list','select') }
         'show'   { $allowed = @('perf','help','group') }
         'do'     { $allowed = @('perf','help','group','vm-name','vm-action') }
+        'task'   { $allowed = @('perf','help','list','vm-init','vm-update','disabled','windows','linux') }
         'move'   { $allowed = @('perf','help','group','vm-name','vm-region') }
         'resize' { $allowed = @('perf','help','group','vm-name','vm-size','windows','linux') }
         'set'    { $allowed = @('perf','help','group','vm-name','hibernation','nested-virtualization') }
@@ -1274,7 +1275,7 @@ function Assert-AzVmCommandOptions {
                 -Detail ("Unsupported command '{0}'." -f $CommandName) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | configure | group | show | do | move | resize | set | exec | ssh | rdp | delete."
+                -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete."
         }
     }
 
@@ -1555,6 +1556,163 @@ function Initialize-AzVmExecCommandRuntimeContext {
         ConfiguredPySshClientPath = $configuredPySshClientPath
         SshTaskTimeoutSeconds = $sshTaskTimeoutSeconds
         SshConnectTimeoutSeconds = $sshConnectTimeoutSeconds
+    }
+}
+
+# Handles Initialize-AzVmTaskCommandRuntimeContext.
+function Initialize-AzVmTaskCommandRuntimeContext {
+    param(
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    $repoRoot = Get-AzVmRepoRoot
+    $envFilePath = Join-Path $repoRoot '.env'
+    $configMap = Read-DotEnvFile -Path $envFilePath
+    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
+    $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
+    $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
+
+    $vmName = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_NAME' -DefaultValue '')
+    $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_LOCATION' -DefaultValue '')
+    $regionCode = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
+        $regionCode = Get-AzVmRegionCode -Location ([string]$azLocation)
+    }
+
+    $nameTokens = @{
+        VM_NAME = [string]$vmName
+        REGION_CODE = [string]$regionCode
+        N = '1'
+    }
+
+    $vmInitTaskDirName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key (Get-AzVmPlatformTaskCatalogConfigKey -Platform $platform -Stage 'init') -DefaultValue ([string]$platformDefaults.VmInitTaskDirDefault))) -Tokens $nameTokens
+    $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key (Get-AzVmPlatformTaskCatalogConfigKey -Platform $platform -Stage 'update') -DefaultValue ([string]$platformDefaults.VmUpdateTaskDirDefault))) -Tokens $nameTokens
+
+    return [pscustomobject]@{
+        RepoRoot = $repoRoot
+        EnvFilePath = $envFilePath
+        ConfigMap = $configMap
+        EffectiveConfigMap = $effectiveConfigMap
+        Platform = $platform
+        PlatformDefaults = $platformDefaults
+        VmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $repoRoot
+        VmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $repoRoot
+    }
+}
+
+# Handles Get-AzVmTaskListRows.
+function Get-AzVmTaskListRows {
+    param(
+        [string]$Stage,
+        [object[]]$InventoryTasks,
+        [switch]$DisabledOnly
+    )
+
+    $rows = @()
+    foreach ($task in @($InventoryTasks)) {
+        if ($null -eq $task) {
+            continue
+        }
+
+        $enabled = $true
+        if ($task.PSObject.Properties.Match('Enabled').Count -gt 0) {
+            $enabled = [bool]$task.Enabled
+        }
+
+        if ($DisabledOnly) {
+            if ($enabled) {
+                continue
+            }
+        }
+        elseif (-not $enabled) {
+            continue
+        }
+
+        $rows += [pscustomobject]@{
+            Stage = ("vm-{0}" -f [string]$Stage)
+            Number = [int]$task.TaskNumber
+            Source = $(if ([string]::Equals([string]$task.Source, 'local', [System.StringComparison]::OrdinalIgnoreCase)) { 'local' } else { 'builtin' })
+            TaskType = [string]$task.TaskType
+            Priority = [int]$task.Priority
+            TimeoutSeconds = [int]$task.TimeoutSeconds
+            Status = $(if ($enabled) { 'enabled' } else { 'disabled' })
+            DisabledReason = [string]$task.DisabledReason
+            Name = [string]$task.Name
+            RelativePath = [string]$task.RelativePath
+        }
+    }
+
+    return @($rows)
+}
+
+# Handles Invoke-AzVmTaskCommand.
+function Invoke-AzVmTaskCommand {
+    param(
+        [hashtable]$Options,
+        [switch]$AutoMode,
+        [switch]$WindowsFlag,
+        [switch]$LinuxFlag
+    )
+
+    if (-not (Test-AzVmCliOptionPresent -Options $Options -Name 'list')) {
+        Show-AzVmCommandHelp -Topic 'task'
+        Throw-FriendlyError `
+            -Detail "Task command currently supports only the --list path." `
+            -Code 2 `
+            -Summary "Task command usage is incomplete." `
+            -Hint "Run az-vm task --list [--vm-init] [--vm-update] [--disabled]."
+    }
+
+    $runtime = Initialize-AzVmTaskCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $includeInit = Test-AzVmCliOptionPresent -Options $Options -Name 'vm-init'
+    $includeUpdate = Test-AzVmCliOptionPresent -Options $Options -Name 'vm-update'
+    if (-not $includeInit -and -not $includeUpdate) {
+        $includeInit = $true
+        $includeUpdate = $true
+    }
+
+    $disabledOnly = Test-AzVmCliOptionPresent -Options $Options -Name 'disabled'
+    $rows = @()
+
+    if ($includeInit) {
+        $initCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$runtime.VmInitTaskDir) -Platform ([string]$runtime.Platform) -Stage 'init' -SuppressSkipMessages
+        $rows += @(Get-AzVmTaskListRows -Stage 'init' -InventoryTasks @($initCatalog.InventoryTasks) -DisabledOnly:$disabledOnly)
+    }
+    if ($includeUpdate) {
+        $updateCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$runtime.VmUpdateTaskDir) -Platform ([string]$runtime.Platform) -Stage 'update' -SuppressSkipMessages
+        $rows += @(Get-AzVmTaskListRows -Stage 'update' -InventoryTasks @($updateCatalog.InventoryTasks) -DisabledOnly:$disabledOnly)
+    }
+
+    $rows = @(
+        $rows | Sort-Object `
+            @{ Expression = { if ([string]::Equals([string]$_.Stage, 'vm-init', [System.StringComparison]::OrdinalIgnoreCase)) { 1 } else { 2 } } }, `
+            @{ Expression = { [int]$_.Priority } }, `
+            @{ Expression = { [int]$_.Number } }, `
+            @{ Expression = { [string]$_.Name } }
+    )
+
+    $statusLabel = if ($disabledOnly) { 'disabled' } else { 'active' }
+    Write-Host ("Discovered {0} {1} tasks for platform '{2}':" -f $statusLabel, ($(if ($includeInit -and $includeUpdate) { 'init/update' } elseif ($includeInit) { 'init' } else { 'update' })), [string]$runtime.Platform) -ForegroundColor Cyan
+    if (@($rows).Count -eq 0) {
+        Write-Host "- (none)"
+        return [pscustomobject]@{
+            Platform = [string]$runtime.Platform
+            Rows = @()
+            DisabledOnly = [bool]$disabledOnly
+        }
+    }
+
+    @($rows) |
+        Select-Object Stage, Number, Source, TaskType, Priority, TimeoutSeconds, Status, DisabledReason, Name, RelativePath |
+        Format-Table -AutoSize |
+        Out-Host
+
+    return [pscustomobject]@{
+        Platform = [string]$runtime.Platform
+        Rows = @($rows)
+        DisabledOnly = [bool]$disabledOnly
     }
 }
 
@@ -1915,7 +2073,7 @@ function Resolve-AzVmTaskSelection {
                 -Detail ("Option '--{0}-task' is required in auto mode." -f $Stage) `
                 -Code 60 `
                 -Summary "Task selection is required in auto mode." `
-                -Hint ("Provide --{0}-task=<NN>." -f $Stage)
+                -Hint ("Provide --{0}-task=<task-number>." -f $Stage)
         }
 
         Write-Host ("Available {0} tasks:" -f $Stage) -ForegroundColor Cyan
@@ -1936,8 +2094,22 @@ function Resolve-AzVmTaskSelection {
 
     $selectedTask = $null
     if ($selectedToken -match '^\d+$') {
-        $prefix = ([int]$selectedToken).ToString('00')
-        $selectedTask = @($allTasks | Where-Object { ([string]$_.Name).StartsWith($prefix + '-', [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
+        $requestedTaskNumber = [int]$selectedToken
+        $selectedTask = @(
+            $allTasks |
+                Where-Object {
+                    $candidateTaskNumber = -1
+                    if ($_.PSObject.Properties.Match('TaskNumber').Count -gt 0 -and $null -ne $_.TaskNumber) {
+                        $candidateTaskNumber = [int]$_.TaskNumber
+                    }
+                    elseif (([string]$_.Name) -match '^(?<n>\d{2,5})-') {
+                        $candidateTaskNumber = [int]$Matches.n
+                    }
+
+                    $candidateTaskNumber -eq $requestedTaskNumber
+                } |
+                Select-Object -First 1
+        )
     }
     else {
         $selectedTask = @($allTasks | Where-Object { [string]::Equals([string]$_.Name, $selectedToken, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
@@ -1948,7 +2120,7 @@ function Resolve-AzVmTaskSelection {
             -Detail ("Task '{0}' was not found in {1} catalog." -f $selectedToken, $Stage) `
             -Code 60 `
             -Summary "Task selection is invalid." `
-            -Hint ("List valid {0} task numbers with 'az-vm exec' in interactive mode." -f $Stage)
+            -Hint ("List valid {0} task numbers with 'az-vm task --list --vm-{0}'." -f $Stage)
     }
 
     return $selectedTask[0]
@@ -1981,7 +2153,7 @@ function Invoke-AzVmExecCommand {
             -Detail "Both --init-task and --update-task were provided." `
             -Code 61 `
             -Summary "Only one task selector can be used at a time." `
-            -Hint "Use either --init-task=<NN> or --update-task=<NN>."
+            -Hint "Use either --init-task=<task-number> or --update-task=<task-number>."
     }
 
     $hasTaskSelector = ($hasInitTask -or $hasUpdateTask)
@@ -2892,7 +3064,7 @@ function Invoke-AzVmMoveTargetHealthCheck {
         -ExpectedVmHibernationEnabled:$ExpectedVmHibernationEnabled
 
     $execResult = Invoke-AzVmExecCommand `
-        -Options @{ group = $ResourceGroup; 'vm-name' = $VmName; 'update-task' = '29' } `
+        -Options @{ group = $ResourceGroup; 'vm-name' = $VmName; 'update-task' = '10099' } `
         -AutoMode:$true `
         -WindowsFlag:([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) `
         -LinuxFlag:([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) `
@@ -5489,6 +5661,13 @@ function Invoke-AzVmCommandDispatcher {
                 Invoke-AzVmDoCommand -Options $Options
                 return
             }
+            'task' {
+                $script:UpdateMode = $false
+                $script:RenewMode = $false
+                $script:ExecutionMode = 'default'
+                Invoke-AzVmTaskCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag | Out-Null
+                return
+            }
             'create' {
                 $actionPlan = Resolve-AzVmActionPlan -CommandName 'create' -Options $Options
                 $script:UpdateMode = $false
@@ -5594,7 +5773,7 @@ function Invoke-AzVmCommandDispatcher {
                     -Detail ("Unknown command '{0}'." -f $CommandName) `
                     -Code 2 `
                     -Summary "Unknown command." `
-                    -Hint "Use one command: create | update | configure | group | show | do | move | resize | set | exec | ssh | rdp | delete."
+                    -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete."
             }
         }
     }

@@ -1,24 +1,27 @@
 {
   "defaults": {
-    "priority": 1000,
+    "priority": 100,
     "timeout": 180
   },
   "tasks": [
     {
-      "name": "01-packages-update-install",
+      "name": "01-upgrade-packages-system",
+      "taskType": "initial",
       "priority": 1,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "04-node-sshd-capabilities",
-      "priority": 10,
+      "name": "101-configure-capabilities-node-sshd",
+      "taskType": "normal",
+      "priority": 101,
       "enabled": true,
       "timeout": 180
     },
     {
-      "name": "06-health-snapshot",
-      "priority": 10,
+      "name": "10099-capture-snapshot-health",
+      "taskType": "final",
+      "priority": 10099,
       "enabled": true,
       "timeout": 180
     }

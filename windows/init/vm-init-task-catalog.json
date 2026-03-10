@@ -1,41 +1,47 @@
 {
   "defaults": {
-    "priority": 1000,
+    "priority": 100,
     "timeout": 180
   },
   "tasks": [
     {
       "name": "01-ensure-users-local",
+      "taskType": "initial",
       "priority": 1,
       "enabled": true,
       "timeout": 180
     },
     {
       "name": "02-bootstrap-choco-system",
+      "taskType": "initial",
       "priority": 2,
       "enabled": true,
       "timeout": 180
     },
     {
       "name": "03-install-openssh-service",
+      "taskType": "initial",
       "priority": 3,
       "enabled": true,
       "timeout": 180
     },
     {
       "name": "04-configure-sshd-port",
+      "taskType": "initial",
       "priority": 4,
       "enabled": true,
       "timeout": 180
     },
     {
       "name": "05-configure-rdp-system",
+      "taskType": "initial",
       "priority": 5,
       "enabled": true,
       "timeout": 180
     },
     {
       "name": "06-open-ports-firewall",
+      "taskType": "initial",
       "priority": 6,
       "enabled": true,
       "timeout": 180

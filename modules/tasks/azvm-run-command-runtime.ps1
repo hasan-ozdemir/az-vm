@@ -533,7 +533,7 @@ function Apply-AzVmTaskBlockReplacements {
                 }
             }
 
-            if ($taskName -in @('34-configure-ux-windows', '36-copy-settings-user', '28-install-be-my-eyes')) {
+            if ($taskName -in @('10003-configure-ux-windows', '10005-copy-settings-user', '126-install-be-my-eyes')) {
                 $repoRoot = Split-Path -Path (Split-Path -Path $directoryPath -Parent) -Parent
                 $helperLocalPath = Join-Path $repoRoot 'tools\windows\az-vm-interactive-session-helper.ps1'
                 if (-not (Test-Path -LiteralPath $helperLocalPath)) {
@@ -554,6 +554,10 @@ function Apply-AzVmTaskBlockReplacements {
             DirectoryPath = $directoryPath
             AssetCopies = @($assetCopies)
             TimeoutSeconds = [int]$timeoutSeconds
+            Priority = if ($taskBlock.PSObject.Properties.Match('Priority').Count -gt 0) { [int]$taskBlock.Priority } else { 0 }
+            TaskType = if ($taskBlock.PSObject.Properties.Match('TaskType').Count -gt 0) { [string]$taskBlock.TaskType } else { '' }
+            Source = if ($taskBlock.PSObject.Properties.Match('Source').Count -gt 0) { [string]$taskBlock.Source } else { '' }
+            TaskNumber = if ($taskBlock.PSObject.Properties.Match('TaskNumber').Count -gt 0) { [int]$taskBlock.TaskNumber } else { 0 }
         }
     }
 

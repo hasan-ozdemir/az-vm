@@ -1,7 +1,7 @@
 param(
     [switch]$WorkerMode,
     [string]$ResultPath = '',
-    [string]$TaskName = '34-configure-ux-windows'
+    [string]$TaskName = '10003-configure-ux-windows'
 )
 
 $ErrorActionPreference = "Stop"

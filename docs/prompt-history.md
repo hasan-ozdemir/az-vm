@@ -4361,3 +4361,27 @@ Implement the plan.
 **Assistant Summary**
 
 Moved intentionally local-only stage tasks into `local/` and `local/disabled/` directories, restored the local Windows private local accessibility asset folder name to `local-accessibility-files`, simplified `.gitignore` to stage-local tree rules only, extended the task loader so local tasks are discovered from disk and configured only by script metadata, updated the docs and contract checks to describe that model, and refreshed smoke coverage for local discovery, duplicate-name failures, nested-path rejection, and local asset resolution.
+
+### 2026-03-11 00:37 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented the shared task-band model across Windows and Linux stage roots: tracked tasks now use `01-99` (`initial`), `101-999` (`normal`), and `10001-10099` (`final`), while intentionally local-only tasks use `1001-9999` with `script metadata -> filename -> auto-detect` priority precedence. Renamed the tracked Windows and Linux task files and catalogs to the new numbering scheme, added the read-only `task --list` command with stage and disabled filters, updated `exec` and move-health selection to accept variable-length task numbers, refreshed the README/AGENTS contract, and re-ran smoke, code-quality, documentation-contract, and PowerShell compatibility checks successfully.
+
+### 2026-03-11 00:37 TRT
+
+**User Prompt**
+
+````text
+Update: please make task `10006-capture-snapshot-health.ps1` become `10099-capture-snapshot-health.ps1`; update both the file name and the priority value.
+````
+
+**Assistant Summary**
+
+Shifted the Windows late health task from `10006-capture-snapshot-health` to `10099-capture-snapshot-health` across the tracked file name, catalog priority, move-cutover health gate, task listing/runtime selectors, help text, and smoke coverage so the final health snapshot now lives at the requested `10099` slot.

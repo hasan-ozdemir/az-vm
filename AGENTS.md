@@ -49,7 +49,7 @@ Use these sources in this order when maintaining the repo:
 - Keep command behavior deterministic across interactive and auto flows.
 
 ## Command-Surface Rules
-- Current public commands are: `configure`, `create`, `update`, `group`, `show`, `do`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
+- Current public commands are: `configure`, `create`, `update`, `group`, `show`, `do`, `task`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
 - Do not preserve removed commands or aliases once the repo has cut over to a new surface.
 - If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
 - Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.
@@ -77,18 +77,23 @@ Use these sources in this order when maintaining the repo:
 - If naming rules change, update README, tests, and any naming-related summaries in the same change.
 
 ## Task Catalog Rules
-- Task files use `NN-verb-noun-target.ext`.
-- `NN` is a two-digit task number.
+- Task files use `<task-number>-verb-noun-target.ext`.
+- Task-number bands are:
+  - `01-99` for `initial`
+  - `101-999` for `normal`
+  - `1001-9999` for intentionally local-only tasks
+  - `10001-10099` for `final`
 - The task catalog JSON files are the execution-order and timeout source of truth for tracked tasks at the stage root.
 - Intentionally local-only tasks live under `local/`, are discovered from disk at runtime, and use script metadata only.
 - Intentionally local-only disabled tasks live under `local/disabled/` and remain disabled by location.
 - Root `disabled/` remains for tracked disabled tasks.
 - Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets` for intentionally local-only tasks that stay out of source control.
 - When both a task catalog entry and script metadata exist, the catalog entry wins for `priority`, `enabled`, and `timeout`.
-- Task priority is catalog-driven for tracked tasks and metadata-driven only for intentionally local-only tasks.
+- Task priority is catalog-driven for tracked tasks and metadata-driven first for intentionally local-only tasks.
+- Local-only task priority precedence is: script metadata `priority` -> filename task number -> deterministic auto-detect in the `1001+` band.
 - Runtime code must not auto-write, auto-sync, or auto-reconcile catalog JSON files.
-- For discovered tasks that are missing from catalog entries, use defaults: `priority=1000`, `enabled=true`, `timeout=180`.
-- For catalog entries missing `priority`, default to `1000`.
+- For tracked tasks that are missing from catalog entries, runtime derives priority from the task-number band and still defaults `enabled=true`, `timeout=180`.
+- For catalog entries missing `priority`, runtime derives the priority from the task-number band.
 - For catalog entries missing `timeout`, default to `180`.
 - Disabled tasks belong under `disabled/` and must be ignored by execution logic.
 - Init and update catalogs may diverge by platform, but the orchestration model should remain parallel in concept.

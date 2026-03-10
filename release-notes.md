@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.268 - 2026-03-11
+
+### Summary
+This release introduces the new shared task-band model across Windows and Linux, adds the read-only `task --list` inventory command, renames the tracked task files/catalogs to the new numbering scheme, and moves the Windows health snapshot task to `10099`.
+
+### Highlights
+- Added `az-vm task --list` with `--vm-init`, `--vm-update`, and `--disabled`, using the same tracked/local discovery pipeline as real orchestration.
+- Renamed tracked Windows and Linux task files so the repo now uses the shared task-number bands `01-99`, `101-999`, `1001-9999`, and `10001-10099`.
+- Updated tracked catalogs with explicit `taskType` metadata and band-aligned priorities while keeping the existing timeout values unchanged.
+- Updated local-task ordering so runtime now resolves priority from script metadata first, then filename number, then deterministic `1001+` auto-detection.
+- Moved the Windows late health check to `10099-capture-snapshot-health` and updated move-cutover and `exec` selectors to target the new number.
+
 ## Release 2026.3.10.267 - 2026-03-10
 
 ### Summary

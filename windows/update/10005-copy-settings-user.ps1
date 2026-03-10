@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: copy-settings-user"
 
-$taskName = '36-copy-settings-user'
+$taskName = '10005-copy-settings-user'
 $managerUser = "__VM_ADMIN_USER__"
 $managerPassword = "__VM_ADMIN_PASS__"
 $assistantUser = "__ASSISTANT_USER__"

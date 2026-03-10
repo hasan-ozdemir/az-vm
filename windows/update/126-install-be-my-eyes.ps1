@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-be-my-eyes"
 
 $taskConfig = [ordered]@{
-    TaskName = '28-install-be-my-eyes'
+    TaskName = '126-install-be-my-eyes'
     ManagerUser = '__VM_ADMIN_USER__'
     ManagerPassword = '__VM_ADMIN_PASS__'
     HelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
