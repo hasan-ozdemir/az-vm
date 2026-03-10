@@ -820,6 +820,8 @@ function Get-AzVmTaskBlocksFromDirectory {
 
     $activeRows = @()
     $disabledRows = @()
+    $trackedTaskPathByName = @{}
+    $localTaskPathByName = @{}
     foreach ($file in $files) {
         $name = [string]$file.Name
         if ($name.StartsWith('.')) {
@@ -835,6 +837,7 @@ function Get-AzVmTaskBlocksFromDirectory {
             throw ("Invalid task filename '{0}'. Expected NN-verb-noun-target format with 2-5 words." -f $name)
         }
 
+        $taskOrder = [int]$Matches.n
         $ext = [string]$Matches.ext
         if (-not [string]::Equals($ext, $expectedExt, [System.StringComparison]::OrdinalIgnoreCase)) {
             throw ("Task file '{0}' has invalid extension for platform '{1}'. Expected '{2}'." -f $name, $Platform, $expectedExt)
@@ -848,21 +851,77 @@ function Get-AzVmTaskBlocksFromDirectory {
             $relativePath = [string]$file.Name
         }
         $relativePath = $relativePath.Replace('\', '/')
-        $isDisabled = $relativePath.StartsWith('disabled/', [System.StringComparison]::OrdinalIgnoreCase)
-        if ((-not $isDisabled) -and $relativePath.Contains('/')) {
-            throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files and disabled/* are allowed." -f $name, $relativePath)
+        $isDisabled = $false
+        $isLocalOnly = $false
+        if (-not $relativePath.Contains('/')) {
+            $isDisabled = $false
+            $isLocalOnly = $false
+        }
+        elseif ($relativePath.StartsWith('disabled/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $isDisabled = $true
+            $isLocalOnly = $false
+        }
+        elseif ($relativePath.StartsWith('local/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $localRelativePath = $relativePath.Substring('local/'.Length)
+            if ([string]::IsNullOrWhiteSpace($localRelativePath)) {
+                throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
+            }
+
+            if ($localRelativePath.StartsWith('disabled/', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $localDisabledRelativePath = $localRelativePath.Substring('disabled/'.Length)
+                if ([string]::IsNullOrWhiteSpace($localDisabledRelativePath) -or $localDisabledRelativePath.Contains('/')) {
+                    throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
+                }
+
+                $isDisabled = $true
+                $isLocalOnly = $true
+            }
+            elseif ($localRelativePath.Contains('/')) {
+                throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
+            }
+            else {
+                $isDisabled = $false
+                $isLocalOnly = $true
+            }
+        }
+        else {
+            throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
         }
 
         $content = Get-Content -Path $file.FullName -Raw
         $metadata = Get-AzVmTaskScriptMetadata -ScriptText ([string]$content) -TaskPath ([string]$relativePath)
+        $taskName = [System.IO.Path]::GetFileNameWithoutExtension($name)
+
+        if ($isLocalOnly) {
+            if ($trackedTaskPathByName.ContainsKey($taskName)) {
+                throw ("Task name '{0}' is duplicated between tracked and local-only scripts ('{1}' and '{2}')." -f $taskName, [string]$trackedTaskPathByName[$taskName], $relativePath)
+            }
+            if ($localTaskPathByName.ContainsKey($taskName)) {
+                throw ("Local-only task name '{0}' is duplicated between '{1}' and '{2}'." -f $taskName, [string]$localTaskPathByName[$taskName], $relativePath)
+            }
+
+            $localTaskPathByName[$taskName] = $relativePath
+        }
+        else {
+            if ($localTaskPathByName.ContainsKey($taskName)) {
+                throw ("Task name '{0}' is duplicated between tracked and local-only scripts ('{1}' and '{2}')." -f $taskName, $relativePath, [string]$localTaskPathByName[$taskName])
+            }
+            if ($trackedTaskPathByName.ContainsKey($taskName)) {
+                throw ("Tracked task name '{0}' is duplicated between '{1}' and '{2}'." -f $taskName, [string]$trackedTaskPathByName[$taskName], $relativePath)
+            }
+
+            $trackedTaskPathByName[$taskName] = $relativePath
+        }
 
         $row = [pscustomobject]@{
-            Order = [int]$Matches.n
-            Name = [System.IO.Path]::GetFileNameWithoutExtension($name)
+            Order = [int]$taskOrder
+            Name = [string]$taskName
             Path = [string]$file.FullName
             RelativePath = [string]$relativePath
             Script = [string]$content
             Metadata = $metadata
+            IsLocalOnly = [bool]$isLocalOnly
+            IsDisabled = [bool]$isDisabled
         }
 
         if ($isDisabled) {
@@ -879,7 +938,7 @@ function Get-AzVmTaskBlocksFromDirectory {
     $sortedActiveRows = @(
         $activeRows | Sort-Object `
             @{ Expression = {
-                if ($taskMap.ContainsKey([string]$_.Name)) {
+                if ((-not [bool]$_.IsLocalOnly) -and $taskMap.ContainsKey([string]$_.Name)) {
                     return [int]$taskMap[[string]$_.Name].Priority
                 }
 
@@ -916,7 +975,7 @@ function Get-AzVmTaskBlocksFromDirectory {
             $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $metadata.TimeoutSeconds -DefaultValue 180
         }
 
-        if ($taskMap.ContainsKey($taskName)) {
+        if ((-not [bool]$row.IsLocalOnly) -and $taskMap.ContainsKey($taskName)) {
             $taskPriority = Convert-AzVmTaskCatalogPriority -Value $taskMap[$taskName].Priority -DefaultValue $taskPriority
             $taskTimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $taskMap[$taskName].TimeoutSeconds -DefaultValue 180
             $isEnabled = [bool](Convert-AzVmTaskCatalogBool -Value $taskMap[$taskName].Enabled -DefaultValue $isEnabled)

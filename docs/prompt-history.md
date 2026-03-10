@@ -4349,3 +4349,15 @@ Please make task `31` the IObit Unlocker task and task `32` the app-startup task
 **Assistant Summary**
 
 Completed the Windows update `31/32` swap fully: renamed the tracked task files so `31-configure-unlocker-io.ps1` now contains the Unlocker task and `32-configure-apps-startup.ps1` now contains the startup task, updated the Windows update catalog and smoke-test path/order expectations accordingly, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.10.266`, and re-ran the local validation suite successfully.
+
+### 2026-03-10 22:16 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Moved intentionally local-only stage tasks into `local/` and `local/disabled/` directories, restored the local Windows private local accessibility asset folder name to `local-accessibility-files`, simplified `.gitignore` to stage-local tree rules only, extended the task loader so local tasks are discovered from disk and configured only by script metadata, updated the docs and contract checks to describe that model, and refreshed smoke coverage for local discovery, duplicate-name failures, nested-path rejection, and local asset resolution.

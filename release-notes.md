@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.267 - 2026-03-10
+
+### Summary
+This release moves intentionally local-only stage tasks under explicit `local/` directories, keeps them metadata-driven and disk-discovered, restores the `local-accessibility-files` local asset folder name, and simplifies stage-related `.gitignore` rules around that model.
+
+### Highlights
+- Added `local/` and `local/disabled/` task locations to the stage loader while keeping tracked root tasks catalog-driven and duplicate tracked/local task names invalid.
+- Restored the Windows local private local accessibility asset layout to `local/local-accessibility-files/` and kept asset resolution relative to the local task file directory.
+- Updated `AGENTS.md`, `README.md`, and smoke/documentation checks so the repo now documents and enforces the new local-only task contract.
+
 ## Release 2026.3.10.266 - 2026-03-10
 
 ### Summary

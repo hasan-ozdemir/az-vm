@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.267] - 2026-03-10
+
+### Changed
+- Moved intentionally local-only stage tasks under `local/` and local-only disabled tasks under `local/disabled/`, while keeping tracked root tasks catalog-driven.
+- Restored the local private local accessibility asset folder name to `local-accessibility-files` under the Windows update local subtree and kept local asset resolution relative to the local task file directory.
+- Extended task discovery so stage roots now accept `local/*` and `local/disabled/*` script locations, ignore catalog state for local-only tasks, and fail fast on duplicate tracked/local task names.
+
+### Documentation
+- Updated the repository contract and operator guide to document the new `local/` / `local/disabled/` layout, the metadata-only behavior of local tasks, and the relative asset-resolution rule for local task payloads.
+
+### Tests
+- Refreshed smoke coverage for local-only task discovery, duplicate-name detection, nested-path rejection, and local asset resolution.
+- Simplified `.gitignore` so stage-specific ignore rules now target only the init/update `local/` trees.
+
 ## [2026.3.10.266] - 2026-03-10
 
 ### Fixed

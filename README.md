@@ -119,8 +119,8 @@
 - `az-vm.cmd`: elevated launcher for Windows operators.
 - `az-vm.ps1`: unified orchestrator entrypoint.
 - `modules/`: core runtime, UI/runtime logic, orchestration helpers, and task helpers.
-- `windows/init/`, `windows/update/`: Windows task directories plus catalog JSON files.
-- `linux/init/`, `linux/update/`: Linux task directories plus catalog JSON files.
+- `windows/init/`, `windows/update/`: Windows stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
+- `linux/init/`, `linux/update/`: Linux stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
 - `tools/`: pyssh helper, scripts, Windows helper assets, and git-hook toggles.
 - `tests/`: local quality and contract checks.
 - `docs/prompt-history.md`: English-normalized historical ledger of completed prompt/summary pairs.
@@ -574,8 +574,11 @@ Catalog JSON files are the source of truth for task ordering, enable state, and 
 - `.sh` for Linux
 
 ### Timeouts, Priority, And Enable Flags
-- tracked task with catalog entry: use catalog values
-- local-only task may declare `# az-vm-task-meta: {...}` on the first non-empty comment line for `priority`, `enabled`, `timeout`, and `assets`
+- tracked task at the stage root: use catalog values
+- local-only task under `local/` may declare `# az-vm-task-meta: {...}` on the first non-empty comment line for `priority`, `enabled`, `timeout`, and `assets`
+- local-only tasks under `local/` are discovered from disk dynamically and do not consume catalog entries
+- local-only tasks under `local/disabled/` remain disabled by location even if their metadata says `enabled=true`
+- local-only asset paths are resolved relative to the local task file directory
 - if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
 - missing `priority`: default to `1000`
 - missing `timeout`: default to `180`

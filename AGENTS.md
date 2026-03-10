@@ -31,9 +31,8 @@ Use these sources in this order when maintaining the repo:
 - `az-vm.cmd`: elevated launcher for Windows operators.
 - `az-vm.ps1`: unified orchestrator entrypoint.
 - `modules/`: runtime modules grouped by domain.
-- `windows/init/`, `windows/update/`: Windows guest task catalogs.
-- `linux/init/`, `linux/update/`: Linux guest task catalogs.
-- `windows/*/disabled/`: intentionally disabled guest tasks.
+- `windows/init/`, `windows/update/`: Windows stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
+- `linux/init/`, `linux/update/`: Linux stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
 - `tools/`: helper tooling, pyssh bootstrap, git-hook toggles, and support scripts.
 - `tests/`: static, compatibility, audit, and contract checks.
 - `docs/prompt-history.md`: human-readable prompt ledger for this repo.
@@ -80,7 +79,10 @@ Use these sources in this order when maintaining the repo:
 ## Task Catalog Rules
 - Task files use `NN-verb-noun-target.ext`.
 - `NN` is a two-digit task number.
-- The task catalog JSON files are the execution-order and timeout source of truth for tracked tasks.
+- The task catalog JSON files are the execution-order and timeout source of truth for tracked tasks at the stage root.
+- Intentionally local-only tasks live under `local/`, are discovered from disk at runtime, and use script metadata only.
+- Intentionally local-only disabled tasks live under `local/disabled/` and remain disabled by location.
+- Root `disabled/` remains for tracked disabled tasks.
 - Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets` for intentionally local-only tasks that stay out of source control.
 - When both a task catalog entry and script metadata exist, the catalog entry wins for `priority`, `enabled`, and `timeout`.
 - Task priority is catalog-driven for tracked tasks and metadata-driven only for intentionally local-only tasks.

@@ -1368,14 +1368,14 @@ Invoke-Test -Name "Task script metadata controls local-only task discovery" -Act
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
     try {
         $scriptAlpha = Join-Path $tempRoot '10-alpha-task.ps1'
-        $scriptBeta = Join-Path $tempRoot '20-beta-task.ps1'
-        $scriptGamma = Join-Path $tempRoot '30-gamma-task.ps1'
-        $assetDir = Join-Path $tempRoot 'assets'
-        New-Item -Path $assetDir -ItemType Directory -Force | Out-Null
-        Set-Content -Path (Join-Path $assetDir 'sample.bin') -Value 'sample' -Encoding UTF8
+        $localDir = Join-Path $tempRoot 'local'
+        $localDisabledDir = Join-Path $localDir 'disabled'
+        New-Item -Path $localDisabledDir -ItemType Directory -Force | Out-Null
+        $scriptBeta = Join-Path $localDir '20-beta-task.ps1'
+        $scriptGamma = Join-Path $localDisabledDir '30-gamma-task.ps1'
 
         Set-Content -Path $scriptAlpha -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":30,"timeout":41,"enabled":true,"assets":[{"local":"assets/sample.bin","remote":"C:/temp/sample.bin"}]}
+# az-vm-task-meta: {"priority":30,"timeout":41,"enabled":true}
 Write-Host "alpha"
 '@
         Set-Content -Path $scriptBeta -Encoding UTF8 -Value @'
@@ -1408,19 +1408,21 @@ Write-Host "gamma"
         $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage update
         $active = @($catalog.ActiveTasks)
         $activeNames = @($active | ForEach-Object { [string]$_.Name })
+        $disabled = @($catalog.DisabledTasks)
 
-        Assert-True -Condition ($active.Count -eq 2) -Message 'Script metadata must allow root local-only tasks while skipping metadata-disabled ones.'
+        Assert-True -Condition ($active.Count -eq 2) -Message 'Tracked root tasks and local-only tasks must both be discoverable.'
+        Assert-True -Condition ($disabled.Count -eq 1) -Message 'Tasks under local/disabled must be discovered as disabled.'
         Assert-True -Condition ([string]$activeNames[0] -eq '10-alpha-task') -Message 'Catalog override must win over script metadata priority.'
-        Assert-True -Condition ([string]$activeNames[1] -eq '20-beta-task') -Message 'Script metadata priority must order uncataloged local-only tasks.'
+        Assert-True -Condition ([string]$activeNames[1] -eq '20-beta-task') -Message 'Script metadata priority must order local-only tasks discovered from local/.'
 
         $alphaTask = $active | Where-Object { [string]$_.Name -eq '10-alpha-task' } | Select-Object -First 1
         $betaTask = $active | Where-Object { [string]$_.Name -eq '20-beta-task' } | Select-Object -First 1
 
         Assert-True -Condition ([int]$alphaTask.TimeoutSeconds -eq 90) -Message 'Catalog timeout must override script metadata timeout.'
-        Assert-True -Condition ([int]$betaTask.TimeoutSeconds -eq 44) -Message 'Script metadata timeout must drive uncataloged local-only tasks.'
-        Assert-True -Condition (@($alphaTask.AssetSpecs).Count -eq 1) -Message 'Script metadata assets must be preserved on discovered tasks.'
-        Assert-True -Condition ([string]@($alphaTask.AssetSpecs)[0].LocalPath -eq 'assets/sample.bin') -Message 'Script metadata local asset path mismatch.'
-        Assert-True -Condition ([string]@($alphaTask.AssetSpecs)[0].RemotePath -eq 'C:/temp/sample.bin') -Message 'Script metadata remote asset path mismatch.'
+        Assert-True -Condition ([int]$betaTask.TimeoutSeconds -eq 44) -Message 'Script metadata timeout must drive local-only tasks.'
+        Assert-True -Condition ([int]$betaTask.Priority -eq 5) -Message 'Script metadata priority must drive local-only tasks.'
+        Assert-True -Condition ([string]$betaTask.RelativePath -eq 'local/20-beta-task.ps1') -Message 'Local-only active task must preserve its relative path.'
+        Assert-True -Condition ([string]$disabled[0].RelativePath -eq 'local/disabled/30-gamma-task.ps1') -Message 'Local-only disabled task must preserve its relative path.'
     }
     finally {
         if (Test-Path -LiteralPath $tempRoot) {
@@ -1433,14 +1435,15 @@ Invoke-Test -Name "Generic task metadata assets resolve into asset copies" -Acti
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-task-assets-test-" + [Guid]::NewGuid().ToString("N"))
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
     try {
-        $assetDir = Join-Path $tempRoot 'assets'
+        $localDir = Join-Path $tempRoot 'local'
+        $assetDir = Join-Path $localDir 'local-accessibility-files'
         New-Item -Path $assetDir -ItemType Directory -Force | Out-Null
         $assetPath = Join-Path $assetDir 'profile.zip'
         Set-Content -Path $assetPath -Value 'payload' -Encoding UTF8
 
-        $taskPath = Join-Path $tempRoot '81-local-config-task.ps1'
+        $taskPath = Join-Path $localDir '81-local-config-task.ps1'
         Set-Content -Path $taskPath -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":32,"timeout":7,"enabled":true,"assets":[{"local":"assets/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
+# az-vm-task-meta: {"priority":32,"timeout":7,"enabled":true,"assets":[{"local":"local-accessibility-files/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
 Write-Host "__VM_ADMIN_USER__"
 '@
 
@@ -1480,6 +1483,59 @@ Write-Host "__VM_ADMIN_USER__"
         Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/samplevm-profile.zip') -Message 'Generic metadata asset remote path mismatch.'
         Assert-True -Condition ([string]$assetCopies[0].LocalPath -eq (Resolve-Path -LiteralPath $assetPath).Path) -Message 'Generic metadata asset local path mismatch.'
         Assert-True -Condition ([string]$resolved.Script -like '*manager*') -Message 'Generic metadata task script must still apply token replacement.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Invoke-Test -Name "Duplicate task names across tracked and local-only tasks fail fast" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-task-duplicate-test-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+    try {
+        $localDir = Join-Path $tempRoot 'local'
+        New-Item -Path $localDir -ItemType Directory -Force | Out-Null
+        Set-Content -Path (Join-Path $tempRoot '10-alpha-task.ps1') -Encoding UTF8 -Value 'Write-Host "tracked"'
+        Set-Content -Path (Join-Path $localDir '10-alpha-task.ps1') -Encoding UTF8 -Value 'Write-Host "local"'
+        Set-Content -Path (Join-Path $tempRoot 'vm-update-task-catalog.json') -Encoding UTF8 -Value '{"tasks":[]}'
+
+        $threw = $false
+        try {
+            Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage update | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*duplicated between tracked and local-only scripts*') -Message 'Duplicate tracked/local task names must report a precise error.'
+        }
+
+        Assert-True -Condition $threw -Message 'Duplicate tracked/local task names must fail fast.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Invoke-Test -Name "Unsupported nested local script directories fail fast" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-task-nesting-test-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -Path (Join-Path $tempRoot 'local\subdir') -ItemType Directory -Force | Out-Null
+    try {
+        Set-Content -Path (Join-Path $tempRoot 'local\subdir\40-bad-task.ps1') -Encoding UTF8 -Value 'Write-Host "bad"'
+        Set-Content -Path (Join-Path $tempRoot 'vm-update-task-catalog.json') -Encoding UTF8 -Value '{"tasks":[]}'
+
+        $threw = $false
+        try {
+            Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage update | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*Only root files, disabled/*, local/*, and local/disabled/* are allowed.*') -Message 'Unexpected nested local scripts must mention the supported task locations.'
+        }
+
+        Assert-True -Condition $threw -Message 'Unexpected nested local scripts must fail fast.'
     }
     finally {
         if (Test-Path -LiteralPath $tempRoot) {

@@ -14,11 +14,31 @@ _tmp_test.txt
 tmp/
 tmp-logs/
 
-# Ignore local-only Windows task extensions and assets
-windows/update/8[01]-*.ps1
-windows/update/90-*.ps1
-windows/update/disabled/99-*.ps1
-windows/update/local-private-assets/
+# Ignore local-only stage task trees
+windows/init/local/**
+!windows/init/local/
+!windows/init/local/.gitkeep
+!windows/init/local/disabled/
+windows/init/local/disabled/**
+!windows/init/local/disabled/.gitkeep
+windows/update/local/**
+!windows/update/local/
+!windows/update/local/.gitkeep
+!windows/update/local/disabled/
+windows/update/local/disabled/**
+!windows/update/local/disabled/.gitkeep
+linux/init/local/**
+!linux/init/local/
+!linux/init/local/.gitkeep
+!linux/init/local/disabled/
+linux/init/local/disabled/**
+!linux/init/local/disabled/.gitkeep
+linux/update/local/**
+!linux/update/local/
+!linux/update/local/.gitkeep
+!linux/update/local/disabled/
+linux/update/local/disabled/**
+!linux/update/local/disabled/.gitkeep
 
 # Ignore downloaded SSH helper binaries/vendors
 tools/putty/*.exe
