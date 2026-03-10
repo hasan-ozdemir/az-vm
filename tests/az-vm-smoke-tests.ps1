@@ -1335,8 +1335,8 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '28-install-be-my-eyes' = 35
         '29-install-nvda-system' = 54
         '30-install-rclone-system' = 13
-        '31-configure-apps-startup' = 45
         '32-configure-unlocker-io' = 23
+        '31-configure-apps-startup' = 45
         '33-create-shortcuts-public-desktop' = 10
         '34-configure-ux-windows' = 13
         '35-configure-settings-advanced-system' = 5

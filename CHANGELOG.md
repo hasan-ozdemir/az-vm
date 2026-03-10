@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.265] - 2026-03-10
+
+### Fixed
+- Swapped the Windows `vm-update` execution priorities of `31-configure-apps-startup` and `32-configure-unlocker-io` so the unlocker task now runs first while both tasks keep their existing timeout values.
+
+### Tests
+- Updated smoke coverage so the tracked Windows update order assertion now expects `32-configure-unlocker-io` before `31-configure-apps-startup`.
+
 ## [2026.3.10.264] - 2026-03-10
 
 ### Changed

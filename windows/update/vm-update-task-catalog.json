@@ -186,13 +186,13 @@
     },
     {
       "name": "31-configure-apps-startup",
-      "priority": 31,
+      "priority": 32,
       "enabled": true,
       "timeout": 45
     },
     {
       "name": "32-configure-unlocker-io",
-      "priority": 32,
+      "priority": 31,
       "enabled": true,
       "timeout": 23
     },

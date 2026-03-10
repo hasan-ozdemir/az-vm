@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.265 - 2026-03-10
+
+### Summary
+This release makes one catalog-order correction on the Windows update flow: `32-configure-unlocker-io` now runs before `31-configure-apps-startup`, while both tasks keep their previous timeout values.
+
+### Highlights
+- Swapped only the catalog priority values of `31-configure-apps-startup` and `32-configure-unlocker-io`.
+- Kept both task names, scripts, and timeout values unchanged.
+- Updated smoke coverage so the tracked Windows update order assertion matches the corrected priority order.
+
 ## Release 2026.3.10.264 - 2026-03-10
 
 ### Summary

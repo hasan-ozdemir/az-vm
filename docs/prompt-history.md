@@ -4325,3 +4325,15 @@ Update: move selected private local-only Windows update tasks and payloads out o
 **Assistant Summary**
 
 Renamed the tracked Windows init/update scripts to the normalized `NN-verb-noun-target` pattern, rebuilt the tracked Windows update catalog around the requested first/last tasks, removed selected private local-only Windows tasks and payloads from tracked catalogs and runtime ownership, added script-local metadata plus generic asset resolution for local-only tasks, updated the maintained docs/tests to match, and rewrote the active `main` and `dev` histories to drop the selected tracked paths and their tracked textual references while preserving `main2` and `dev2` as untouched backups. Re-ran smoke, documentation-contract, code-quality, and PowerShell compatibility checks successfully before the rewrite and verified afterward that the cleaned identifiers remain only on the untouched backup branches.
+
+### 2026-03-10 21:41 TRT
+
+**User Prompt**
+
+````text
+Minor fix: swap the execution priority of Windows `vm-update` tasks `31` and `32`.
+````
+
+**Assistant Summary**
+
+Swapped the Windows update catalog priorities of `31-configure-apps-startup` and `32-configure-unlocker-io`, kept both timeout values unchanged, updated the smoke-test expectation to match the corrected order, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.10.265`, and re-ran the local validation suite successfully.
