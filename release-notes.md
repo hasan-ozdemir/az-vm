@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.10.264 - 2026-03-10
+
+### Summary
+This release removes selected private local-only Windows tasks and payloads from tracked history, normalizes the tracked Windows task naming/order, and moves the remaining local-only behavior behind script-level metadata instead of hardcoded runtime special cases.
+
+### Highlights
+- Renamed tracked Windows `vm-init` and `vm-update` scripts to the shared `NN-verb-noun-target` convention and reordered the tracked Windows update flow so bootstrap/package tasks start first while late-stage UX, user-settings, and health tasks run last.
+- Moved selected private local-only Windows tasks and payloads out of source control while keeping them runnable from disk through ignored local-only files.
+- Added generic script-local metadata support for local-only Windows tasks so they can declare `priority`, `enabled`, `timeout`, and asset copy requirements without re-entering tracked catalogs.
+- Replaced the runtime's old task-specific Windows asset-copy branch with generic metadata-driven asset resolution.
+- Rewrote the active `main` and `dev` histories to remove the selected private local-only tracked paths and their tracked textual references, while preserving `main2` and `dev2` as untouched backups.
+- Expanded smoke and documentation checks to cover the normalized naming/order model, local-only metadata discovery, and the cleaned tracked surface.
+
 ## Release 2026.3.10.263 - 2026-03-10
 
 ### Summary

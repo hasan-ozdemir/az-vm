@@ -3,6 +3,23 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.10.264] - 2026-03-10
+
+### Changed
+- Renamed the tracked Windows `vm-init` and `vm-update` scripts to the normalized `NN-verb-noun-target` pattern and rebuilt the tracked Windows update order around tooling-first early tasks plus the requested late-stage UX, user-settings, and health tasks.
+- Moved selected private local-only Windows tasks and payloads out of source control while keeping them available on disk through ignored local-only files and script-local metadata.
+
+### Refactoring
+- Added generic script-local task metadata parsing for intentionally local-only Windows tasks, including `priority`, `enabled`, `timeout`, and asset declarations, while keeping tracked catalog values authoritative whenever both exist.
+- Replaced the old task-specific Windows asset-copy special case with metadata-driven asset resolution so tracked runtime code no longer needs custom knowledge of local-only private payloads.
+- Rewrote the active `main` and `dev` histories to remove the selected private local-only Windows paths and scrub their tracked textual references, while leaving the backup branches untouched.
+
+### Documentation
+- Updated `AGENTS.md`, `README.md`, `roadmap.md`, `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md` to describe the normalized Windows task naming scheme and the local-only metadata model without carrying the removed tracked identifiers.
+
+### Tests
+- Expanded smoke and documentation-contract coverage for normalized Windows task ordering, script-local metadata discovery, generic asset resolution, and the absence of the removed tracked task identifiers from the maintained repo surface.
+
 ## [2026.3.10.263] - 2026-03-10
 
 ### Fixed

@@ -4313,3 +4313,15 @@ Fix and update: make sure every parameter of the `az-vm set` command actually do
 **Assistant Summary**
 
 Refactored the `set` command to resolve its target VM directly instead of depending on the heavier Step-1 runtime path, which removes unrelated configuration dependencies from feature-toggle updates. Added `.env` synchronization so successful `set` runs now persist the resolved `RESOURCE_GROUP`, `VM_NAME`, and any applied `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values, updated README/help text to document that behavior, and added smoke coverage for both full-success and partial-success scenarios before re-running the local validation suite.
+
+### 2026-03-10 20:47 TRT
+
+**User Prompt**
+
+````text
+Update: move selected private local-only Windows update tasks and payloads out of source control while keeping them on disk, remove them from the active `main` and `dev` histories without touching the backup branches or commit messages, normalize the Windows init/update task naming and ordering, and keep the runtime/task-catalog behavior aligned with the new local-only metadata model.
+````
+
+**Assistant Summary**
+
+Renamed the tracked Windows init/update scripts to the normalized `NN-verb-noun-target` pattern, rebuilt the tracked Windows update catalog around the requested first/last tasks, removed selected private local-only Windows tasks and payloads from tracked catalogs and runtime ownership, added script-local metadata plus generic asset resolution for local-only tasks, updated the maintained docs/tests to match, and rewrote the active `main` and `dev` histories to drop the selected tracked paths and their tracked textual references while preserving `main2` and `dev2` as untouched backups. Re-ran smoke, documentation-contract, code-quality, and PowerShell compatibility checks successfully before the rewrite and verified afterward that the cleaned identifiers remain only on the untouched backup branches.
