@@ -957,7 +957,9 @@ try {
         }
     }
 
-    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
+    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
+        Where-Object { $managedShortcutNames -contains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) } |
+        ForEach-Object {
         try {
             Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
             Write-Host ("public-desktop-removed: {0}" -f $_.Name)
@@ -975,20 +977,6 @@ try {
         $expectedShortcutPath = Join-Path $publicDesktop ($expectedShortcutName + ".lnk")
         if (-not (Test-Path -LiteralPath $expectedShortcutPath)) {
             throw ("Managed public shortcut was not created: {0}" -f $expectedShortcutPath)
-        }
-    }
-
-    $unexpectedShortcutPaths = @(
-        Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
-            Where-Object { $managedShortcutNames -notcontains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }
-    )
-    foreach ($unexpectedShortcut in @($unexpectedShortcutPaths)) {
-        try {
-            Remove-Item -LiteralPath $unexpectedShortcut.FullName -Force -ErrorAction Stop
-            Write-Host ("unexpected-shortcut-removed: {0}" -f $unexpectedShortcut.FullName)
-        }
-        catch {
-            throw ("Failed to remove unexpected public shortcut '{0}': {1}" -f $unexpectedShortcut.FullName, $_.Exception.Message)
         }
     }
 

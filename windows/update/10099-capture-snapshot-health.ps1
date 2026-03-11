@@ -4,6 +4,7 @@ Write-Host "Update task started: capture-snapshot-health"
 $companyName = "__COMPANY_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
+$hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
@@ -77,6 +78,337 @@ function Get-ShortcutDetails {
         WindowStyle = [int]$shortcut.WindowStyle
         RunAsAdmin = [bool](Get-ShortcutRunAsAdministratorFlag -ShortcutPath $ShortcutPath)
     }
+}
+
+function Convert-Base64JsonToObjectArray {
+    param([string]$Base64Text)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Base64Text)) {
+        return @()
+    }
+
+    try {
+        $bytes = [Convert]::FromBase64String([string]$Base64Text)
+        $json = [System.Text.Encoding]::UTF8.GetString($bytes)
+        if ([string]::IsNullOrWhiteSpace([string]$json)) {
+            return @()
+        }
+
+        $parsed = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+        return @($parsed)
+    }
+    catch {
+        Write-Warning ("startup-profile-decode-failed => {0}" -f $_.Exception.Message)
+        return @()
+    }
+}
+
+function Get-LocalUserProfileInfo {
+    param([string]$UserName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$UserName)) {
+        throw "User name is empty."
+    }
+
+    $expectedPath = "C:\Users\$UserName"
+    $profile = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\*' -ErrorAction SilentlyContinue | Where-Object {
+        [string]::Equals([string]$_.ProfileImagePath, $expectedPath, [System.StringComparison]::OrdinalIgnoreCase)
+    } | Select-Object -First 1
+
+    if ($null -eq $profile) {
+        throw ("Profile was not found for user '{0}'." -f $UserName)
+    }
+
+    return [pscustomobject]@{
+        UserName = [string]$UserName
+        Sid = [string]$profile.PSChildName
+        ProfilePath = [string]$profile.ProfileImagePath
+    }
+}
+
+function Remove-RegistryMountIfPresent {
+    param([string]$MountName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$MountName)) {
+        return
+    }
+
+    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
+}
+
+function Mount-RegistryHive {
+    param(
+        [string]$MountName,
+        [string]$HiveFilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$MountName)) {
+        throw "Registry mount name is empty."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
+        throw ("Registry hive file was not found: {0}" -f $HiveFilePath)
+    }
+
+    Remove-RegistryMountIfPresent -MountName $MountName
+    & reg.exe load ("HKU\{0}" -f $MountName) $HiveFilePath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("reg load failed for HKU\{0} => {1}" -f $MountName, $HiveFilePath)
+    }
+
+    return ("Registry::HKEY_USERS\{0}" -f $MountName)
+}
+
+function Dismount-RegistryHive {
+    param([string]$MountName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$MountName)) {
+        return
+    }
+
+    try {
+        Set-Location -Path 'C:\'
+    }
+    catch {
+    }
+
+    foreach ($attempt in 1..15) {
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
+        Start-Sleep -Milliseconds 750
+
+        & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        Start-Sleep -Seconds 2
+    }
+
+    Write-Warning ("reg unload failed for HKU\{0}" -f $MountName)
+}
+
+function Get-StartupApprovedStateCode {
+    param(
+        [string]$Path,
+        [string]$ValueName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or [string]::IsNullOrWhiteSpace([string]$ValueName)) {
+        return -1
+    }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return -1
+    }
+
+    $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return -1
+    }
+
+    $property = @($item.PSObject.Properties | Where-Object { [string]$_.Name -eq $ValueName } | Select-Object -First 1)
+    if (@($property).Count -eq 0 -or $null -eq $property[0].Value) {
+        return -1
+    }
+
+    $bytes = @($property[0].Value)
+    if (@($bytes).Count -eq 0) {
+        return -1
+    }
+
+    return [int]$bytes[0]
+}
+
+function Get-ManagerContext {
+    param([string]$UserName)
+
+    $profileInfo = Get-LocalUserProfileInfo -UserName $UserName
+    $mountName = ''
+    $mainRoot = ("Registry::HKEY_USERS\{0}" -f [string]$profileInfo.Sid)
+    if (-not (Test-Path -LiteralPath $mainRoot)) {
+        $mountName = 'AzVm10099Manager'
+        $mainRoot = Mount-RegistryHive -MountName $mountName -HiveFilePath (Join-Path ([string]$profileInfo.ProfilePath) 'NTUSER.DAT')
+    }
+
+    return [pscustomobject]@{
+        ProfileInfo = $profileInfo
+        MainRoot = [string]$mainRoot
+        MountName = [string]$mountName
+        StartupFolder = (Join-Path ([string]$profileInfo.ProfilePath) 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup')
+        StartupApprovedStartupFolderPath = ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder" -f [string]$mainRoot)
+        RunPath = ("{0}\Software\Microsoft\Windows\CurrentVersion\Run" -f [string]$mainRoot)
+        RunApprovalPath = ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run" -f [string]$mainRoot)
+        Run32Path = ("{0}\Software\Microsoft\Windows\CurrentVersion\Run32" -f [string]$mainRoot)
+        Run32ApprovalPath = ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32" -f [string]$mainRoot)
+    }
+}
+
+function Resolve-StartupDisplayName {
+    param([string]$Key)
+
+    switch ([string]$Key) {
+        'docker-desktop' { return 'Docker Desktop' }
+        'ollama' { return 'Ollama' }
+        'onedrive' { return 'OneDrive' }
+        'teams' { return 'Teams' }
+        'private local accessibility' { return 'private local accessibility' }
+        'itunes-helper' { return 'iTunesHelper' }
+        'google-drive' { return 'Google Drive' }
+        'windscribe' { return 'Windscribe' }
+        'anydesk' { return 'AnyDesk' }
+        'codex-app' { return 'Codex App' }
+        default { return '' }
+    }
+}
+
+function Get-StartupLocationDefinitions {
+    param([pscustomobject]$ManagerContext)
+
+    return @(
+        [pscustomobject]@{
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            Kind = 'Run'
+            RunPath = [string]$ManagerContext.RunPath
+            ApprovalPath = [string]$ManagerContext.RunApprovalPath
+        }
+        [pscustomobject]@{
+            Scope = 'CurrentUser'
+            EntryType = 'Run32'
+            Kind = 'Run'
+            RunPath = [string]$ManagerContext.Run32Path
+            ApprovalPath = [string]$ManagerContext.Run32ApprovalPath
+        }
+        [pscustomobject]@{
+            Scope = 'CurrentUser'
+            EntryType = 'StartupFolder'
+            Kind = 'StartupFolder'
+            DirectoryPath = [string]$ManagerContext.StartupFolder
+            ApprovalPath = [string]$ManagerContext.StartupApprovedStartupFolderPath
+        }
+        [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+            Kind = 'Run'
+            RunPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
+            ApprovalPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
+        }
+        [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'Run32'
+            Kind = 'Run'
+            RunPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run32'
+            ApprovalPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32'
+        }
+        [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'StartupFolder'
+            Kind = 'StartupFolder'
+            DirectoryPath = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp'
+            ApprovalPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder'
+        }
+    )
+}
+
+function Resolve-RequestedStartupLocation {
+    param(
+        [psobject]$ProfileEntry,
+        [object[]]$LocationDefinitions
+    )
+
+    if ($null -eq $ProfileEntry) {
+        return $null
+    }
+
+    $scope = if ($ProfileEntry.PSObject.Properties.Match('Scope').Count -gt 0) { [string]$ProfileEntry.Scope } else { '' }
+    $entryType = if ($ProfileEntry.PSObject.Properties.Match('EntryType').Count -gt 0) { [string]$ProfileEntry.EntryType } else { '' }
+
+    return @(
+        @($LocationDefinitions) |
+            Where-Object {
+                [string]::Equals([string]$_.Scope, $scope, [System.StringComparison]::OrdinalIgnoreCase) -and
+                [string]::Equals([string]$_.EntryType, $entryType, [System.StringComparison]::OrdinalIgnoreCase)
+            } |
+            Select-Object -First 1
+    )[0]
+}
+
+function Get-RegistryValueText {
+    param(
+        [string]$Path,
+        [string]$ValueName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or [string]::IsNullOrWhiteSpace([string]$ValueName)) {
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return $null
+    }
+
+    $item = Get-ItemProperty -Path $Path -Name $ValueName -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return $null
+    }
+
+    return [string]$item.$ValueName
+}
+
+function Write-ShortcutReadback {
+    param(
+        [string]$Label,
+        [string]$ShortcutPath
+    )
+
+    $shortcut = Get-ShortcutDetails -ShortcutPath $ShortcutPath
+    Write-Host ("{0} => {1}" -f $Label, $ShortcutPath)
+    Write-Host (" target => {0}" -f [string]$shortcut.TargetPath)
+    Write-Host (" args => {0}" -f [string]$shortcut.Arguments)
+    Write-Host (" hotkey => {0}" -f [string]$shortcut.Hotkey)
+    Write-Host (" start-in => {0}" -f [string]$shortcut.WorkingDirectory)
+    Write-Host (" show => {0}" -f [int]$shortcut.WindowStyle)
+    Write-Host (" run-as-admin => {0}" -f [bool]$shortcut.RunAsAdmin)
+}
+
+function Write-StartupEntryStatus {
+    param(
+        [string]$DisplayName,
+        [psobject]$ProfileEntry,
+        [object[]]$LocationDefinitions
+    )
+
+    $location = Resolve-RequestedStartupLocation -ProfileEntry $ProfileEntry -LocationDefinitions $LocationDefinitions
+    if ($null -eq $location) {
+        Write-Warning ("startup-entry-skip => {0} => unsupported method '{1}/{2}'." -f $DisplayName, [string]$ProfileEntry.Scope, [string]$ProfileEntry.EntryType)
+        return
+    }
+
+    if ([string]::Equals([string]$location.Kind, 'Run', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $commandText = Get-RegistryValueText -Path ([string]$location.RunPath) -ValueName $DisplayName
+        if ($null -eq $commandText) {
+            Write-Host ("missing-startup-entry => {0} => {1}/{2}" -f $DisplayName, [string]$location.Scope, [string]$location.EntryType)
+            return
+        }
+
+        $approvalState = Get-StartupApprovedStateCode -Path ([string]$location.ApprovalPath) -ValueName $DisplayName
+        Write-Host ("startup-entry => {0} => {1}/{2}" -f $DisplayName, [string]$location.Scope, [string]$location.EntryType)
+        Write-Host (" command => {0}" -f [string]$commandText)
+        Write-Host (" approval-state => {0}" -f [int]$approvalState)
+        Write-Host (" enabled => {0}" -f [bool]($approvalState -lt 0 -or $approvalState -eq 2))
+        return
+    }
+
+    $shortcutPath = Join-Path ([string]$location.DirectoryPath) ($DisplayName + '.lnk')
+    if (-not (Test-Path -LiteralPath $shortcutPath)) {
+        Write-Host ("missing-startup-entry => {0} => {1}/{2}" -f $DisplayName, [string]$location.Scope, [string]$location.EntryType)
+        return
+    }
+
+    $approvalState = Get-StartupApprovedStateCode -Path ([string]$location.ApprovalPath) -ValueName ($DisplayName + '.lnk')
+    Write-ShortcutReadback -Label 'startup-entry' -ShortcutPath $shortcutPath
+    Write-Host (" scope => {0}" -f [string]$location.Scope)
+    Write-Host (" method => {0}" -f [string]$location.EntryType)
+    Write-Host (" approval-state => {0}" -f [int]$approvalState)
+    Write-Host (" enabled => {0}" -f [bool]($approvalState -lt 0 -or $approvalState -eq 2))
 }
 
 function Write-DesktopArtifactScan {
@@ -323,19 +655,20 @@ foreach ($shortcutName in @($publicShortcutNames)) {
     Write-Host " run-as-admin => $([bool]$shortcut.RunAsAdmin)"
 }
 
-Write-Host "PUBLIC DESKTOP MIRROR STATUS:"
-$actualPublicShortcutNames = @(
-    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
-        ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }
+Write-Host "PUBLIC DESKTOP RECONCILE STATUS:"
+$actualPublicShortcutFiles = @(
+    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | Sort-Object Name
 )
-$unexpectedShortcutNames = @($actualPublicShortcutNames | Where-Object { $publicShortcutNames -notcontains [string]$_ })
-if (@($unexpectedShortcutNames).Count -eq 0) {
-    Write-Host "unexpected-public-shortcut-count=0"
-}
-else {
-    foreach ($shortcutName in @($unexpectedShortcutNames)) {
-        Write-Host ("unexpected-public-shortcut => {0}" -f $shortcutName)
-    }
+$unmanagedPublicShortcutFiles = @(
+    @($actualPublicShortcutFiles) |
+        Where-Object {
+            $baseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name)
+            return ($publicShortcutNames -notcontains [string]$baseName)
+        }
+)
+Write-Host ("unmanaged-public-shortcut-count={0}" -f @($unmanagedPublicShortcutFiles).Count)
+foreach ($shortcutFile in @($unmanagedPublicShortcutFiles)) {
+    Write-ShortcutReadback -Label 'unmanaged-public-shortcut' -ShortcutPath ([string]$shortcutFile.FullName)
 }
 
 Write-Host "PER-USER DESKTOP STATUS:"
@@ -357,19 +690,57 @@ foreach ($drive in @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -Er
 }
 
 Write-Host "AUTO-START APP STATUS:"
-$machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-foreach ($startupShortcutName in @('Docker Desktop', 'Ollama', 'OneDrive', 'Teams', 'iTunesHelper')) {
-    $startupShortcutPath = Join-Path $machineStartupFolder ($startupShortcutName + ".lnk")
-    if (-not (Test-Path -LiteralPath $startupShortcutPath)) {
-        Write-Host "missing-startup-shortcut => $startupShortcutPath"
+$startupProfile = @(Convert-Base64JsonToObjectArray -Base64Text $hostStartupProfileJsonBase64)
+$startupProfileByKey = @{}
+foreach ($entry in @($startupProfile)) {
+    if ($null -eq $entry) {
         continue
     }
 
-    $startupShortcut = Get-ShortcutDetails -ShortcutPath $startupShortcutPath
-    Write-Host "startup-shortcut => $startupShortcutPath"
-    Write-Host " target => $([string]$startupShortcut.TargetPath)"
-    Write-Host " args => $([string]$startupShortcut.Arguments)"
-    Write-Host " hotkey => $([string]$startupShortcut.Hotkey)"
+    $key = if ($entry.PSObject.Properties.Match('Key').Count -gt 0) { [string]$entry.Key } else { '' }
+    if ([string]::IsNullOrWhiteSpace([string]$key) -or $startupProfileByKey.ContainsKey($key)) {
+        continue
+    }
+
+    $startupProfileByKey[$key] = $entry
+}
+
+$startupProfileSummary = @(
+    @($startupProfileByKey.Keys | Sort-Object) |
+        ForEach-Object {
+            $entry = $startupProfileByKey[[string]$_]
+            ("{0}:{1}:{2}" -f [string]$_, [string]$entry.EntryType, [string]$entry.Scope)
+        }
+)
+if (@($startupProfileSummary).Count -eq 0) {
+    Write-Host 'host-startup-profile => none'
+}
+else {
+    Write-Host ("host-startup-profile => {0}" -f ($startupProfileSummary -join ', '))
+}
+
+$managerContext = $null
+try {
+    $managerContext = Get-ManagerContext -UserName $managerUser
+    $startupLocationDefinitions = @(Get-StartupLocationDefinitions -ManagerContext $managerContext)
+
+    foreach ($startupKey in @($startupProfileByKey.Keys | Sort-Object)) {
+        $displayName = Resolve-StartupDisplayName -Key ([string]$startupKey)
+        if ([string]::IsNullOrWhiteSpace([string]$displayName)) {
+            Write-Host ("unsupported-startup-key => {0}" -f [string]$startupKey)
+            continue
+        }
+
+        Write-StartupEntryStatus -DisplayName $displayName -ProfileEntry $startupProfileByKey[[string]$startupKey] -LocationDefinitions $startupLocationDefinitions
+    }
+}
+catch {
+    Write-Warning ("startup-health-readback-failed => {0}" -f $_.Exception.Message)
+}
+finally {
+    if ($null -ne $managerContext -and -not [string]::IsNullOrWhiteSpace([string]$managerContext.MountName)) {
+        Dismount-RegistryHive -MountName ([string]$managerContext.MountName)
+    }
 }
 
 Write-Host "capture-snapshot-health-completed"

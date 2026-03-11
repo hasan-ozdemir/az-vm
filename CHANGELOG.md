@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.276] - 2026-03-11
+
+### Changed
+- Changed `10002-create-shortcuts-public-desktop` from a full Public Desktop mirror into a managed-shortcut reconcile pass, so it now removes and recreates only the tracked shortcut names while preserving unmanaged Public Desktop entries such as local-only `j0Accessibility`; the same task still clears the manager, assistant, and default desktop roots.
+- Restored host startup-profile discovery in `azvm-core-foundation`, replaced the static Windows auto-start snapshot with host-driven method mirroring in `10001-configure-apps-startup`, and added a guest compatibility layer for LocalMachine startup apps so the guest now applies the host-observed startup surfaces and approval state instead of relying on a hard-coded list.
+- Expanded `10099-capture-snapshot-health` so Windows late-stage health snapshots now inventory unmanaged Public Desktop shortcuts and host-driven startup entries instead of treating extra Public Desktop shortcuts as unexpected removable artifacts.
+
+### Tests
+- Extended the Windows smoke and compatibility contracts so the host startup-profile token flow, the managed-only Public Desktop cleanup behavior, the unmanaged shortcut inventory, and the startup compatibility scaffolding are all enforced together with the existing task contracts.
+
 ## [2026.3.11.275] - 2026-03-11
 
 ### Changed

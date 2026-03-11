@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.276 - 2026-03-11
+
+### Summary
+This release changes the Windows Public Desktop shortcut task from a destructive full mirror into a managed-only reconcile pass, restores host-driven startup mirroring for installed guest apps, and expands the late health snapshot so preserved unmanaged shortcuts and host-observed startup surfaces are both inventoried explicitly.
+
+### Highlights
+- Updated `10002-create-shortcuts-public-desktop` so it now preserves unmanaged Public Desktop shortcuts such as local-only `j0Accessibility` while still rebuilding the tracked managed shortcut set and clearing the manager, assistant, and default desktop roots.
+- Restored dynamic host startup-profile discovery and moved `10001-configure-apps-startup` to method-based host parity, including guest compatibility scaffolding for host apps that start from LocalMachine surfaces.
+- Expanded `10099-capture-snapshot-health` and the smoke contract so unmanaged Public Desktop shortcuts are inventoried instead of flagged as unexpected, and startup verification now reads back the decoded host startup profile instead of a static guest snapshot.
+
 ## Release 2026.3.11.275 - 2026-03-11
 
 ### Summary

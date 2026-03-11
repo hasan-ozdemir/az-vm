@@ -1352,10 +1352,11 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmDiskName = "disk-samplevm"
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
+        HostStartupProfileJsonBase64 = "W10="
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __TCP_PORTS_BASH__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -1365,6 +1366,30 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*samplevm*") -Message "VM name token was not replaced."
     Assert-True -Condition ($scriptBody -like "*orgprofile*") -Message "Company name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*W10=*") -Message "Host startup profile token was not replaced."
+}
+
+Invoke-Test -Name "Startup mirror profile resolution" -Action {
+    $entries = @(
+        [pscustomobject]@{ Name = 'Docker Desktop'; Command = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Ollama.lnk'; Command = 'C:\Users\operator\AppData\Local\Programs\Ollama\ollama app.exe'; EntryType = 'StartupFolder'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Teams'; Command = '"C:\Users\operator\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" msteams:system-initiated'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'private local accessibility'; Command = '"C:\Program Files\local accessibility vendor\private local accessibility\2025\local-accessibility.exe" /run'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
+        [pscustomobject]@{ Name = 'iTunesHelper'; Command = '"C:\Program Files\iTunes\iTunesHelper.exe"'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
+        [pscustomobject]@{ Name = 'OneDrive'; Command = '"C:\Program Files\Microsoft OneDrive\OneDrive.exe" /background'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Microsoft Lists'; Command = '"C:\Program Files\WindowsApps\Microsoft.Lists\Lists.exe"'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Edge'; Command = '"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --minimized'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $false }
+    )
+
+    $profile = @(Resolve-AzVmHostStartupMirrorProfileFromEntries -Entries $entries)
+    $keys = @($profile | ForEach-Object { [string]$_.Key })
+
+    foreach ($requiredKey in @('docker-desktop','ollama','teams','private local accessibility','itunes-helper','onedrive')) {
+        Assert-True -Condition ($keys -contains $requiredKey) -Message ("Startup mirror profile must include '{0}'." -f $requiredKey)
+    }
+
+    Assert-True -Condition (-not ($keys -contains 'codex-app')) -Message "Startup mirror profile must not infer unsupported apps from unrelated entries."
+    Assert-True -Condition (-not ($keys -contains 'microsoft-edge')) -Message "Disabled startup entries must not be mirrored."
 }
 
 Invoke-Test -Name "Required config helper rejects empty and placeholder values" -Action {
@@ -2031,7 +2056,10 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition ($healthTaskScript -like '*start-in =>*') -Message 'Health snapshot must read back shortcut working directories.'
     Assert-True -Condition ($healthTaskScript -like '*show =>*') -Message 'Health snapshot must read back shortcut show commands.'
     Assert-True -Condition ($healthTaskScript -like '*run-as-admin =>*') -Message 'Health snapshot must read back shortcut admin flags.'
-    Assert-True -Condition ($healthTaskScript -like '*unexpected-public-shortcut*') -Message 'Health snapshot must report unexpected Public Desktop shortcuts.'
+    Assert-True -Condition ($healthTaskScript -like '*unmanaged-public-shortcut-count=*') -Message 'Health snapshot must inventory unmanaged Public Desktop shortcuts.'
+    Assert-True -Condition (($healthTaskScript.IndexOf("Write-ShortcutReadback -Label 'unmanaged-public-shortcut'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must read back unmanaged Public Desktop shortcut details.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Where-Object { $managedShortcutNames -contains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must only remove managed Public Desktop shortcuts.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('unexpected-public-shortcut', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep unexpected Public Desktop cleanup logic.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
 }
@@ -2093,7 +2121,7 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
     }
 }
 
-Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Action {
+Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by method" -Action {
     $taskPath = Join-Path $RepoRoot 'windows\update\10001-configure-apps-startup.ps1'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
@@ -2101,42 +2129,63 @@ Invoke-Test -Name "Windows auto-start task keeps a static startup snapshot" -Act
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     foreach ($fragment in @(
-        'static-startup-snapshot =>',
+        '__HOST_STARTUP_PROFILE_JSON_B64__',
+        'host-startup-profile =>',
+        'Get-ManagerContext',
+        'Get-StartupLocationDefinitions',
+        'Resolve-RequestedStartupLocation',
+        'Clear-OwnedStartupArtifacts',
+        'autostart-cleared:',
+        'autostart-method =>',
+        'Register-ScheduledTask',
+        'ScheduledTask/AtLogOn',
+        'autostart-skip: private local accessibility => owned by local private local accessibility task',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
+        'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run32',
         'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp',
-        'StartupApproved\StartupFolder',
-        'Split-Path -Path $startupApprovedPath -Parent',
-        'New-Item -Path $startupApprovedParentPath -Force',
         'docker-desktop',
         'ollama',
         'onedrive',
         'teams',
         'itunes-helper',
+        'google-drive',
+        'windscribe',
+        'anydesk',
+        'codex-app',
         'Docker Desktop',
         'Ollama',
         'OneDrive',
         'Teams',
         'iTunesHelper',
+        'Google Drive',
+        'Windscribe',
+        'AnyDesk',
+        'Codex App',
         'msteams:system-initiated',
         '%LOCALAPPDATA%\Programs\Ollama\ollama app.exe',
         'configure-apps-startup-completed'
     )) {
         Assert-True -Condition ($taskText -like ('*' + $fragment + '*')) -Message ("Auto-start task must include fragment '{0}'." -f $fragment)
     }
-    Assert-True -Condition (($taskText.IndexOf('__HOST_STARTUP_PROFILE_JSON_B64__', [System.StringComparison]::Ordinal)) -lt 0) -Message "Auto-start task must not depend on runtime startup-profile tokens."
+    Assert-True -Condition (($taskText.IndexOf('static-startup-snapshot =>', [System.StringComparison]::Ordinal)) -lt 0) -Message "Auto-start task must not keep the static startup snapshot contract."
 
     foreach ($fragment in @(
         'AUTO-START APP STATUS:',
-        'startup-shortcut =>',
-        'missing-startup-shortcut =>',
+        '__HOST_STARTUP_PROFILE_JSON_B64__',
+        'host-startup-profile =>',
+        'startup-entry =>',
+        'missing-startup-entry =>',
+        'unsupported-startup-key =>',
         'Docker Desktop',
         'Ollama',
         'OneDrive',
         'Teams',
+        'private local accessibility',
         'iTunesHelper'
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
-    Assert-True -Condition (($healthTaskText.IndexOf('__HOST_STARTUP_PROFILE_JSON_B64__', [System.StringComparison]::Ordinal)) -lt 0) -Message "Health snapshot must not depend on runtime startup-profile tokens."
+    Assert-True -Condition (($healthTaskText.IndexOf('Get-ManagerContext', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must read manager-scope startup locations through the manager hive."
 }
 
 Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {

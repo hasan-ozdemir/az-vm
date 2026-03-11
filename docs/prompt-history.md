@@ -4482,3 +4482,15 @@ Task: add the following shortcuts to the `public-desktop-icons` operations under
 **Assistant Summary**
 
 Expanded the Windows Public Desktop shortcut manifest with the requested `g1-g4` developer links and `q2-q8` quick-access web shortcuts, all reusing the same Chrome launcher contract as `i1Internet`. Updated the Windows health snapshot and smoke contract to inventory and enforce the new shortcut names and URLs, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.11.275`, and revalidated the change with `code-quality-check`, `documentation-contract-check`, `powershell-compatibility-check`, and `az-vm-smoke-tests`.
+
+### 2026-03-11 11:18 TRT
+
+**User Prompt**
+
+````text
+Implement the agreed plan so that `public-desktop-icons` preserves unmanaged Public Desktop shortcuts such as local `j0Accessibility`, keeps clearing the manager/assistant/default desktops, aligns the local `j0Accessibility` shortcut contract with the managed Public Desktop shortcuts, mirrors this host's startup methods on the guest for matching installed apps, and validate the result in isolation on the guest VM.
+````
+
+**Assistant Summary**
+
+Changed the tracked Windows Public Desktop flow from a destructive full mirror into a managed-only reconcile pass, restored host-driven startup-profile discovery and method-based startup mirroring for supported guest apps, expanded the late health snapshot and smoke coverage for the new behavior, and updated the release docs to `2026.3.11.276`. Live guest validation confirmed that `10002-create-shortcuts-public-desktop` now preserves the local-only `j0Accessibility` shortcut while still clearing the manager, assistant, and default desktops, and that the guest now records the expected host-derived startup entries and compatibility scaffolding; however, repeated reboot-based probes on 2026-03-11 still did not produce running `local-accessibility.exe` or `iTunesHelper.exe` processes on the guest despite the added compatibility layers, so private local accessibility guest auto-start remains unconfirmed.
