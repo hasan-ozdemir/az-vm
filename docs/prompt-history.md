@@ -4434,3 +4434,15 @@ Action: continue from the `dev` branch after syncing `dev` and `main` again. Fix
 **Assistant Summary**
 
 Resynced `dev` with `main`, continued the work on `dev`, and closed the remaining `public-desktop-icons` gap by moving the per-user desktop cleanup directly into `10002-create-shortcuts-public-desktop`. The task now clears the manager, assistant, and default desktop roots as part of the same Public Desktop mirror pass, the smoke contract now asserts that ownership explicitly, and the change was revalidated with local tests plus isolated live reruns of `10002` and `10099`.
+
+### 2026-03-11 07:12 TRT
+
+**User Prompt**
+
+````text
+Add the following shortcuts to the public-desktop-icons vm-update task as well, with the same general shortcut properties as the others: `e1Mail <email>`, `n1Notepad`, `m1Dijital Vergi Dairesi`, `r1-r10` marketplace shortcuts, and restore `u7Network and Sharing`.
+````
+
+**Assistant Summary**
+
+Extended the Windows Public Desktop shortcut manifest on `dev` with the requested `e1`, `m1`, `n1`, `r1-r10`, and `u7Network and Sharing` entries, kept the shared Chrome-profile, run-maximized, run-as-admin, full-mirror, and per-user desktop cleanup contracts intact, expanded the Windows health snapshot and smoke coverage for the new shortcut set, and revalidated the result with the local validation suite plus isolated live reruns of `10002` and `10099`.

@@ -665,6 +665,7 @@ $chromeExe = Resolve-CommandPath -CommandName "chrome.exe" -FallbackCandidates @
 )
 $chromeTarget = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Chrome\Application\chrome.exe" -ResolvedPath $chromeExe -FallbackPath "C:\Program Files\Google\Chrome\Application\chrome.exe"
 $chromeSyncSetupCommand = ('/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"' -f $chromeTarget, $publicChromeUserDataDir, $companyName)
+$controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
 $powershellExe = Resolve-CommandPath -CommandName "powershell.exe" -FallbackCandidates @("C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
 $pwshExe = Resolve-CommandPath -CommandName "pwsh.exe" -FallbackCandidates @("C:\Program Files\PowerShell\7\pwsh.exe")
@@ -804,6 +805,19 @@ $bankShortcuts = @(
     @{ Name = "b7ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" },
     @{ Name = "b8ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" }
 )
+$marketplaceWebShortcuts = @(
+    @{ Name = "m1Dijital Vergi Dairesi"; Url = "https://dijital.gib.gov.tr/portal/login" },
+    @{ Name = "r1Sahibinden Kurumsal"; Url = "https://secure.sahibinden.com/giris" },
+    @{ Name = "r2Sahibinden Bireysel"; Url = "https://www.sahibinden.com" },
+    @{ Name = "r3Letgo Kurumsal"; Url = "https://www.letgo.com" },
+    @{ Name = "r4Letgo Bireysel"; Url = "https://www.letgo.com" },
+    @{ Name = "r5Trendyol Kurumsal"; Url = "https://partner.trendyol.com" },
+    @{ Name = "r6Trendyol Bireysel"; Url = "https://www.trendyol.com/uyelik" },
+    @{ Name = "r7Amazon TR Kurumsal"; Url = "https://sellercentral.amazon.com.tr" },
+    @{ Name = "r8Amazon TR Bireysel"; Url = "https://www.amazon.com.tr/ap/signin" },
+    @{ Name = "r9HepsiBurada Kurumsal"; Url = "https://merchant.hepsiburada.com" },
+    @{ Name = "r10HepsiBurada Bireysel"; Url = "https://giris.hepsiburada.com" }
+)
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://chatgpt.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath $true -ValidationKind "app")
@@ -841,11 +855,18 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -Targ
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "e1Mail <email>" -TargetPath $cmdExe -Arguments '/c start outlook.exe /select "outlook:\\<email>\\Inbox"' -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i1Internet" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://www.google.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
+
+foreach ($spec in @($marketplaceWebShortcuts)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+}
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "n1Notepad" -TargetPath "C:\Windows\System32\notepad.exe" -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o1Outlook" -TargetPath $outlookExe -AllowMissingTargetPath $true -ValidationKind "office")
 if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) {
@@ -883,6 +904,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t15Io Unlocker" -Ta
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u1User Files" -TargetPath $explorerExe -Arguments "shell:UsersFilesFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u2This PC" -TargetPath $explorerExe -Arguments "shell:MyComputerFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u3Control Panel" -TargetPath $explorerExe -Arguments "shell:ControlPanelFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u7Network and Sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" -IconLocation ($controlExe + ",0") -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments "-command ""&'%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd'""" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
 

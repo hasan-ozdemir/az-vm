@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.273] - 2026-03-11
+
+### Changed
+- Expanded `10002-create-shortcuts-public-desktop` again so the managed Public Desktop set now also restores the requested `e1`, `m1`, `n1`, `r1-r10`, and `u7Network and Sharing` shortcuts while preserving the existing Chrome-profile, run-maximized, run-as-admin, full-mirror, and per-user desktop cleanup contracts.
+
+### Tests
+- Extended the Windows public-desktop smoke contract and health inventory expectations so the new `e/m/n/r/u7` shortcuts and their launcher fragments are validated together with the existing Public Desktop set.
+
 ## [2026.3.11.272] - 2026-03-11
 
 ### Changed

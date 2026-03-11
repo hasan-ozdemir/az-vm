@@ -2,6 +2,15 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.273 - 2026-03-11
+
+### Summary
+This release expands the managed Public Desktop contract again by restoring the requested `e1`, `m1`, `n1`, `r1-r10`, and `u7Network and Sharing` shortcuts while keeping the existing Chrome-profile, mirroring, admin-flag, and per-user desktop cleanup behavior unchanged.
+
+### Highlights
+- Extended `10002-create-shortcuts-public-desktop` with the new Outlook inbox launcher, Notepad shortcut, marketplace and tax-portal Chrome shortcuts, and a direct `control.exe /name Microsoft.NetworkAndSharingCenter` shortcut for `u7Network and Sharing`.
+- Expanded `10099-capture-snapshot-health` and the smoke contract so the new shortcut names, URLs, and launcher fragments are now read back and enforced together with the existing Public Desktop set.
+
 ## Release 2026.3.11.272 - 2026-03-11
 
 ### Summary
