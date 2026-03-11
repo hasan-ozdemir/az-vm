@@ -1266,8 +1266,8 @@ function Assert-AzVmCommandOptions {
         'resize' { $allowed = @('perf','help','group','vm-name','vm-size','windows','linux') }
         'set'    { $allowed = @('perf','help','group','vm-name','hibernation','nested-virtualization') }
         'exec'   { $allowed = @('perf','windows','linux','help','group','vm-name','init-task','update-task') }
-        'ssh'    { $allowed = @('perf','help','group','vm-name','user') }
-        'rdp'    { $allowed = @('perf','help','group','vm-name','user') }
+        'ssh'    { $allowed = @('perf','help','group','vm-name','user','test') }
+        'rdp'    { $allowed = @('perf','help','group','vm-name','user','test') }
         'delete' { $allowed = @('auto','perf','help','target','group','yes') }
         'help'   { $allowed = @('help') }
         default {
@@ -2702,18 +2702,40 @@ function Invoke-AzVmSetCommand {
 
         if ($hasNested) {
             $nestedBool = if ([string]::Equals($nestedTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
-            try {
-                Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --set additionalCapabilities.nestedVirtualization={2}" -f $resourceGroup, $vmName, $nestedBool) -Action {
-                    az vm update -g $resourceGroup -n $vmName --set ("additionalCapabilities.nestedVirtualization={0}" -f $nestedBool) -o none --only-show-errors
-                    Assert-LastExitCode "az vm update --set additionalCapabilities.nestedVirtualization"
-                } | Out-Null
+            if ($nestedBool -eq 'true') {
+                $lifecycleSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $resourceGroup -VmName $vmName
+                if ([string]$lifecycleSnapshot.NormalizedState -ne 'started') {
+                    Throw-FriendlyError `
+                        -Detail ("Nested virtualization validation requires the target VM '{0}' in resource group '{1}' to be running. Current state: {2}" -f $vmName, $resourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $lifecycleSnapshot)) `
+                        -Code 62 `
+                        -Summary "Nested virtualization validation requires a running VM." `
+                        -Hint "Start the VM first, then rerun set --nested-virtualization=on."
+                }
+
+                $vmOsTypeNormalized = if ($LinuxFlag) {
+                    'linux'
+                }
+                elseif ($WindowsFlag) {
+                    'windows'
+                }
+                else {
+                    $vmOsType = az vm show -g $resourceGroup -n $vmName --query "storageProfile.osDisk.osType" -o tsv --only-show-errors 2>$null
+                    if ([string]$vmOsType -match '(?i)linux') { 'linux' } else { 'windows' }
+                }
+                $nestedValidation = Get-AzVmNestedVirtualizationGuestValidation -ResourceGroup $resourceGroup -VmName $vmName -OsType $vmOsTypeNormalized
+                if (-not [bool]$nestedValidation.Enabled) {
+                    $nestedEvidenceText = if (@($nestedValidation.Evidence).Count -gt 0) { (@($nestedValidation.Evidence) -join '; ') } else { [string]$nestedValidation.ErrorMessage }
+                    Throw-FriendlyError `
+                        -Detail ("Nested virtualization guest validation failed for VM '{0}'. {1}" -f $vmName, [string]$nestedEvidenceText) `
+                        -Code 62 `
+                        -Summary "Nested virtualization setting could not be applied." `
+                        -Hint "Check VM SKU, security type, and guest virtualization readiness, then retry."
+                }
+
+                Write-Host ("Nested virtualization guest validation passed for VM '{0}'. {1}" -f $vmName, ((@($nestedValidation.Evidence) -join '; '))) -ForegroundColor Green
             }
-            catch {
-                Throw-FriendlyError `
-                    -Detail ("Nested virtualization update failed via Azure API: {0}" -f $_.Exception.Message) `
-                    -Code 62 `
-                    -Summary "Nested virtualization setting could not be applied." `
-                    -Hint "Check VM SKU/API support for nested virtualization, then retry."
+            else {
+                Write-Host ("Nested virtualization desired-state tracking was set to off for VM '{0}'. Azure does not expose a separate disable toggle for this capability on single VMs." -f $vmName) -ForegroundColor DarkCyan
             }
             $persistMap['VM_ENABLE_NESTED_VIRTUALIZATION'] = $nestedBool
         }
@@ -3870,7 +3892,24 @@ function Get-AzVmVmInventoryDump {
 
     $featureFlags = [ordered]@{
         HibernationEnabled = $vmFull.additionalCapabilities.hibernationEnabled
+        NestedVirtualizationEnabled = $null
+        NestedVirtualizationValidationSource = ''
+        NestedVirtualizationEvidence = @()
         NestedVirtualizationCapabilities = @()
+    }
+    if ($vmFull.additionalCapabilities -and $vmFull.additionalCapabilities.PSObject.Properties.Match('nestedVirtualization').Count -gt 0) {
+        $featureFlags.NestedVirtualizationEnabled = $vmFull.additionalCapabilities.nestedVirtualization
+        $featureFlags.NestedVirtualizationValidationSource = 'azure-api'
+    }
+
+    $normalizedOsType = if ([string]$osType -match '(?i)linux') { 'linux' } else { 'windows' }
+    if (-not [string]::IsNullOrWhiteSpace([string]$powerState) -and ([string]$powerState).ToLowerInvariant().Contains('running')) {
+        $nestedValidation = Get-AzVmNestedVirtualizationGuestValidation -ResourceGroup $ResourceGroup -VmName $VmName -OsType $normalizedOsType -SuppressError
+        if ([bool]$nestedValidation.Known) {
+            $featureFlags.NestedVirtualizationEnabled = [bool]$nestedValidation.Enabled
+            $featureFlags.NestedVirtualizationValidationSource = 'guest'
+            $featureFlags.NestedVirtualizationEvidence = @($nestedValidation.Evidence)
+        }
     }
 
     return [ordered]@{
@@ -4161,6 +4200,45 @@ function Write-AzVmShowKeyValueRow {
     Write-Host ("{0}{1}: {2}" -f $indentText, $Label, $valueText)
 }
 
+# Handles Test-AzVmShowSensitiveConfigKey.
+function Test-AzVmShowSensitiveConfigKey {
+    param(
+        [string]$Key
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Key)) {
+        return $false
+    }
+
+    $normalizedKey = [string]$Key
+    $normalizedKey = $normalizedKey.Trim().ToUpperInvariant()
+    if ($normalizedKey -in @('VM_ADMIN_PASS', 'VM_ASSISTANT_PASS')) {
+        return $true
+    }
+
+    return (
+        $normalizedKey.Contains('PASSWORD') -or
+        $normalizedKey.Contains('_PASS') -or
+        $normalizedKey.EndsWith('PASS') -or
+        $normalizedKey.Contains('SECRET') -or
+        $normalizedKey.Contains('TOKEN')
+    )
+}
+
+# Handles ConvertTo-AzVmShowConfigDisplayValue.
+function ConvertTo-AzVmShowConfigDisplayValue {
+    param(
+        [string]$Key,
+        [object]$Value
+    )
+
+    if (Test-AzVmShowSensitiveConfigKey -Key $Key) {
+        return '[redacted]'
+    }
+
+    return $Value
+}
+
 # Handles Write-AzVmShowReport.
 function Write-AzVmShowReport {
     param(
@@ -4192,7 +4270,7 @@ function Write-AzVmShowReport {
     $envValues = $Dump.Config.DotEnvValues
     if ($envValues -and $envValues.Count -gt 0) {
         foreach ($key in @($envValues.Keys | Sort-Object)) {
-            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value ($envValues[$key]) -Indent 2
+            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value (ConvertTo-AzVmShowConfigDisplayValue -Key ([string]$key) -Value ($envValues[$key])) -Indent 2
         }
     }
     else {
@@ -4203,7 +4281,7 @@ function Write-AzVmShowReport {
     $overrideValues = $Dump.Config.RuntimeOverrides
     if ($overrideValues -and $overrideValues.Count -gt 0) {
         foreach ($key in @($overrideValues.Keys | Sort-Object)) {
-            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value ($overrideValues[$key]) -Indent 2
+            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value (ConvertTo-AzVmShowConfigDisplayValue -Key ([string]$key) -Value ($overrideValues[$key])) -Indent 2
         }
     }
     else {
@@ -4285,6 +4363,24 @@ function Write-AzVmShowReport {
                 $hibernationEnabled = $vm.FeatureFlags.HibernationEnabled
             }
             Write-AzVmShowKeyValueRow -Label "Hibernation enabled" -Value $hibernationEnabled -Indent 6
+
+            $nestedVirtualizationEnabled = $null
+            if ($vm.FeatureFlags -and $vm.FeatureFlags.Contains('NestedVirtualizationEnabled')) {
+                $nestedVirtualizationEnabled = $vm.FeatureFlags.NestedVirtualizationEnabled
+            }
+            Write-AzVmShowKeyValueRow -Label "Nested virtualization enabled" -Value $nestedVirtualizationEnabled -Indent 6
+
+            $nestedValidationSource = ''
+            if ($vm.FeatureFlags -and $vm.FeatureFlags.Contains('NestedVirtualizationValidationSource')) {
+                $nestedValidationSource = [string]$vm.FeatureFlags.NestedVirtualizationValidationSource
+            }
+            Write-AzVmShowKeyValueRow -Label "Nested virtualization validation source" -Value $nestedValidationSource -Indent 6
+
+            $nestedValidationEvidence = @()
+            if ($vm.FeatureFlags -and $vm.FeatureFlags.Contains('NestedVirtualizationEvidence')) {
+                $nestedValidationEvidence = @($vm.FeatureFlags.NestedVirtualizationEvidence)
+            }
+            Write-AzVmShowKeyValueRow -Label "Nested virtualization evidence" -Value $nestedValidationEvidence -Indent 6
 
             $nestedCapabilityRows = @(
                 ConvertTo-ObjectArrayCompat -InputObject $vm.FocusedCapabilities |
@@ -5530,11 +5626,165 @@ function Initialize-AzVmConnectionCommandContext {
     }
 }
 
+# Handles Resolve-AzVmConnectionPortNumber.
+function Resolve-AzVmConnectionPortNumber {
+    param(
+        [string]$PortText,
+        [string]$PortLabel
+    )
+
+    $resolvedPort = 0
+    if (-not [int]::TryParse([string]$PortText, [ref]$resolvedPort) -or $resolvedPort -lt 1 -or $resolvedPort -gt 65535) {
+        Throw-FriendlyError `
+            -Detail ("{0} port value '{1}' is invalid." -f [string]$PortLabel, [string]$PortText) `
+            -Code 66 `
+            -Summary ("{0} port configuration is invalid." -f [string]$PortLabel) `
+            -Hint ("Set a valid {0} port in .env and retry." -f [string]$PortLabel)
+    }
+
+    return [int]$resolvedPort
+}
+
+# Handles Test-AzVmConnectionIdentityOutputMatchesUser.
+function Test-AzVmConnectionIdentityOutputMatchesUser {
+    param(
+        [string]$ExpectedUserName,
+        [string]$OutputText
+    )
+
+    $expected = [string]$ExpectedUserName
+    $expected = $expected.Trim().ToLowerInvariant()
+    if ([string]::IsNullOrWhiteSpace([string]$expected)) {
+        return $false
+    }
+
+    $output = [string]$OutputText
+    $output = $output.Replace(([string][char]0), '')
+    $lines = @(
+        $output -split "(\r?\n)+" |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+
+    foreach ($line in @($lines)) {
+        $candidate = [string]$line
+        $candidate = $candidate.Trim().ToLowerInvariant()
+        if ([string]::Equals($candidate, $expected, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+
+        if ($candidate -match ('(^|[\\/@]){0}$' -f [regex]::Escape($expected))) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+# Handles Invoke-AzVmSshConnectivityTest.
+function Invoke-AzVmSshConnectivityTest {
+    param(
+        [hashtable]$Options
+    )
+
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'ssh'
+    $sshPort = Resolve-AzVmConnectionPortNumber -PortText ([string]$runtime.VmSshPort) -PortLabel 'SSH'
+    $sshReachable = Wait-AzVmTcpPortReachable -HostName ([string]$runtime.ConnectionHost) -Port $sshPort -MaxAttempts 6 -DelaySeconds 5 -TimeoutSeconds 5 -Label 'ssh'
+    if (-not $sshReachable) {
+        Throw-FriendlyError `
+            -Detail ("SSH port {0} was not reachable on host '{1}' for VM '{2}'." -f $sshPort, [string]$runtime.ConnectionHost, [string]$runtime.VmName) `
+            -Code 66 `
+            -Summary "SSH connectivity test failed." `
+            -Hint "Check guest SSH service readiness, NSG rules, firewall state, and the configured VM_SSH_PORT."
+    }
+
+    $repoRoot = Get-AzVmRepoRoot
+    $configuredPySshClientPath = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
+    $pySshTools = Ensure-AzVmPySshTools -RepoRoot $repoRoot -ConfiguredPySshClientPath $configuredPySshClientPath
+    $sshRetryText = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')
+    $sshMaxAttempts = Resolve-AzVmSshRetryCount -RetryText $sshRetryText -DefaultValue 3
+    $connectTimeoutText = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'SSH_CONNECT_TIMEOUT_SECONDS' -DefaultValue '30')
+    $connectTimeoutSeconds = 30
+    if (-not [int]::TryParse($connectTimeoutText, [ref]$connectTimeoutSeconds) -or $connectTimeoutSeconds -lt 5) {
+        $connectTimeoutSeconds = 30
+    }
+    if ($connectTimeoutSeconds -gt 300) {
+        $connectTimeoutSeconds = 300
+    }
+
+    $result = Invoke-AzVmProcessWithRetry `
+        -FilePath ([string]$pySshTools.PythonPath) `
+        -Arguments @(
+            [string]$pySshTools.ClientPath,
+            'exec',
+            '--host', [string]$runtime.ConnectionHost,
+            '--port', [string]$runtime.VmSshPort,
+            '--user', [string]$runtime.SelectedUserName,
+            '--password', [string]$runtime.SelectedPassword,
+            '--timeout', [string]$connectTimeoutSeconds,
+            '--command', 'whoami'
+        ) `
+        -Label ("pyssh ssh test -> {0}@{1}:{2}" -f [string]$runtime.SelectedUserName, [string]$runtime.ConnectionHost, [string]$runtime.VmSshPort) `
+        -MaxAttempts $sshMaxAttempts `
+        -AllowFailure
+
+    if ([int]$result.ExitCode -ne 0) {
+        Throw-FriendlyError `
+            -Detail ("SSH test command returned exit code {0}. Output: {1}" -f [int]$result.ExitCode, [string]$result.Output) `
+            -Code 66 `
+            -Summary "SSH connectivity test failed." `
+            -Hint "Check the VM credentials, SSH service readiness, and pyssh connectivity from the operator machine."
+    }
+
+    if (-not (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName ([string]$runtime.SelectedUserName) -OutputText ([string]$result.Output))) {
+        Throw-FriendlyError `
+            -Detail ("SSH test output did not confirm the expected user '{0}'. Output: {1}" -f [string]$runtime.SelectedUserName, [string]$result.Output) `
+            -Code 66 `
+            -Summary "SSH connectivity test failed." `
+            -Hint "Verify the selected SSH user and VM credentials, then retry."
+    }
+
+    Write-Host ("SSH test passed for '{0}@{1}:{2}'." -f [string]$runtime.SelectedUserName, [string]$runtime.ConnectionHost, [string]$runtime.VmSshPort) -ForegroundColor Green
+}
+
+# Handles Invoke-AzVmRdpConnectivityTest.
+function Invoke-AzVmRdpConnectivityTest {
+    param(
+        [hashtable]$Options
+    )
+
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'rdp'
+    if (-not [string]::Equals(([string]$runtime.OsType).Trim(), 'Windows', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' reports osType '{1}', so RDP launch is not supported." -f [string]$runtime.VmName, [string]$runtime.OsType) `
+            -Code 66 `
+            -Summary "RDP command is only available for Windows VMs." `
+            -Hint "Use the ssh command for Linux VMs, or target a Windows VM."
+    }
+
+    $rdpPort = Resolve-AzVmConnectionPortNumber -PortText ([string]$runtime.VmRdpPort) -PortLabel 'RDP'
+    $rdpReachable = Wait-AzVmTcpPortReachable -HostName ([string]$runtime.ConnectionHost) -Port $rdpPort -MaxAttempts 6 -DelaySeconds 5 -TimeoutSeconds 5 -Label 'rdp'
+    if (-not $rdpReachable) {
+        Throw-FriendlyError `
+            -Detail ("RDP port {0} was not reachable on host '{1}' for VM '{2}'." -f $rdpPort, [string]$runtime.ConnectionHost, [string]$runtime.VmName) `
+            -Code 66 `
+            -Summary "RDP connectivity test failed." `
+            -Hint "Check guest RDP service readiness, NSG rules, firewall state, and the configured VM_RDP_PORT."
+    }
+
+    Write-Host ("RDP test passed for '{0}:{1}'." -f [string]$runtime.ConnectionHost, [string]$runtime.VmRdpPort) -ForegroundColor Green
+}
+
 # Handles Invoke-AzVmSshConnectCommand.
 function Invoke-AzVmSshConnectCommand {
     param(
         [hashtable]$Options
     )
+
+    if (Test-AzVmCliOptionPresent -Options $Options -Name 'test') {
+        Invoke-AzVmSshConnectivityTest -Options $Options
+        return
+    }
 
     $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'ssh'
     $sshExePath = Resolve-AzVmLocalExecutablePath -Candidates @('ssh.exe', (Join-Path $env:SystemRoot 'System32\OpenSSH\ssh.exe')) -FriendlyName 'Windows OpenSSH'
@@ -5552,6 +5802,11 @@ function Invoke-AzVmRdpConnectCommand {
     param(
         [hashtable]$Options
     )
+
+    if (Test-AzVmCliOptionPresent -Options $Options -Name 'test') {
+        Invoke-AzVmRdpConnectivityTest -Options $Options
+        return
+    }
 
     $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'rdp'
     if (-not [string]::Equals(([string]$runtime.OsType).Trim(), 'Windows', [System.StringComparison]::OrdinalIgnoreCase)) {

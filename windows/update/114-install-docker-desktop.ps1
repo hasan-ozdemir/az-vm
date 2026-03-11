@@ -237,14 +237,17 @@ function Wait-DockerDaemonReady {
         $attempt++
         $daemonResult = Invoke-ProcessWithTimeout -Label ("docker version (readiness attempt {0})" -f $attempt) -FilePath $DockerExe -Arguments @("version") -TimeoutSeconds 25
         if ($daemonResult.Success) {
+            $global:LASTEXITCODE = 0
             Write-Host "docker-step-ok: docker-daemon-version"
             return $true
         }
 
+        $global:LASTEXITCODE = 0
         Write-Host ("Docker daemon is not ready yet. Waiting before retry {0}." -f ($attempt + 1)) -ForegroundColor Yellow
         Start-Sleep -Seconds 10
     }
 
+    $global:LASTEXITCODE = 0
     return $false
 }
 
@@ -358,5 +361,6 @@ else {
     Write-Host "docker-step-deferred: interactive-sign-in-required"
 }
 
+$global:LASTEXITCODE = 0
 Write-Host "install-docker-desktop-completed"
 Write-Host "Update task completed: install-docker-desktop"

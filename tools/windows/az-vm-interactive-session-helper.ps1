@@ -323,6 +323,54 @@ function Get-AzVmLocalPrincipalName {
     return ("{0}\{1}" -f $env:COMPUTERNAME, [string]$UserName)
 }
 
+function Test-AzVmUserInteractiveDesktopReady {
+    param(
+        [string]$UserName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$UserName)) {
+        return $false
+    }
+
+    $principalName = Get-AzVmLocalPrincipalName -UserName $UserName
+    try {
+        $explorerProcesses = @(Get-Process -Name 'explorer' -IncludeUserName -ErrorAction Stop)
+        foreach ($process in @($explorerProcesses)) {
+            $ownerName = [string]$process.UserName
+            if ([string]::IsNullOrWhiteSpace([string]$ownerName)) {
+                continue
+            }
+
+            if ([string]::Equals($ownerName, $principalName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+    }
+    catch {
+    }
+
+    $processes = @(Get-CimInstance Win32_Process -Filter "Name='explorer.exe'" -ErrorAction SilentlyContinue)
+    foreach ($process in @($processes)) {
+        try {
+            $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwner -ErrorAction Stop
+            if ($null -eq $owner -or [int]$owner.ReturnValue -ne 0) {
+                continue
+            }
+
+            $ownerUser = [string]$owner.User
+            $ownerDomain = [string]$owner.Domain
+            if ([string]::Equals($ownerUser, $UserName, [System.StringComparison]::OrdinalIgnoreCase) -and `
+                [string]::Equals($ownerDomain, $env:COMPUTERNAME, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+        catch {
+        }
+    }
+
+    return $false
+}
+
 function Remove-AzVmInteractiveScheduledTask {
     param(
         [string]$TaskName
@@ -521,7 +569,15 @@ function Invoke-AzVmInteractiveDesktopAutomation {
             throw $summary
         }
 
-        Write-Host ("interactive-session-bootstrap: password-logon scheduled task completed for {0}" -f [string]$RunAsUser)
+        $modeLabel = 'password-logon'
+        if ($isServiceAccount) {
+            $modeLabel = 'service-account'
+        }
+        elseif ($useInteractiveToken) {
+            $modeLabel = 'interactive-token'
+        }
+
+        Write-Host ("interactive-session-bootstrap: {0} scheduled task completed for {1}" -f $modeLabel, [string]$RunAsUser)
     }
     finally {
         try {

@@ -49,9 +49,56 @@ function Assert-RegistryValue {
         $actualValue = $item.$Name
     }
 
-    if ([string]$actualValue -ne [string]$ExpectedValue) {
-        throw ("Registry validation failed: {0}\{1} expected '{2}' but got '{3}'." -f $Path, $Name, $ExpectedValue, $actualValue)
+    $actualDisplayValue = Get-RegistryComparableValueText -Value $actualValue
+    $expectedDisplayValue = Get-RegistryComparableValueText -Value $ExpectedValue
+    if ($actualDisplayValue -ne $expectedDisplayValue) {
+        throw ("Registry validation failed: {0}\{1} expected '{2}' but got '{3}'." -f $Path, $Name, $expectedDisplayValue, $actualDisplayValue)
     }
+}
+
+function Get-RegistryComparableValueText {
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        return ''
+    }
+
+    if ($Value -is [byte[]]) {
+        $shellPropertyExpression = Convert-AzVmShellSortBytesToPropertyExpression -Bytes ([byte[]]$Value)
+        if (-not [string]::IsNullOrWhiteSpace([string]$shellPropertyExpression)) {
+            return [string]$shellPropertyExpression
+        }
+
+        return ('0x{0}' -f ([BitConverter]::ToString([byte[]]$Value).Replace('-', '')))
+    }
+
+    return [string]$Value
+}
+
+function Convert-AzVmShellSortBytesToPropertyExpression {
+    param([byte[]]$Bytes)
+
+    if ($null -eq $Bytes -or $Bytes.Length -lt 40) {
+        return ''
+    }
+
+    try {
+        $propertyGuid = New-Object System.Guid (,[byte[]]@($Bytes[20..35]))
+        $propertyId = [BitConverter]::ToUInt32([byte[]]$Bytes, 36)
+        $propertyKey = ('{0}:{1}' -f $propertyGuid.Guid.ToLowerInvariant(), $propertyId)
+        $propertyMap = @{
+            'b725f130-47ef-101a-a5f1-02608c9eebac:10' = 'prop:System.ItemNameDisplay'
+        }
+
+        if ($propertyMap.ContainsKey($propertyKey)) {
+            return [string]$propertyMap[$propertyKey]
+        }
+    }
+    catch {
+        return ''
+    }
+
+    return ''
 }
 
 function Get-LocalUserProfileInfo {
@@ -84,7 +131,7 @@ function Remove-RegistryMountIfPresent {
         return
     }
 
-    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
+    $null = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
 }
 
 function Mount-RegistryHive {
@@ -101,8 +148,8 @@ function Mount-RegistryHive {
     }
 
     Remove-RegistryMountIfPresent -MountName $MountName
-    & reg.exe load ("HKU\{0}" -f $MountName) $HiveFilePath | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = Invoke-RegQuiet -Verb 'load' -Arguments @(("HKU\{0}" -f $MountName), $HiveFilePath)
+    if ($exitCode -ne 0) {
         throw ("reg load failed for HKU\{0} => {1}" -f $MountName, $HiveFilePath)
     }
 
@@ -116,10 +163,26 @@ function Dismount-RegistryHive {
         return
     }
 
-    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+    if ($exitCode -ne 0) {
         throw ("reg unload failed for HKU\{0}" -f $MountName)
     }
+}
+
+function Invoke-RegQuiet {
+    param(
+        [string]$Verb,
+        [string[]]$Arguments
+    )
+
+    $segments = @('reg', [string]$Verb)
+    foreach ($argument in @($Arguments)) {
+        $segments += ('"{0}"' -f [string]$argument)
+    }
+
+    $command = ((@($segments) -join ' ') + ' >nul 2>&1')
+    cmd.exe /d /c $command | Out-Null
+    return [int]$LASTEXITCODE
 }
 
 function Resolve-ManagerRegistryRoots {

@@ -41,8 +41,10 @@ Write-Host "Resolved winget executable: $wingetExe"
 Write-Host "Running: winget install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
 & $wingetExe install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
 $installExit = [int]$LASTEXITCODE
+$needsPostInstallVerification = $false
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
-    throw "winget install anydesk.anydesk failed with exit code $installExit."
+    Write-Warning ("winget install anydesk.anydesk returned exit code {0}; post-install verification will determine whether the package is usable." -f $installExit)
+    $needsPostInstallVerification = $true
 }
 
 $anyDeskPathCandidates = @(
@@ -59,11 +61,18 @@ foreach ($candidate in @($anyDeskPathCandidates)) {
 if ([string]::IsNullOrWhiteSpace([string]$anyDeskPath)) {
     Write-Host "Running: winget list anydesk.anydesk"
     $listOutput = & $wingetExe list anydesk.anydesk
+    $listExit = [int]$LASTEXITCODE
     $listText = [string]($listOutput | Out-String)
-    if ([string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains("anydesk")) {
+    if ($listExit -ne 0 -or [string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains("anydesk")) {
         throw "AnyDesk install could not be verified."
     }
+
+    Write-Host ("install-anydesk-system-verified: winget-list (install-exit={0})" -f $installExit)
+}
+else {
+    Write-Host ("install-anydesk-system-verified: executable => {0} (install-exit={1})" -f $anyDeskPath, $installExit)
 }
 
+$global:LASTEXITCODE = 0
 Write-Host "install-anydesk-system-completed"
 Write-Host "Update task completed: install-anydesk-system"

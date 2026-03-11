@@ -304,7 +304,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  task    List discovered init/update tasks in real execution order."
     Write-Host "  move    Move an existing VM to another Azure region; expect a health-gated cutover that can take tens of minutes."
     Write-Host "  resize  Change VM size for an existing VM in-place."
-    Write-Host "  set     Apply VM feature flags (hibernation, nested virtualization)."
+    Write-Host "  set     Apply hibernation and sync nested virtualization desired state."
     Write-Host "  exec    Run one init/update task or open interactive remote shell."
     Write-Host "  ssh     Launch Windows OpenSSH client for a managed VM."
     Write-Host "  rdp     Launch mstsc for a managed Windows VM."
@@ -337,7 +337,9 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm task --list --vm-update"
     Write-Host "  az-vm exec --update-task=10001 --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm ssh --vm-name=<vm-name>"
+    Write-Host "  az-vm ssh --vm-name=<vm-name> --test"
     Write-Host "  az-vm rdp --vm-name=<vm-name> --user=assistant"
+    Write-Host "  az-vm rdp --vm-name=<vm-name> --test"
     Write-Host "  az-vm show --group=<resource-group>"
     Write-Host "  az-vm delete --target=group --group=<resource-group> --yes"
     Write-Host ""
@@ -389,8 +391,8 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  resize  : supports --group, --vm-name, --vm-size, --windows, --linux"
         Write-Host "  set     : supports --group, --vm-name, --hibernation, --nested-virtualization"
         Write-Host "  exec    : supports --group, --vm-name, --init-task, --update-task"
-        Write-Host "  ssh     : supports --group, --vm-name, --user"
-        Write-Host "  rdp     : supports --group, --vm-name, --user"
+        Write-Host "  ssh     : supports --group, --vm-name, --user, --test"
+        Write-Host "  rdp     : supports --group, --vm-name, --user, --test"
         Write-Host "  delete  : supports --target, --group, --yes"
         Write-Host ""
         Write-Host "Examples:"
@@ -408,7 +410,9 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm task --list --vm-init"
         Write-Host "  az-vm exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm ssh --vm-name=<vm-name>"
+        Write-Host "  az-vm ssh --vm-name=<vm-name> --test"
         Write-Host "  az-vm rdp --vm-name=<vm-name> --user=assistant"
+        Write-Host "  az-vm rdp --vm-name=<vm-name> --test"
         Write-Host "  az-vm show --group=<resource-group>"
         Write-Host "  az-vm delete --target=vm --group=<resource-group> --yes"
         Write-Host ""
@@ -503,6 +507,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm show"
             Write-Host "  az-vm show --group=<resource-group>"
             Write-Host "  az-vm show --perf"
+            Write-Host "Notes: password-bearing .env values are redacted in the rendered report. When the VM is running, nested virtualization is shown from guest validation evidence."
             return
         }
         'do' {
@@ -570,7 +575,7 @@ function Show-AzVmCommandHelpDetailed {
         }
         'set' {
             Write-Host "Command: set"
-            Write-Host "Description: apply VM feature settings and sync the resolved target/toggle values back to .env."
+            Write-Host "Description: apply hibernation changes and sync nested virtualization desired-state values back to .env."
             Write-Host "Usage:"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=on|off"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=on|off"
@@ -580,7 +585,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Examples:"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=off"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off"
-            Write-Host "Notes: successful updates persist RESOURCE_GROUP, VM_NAME, and the updated VM_ENABLE_* feature toggles to .env."
+            Write-Host "Notes: hibernation is changed through Azure. Nested virtualization is governed by VM size/security type, so '--nested-virtualization=on' validates guest readiness on a running VM and '--nested-virtualization=off' only updates repo desired state. Successful updates persist RESOURCE_GROUP, VM_NAME, and the updated VM_ENABLE_* feature toggles to .env."
             return
         }
         'exec' {
@@ -603,26 +608,28 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Command: ssh"
             Write-Host "Description: launch Windows OpenSSH client for a managed VM."
             Write-Host "Usage:"
-            Write-Host "  az-vm ssh [--group=<resource-group>] [--vm-name=<vm-name>] [--user=manager|assistant] [--perf]"
+            Write-Host "  az-vm ssh [--group=<resource-group>] [--vm-name=<vm-name>] [--user=manager|assistant] [--test] [--perf]"
             Write-Host "  az-vm ssh -h"
             Write-Host "  az-vm ssh --help"
             Write-Host "Examples:"
             Write-Host "  az-vm ssh --vm-name=<vm-name>"
             Write-Host "  az-vm ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant"
-            Write-Host "Notes: the VM must already be running; password entry is handled in the external SSH console window."
+            Write-Host "  az-vm ssh --group=<resource-group> --vm-name=<vm-name> --user=manager --test"
+            Write-Host "Notes: the VM must already be running; password entry is handled in the external SSH console window. Use --test for a non-interactive SSH handshake check."
             return
         }
         'rdp' {
             Write-Host "Command: rdp"
             Write-Host "Description: launch mstsc for a managed Windows VM."
             Write-Host "Usage:"
-            Write-Host "  az-vm rdp [--group=<resource-group>] [--vm-name=<vm-name>] [--user=manager|assistant] [--perf]"
+            Write-Host "  az-vm rdp [--group=<resource-group>] [--vm-name=<vm-name>] [--user=manager|assistant] [--test] [--perf]"
             Write-Host "  az-vm rdp -h"
             Write-Host "  az-vm rdp --help"
             Write-Host "Examples:"
             Write-Host "  az-vm rdp --vm-name=<vm-name>"
             Write-Host "  az-vm rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant"
-            Write-Host "Notes: the VM must already be running; credentials are staged with cmdkey before mstsc is launched."
+            Write-Host "  az-vm rdp --group=<resource-group> --vm-name=<vm-name> --user=manager --test"
+            Write-Host "Notes: the VM must already be running; credentials are staged with cmdkey before mstsc is launched. Use --test for a non-interactive RDP reachability check."
             return
         }
         'delete' {
@@ -1194,6 +1201,267 @@ function ConvertTo-ObjectArrayCompat {
     }
 
     return $result
+}
+
+# Handles Get-AzVmRunCommandChannelMessage.
+function Get-AzVmRunCommandChannelMessage {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$RunCommandObject,
+        [ValidateSet('StdOut','StdErr')]
+        [string]$Channel = 'StdOut'
+    )
+
+    foreach ($entry in @(ConvertTo-ObjectArrayCompat -InputObject $RunCommandObject.value)) {
+        $code = [string]$entry.code
+        if ([string]::IsNullOrWhiteSpace([string]$code)) {
+            continue
+        }
+
+        if ($code -like ("ComponentStatus/{0}/*" -f [string]$Channel)) {
+            return [string]$entry.message
+        }
+    }
+
+    return ''
+}
+
+# Handles Invoke-AzVmVmRunCommandJson.
+function Invoke-AzVmVmRunCommandJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroup,
+        [Parameter(Mandatory = $true)]
+        [string]$VmName,
+        [Parameter(Mandatory = $true)]
+        [string]$CommandId,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Scripts,
+        [string]$ContextLabel = 'az vm run-command invoke',
+        [int]$MaxAttempts = 6,
+        [int]$RetryDelaySeconds = 20
+    )
+
+    if ($MaxAttempts -lt 1) {
+        $MaxAttempts = 1
+    }
+    if ($RetryDelaySeconds -lt 1) {
+        $RetryDelaySeconds = 1
+    }
+
+    $lastError = ''
+    $lastStdErr = ''
+    $lastStdOut = ''
+    $lastParsedResult = $null
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $azArgs = @('vm', 'run-command', 'invoke', '-g', $ResourceGroup, '-n', $VmName, '--command-id', $CommandId, '--scripts')
+        $azArgs += @($Scripts)
+        $azArgs += @('-o', 'json', '--only-show-errors')
+
+        try {
+            $rawOutput = Invoke-AzVmWithSuppressedAzCliStderr -Action { az @azArgs }
+            if ($LASTEXITCODE -ne 0) {
+                $lastError = ("{0} returned exit code {1}." -f [string]$ContextLabel, [int]$LASTEXITCODE)
+            }
+            elseif ([string]::IsNullOrWhiteSpace([string]$rawOutput)) {
+                $lastError = ("{0} returned empty output." -f [string]$ContextLabel)
+            }
+            else {
+                $parsedResult = ConvertFrom-JsonCompat -InputObject $rawOutput
+                $lastParsedResult = $parsedResult
+                $stdOutText = [string](Get-AzVmRunCommandChannelMessage -RunCommandObject $parsedResult -Channel 'StdOut')
+                $stdErrText = [string](Get-AzVmRunCommandChannelMessage -RunCommandObject $parsedResult -Channel 'StdErr')
+                $lastStdOut = [string]$stdOutText
+                $lastStdErr = [string]$stdErrText
+                if ([string]::IsNullOrWhiteSpace([string]$stdOutText)) {
+                    $lastError = if ([string]::IsNullOrWhiteSpace([string]$stdErrText)) {
+                        ("{0} returned empty StdOut." -f [string]$ContextLabel)
+                    }
+                    else {
+                        ("{0} returned empty StdOut. StdErr: {1}" -f [string]$ContextLabel, [string]$stdErrText)
+                    }
+                }
+                else {
+                    try {
+                        $jsonOutput = ConvertFrom-JsonCompat -InputObject $stdOutText
+                        return [pscustomobject]@{
+                            Success = $true
+                            OutputObject = $jsonOutput
+                            StdOut = [string]$stdOutText
+                            StdErr = [string]$stdErrText
+                            RawResult = $parsedResult
+                            ErrorMessage = ''
+                        }
+                    }
+                    catch {
+                        $lastError = ("{0} returned non-JSON StdOut: {1}" -f [string]$ContextLabel, $_.Exception.Message)
+                    }
+                }
+            }
+        }
+        catch {
+            $lastError = [string]$_.Exception.Message
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            Write-Host ("{0} is not ready yet. Retrying in {1}s (attempt {2}/{3})..." -f [string]$ContextLabel, $RetryDelaySeconds, $attempt, $MaxAttempts) -ForegroundColor Yellow
+            Start-Sleep -Seconds $RetryDelaySeconds
+        }
+    }
+
+    return [pscustomobject]@{
+        Success = $false
+        OutputObject = $null
+        StdOut = [string]$lastStdOut
+        StdErr = [string]$lastStdErr
+        RawResult = $lastParsedResult
+        ErrorMessage = [string]$lastError
+    }
+}
+
+# Handles Get-AzVmNestedVirtualizationGuestValidation.
+function Get-AzVmNestedVirtualizationGuestValidation {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroup,
+        [Parameter(Mandatory = $true)]
+        [string]$VmName,
+        [ValidateSet('windows','linux')]
+        [string]$OsType = 'windows',
+        [int]$MaxAttempts = 6,
+        [int]$RetryDelaySeconds = 20,
+        [switch]$SuppressError
+    )
+
+    $normalizedOsType = if ([string]::IsNullOrWhiteSpace([string]$OsType)) { 'windows' } else { [string]$OsType.Trim().ToLowerInvariant() }
+    $commandId = 'RunPowerShellScript'
+    $scripts = @(
+        '$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 Name,VMMonitorModeExtensions,VirtualizationFirmwareEnabled,SecondLevelAddressTranslationExtensions',
+        '[pscustomobject]@{',
+        '  ProcessorName = [string]$cpu.Name',
+        '  VMMonitorModeExtensions = [bool]$cpu.VMMonitorModeExtensions',
+        '  VirtualizationFirmwareEnabled = [bool]$cpu.VirtualizationFirmwareEnabled',
+        '  SecondLevelAddressTranslationExtensions = [bool]$cpu.SecondLevelAddressTranslationExtensions',
+        '} | ConvertTo-Json -Compress'
+    )
+    $contextLabel = "nested virtualization guest validation"
+
+    if ($normalizedOsType -eq 'linux') {
+        $commandId = 'RunShellScript'
+        $scripts = @(
+            "if grep -Eq '(vmx|svm)' /proc/cpuinfo; then",
+            '  printf ''{"VirtualizationExtensionsVisible":true}\n''',
+            "else",
+            '  printf ''{"VirtualizationExtensionsVisible":false}\n''',
+            "fi"
+        )
+    }
+    else {
+        $scripts = @(
+            '$featureMap = @{}',
+            'foreach ($featureName in @(''VirtualMachinePlatform'',''Microsoft-Hyper-V'',''Microsoft-Hyper-V-All'',''HypervisorPlatform'')) {',
+            '  $feature = Get-WindowsOptionalFeature -Online -FeatureName $featureName -ErrorAction SilentlyContinue',
+            '  if ($null -ne $feature) {',
+            '    $featureMap[$featureName] = [string]$feature.State',
+            '  }',
+            '  else {',
+            '    $featureMap[$featureName] = ''''',
+            '  }',
+            '}',
+            '$cpu = Get-CimInstance Win32_Processor | Select-Object -First 1 Name,VMMonitorModeExtensions,VirtualizationFirmwareEnabled,SecondLevelAddressTranslationExtensions',
+            '$hyperVisorInfo = Get-ComputerInfo -Property HyperVisorPresent',
+            '$bcdText = [string](bcdedit /enum {current} | Out-String)',
+            '[pscustomobject]@{',
+            '  ProcessorName = [string]$cpu.Name',
+            '  VMMonitorModeExtensions = [bool]$cpu.VMMonitorModeExtensions',
+            '  VirtualizationFirmwareEnabled = [bool]$cpu.VirtualizationFirmwareEnabled',
+            '  SecondLevelAddressTranslationExtensions = [bool]$cpu.SecondLevelAddressTranslationExtensions',
+            '  HyperVisorPresent = [bool]$hyperVisorInfo.HyperVisorPresent',
+            '  VirtualMachinePlatformState = [string]$featureMap[''VirtualMachinePlatform'']',
+            '  HypervisorPlatformState = [string]$featureMap[''HypervisorPlatform'']',
+            '  MicrosoftHyperVState = [string]$featureMap[''Microsoft-Hyper-V'']',
+            '  MicrosoftHyperVAllState = [string]$featureMap[''Microsoft-Hyper-V-All'']',
+            '  BcdHypervisorLaunchType = $(if ($bcdText -match ''hypervisorlaunchtype\s+(\S+)'') { [string]$Matches[1] } else { '''' })',
+            '} | ConvertTo-Json -Compress'
+        )
+    }
+
+    $runResult = Invoke-AzVmVmRunCommandJson `
+        -ResourceGroup $ResourceGroup `
+        -VmName $VmName `
+        -CommandId $commandId `
+        -Scripts $scripts `
+        -ContextLabel $contextLabel `
+        -MaxAttempts $MaxAttempts `
+        -RetryDelaySeconds $RetryDelaySeconds
+
+    if (-not [bool]$runResult.Success) {
+        $result = [pscustomobject]@{
+            Known = $false
+            Enabled = $false
+            Evidence = @()
+            Data = $null
+            ErrorMessage = [string]$runResult.ErrorMessage
+        }
+        if ($SuppressError) {
+            return $result
+        }
+
+        throw ("Nested virtualization guest validation failed for VM '{0}' in resource group '{1}': {2}" -f $VmName, $ResourceGroup, [string]$runResult.ErrorMessage)
+    }
+
+    $data = $runResult.OutputObject
+    $evidence = @()
+    $enabled = $false
+
+    if ($normalizedOsType -eq 'linux') {
+        $visible = [bool]$data.VirtualizationExtensionsVisible
+        $enabled = [bool]$visible
+        $evidence = @(
+            ("VirtualizationExtensionsVisible={0}" -f [bool]$visible)
+        )
+    }
+    else {
+        $vmMonitorModeExtensions = [bool]$data.VMMonitorModeExtensions
+        $virtualizationFirmwareEnabled = [bool]$data.VirtualizationFirmwareEnabled
+        $slatEnabled = [bool]$data.SecondLevelAddressTranslationExtensions
+        $hyperVisorPresent = [bool]$data.HyperVisorPresent
+        $virtualMachinePlatformState = [string]$data.VirtualMachinePlatformState
+        $hypervisorPlatformState = [string]$data.HypervisorPlatformState
+        $microsoftHyperVState = [string]$data.MicrosoftHyperVState
+        $microsoftHyperVAllState = [string]$data.MicrosoftHyperVAllState
+        $bcdHypervisorLaunchType = [string]$data.BcdHypervisorLaunchType
+        $cpuFlagEnabled = ($vmMonitorModeExtensions -and $virtualizationFirmwareEnabled -and $slatEnabled)
+        $activeHypervisorEnabled = ($hyperVisorPresent -and $virtualizationFirmwareEnabled -and `
+            (@($virtualMachinePlatformState, $hypervisorPlatformState, $microsoftHyperVState, $microsoftHyperVAllState) | Where-Object {
+                [string]::Equals([string]$_, 'Enabled', [System.StringComparison]::OrdinalIgnoreCase)
+            }).Count -gt 0)
+        $enabled = ($cpuFlagEnabled -or $activeHypervisorEnabled)
+        if (-not [string]::IsNullOrWhiteSpace([string]$data.ProcessorName)) {
+            $evidence += ("ProcessorName={0}" -f [string]$data.ProcessorName)
+        }
+        $evidence += @(
+            ("VMMonitorModeExtensions={0}" -f [bool]$vmMonitorModeExtensions),
+            ("VirtualizationFirmwareEnabled={0}" -f [bool]$virtualizationFirmwareEnabled),
+            ("SecondLevelAddressTranslationExtensions={0}" -f [bool]$slatEnabled),
+            ("HyperVisorPresent={0}" -f [bool]$hyperVisorPresent),
+            ("VirtualMachinePlatformState={0}" -f $virtualMachinePlatformState),
+            ("HypervisorPlatformState={0}" -f $hypervisorPlatformState),
+            ("MicrosoftHyperVState={0}" -f $microsoftHyperVState),
+            ("MicrosoftHyperVAllState={0}" -f $microsoftHyperVAllState)
+        )
+        if (-not [string]::IsNullOrWhiteSpace([string]$bcdHypervisorLaunchType)) {
+            $evidence += ("BcdHypervisorLaunchType={0}" -f $bcdHypervisorLaunchType)
+        }
+    }
+
+    return [pscustomobject]@{
+        Known = $true
+        Enabled = [bool]$enabled
+        Evidence = @($evidence)
+        Data = $data
+        ErrorMessage = ''
+    }
 }
 
 # Handles Write-TextFileNormalized.

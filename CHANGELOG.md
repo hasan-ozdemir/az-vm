@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.279] - 2026-03-11
+
+### Added
+- Added non-interactive connection test modes for `az-vm ssh --test` and `az-vm rdp --test`, so the repo can validate SSH authentication and RDP reachability without launching external clients.
+
+### Changed
+- Changed post-deploy feature handling so `create`, `update`, and `set` now treat `VM_ENABLE_HIBERNATION=true` and `VM_ENABLE_NESTED_VIRTUALIZATION=true` as verified desired outcomes: hibernation is checked through Azure instance state, while nested virtualization is validated from inside the running guest instead of relying on the removed single-VM Azure property path.
+- Changed `az-vm show` so password-bearing config values are redacted in the rendered report and running-VM inventory now includes guest-validated nested-virtualization status plus supporting evidence.
+- Refreshed the README and documentation contract to document the natural `vm-init` / `vm-update` order as builtin `initial`, builtin `normal`, local untracked tasks, then builtin `final`, and to describe the new connection-test and feature-validation behavior accurately.
+- Hardened the Windows interactive-session helper and Store-backed tasks so Be My Eyes and iCloud now detect whether an interactive desktop is available, fall back to deferred `RunOnce` registration when needed, and use interactive-token execution when a user desktop is already active.
+- Hardened several Windows update tasks and UX helpers by quieting registry hive load/unload noise, improving shell-sort validation, excluding unstable Ollama WebView cache paths from profile copies, retrying or settling installer descendants where needed, and normalizing non-fatal native exit codes in Docker Desktop and AnyDesk flows.
+- Raised the tracked timeouts for `126-install-be-my-eyes` and `10005-copy-settings-user` to match the longer real-world execution windows observed in the refreshed task implementations.
+
+### Fixed
+- Fixed `az vm create` argument selection during create-or-update paths so security-type create arguments are omitted automatically when the target VM already exists, avoiding Azure failures on existing managed VMs.
+
+### Tests
+- Kept the smoke and documentation contracts aligned with the new runtime surface, including connection-test parsing, show redaction, nested-virtualization guest validation, task-order guarantees, and the hardened Windows task contracts.
+
 ## [2026.3.11.278] - 2026-03-11
 
 ### Fixed

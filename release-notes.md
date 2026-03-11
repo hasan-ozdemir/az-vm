@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.279 - 2026-03-11
+
+### Summary
+This release hardens the live publish-gate surface by adding non-interactive SSH/RDP validation, turning hibernation and nested virtualization into verified post-deploy outcomes, redacting password-bearing values from `az-vm show`, and making the Windows interactive/update tasks more resilient under real guest conditions.
+
+### Highlights
+- Added `az-vm ssh --test` and `az-vm rdp --test` so the repo can prove connection readiness without launching `ssh.exe` or `mstsc.exe`.
+- Changed post-deploy feature reconciliation so `VM_ENABLE_HIBERNATION=true` and `VM_ENABLE_NESTED_VIRTUALIZATION=true` now require successful verification instead of best-effort warnings; nested virtualization is validated from inside the running guest.
+- Updated `az-vm show` to redact password-bearing config values and to print nested-virtualization state, validation source, and evidence when available.
+- Improved the Windows interactive desktop helper plus the Be My Eyes and iCloud tasks so they can use an existing interactive desktop when present and register deferred `RunOnce` installs when Store-backed flows cannot complete headlessly.
+- Hardened Windows UX/profile-copy, Ollama, Docker Desktop, and AnyDesk tasks to reduce avoidable noise, stale-installer waits, and non-fatal native exit-code regressions during real update runs.
+
 ## Release 2026.3.11.278 - 2026-03-11
 
 ### Summary

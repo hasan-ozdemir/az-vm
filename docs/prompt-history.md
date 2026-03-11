@@ -4518,3 +4518,27 @@ Fix the compatibility-test code path step by step: find which step is taking unn
 **Assistant Summary**
 
 Traced the compatibility-matrix slowdown to two post-deploy feature-enable smoke tests that started waiting on the new provisioning-ready gate without stubbing `az vm get-instance-view`. Updated those local `az` stubs to return an immediate `Provisioning succeeded` snapshot, then reran `tests/az-vm-smoke-tests.ps1` and `tests/powershell-compatibility-check.ps1`. After the fix, the smoke suite completed in about `3.2s` and the full compatibility matrix completed in about `6.8s` without the previous synthetic multi-minute wait loop.
+
+### 2026-03-11 23:32 TRT
+
+**User Prompt**
+
+````text
+Implement the agreed live publish-gate plan: keep `vm-init` and `vm-update` running in their natural order of builtin `initial`, builtin `normal`, local untracked tasks, and builtin `final`; remove password display from `az-vm show`; add non-interactive `az-vm ssh --test` and `az-vm rdp --test`; require `az-vm do --vm-action=status` to report `started`; and harden hibernation, nested-virtualization, and related Windows update behavior so the repo is ready for realistic publish-gate validation.
+````
+
+**Assistant Summary**
+
+Implemented the live publish-gate hardening set across runtime, docs, and task contracts: `create`, `update`, and `set` now verify hibernation and nested virtualization as required outcomes, `az-vm show` redacts password-bearing values and surfaces nested-virtualization evidence, `az-vm ssh --test` and `az-vm rdp --test` provide non-interactive readiness checks, the README and documentation contract now spell out the natural task order, `az vm create` omits incompatible security-type create arguments for existing VMs, and the Windows UX, profile-copy, Ollama, Docker Desktop, AnyDesk, Be My Eyes, and iCloud tasks were hardened for interactive-session, installer-settle, and deferred-install realities.
+
+### 2026-03-11 23:44 TRT
+
+**User Prompt**
+
+````text
+Commit the pending prompt-driven updates with a pragmatic, contextual commit message; then align the `main` branch to `dev` without causing any data loss; finally verify whether we are ready for publication and report the result comprehensively.
+````
+
+**Assistant Summary**
+
+Committed the pending runtime and Windows task hardening work with a contextual feature commit, fast-forwarded `main` to `dev` without rewriting history, reran the non-live validation suite, and checked the repository's publish surface. The repo now has matching `dev` and `main` tips for the current code line, the publish-facing docs and help surface remain aligned, and the remaining release assessment is limited to whether a separate live Azure recreate test is still required before shipping.

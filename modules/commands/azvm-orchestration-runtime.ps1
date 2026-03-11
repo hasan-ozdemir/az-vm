@@ -789,6 +789,43 @@ function Get-AzVmCreateSecurityArguments {
     return @($arguments)
 }
 
+# Handles Get-AzVmCreateSecurityArgumentsForCurrentVmState.
+function Get-AzVmCreateSecurityArgumentsForCurrentVmState {
+    param(
+        [hashtable]$Context,
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [switch]$SuppressNotice
+    )
+
+    $desiredArguments = @(Get-AzVmCreateSecurityArguments -Context $Context)
+    if (@($desiredArguments).Count -eq 0) {
+        return @()
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$VmName)) {
+        return @($desiredArguments)
+    }
+
+    $vmExists = $false
+    try {
+        $vmExists = Test-AzVmAzResourceExists -AzArgs @('vm', 'show', '-g', $ResourceGroup, '-n', $VmName)
+    }
+    catch {
+        $vmExists = $false
+    }
+
+    if (-not $vmExists) {
+        return @($desiredArguments)
+    }
+
+    if (-not $SuppressNotice) {
+        Write-Host ("Existing VM '{0}' already exists in resource group '{1}'. Security-type create arguments are omitted because Azure does not allow changing securityProfile.securityType during create-or-update on an existing VM." -f $VmName, $ResourceGroup) -ForegroundColor DarkCyan
+    }
+
+    return @()
+}
+
 # Handles Get-AzVmSecurityTypeFeatureRegistrationSnapshot.
 function Get-AzVmSecurityTypeFeatureRegistrationSnapshot {
     $result = [ordered]@{
@@ -1066,8 +1103,8 @@ function Get-AzVmNestedVirtualizationSupportInfo {
         }
     )
     if (@($capabilities).Count -eq 0) {
-        $result.Known = $true
-        $result.Message = 'nested-capability-not-advertised'
+        $result.Known = $false
+        $result.Message = 'nested-capability-inconclusive'
         return [pscustomobject]$result
     }
 
@@ -1109,24 +1146,75 @@ function Ensure-AzVmDeallocatedForFeatureUpdate {
     $DeallocatedFlag.Value = $true
 }
 
+# Handles Get-AzVmVmAdditionalCapabilityFlag.
+function Get-AzVmVmAdditionalCapabilityFlag {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$QueryPath
+    )
+
+    $rawValue = az vm show -g $ResourceGroup -n $VmName --query $QueryPath -o tsv --only-show-errors 2>$null
+    $querySucceeded = ($LASTEXITCODE -eq 0)
+    $stateText = Get-AzVmSafeTrimmedText -Value $rawValue
+
+    return [pscustomobject]@{
+        Known = [bool]$querySucceeded
+        RawValue = [string]$stateText
+        Enabled = ($querySucceeded -and [string]::Equals([string]$stateText, 'true', [System.StringComparison]::OrdinalIgnoreCase))
+    }
+}
+
+# Handles Wait-AzVmProvisioningSucceeded.
+function Wait-AzVmProvisioningSucceeded {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [int]$MaxAttempts = 24,
+        [int]$DelaySeconds = 10
+    )
+
+    $lastSnapshot = $null
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $snapshotJson = az vm get-instance-view -g $ResourceGroup -n $VmName --query "{provisioningCode:statuses[?starts_with(code,'ProvisioningState/')].code | [0],provisioningDisplay:statuses[?starts_with(code,'ProvisioningState/')].displayStatus | [0],powerCode:statuses[?starts_with(code,'PowerState/')].code | [0],powerDisplay:statuses[?starts_with(code,'PowerState/')].displayStatus | [0]}" -o json --only-show-errors 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$snapshotJson)) {
+            $lastSnapshot = ConvertFrom-JsonCompat -InputObject $snapshotJson
+            $provisioningCode = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningCode
+            $provisioningDisplay = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningDisplay
+            if ([string]::Equals([string]$provisioningCode, 'ProvisioningState/succeeded', [System.StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals([string]$provisioningDisplay, 'Provisioning succeeded', [System.StringComparison]::OrdinalIgnoreCase)) {
+                return [pscustomobject]@{
+                    Ready = $true
+                    Snapshot = $lastSnapshot
+                }
+            }
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            $statusText = if ($null -ne $lastSnapshot) {
+                ("provisioning={0}; power={1}" -f (Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningDisplay), (Get-AzVmSafeTrimmedText -Value $lastSnapshot.powerDisplay))
+            }
+            else {
+                'instance view not ready'
+            }
+
+            Write-Host ("VM provisioning is not ready yet for '{0}' in group '{1}'. {2}. Retrying in {3}s (attempt {4}/{5})..." -f $VmName, $ResourceGroup, $statusText, $DelaySeconds, $attempt, $MaxAttempts) -ForegroundColor Yellow
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+
+    return [pscustomobject]@{
+        Ready = $false
+        Snapshot = $lastSnapshot
+    }
+}
+
 # Handles Invoke-AzVmPostDeployFeatureEnablement.
 function Invoke-AzVmPostDeployFeatureEnablement {
     param(
         [hashtable]$Context,
         [switch]$VmCreatedThisRun
     )
-
-    if (-not $VmCreatedThisRun) {
-        Write-Host ("Hibernation check skipped for existing VM '{0}'." -f [string]$Context.VmName) -ForegroundColor DarkCyan
-        return [pscustomobject]@{
-            HibernationAttempted = $false
-            HibernationEnabled = $false
-            HibernationMessage = 'skipped-existing-vm'
-            NestedAttempted = $false
-            NestedEnabled = $false
-            NestedMessage = 'skipped-existing-vm'
-        }
-    }
 
     $resourceGroup = [string]$Context.ResourceGroup
     $vmName = [string]$Context.VmName
@@ -1149,8 +1237,22 @@ function Invoke-AzVmPostDeployFeatureEnablement {
     $hibernationSupport = Get-AzVmHibernationSupportInfo -Location ([string]$Context.AzLocation) -VmSize ([string]$Context.VmSize)
     $nestedSupport = Get-AzVmNestedVirtualizationSupportInfo -Location ([string]$Context.AzLocation) -VmSize ([string]$Context.VmSize)
     $nestedSecurityState = Get-AzVmSafeTrimmedText -Value $Context.VmSecurityType
+    $vmLifecycleLabel = if ($VmCreatedThisRun) { 'newly created' } else { 'existing' }
+    Write-Host ("Post-deploy feature verification will run for the {0} VM '{1}'." -f $vmLifecycleLabel, $vmName) -ForegroundColor DarkCyan
 
     try {
+        $provisioningWaitResult = Wait-AzVmProvisioningSucceeded -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 30 -DelaySeconds 10
+        if (-not [bool]$provisioningWaitResult.Ready) {
+            $snapshot = $provisioningWaitResult.Snapshot
+            $provisioningText = if ($null -ne $snapshot) { Get-AzVmSafeTrimmedText -Value $snapshot.provisioningDisplay } else { '(unknown)' }
+            $powerText = if ($null -ne $snapshot) { Get-AzVmSafeTrimmedText -Value $snapshot.powerDisplay } else { '(unknown)' }
+            Throw-FriendlyError `
+                -Detail ("VM '{0}' in resource group '{1}' did not reach provisioning succeeded before feature verification. provisioning='{2}', power='{3}'." -f $vmName, $resourceGroup, $provisioningText, $powerText) `
+                -Code 66 `
+                -Summary "VM provisioning is not ready for feature verification." `
+                -Hint "Wait until provisioning succeeds, then retry the create/update flow."
+        }
+
         $securityProfileJson = az vm show -g $resourceGroup -n $vmName --query "{securityType:securityProfile.securityType,secureBoot:securityProfile.uefiSettings.secureBootEnabled,vTpm:securityProfile.uefiSettings.vTpmEnabled}" -o json --only-show-errors 2>$null
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$securityProfileJson)) {
             $securityProfile = ConvertFrom-JsonCompat -InputObject $securityProfileJson
@@ -1164,91 +1266,141 @@ function Invoke-AzVmPostDeployFeatureEnablement {
     catch {
     }
 
-    if (-not $hibernationDesired) {
-        $hibernationMessage = 'disabled-by-config'
-        Write-Host ("Hibernation enablement is disabled by VM_ENABLE_HIBERNATION=false for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
-    }
-    else {
-        if ([bool]$hibernationSupport.Known -and [bool]$hibernationSupport.Supported) {
-            Write-Host ("Hibernation is supported for VM size '{0}'. {1}" -f [string]$Context.VmSize, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Hibernation' -CapabilityLabel 'HibernationSupported' -ReasonCode ([string]$hibernationSupport.Message) -Evidence @($hibernationSupport.Evidence))) -ForegroundColor DarkCyan
+    try {
+        if (-not $hibernationDesired) {
+            $hibernationMessage = 'disabled-by-config'
+            Write-Host ("Hibernation enablement is disabled by VM_ENABLE_HIBERNATION=false for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
         }
         else {
-            Write-Host ("Hibernation will not be enabled for VM size '{0}'. Reason: {1}" -f [string]$Context.VmSize, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Hibernation' -CapabilityLabel 'HibernationSupported' -ReasonCode ([string]$hibernationSupport.Message) -Evidence @($hibernationSupport.Evidence))) -ForegroundColor Yellow
-            $hibernationMessage = [string]$hibernationSupport.Message
-        }
+            $hibernationAttempted = $true
+            $hibernationSupportReason = Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Hibernation' -CapabilityLabel 'HibernationSupported' -ReasonCode ([string]$hibernationSupport.Message) -Evidence @($hibernationSupport.Evidence)
+            if ([bool]$hibernationSupport.Known -and [bool]$hibernationSupport.Supported) {
+                Write-Host ("Hibernation is supported for VM size '{0}'. {1}" -f [string]$Context.VmSize, $hibernationSupportReason) -ForegroundColor DarkCyan
+            }
+            elseif ([bool]$hibernationSupport.Known) {
+                Throw-FriendlyError `
+                    -Detail ("VM_ENABLE_HIBERNATION=true requires Azure hibernation support for VM '{0}', but VM size '{1}' did not advertise support. {2}" -f $vmName, [string]$Context.VmSize, $hibernationSupportReason) `
+                    -Code 66 `
+                    -Summary "Hibernation could not be enabled." `
+                    -Hint "Use a VM size that supports hibernation, or set VM_ENABLE_HIBERNATION=false before retrying."
+            }
+            else {
+                Write-Host ("Hibernation capability metadata is inconclusive for VM size '{0}'. Azure verification will be attempted. {1}" -f [string]$Context.VmSize, $hibernationSupportReason) -ForegroundColor Yellow
+            }
 
-        try {
-            if ([bool]$hibernationSupport.Supported) {
-                $hibernationAttempted = $true
-                $hibernationState = az vm show -g $resourceGroup -n $vmName --query "additionalCapabilities.hibernationEnabled" -o tsv --only-show-errors 2>$null
-                $hibernationStateText = Get-AzVmSafeTrimmedText -Value $hibernationState
-                if ($LASTEXITCODE -eq 0 -and [string]::Equals($hibernationStateText, 'true', [System.StringComparison]::OrdinalIgnoreCase)) {
-                    Write-Host ("Hibernation is already enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
+            $hibernationState = Get-AzVmVmAdditionalCapabilityFlag -ResourceGroup $resourceGroup -VmName $vmName -QueryPath 'additionalCapabilities.hibernationEnabled'
+            if ([bool]$hibernationState.Enabled) {
+                Write-Host ("Hibernation is already enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
+                $hibernationEnabled = $true
+                $hibernationMessage = 'already-enabled'
+            }
+            else {
+                Ensure-AzVmDeallocatedForFeatureUpdate -ResourceGroup $resourceGroup -VmName $vmName -DeallocatedFlag ([ref]$deallocated)
+
+                Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --set supportsHibernation=true" -f $resourceGroup, $vmDiskName) -Action {
+                    az disk update -g $resourceGroup -n $vmDiskName --set supportsHibernation=true -o none --only-show-errors
+                    Assert-LastExitCode "az disk update --set supportsHibernation=true"
+                } | Out-Null
+
+                Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation true" -f $resourceGroup, $vmName) -Action {
+                    az vm update -g $resourceGroup -n $vmName --enable-hibernation true -o none --only-show-errors
+                    Assert-LastExitCode "az vm update --enable-hibernation true"
+                } | Out-Null
+
+                $hibernationStateAfter = Get-AzVmVmAdditionalCapabilityFlag -ResourceGroup $resourceGroup -VmName $vmName -QueryPath 'additionalCapabilities.hibernationEnabled'
+                if ([bool]$hibernationStateAfter.Enabled) {
                     $hibernationEnabled = $true
-                    $hibernationMessage = 'already-enabled'
+                    $hibernationMessage = 'enabled'
+                    Write-Host ("Hibernation was enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
                 }
                 else {
-                    Ensure-AzVmDeallocatedForFeatureUpdate -ResourceGroup $resourceGroup -VmName $vmName -DeallocatedFlag ([ref]$deallocated)
-
-                    Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --set supportsHibernation=true" -f $resourceGroup, $vmDiskName) -Action {
-                        az disk update -g $resourceGroup -n $vmDiskName --set supportsHibernation=true -o none --only-show-errors
-                        Assert-LastExitCode "az disk update --set supportsHibernation=true"
-                    } | Out-Null
-
-                    Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation true" -f $resourceGroup, $vmName) -Action {
-                        az vm update -g $resourceGroup -n $vmName --enable-hibernation true -o none --only-show-errors
-                        Assert-LastExitCode "az vm update --enable-hibernation true"
-                    } | Out-Null
-
-                    $hibernationStateAfter = az vm show -g $resourceGroup -n $vmName --query "additionalCapabilities.hibernationEnabled" -o tsv --only-show-errors 2>$null
-                    $hibernationStateAfterText = Get-AzVmSafeTrimmedText -Value $hibernationStateAfter
-                    if ($LASTEXITCODE -eq 0 -and [string]::Equals($hibernationStateAfterText, 'true', [System.StringComparison]::OrdinalIgnoreCase)) {
-                        $hibernationEnabled = $true
-                        $hibernationMessage = 'enabled'
-                        Write-Host ("Hibernation was enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
-                    }
-                    else {
-                        $hibernationMessage = if ([string]::IsNullOrWhiteSpace([string]$hibernationStateAfterText)) { 'Azure did not report hibernationEnabled=true after the update command.' } else { "Azure reported hibernationEnabled='$hibernationStateAfterText' after the update command." }
-                        Write-Host ("Hibernation enablement could not be confirmed for VM '{0}'. Reason: {1}" -f $vmName, $hibernationMessage) -ForegroundColor Yellow
-                    }
+                    $hibernationMessage = if ([bool]$hibernationStateAfter.Known) { "Azure reported hibernationEnabled='{0}' after the update command." -f [string]$hibernationStateAfter.RawValue } else { 'Azure could not report hibernationEnabled after the update command.' }
+                    Throw-FriendlyError `
+                        -Detail ("Hibernation verification failed for VM '{0}'. {1}" -f $vmName, $hibernationMessage) `
+                        -Code 66 `
+                        -Summary "Hibernation could not be enabled." `
+                        -Hint "Check Azure VM and disk feature support, then retry the create/update flow."
                 }
             }
         }
-        catch {
-            $hibernationMessage = [string]$_.Exception.Message
-            Write-Host ("Hibernation enablement failed for VM '{0}'. Reason: {1}" -f $vmName, $hibernationMessage) -ForegroundColor Yellow
-        }
-    }
 
-    if (-not $nestedDesired) {
-        $nestedMessage = 'disabled-by-config'
-        Write-Host ("Nested virtualization enablement is disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
-    }
-    elseif ([string]::Equals([string]$nestedSecurityState, 'TrustedLaunch', [System.StringComparison]::OrdinalIgnoreCase)) {
-        $nestedMessage = 'nested-requires-standard-security'
-        Write-Host ("Nested virtualization will not be enabled for VM '{0}'. Reason: {1}" -f $vmName, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode $nestedMessage -Evidence @($nestedSupport.Evidence))) -ForegroundColor Yellow
-    }
-    else {
-        if ([bool]$nestedSupport.Known -and [bool]$nestedSupport.Supported) {
-            $nestedEnabled = $true
-            $nestedMessage = 'nested-managed-by-security-type'
-            Write-Host ("Nested virtualization is available for VM size '{0}'. {1}" -f [string]$Context.VmSize, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode $nestedMessage -Evidence @($nestedSupport.Evidence))) -ForegroundColor Green
+        if (-not $nestedDesired) {
+            $nestedMessage = 'disabled-by-config'
+            Write-Host ("Nested virtualization enablement is disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
         }
         else {
-            $nestedMessage = 'nested-capability-inconclusive'
-            Write-Host ("Nested virtualization readiness is inconclusive for VM size '{0}'. {1}" -f [string]$Context.VmSize, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode $nestedMessage -Evidence @($nestedSupport.Evidence))) -ForegroundColor Yellow
+            $nestedAttempted = $true
+            if ([string]::Equals([string]$nestedSecurityState, 'TrustedLaunch', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $nestedMessage = 'nested-requires-standard-security'
+                Throw-FriendlyError `
+                    -Detail ("VM_ENABLE_NESTED_VIRTUALIZATION=true requires security type 'Standard', but VM '{0}' currently reports security type '{1}'. {2}" -f $vmName, [string]$nestedSecurityState, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode $nestedMessage -Evidence @($nestedSupport.Evidence))) `
+                    -Code 66 `
+                    -Summary "Nested virtualization could not be enabled." `
+                    -Hint "Use VM_SECURITY_TYPE=Standard for this VM and retry."
+            }
+
+            $nestedSupportReason = Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode ([string]$nestedSupport.Message) -Evidence @($nestedSupport.Evidence)
+            if ([bool]$nestedSupport.Known -and [bool]$nestedSupport.Supported) {
+                Write-Host ("Nested virtualization is supported for VM size '{0}'. {1}" -f [string]$Context.VmSize, $nestedSupportReason) -ForegroundColor DarkCyan
+            }
+            elseif ([bool]$nestedSupport.Known) {
+                $nestedMessage = [string]$nestedSupport.Message
+                Throw-FriendlyError `
+                    -Detail ("VM_ENABLE_NESTED_VIRTUALIZATION=true requires Azure nested virtualization support for VM '{0}', but VM size '{1}' did not advertise support. {2}" -f $vmName, [string]$Context.VmSize, $nestedSupportReason) `
+                    -Code 66 `
+                    -Summary "Nested virtualization could not be enabled." `
+                    -Hint "Use a VM size that supports nested virtualization, or set VM_ENABLE_NESTED_VIRTUALIZATION=false before retrying."
+            }
+            else {
+                $nestedMessage = 'nested-capability-inconclusive'
+                Write-Host ("Nested virtualization capability metadata is inconclusive for VM size '{0}'. Guest validation will be attempted. {1}" -f [string]$Context.VmSize, $nestedSupportReason) -ForegroundColor Yellow
+            }
+        }
+
+        if ($nestedAttempted) {
+            if ($deallocated) {
+                Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+                    az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
+                    Assert-LastExitCode "az vm start"
+                } | Out-Null
+                $deallocated = $false
+                Write-Host ("VM '{0}' was started before nested virtualization guest validation." -f $vmName) -ForegroundColor DarkCyan
+            }
+
+            $nestedValidation = Get-AzVmNestedVirtualizationGuestValidation `
+                -ResourceGroup $resourceGroup `
+                -VmName $vmName `
+                -OsType ([string]$Context.VmOsType) `
+                -MaxAttempts 8 `
+                -RetryDelaySeconds 20
+
+            if ([bool]$nestedValidation.Known -and [bool]$nestedValidation.Enabled) {
+                $nestedEnabled = $true
+                $nestedMessage = 'guest-validated'
+                Write-Host ("Nested virtualization guest validation passed for VM '{0}'. {1}" -f $vmName, ((@($nestedValidation.Evidence) -join '; '))) -ForegroundColor Green
+            }
+            else {
+                $nestedEvidenceText = if (@($nestedValidation.Evidence).Count -gt 0) { (@($nestedValidation.Evidence) -join '; ') } else { [string]$nestedValidation.ErrorMessage }
+                Throw-FriendlyError `
+                    -Detail ("Nested virtualization guest validation failed for VM '{0}'. {1}" -f $vmName, [string]$nestedEvidenceText) `
+                    -Code 66 `
+                    -Summary "Nested virtualization could not be enabled." `
+                    -Hint "Check the VM size, security type, and guest virtualization requirements, then retry the create/update flow."
+            }
         }
     }
-    if ($deallocated) {
-        try {
-            Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-                az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
-                Assert-LastExitCode "az vm start"
-            } | Out-Null
-            Write-Host ("VM '{0}' was started after feature enablement." -f $vmName) -ForegroundColor DarkCyan
-        }
-        catch {
-            Write-Warning ("VM '{0}' could not be started after feature enablement: {1}" -f $vmName, $_.Exception.Message)
+    finally {
+        if ($deallocated) {
+            try {
+                Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+                    az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
+                    Assert-LastExitCode "az vm start"
+                } | Out-Null
+                Write-Host ("VM '{0}' was started after feature enablement." -f $vmName) -ForegroundColor DarkCyan
+            }
+            catch {
+                Write-Warning ("VM '{0}' could not be started after feature enablement: {1}" -f $vmName, $_.Exception.Message)
+            }
         }
     }
 

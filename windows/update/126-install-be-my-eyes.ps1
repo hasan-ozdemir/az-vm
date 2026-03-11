@@ -9,7 +9,9 @@ $taskConfig = [ordered]@{
     PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
     StoreProductId = '9MSW46LTDWGF'
     InteractiveTaskSuffix = 'interactive-install'
-    WaitTimeoutSeconds = 300
+    DeferredRunOnceName = 'AzVmInstallBeMyEyes'
+    WaitTimeoutSeconds = 240
+    StoreSessionErrorRegex = '(?i)0x80070520|logon session|microsoft store|msstore'
 }
 
 $taskName = [string]$taskConfig.TaskName
@@ -75,11 +77,28 @@ function Test-BeMyEyesInstalled {
     return $false
 }
 
+function Register-BeMyEyesDeferredInstall {
+    param([string]$WingetPath)
+
+    $runOncePath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+    if (-not (Test-Path -LiteralPath $runOncePath)) {
+        New-Item -Path $runOncePath -Force | Out-Null
+    }
+
+    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id {1} --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"' -f $WingetPath, $storeProductId)
+    Set-ItemProperty -Path $runOncePath -Name ([string]$taskConfig.DeferredRunOnceName) -Value $commandValue -Type String
+}
+
 Refresh-SessionPath
 if (Test-BeMyEyesInstalled) {
     Write-Host "install-be-my-eyes-completed"
     Write-Host "Update task completed: install-be-my-eyes"
     return
+}
+
+$wingetExe = Resolve-WingetExe
+if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
+    throw "winget command is not available."
 }
 
 $workerTaskName = "{0}-{1}" -f $taskName, ([string]$taskConfig.InteractiveTaskSuffix)
@@ -148,10 +167,11 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 if (-not (Test-BeMyEyesInstalled)) {
-    & $wingetExe install --id $storeProductId --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+    $installOutput = @(& $wingetExe install --id $storeProductId --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force 2>&1)
     $installExit = [int]$LASTEXITCODE
+    $installText = [string]($installOutput | Out-String)
     if ($installExit -ne 0 -and $installExit -ne -1978335189) {
-        Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary ("winget install failed with exit code {0}." -f $installExit)
+        Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary ("winget install failed with exit code {0}." -f $installExit) -Details @($installText)
         exit 1
     }
 }
@@ -173,12 +193,42 @@ $workerScript = $workerScript.Replace('__TASK_NAME__', $workerTaskName)
 $workerScript = $workerScript.Replace('__STORE_PRODUCT_ID__', $storeProductId)
 $workerScript = $workerScript.Replace('__PORTABLE_WINGET_PATH__', [string]$taskConfig.PortableWingetPath)
 
-$null = Invoke-AzVmInteractiveDesktopAutomation `
-    -TaskName $workerTaskName `
-    -RunAsUser $managerUser `
-    -RunAsPassword $managerPassword `
-    -WorkerScriptText $workerScript `
-    -WaitTimeoutSeconds ([int]$taskConfig.WaitTimeoutSeconds)
+if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
+    Register-BeMyEyesDeferredInstall -WingetPath $wingetExe
+    Write-Warning "Be My Eyes install requires an interactive desktop session. A RunOnce install was registered for the next interactive sign-in."
+    Write-Host "install-be-my-eyes-deferred"
+    Write-Host "Update task completed: install-be-my-eyes"
+    return
+}
+
+try {
+    $null = Invoke-AzVmInteractiveDesktopAutomation `
+        -TaskName $workerTaskName `
+        -RunAsUser $managerUser `
+        -RunAsPassword $managerPassword `
+        -WorkerScriptText $workerScript `
+        -WaitTimeoutSeconds ([int]$taskConfig.WaitTimeoutSeconds) `
+        -RunAsMode 'interactiveToken'
+}
+catch {
+    Refresh-SessionPath
+    if (Test-BeMyEyesInstalled) {
+        Write-Host "install-be-my-eyes-completed"
+        Write-Host "Update task completed: install-be-my-eyes"
+        return
+    }
+
+    $interactiveError = [string]$_.Exception.Message
+    if ($interactiveError -match ([string]$taskConfig.StoreSessionErrorRegex)) {
+        Register-BeMyEyesDeferredInstall -WingetPath $wingetExe
+        Write-Warning "Be My Eyes install could not complete in the current session. A RunOnce install was registered for the next interactive sign-in."
+        Write-Host "install-be-my-eyes-deferred"
+        Write-Host "Update task completed: install-be-my-eyes"
+        return
+    }
+
+    throw
+}
 
 Refresh-SessionPath
 if (-not (Test-BeMyEyesInstalled)) {

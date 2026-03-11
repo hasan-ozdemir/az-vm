@@ -177,6 +177,7 @@
 - `vm-init` is Azure Run Command driven and is used for early guest bootstrap.
 - `vm-update` is pyssh driven and is used for richer task-by-task update flows after the VM is reachable.
 - Both stages use catalog JSON files as the source of truth for ordering, timeout, and enable/disable state.
+- The natural execution order for both stages is: builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks.
 
 ### Interactive Versus Auto Mode
 - Interactive mode is the default and prompts when required values are missing.
@@ -240,7 +241,7 @@ The runtime never auto-writes or auto-syncs catalog files. Missing entries fall 
 8. Print a final VM/resource summary.
 
 The same mental model applies to `update`, except that existing managed resources are reconciled instead of always starting from empty state.
-Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION`; set them to `false` when you want create/update to skip those feature paths even if the SKU supports them.
+Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION`; set them to `false` when you want create/update to skip those feature paths even if the SKU supports them. When either key is `true`, create/update now treats that capability as a required verified outcome, not a best-effort warning.
 
 ### Safety Model And Failure Handling
 - Validation happens before destructive Azure work.
@@ -274,7 +275,7 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 
 ### Shared VM Feature Toggles
 - `VM_ENABLE_HIBERNATION`: `true` or `false`. Controls whether create/update flows should attempt post-deploy Azure hibernation enablement when the target SKU supports it.
-- `VM_ENABLE_NESTED_VIRTUALIZATION`: `true` or `false`. Controls whether create/update flows should treat nested virtualization as a desired capability during post-deploy feature validation.
+- `VM_ENABLE_NESTED_VIRTUALIZATION`: `true` or `false`. Controls whether create/update flows should require nested virtualization guest readiness. Azure single-VM APIs do not expose a separate nested-virtualization toggle here; the repo validates the capability from inside the guest on running VMs.
 - These are common keys, not platform-specific keys. Keep them in `.env` unless you are deliberately overriding them on the CLI/runtime side.
 
 ### Platform-Specific Settings
@@ -398,6 +399,10 @@ Good for:
 - post-create or post-move confirmation
 - support and diagnostics snapshots
 
+Behavior notes:
+- password-bearing `.env` values are redacted in the rendered report
+- the VM detail section includes the effective hibernation state and, when the VM is running, guest-validated nested-virtualization state plus validation evidence
+
 ### `do`
 Purpose: inspect or change one VM lifecycle state.
 
@@ -475,12 +480,14 @@ Usage patterns:
 .\az-vm.cmd ssh -h
 .\az-vm.cmd ssh --vm-name=<vm-name>
 .\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant
+.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=manager --test
 ```
 
 Behavior notes:
 - only runs when the target VM is already running
 - uses current managed VM state and connection settings from config/runtime
 - politely refuses and suggests `az-vm do --vm-action=start` when the VM is not running
+- `--test` performs a non-interactive SSH authentication and `whoami` handshake by using the repo-managed pyssh client instead of opening `ssh.exe`
 
 ### `rdp`
 Purpose: launch the local Remote Desktop client for a managed Windows VM.
@@ -490,12 +497,14 @@ Usage patterns:
 .\az-vm.cmd rdp -h
 .\az-vm.cmd rdp --vm-name=<vm-name>
 .\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
+.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=manager --test
 ```
 
 Behavior notes:
 - only runs when the target VM is already running
 - stages credentials via `cmdkey` and launches `mstsc.exe`
 - politely refuses and suggests `az-vm do --vm-action=start` when the VM is not running
+- `--test` performs a non-interactive TCP reachability check against the resolved RDP endpoint instead of launching `mstsc.exe`
 
 ### `move`
 Purpose: move a managed VM to another Azure region with a health-gated cutover.
@@ -544,7 +553,7 @@ Behavior notes:
 - `--windows` and `--linux` act as expected-platform assertions
 
 ### `set`
-Purpose: apply VM feature flags.
+Purpose: apply hibernation and sync nested-virtualization desired state.
 
 Supported flags:
 - `--hibernation=on|off`
@@ -560,7 +569,9 @@ Usage patterns:
 
 Behavior notes:
 - `set` resolves the target VM directly and does not depend on the heavier Step-1 create/update runtime path.
-- After each successful Azure change, the command syncs the resolved `RESOURCE_GROUP`, `VM_NAME`, and the changed `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values back into the local `.env` file.
+- Hibernation is changed through Azure.
+- Nested virtualization is governed by VM size, security type, and guest readiness; `--nested-virtualization=on` validates the capability from inside a running VM, while `--nested-virtualization=off` only updates repo desired state.
+- After each successful change, the command syncs the resolved `RESOURCE_GROUP`, `VM_NAME`, and the changed `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values back into the local `.env` file.
 - If one toggle succeeds and a later toggle fails, `.env` is still updated to match the successful change so local intent does not drift away from the actual VM state.
 
 ### `delete`

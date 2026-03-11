@@ -198,7 +198,7 @@
       "taskType": "normal",
       "priority": 126,
       "enabled": true,
-      "timeout": 35
+      "timeout": 240
     },
     {
       "name": "127-install-nvda-system",
@@ -268,7 +268,7 @@
       "taskType": "final",
       "priority": 10005,
       "enabled": true,
-      "timeout": 180
+      "timeout": 300
     },
     {
       "name": "10099-capture-snapshot-health",

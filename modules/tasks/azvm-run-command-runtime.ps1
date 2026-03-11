@@ -533,7 +533,7 @@ function Apply-AzVmTaskBlockReplacements {
                 }
             }
 
-            if ($taskName -in @('10003-configure-ux-windows', '10005-copy-settings-user', '126-install-be-my-eyes')) {
+            if ($taskName -in @('10003-configure-ux-windows', '10005-copy-settings-user', '126-install-be-my-eyes', '131-install-icloud-system')) {
                 $repoRoot = Split-Path -Path (Split-Path -Path $directoryPath -Parent) -Parent
                 $helperLocalPath = Join-Path $repoRoot 'tools\windows\az-vm-interactive-session-helper.ps1'
                 if (-not (Test-Path -LiteralPath $helperLocalPath)) {

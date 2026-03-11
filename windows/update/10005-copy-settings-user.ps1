@@ -44,6 +44,22 @@ function Assert-RegistryValue {
     }
 }
 
+function Invoke-RegQuiet {
+    param(
+        [string]$Verb,
+        [string[]]$Arguments
+    )
+
+    $segments = @('reg', [string]$Verb)
+    foreach ($argument in @($Arguments)) {
+        $segments += ('"{0}"' -f [string]$argument)
+    }
+
+    $command = ((@($segments) -join ' ') + ' >nul 2>&1')
+    cmd.exe /d /c $command | Out-Null
+    return [int]$LASTEXITCODE
+}
+
 function Assert-HiddenShellDesktopIcons {
     param(
         [string]$RootPath,
@@ -257,7 +273,7 @@ function Remove-RegistryMountIfPresent {
         return
     }
 
-    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
+    $null = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
 }
 
 function Mount-RegistryHive {
@@ -274,8 +290,8 @@ function Mount-RegistryHive {
     }
 
     Remove-RegistryMountIfPresent -MountName $MountName
-    & reg.exe load ("HKU\{0}" -f $MountName) $HiveFilePath | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = Invoke-RegQuiet -Verb 'load' -Arguments @(("HKU\{0}" -f $MountName), $HiveFilePath)
+    if ($exitCode -ne 0) {
         throw ("reg load failed for HKU\{0} => {1}" -f $MountName, $HiveFilePath)
     }
 
@@ -300,21 +316,20 @@ function Dismount-RegistryHive {
         [System.GC]::WaitForPendingFinalizers()
         Start-Sleep -Milliseconds 750
 
-        & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+        if ($exitCode -eq 0) {
             return
         }
 
         Start-Sleep -Seconds 2
     }
 
-    $fallbackCommand = ('reg unload "HKU\{0}"' -f $MountName)
-    cmd.exe /d /c $fallbackCommand | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+    if ($exitCode -eq 0) {
         return
     }
 
-    throw ("reg unload failed for HKU\{0}" -f $MountName)
+    throw ("reg unload failed for HKU\{0} with exit code {1}" -f $MountName, $exitCode)
 }
 
 function Copy-RegistryBranchWithRegExe {
@@ -331,7 +346,7 @@ function Copy-RegistryBranchWithRegExe {
 
     $sourceRegPath = Convert-AzVmRegistryProviderPathToRegExePath -Path $SourcePath
     $targetRegPath = Convert-AzVmRegistryProviderPathToRegExePath -Path $TargetPath
-    & reg.exe copy $sourceRegPath $targetRegPath /s /f | Out-Null
+    & reg.exe copy $sourceRegPath $targetRegPath /s /f 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw ("reg copy failed for {0}: {1} -> {2}" -f $Label, $sourceRegPath, $targetRegPath)
     }
@@ -629,7 +644,7 @@ function Invoke-ClassesHiveRegCopy {
     }
 
     $mountPath = "HKU\$MountName"
-    & reg.exe load $mountPath $HiveFilePath | Out-Null
+    & reg.exe load $mountPath $HiveFilePath 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw ("reg load failed for {0}: {1}" -f $Label, $HiveFilePath)
     }
@@ -639,7 +654,7 @@ function Invoke-ClassesHiveRegCopy {
             'Local Settings\Software\Microsoft\Windows\Shell',
             'CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}'
         )) {
-            & reg.exe copy ("HKEY_CURRENT_USER\Software\Classes\{0}" -f $branch) ("{0}\{1}" -f $mountPath, $branch) /s /f | Out-Null
+            & reg.exe copy ("HKEY_CURRENT_USER\Software\Classes\{0}" -f $branch) ("{0}\{1}" -f $mountPath, $branch) /s /f 2>$null | Out-Null
             if ($LASTEXITCODE -ne 0) {
                 throw ("reg copy failed for {0}: {1}" -f $Label, $branch)
             }
@@ -658,7 +673,7 @@ function Invoke-ClassesHiveRegCopy {
         Write-Detail ("copy-settings-user-classes-ok: {0}" -f $Label)
     }
     finally {
-        & reg.exe unload $mountPath | Out-Null
+        & reg.exe unload $mountPath 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw ("reg unload failed for {0}: {1}" -f $Label, $mountPath)
         }
@@ -677,7 +692,7 @@ function Invoke-MainHiveRegCopy {
     }
 
     $mountPath = "HKU\$MountName"
-    & reg.exe load $mountPath $HiveFilePath | Out-Null
+    & reg.exe load $mountPath $HiveFilePath 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw ("reg load failed for {0}: {1}" -f $Label, $HiveFilePath)
     }
@@ -692,7 +707,7 @@ function Invoke-MainHiveRegCopy {
             'Software\Microsoft\Windows\CurrentVersion\Explorer',
             'Software\Microsoft\Windows\CurrentVersion\Search'
         )) {
-            & reg.exe copy ("HKEY_CURRENT_USER\{0}" -f $branch) ("{0}\{1}" -f $mountPath, $branch) /s /f | Out-Null
+            & reg.exe copy ("HKEY_CURRENT_USER\{0}" -f $branch) ("{0}\{1}" -f $mountPath, $branch) /s /f 2>$null | Out-Null
             if ($LASTEXITCODE -ne 0) {
                 throw ("reg copy failed for {0}: {1}" -f $Label, $branch)
             }
@@ -732,7 +747,7 @@ function Invoke-MainHiveRegCopy {
         Write-Detail ("copy-settings-user-main-hive-ok: {0}" -f $Label)
     }
     finally {
-        & reg.exe unload $mountPath | Out-Null
+        & reg.exe unload $mountPath 2>$null | Out-Null
         if ($LASTEXITCODE -ne 0) {
             throw ("reg unload failed for {0}: {1}" -f $Label, $mountPath)
         }
@@ -784,6 +799,8 @@ function Invoke-ProfileFileCopy {
         'Microsoft\Protect',
         'Microsoft\Vault',
         'Microsoft\IdentityCRL',
+        'ollama app.exe\EBWebView\Default\Network',
+        'ollama app.exe\EBWebView\Default\Safe Browsing Network',
         'npm-cache'
     ) -ExcludedFiles @(
         'desktop.ini',
