@@ -1949,6 +1949,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'WindowStyle',
         'RunAsAdmin = [bool]$RunAsAdmin',
         'ShowCmd = [int]$ShowCmd',
+        'Name "z1Google Account Setup" -TargetPath $cmdExe',
+        '/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"',
         '%UserProfile%',
         '$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"',
         '--user-data-dir="{0}"',

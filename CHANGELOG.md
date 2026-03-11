@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.271] - 2026-03-11
+
+### Changed
+- Updated `10002-create-shortcuts-public-desktop` so `z1Google Account Setup` now launches Chrome through `C:\Windows\System32\cmd.exe /c start "" ...` with the requested shared Public Desktop Chrome user-data directory and direct `chrome://settings/syncSetup` target, instead of binding the shortcut directly to `chrome.exe`.
+
+### Tests
+- Tightened the Windows public-desktop smoke contract so `z1Google Account Setup` must target `cmd.exe` and carry the requested `start "" "chrome.exe" ... syncSetup` argument shape.
+
 ## [2026.3.11.270] - 2026-03-11
 
 ### Added

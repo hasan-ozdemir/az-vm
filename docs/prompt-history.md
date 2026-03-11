@@ -4409,3 +4409,16 @@ Continue the interrupted implementation of the latest Windows UX, public desktop
 **Assistant Summary**
 
 Completed the interrupted Windows late-stage update overhaul: added the tracked `130-install-icloud-system` task, removed every `company_name -> VM_NAME` fallback so Windows public shortcuts now fail fast unless `company_name` is set, rebuilt `10002-create-shortcuts-public-desktop` around the requested final manifest and full Public Desktop mirroring contract, expanded `10003-configure-ux-windows` for System Restore/shadow-copy shutdown, RDP NLA-off, artifact suppression, and Explorer no-group defaults, and rewrote `10005-copy-settings-user` so assistant/default propagation is deterministic while keeping manager, assistant, and default desktops empty. Updated the Windows health snapshot, timeout contracts, README / `.env.example` / release docs, fixed multiple live-exec blockers uncovered during isolated reruns, and verified the result with the full local validation suite plus isolated live `exec` runs of `130`, `10003`, `10002`, `10005`, and `10099`, including final idempotency reruns of `10002` and `10003`.
+
+### 2026-03-11 06:42 TRT
+
+**User Prompt**
+
+````text
+Fix/update/test the `z1` public desktop shortcut so its target becomes:
+c:\windows\system32\cmd.exe /c start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --new-window --start-maximized --user-data-dir="C:\Users\Public\AppData\Local\Google\Chrome\UserData" --profile-directory=exampleorg "chrome://settings/syncSetup"
+````
+
+**Assistant Summary**
+
+Updated the Windows public desktop shortcut manifest so `z1Google Account Setup` now launches through `cmd.exe /c start "" "chrome.exe" ... chrome://settings/syncSetup` with the shared Public Desktop Chrome user-data directory, aligned the smoke contract to assert the new target and argument shape, refreshed release history, reran the local validation suite, and reran isolated live `10002` and `10099` update tasks to confirm the shortcut readback matches the requested behavior.

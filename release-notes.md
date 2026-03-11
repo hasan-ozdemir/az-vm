@@ -2,6 +2,15 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.271 - 2026-03-11
+
+### Summary
+This release adjusts the `z1Google Account Setup` public desktop shortcut so it now opens Chrome through the exact requested `cmd.exe /c start "" "chrome.exe" ... chrome://settings/syncSetup` launcher shape while keeping the shared Public Desktop Chrome profile contract intact.
+
+### Highlights
+- Changed `10002-create-shortcuts-public-desktop` so `z1Google Account Setup` now targets `C:\Windows\System32\cmd.exe` and uses a `start "" "C:\Program Files\Google\Chrome\Application\chrome.exe"` wrapper with `--new-window`, `--start-maximized`, the shared Public Desktop `--user-data-dir`, and the direct `chrome://settings/syncSetup` URL.
+- Updated smoke coverage so the Windows shortcut contract now explicitly checks the new `z1` target/argument layout.
+
 ## Release 2026.3.11.270 - 2026-03-11
 
 ### Summary

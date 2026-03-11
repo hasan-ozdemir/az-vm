@@ -640,6 +640,7 @@ $chromeExe = Resolve-CommandPath -CommandName "chrome.exe" -FallbackCandidates @
     "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 )
 $chromeTarget = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Chrome\Application\chrome.exe" -ResolvedPath $chromeExe -FallbackPath "C:\Program Files\Google\Chrome\Application\chrome.exe"
+$chromeSyncSetupCommand = ('/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"' -f $chromeTarget, $publicChromeUserDataDir, $companyName)
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
 $powershellExe = Resolve-CommandPath -CommandName "powershell.exe" -FallbackCandidates @("C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
 $pwshExe = Resolve-CommandPath -CommandName "pwsh.exe" -FallbackCandidates @("C:\Program Files\PowerShell\7\pwsh.exe")
@@ -861,7 +862,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u3Control Panel" -T
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments "-command ""&'%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd'""" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "chrome://settings/syncSetup"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $cmdExe -Arguments $chromeSyncSetupCommand -IconLocation ($chromeTarget + ",0") -ValidationKind "chrome-setup")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z2Office365 Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "https://portal.office.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
 
 $managedShortcutNames = @($shortcutSpecs | ForEach-Object { [string]$_.Name })
