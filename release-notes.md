@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.278 - 2026-03-11
+
+### Summary
+This release removes an artificial compatibility-test bottleneck by fixing the smoke-test stubs behind the new provisioning-ready gate, so the PowerShell compatibility matrix no longer spends minutes waiting on fake Azure provisioning and now finishes in normal time again.
+
+### Highlights
+- Fixed the two post-deploy feature-enable smoke tests so their local `az` stubs now answer `az vm get-instance-view` with an immediate `Provisioning succeeded` snapshot.
+- Eliminated the repeated synthetic provisioning wait loop that had stretched `tests/powershell-compatibility-check.ps1` into multi-minute runs and timeout-prone output floods.
+- Revalidated the fix with a direct smoke rerun and a full compatibility-matrix rerun after the stub update.
+
 ## Release 2026.3.11.277 - 2026-03-11
 
 ### Summary

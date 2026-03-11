@@ -4506,3 +4506,15 @@ Update the repo for a full publish-ready documentation sync: scan the developmen
 **Assistant Summary**
 
 Implemented the publish-ready sync plan end to end: added `-h` support next to `--help` across the CLI and help docs, refreshed `README.md` and the maintained help contract, added `CONTRIBUTING.md`, `SUPPORT.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue templates, and a pull-request template, extended GitHub Actions with the non-live smoke-contract suite, normalized tracked Linux shell scripts to LF and pinned `*.sh text eol=lf` in `.gitattributes`, redacted environment-specific VM/profile/path literals from `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md`, updated the documented release to `2026.3.11.277`, and revalidated the result with `bash-syntax-check`, `documentation-contract-check`, `code-quality-check`, `az-vm-smoke-tests`, and `powershell-compatibility-check`.
+
+### 2026-03-11 23:18 TRT
+
+**User Prompt**
+
+````text
+Fix the compatibility-test code path step by step: find which step is taking unnecessarily long and causing timeouts, correct that bottleneck, and prevent the compatibility check from wasting that much time again.
+````
+
+**Assistant Summary**
+
+Traced the compatibility-matrix slowdown to two post-deploy feature-enable smoke tests that started waiting on the new provisioning-ready gate without stubbing `az vm get-instance-view`. Updated those local `az` stubs to return an immediate `Provisioning succeeded` snapshot, then reran `tests/az-vm-smoke-tests.ps1` and `tests/powershell-compatibility-check.ps1`. After the fix, the smoke suite completed in about `3.2s` and the full compatibility matrix completed in about `6.8s` without the previous synthetic multi-minute wait loop.

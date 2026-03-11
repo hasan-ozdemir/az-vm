@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.278] - 2026-03-11
+
+### Fixed
+- Fixed an avoidable compatibility-matrix slowdown in `tests/az-vm-smoke-tests.ps1`: the two post-deploy feature-enable smoke tests now stub `az vm get-instance-view` as `Provisioning succeeded` immediately, so the compatibility run no longer burns minutes inside artificial provisioning waits after the new feature-verification gate was added.
+
+### Tests
+- Revalidated the compatibility path with `tests/az-vm-smoke-tests.ps1` and `tests/powershell-compatibility-check.ps1`; the smoke suite now completes in seconds and the compatibility matrix no longer times out due to the synthetic wait loop.
+
 ## [2026.3.11.277] - 2026-03-11
 
 ### Added

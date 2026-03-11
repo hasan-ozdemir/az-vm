@@ -360,11 +360,19 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedSshShortHelp = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("-h")
     Assert-True -Condition ([string]$parsedSshShortHelp.Command -eq "ssh") -Message "SSH command with -h parse failed."
 
+    $parsedSshTest = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("--test")
+    Assert-True -Condition ([string]$parsedSshTest.Command -eq "ssh") -Message "SSH command with --test parse failed."
+    Assert-True -Condition ($parsedSshTest.Options.ContainsKey("test")) -Message "SSH command --test option was not captured."
+
     $parsedRdpHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedRdpHelp.Command -eq "rdp") -Message "RDP command with --help parse failed."
 
     $parsedRdpShortHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("-h")
     Assert-True -Condition ([string]$parsedRdpShortHelp.Command -eq "rdp") -Message "RDP command with -h parse failed."
+
+    $parsedRdpTest = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--test")
+    Assert-True -Condition ([string]$parsedRdpTest.Command -eq "rdp") -Message "RDP command with --test parse failed."
+    Assert-True -Condition ($parsedRdpTest.Options.ContainsKey("test")) -Message "RDP command --test option was not captured."
 
     $parsedDoHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedDoHelp.Command -eq "do") -Message "Do command with --help parse failed."
@@ -443,6 +451,13 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
+}
+
+Invoke-Test -Name "SSH and RDP commands accept automated test mode" -Action {
+    Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ test = $true }
+    Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ 'vm-name' = 'samplevm'; user = 'manager'; test = $true }
+    Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ test = $true }
+    Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; user = 'assistant'; test = $true }
 }
 
 Invoke-Test -Name "Create and update accept vm-name override" -Action {
@@ -586,9 +601,9 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
         Assert-True -Condition ([string]$envMap['VM_NAME'] -eq 'targetvm') -Message 'Set command must persist the resolved VM name.'
         Assert-True -Condition ([string]$envMap['VM_ENABLE_HIBERNATION'] -eq 'true') -Message 'Set command must persist VM_ENABLE_HIBERNATION=true when hibernation is turned on.'
         Assert-True -Condition ([string]$envMap['VM_ENABLE_NESTED_VIRTUALIZATION'] -eq 'false') -Message 'Set command must persist VM_ENABLE_NESTED_VIRTUALIZATION=false when nested virtualization is turned off.'
-        Assert-True -Condition (@($script:SetCommandAzCalls).Count -eq 2) -Message 'Set command must issue one Azure update per requested toggle.'
+        Assert-True -Condition (@($script:SetCommandAzCalls).Count -eq 1) -Message 'Set command must issue the Azure hibernation update without calling a nested virtualization API toggle.'
         Assert-True -Condition ((@($script:SetCommandAzCalls) -join "`n") -match [regex]::Escape('--enable-hibernation true')) -Message 'Set command must call Azure hibernation update.'
-        Assert-True -Condition ((@($script:SetCommandAzCalls) -join "`n") -match [regex]::Escape('additionalCapabilities.nestedVirtualization=false')) -Message 'Set command must call Azure nested virtualization update.'
+        Assert-True -Condition (-not ((@($script:SetCommandAzCalls) -join "`n") -match [regex]::Escape('additionalCapabilities.nestedVirtualization'))) -Message 'Set command must not call the removed Azure nested virtualization property path.'
     }
     finally {
         foreach ($functionName in @(
@@ -618,6 +633,7 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
 
     try {
         $script:SetCommandFailureAzCalls = @()
+        $script:SetCommandNestedValidationCalled = $false
 
         function Get-AzVmRepoRoot { return $tempRoot }
         function Resolve-AzVmManagedVmTarget {
@@ -632,13 +648,33 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
             & $Action
             return [pscustomobject]@{ Label = $Label }
         }
+        function Get-AzVmVmLifecycleSnapshot {
+            param([string]$ResourceGroup, [string]$VmName)
+            return [pscustomobject]@{
+                NormalizedState = 'started'
+                VmName = $VmName
+                ResourceGroup = $ResourceGroup
+                PowerStateDisplay = 'VM running'
+                ProvisioningStateDisplay = 'Provisioning succeeded'
+                HibernationStateDisplay = ''
+                HibernationStateCode = ''
+                HibernationEnabled = $true
+            }
+        }
+        function Get-AzVmNestedVirtualizationGuestValidation {
+            param([string]$ResourceGroup, [string]$VmName, [string]$OsType)
+            $script:SetCommandNestedValidationCalled = $true
+            return [pscustomobject]@{
+                Known = $true
+                Enabled = $false
+                Evidence = @('VirtualizationFirmwareEnabled=False')
+                Data = $null
+                ErrorMessage = ''
+            }
+        }
         function az {
             $line = @($args) -join ' '
             $script:SetCommandFailureAzCalls += ,$line
-            if ($line -match [regex]::Escape('additionalCapabilities.nestedVirtualization=false')) {
-                $global:LASTEXITCODE = 1
-                return ''
-            }
             $global:LASTEXITCODE = 0
             return ''
         }
@@ -649,14 +685,15 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
                 group = 'rg-target'
                 'vm-name' = 'targetvm'
                 hibernation = 'on'
-                'nested-virtualization' = 'off'
+                'nested-virtualization' = 'on'
             } -AutoMode:$false -WindowsFlag:$false -LinuxFlag:$false
         }
         catch {
             $threw = $true
         }
 
-        Assert-True -Condition $threw -Message 'Set command must fail when a later Azure update fails.'
+        Assert-True -Condition $threw -Message 'Set command must fail when nested virtualization guest validation fails.'
+        Assert-True -Condition ([bool]$script:SetCommandNestedValidationCalled) -Message 'Set command must validate nested virtualization through guest checks when turning it on.'
         $envMap = Read-DotEnvFile -Path $envFilePath
         Assert-True -Condition ([string]$envMap['RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must still persist the resolved resource group after a partial update.'
         Assert-True -Condition ([string]$envMap['VM_NAME'] -eq 'targetvm') -Message 'Set command must still persist the resolved VM name after a partial update.'
@@ -668,12 +705,283 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
             'Get-AzVmRepoRoot',
             'Resolve-AzVmManagedVmTarget',
             'Invoke-TrackedAction',
+            'Get-AzVmVmLifecycleSnapshot',
+            'Get-AzVmNestedVirtualizationGuestValidation',
             'az'
         )) {
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
         }
         Remove-Variable -Name SetCommandFailureAzCalls -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name SetCommandNestedValidationCalled -Scope Script -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Post-deploy feature enablement verifies desired flags even on existing VMs" -Action {
+    $script:FeatureEnablementAzCalls = @()
+    $script:FeatureEnablementGuestValidationCalled = $false
+    $script:FeatureEnablementState = @{
+        HibernationEnabled = $false
+    }
+    try {
+        function Invoke-TrackedAction {
+            param([string]$Label, [scriptblock]$Action)
+            & $Action
+            return [pscustomobject]@{ Label = $Label }
+        }
+        function Get-AzVmHibernationSupportInfo {
+            param([string]$Location, [string]$VmSize)
+            return [pscustomobject]@{
+                Known = $true
+                Supported = $true
+                Evidence = @('HibernationSupported=true')
+                Message = 'hibernation-supported'
+            }
+        }
+        function Get-AzVmNestedVirtualizationSupportInfo {
+            param([string]$Location, [string]$VmSize)
+            return [pscustomobject]@{
+                Known = $false
+                Supported = $false
+                Evidence = @()
+                Message = 'nested-capability-inconclusive'
+            }
+        }
+        function Get-AzVmNestedVirtualizationGuestValidation {
+            param([string]$ResourceGroup, [string]$VmName, [string]$OsType, [int]$MaxAttempts, [int]$RetryDelaySeconds)
+            $script:FeatureEnablementGuestValidationCalled = $true
+            return [pscustomobject]@{
+                Known = $true
+                Enabled = $true
+                Evidence = @('VMMonitorModeExtensions=True','VirtualizationFirmwareEnabled=True','SecondLevelAddressTranslationExtensions=True')
+                Data = $null
+                ErrorMessage = ''
+            }
+        }
+        function az {
+            $line = @($args) -join ' '
+            $script:FeatureEnablementAzCalls += ,$line
+
+            if ($line -match [regex]::Escape('get-instance-view')) {
+                $global:LASTEXITCODE = 0
+                return '{"provisioningCode":"ProvisioningState/succeeded","provisioningDisplay":"Provisioning succeeded","powerCode":"PowerState/running","powerDisplay":"VM running"}'
+            }
+            if ($line -match [regex]::Escape('securityProfile.securityType')) {
+                $global:LASTEXITCODE = 0
+                return '{"securityType":"Standard","secureBoot":true,"vTpm":true}'
+            }
+            if ($line -match [regex]::Escape('additionalCapabilities.hibernationEnabled')) {
+                $global:LASTEXITCODE = 0
+                if ([bool]$script:FeatureEnablementState.HibernationEnabled) { return 'true' }
+                return ''
+            }
+            if ($line -match [regex]::Escape('disk update') -or $line -match [regex]::Escape('--set supportsHibernation=true')) {
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+            if ($line -match [regex]::Escape('--enable-hibernation true')) {
+                $script:FeatureEnablementState.HibernationEnabled = $true
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        $result = Invoke-AzVmPostDeployFeatureEnablement -Context @{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+            VmDiskName = 'disk-samplevm'
+            AzLocation = 'austriaeast'
+            VmSize = 'Standard_D4as_v5'
+            VmSecurityType = 'Standard'
+            VmEnableHibernation = $true
+            VmEnableNestedVirtualization = $true
+        } -VmCreatedThisRun:$false
+
+        Assert-True -Condition ([bool]$result.HibernationAttempted) -Message 'Feature enablement must still evaluate hibernation on existing VMs.'
+        Assert-True -Condition ([bool]$result.HibernationEnabled) -Message 'Feature enablement must verify hibernation.'
+        Assert-True -Condition ([bool]$result.NestedAttempted) -Message 'Feature enablement must still evaluate nested virtualization on existing VMs.'
+        Assert-True -Condition ([bool]$result.NestedEnabled) -Message 'Feature enablement must verify nested virtualization.'
+        Assert-True -Condition ([bool]$script:FeatureEnablementGuestValidationCalled) -Message 'Feature enablement must validate nested virtualization through guest checks.'
+        Assert-True -Condition ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('--enable-hibernation true')) -Message 'Feature enablement must call the Azure hibernation update.'
+        Assert-True -Condition (-not ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('additionalCapabilities.nestedVirtualization'))) -Message 'Feature enablement must not call the removed Azure nested virtualization property path.'
+        Assert-True -Condition ((@($script:FeatureEnablementAzCalls) | Where-Object { $_ -like '*vm deallocate*' }).Count -eq 1) -Message 'Feature enablement should deallocate the VM once before applying feature updates.'
+        Assert-True -Condition ((@($script:FeatureEnablementAzCalls) | Where-Object { $_ -like '*vm start*' }).Count -eq 1) -Message 'Feature enablement should start the VM again after feature updates.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Invoke-TrackedAction',
+            'Get-AzVmHibernationSupportInfo',
+            'Get-AzVmNestedVirtualizationSupportInfo',
+            'Get-AzVmNestedVirtualizationGuestValidation',
+            'az'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name FeatureEnablementAzCalls -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name FeatureEnablementGuestValidationCalled -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name FeatureEnablementState -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Windows nested virtualization guest validation accepts an active nested runtime" -Action {
+    try {
+        function Invoke-AzVmVmRunCommandJson {
+            param(
+                [string]$ResourceGroup,
+                [string]$VmName,
+                [string]$CommandId,
+                [string[]]$Scripts,
+                [string]$ContextLabel,
+                [int]$MaxAttempts,
+                [int]$RetryDelaySeconds
+            )
+
+            return [pscustomobject]@{
+                Success = $true
+                ErrorMessage = ''
+                OutputObject = [pscustomobject]@{
+                    ProcessorName = 'AMD EPYC 7763 64-Core Processor'
+                    VMMonitorModeExtensions = $false
+                    VirtualizationFirmwareEnabled = $true
+                    SecondLevelAddressTranslationExtensions = $false
+                    HyperVisorPresent = $true
+                    VirtualMachinePlatformState = 'Enabled'
+                    HypervisorPlatformState = 'Disabled'
+                    MicrosoftHyperVState = 'Disabled'
+                    MicrosoftHyperVAllState = 'Disabled'
+                    BcdHypervisorLaunchType = ''
+                }
+            }
+        }
+
+        $result = Get-AzVmNestedVirtualizationGuestValidation -ResourceGroup 'rg-samplevm-ate1-g1' -VmName 'samplevm' -OsType 'windows'
+
+        Assert-True -Condition ([bool]$result.Known) -Message 'Nested virtualization guest validation must return a known result when run-command succeeds.'
+        Assert-True -Condition ([bool]$result.Enabled) -Message 'Nested virtualization guest validation must accept a running nested runtime on Windows guests.'
+        Assert-True -Condition ((@($result.Evidence) -join "`n") -match [regex]::Escape('HyperVisorPresent=True')) -Message 'Nested virtualization guest validation must record active hypervisor evidence.'
+        Assert-True -Condition ((@($result.Evidence) -join "`n") -match [regex]::Escape('VirtualMachinePlatformState=Enabled')) -Message 'Nested virtualization guest validation must record virtualization platform feature state.'
+    }
+    finally {
+        Remove-Item Function:\Invoke-AzVmVmRunCommandJson -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualization cannot be verified" -Action {
+    try {
+        function Invoke-TrackedAction {
+            param([string]$Label, [scriptblock]$Action)
+            & $Action
+            return [pscustomobject]@{ Label = $Label }
+        }
+        function Get-AzVmHibernationSupportInfo {
+            param([string]$Location, [string]$VmSize)
+            return [pscustomobject]@{
+                Known = $true
+                Supported = $true
+                Evidence = @('HibernationSupported=true')
+                Message = 'hibernation-supported'
+            }
+        }
+        function Get-AzVmNestedVirtualizationSupportInfo {
+            param([string]$Location, [string]$VmSize)
+            return [pscustomobject]@{
+                Known = $false
+                Supported = $false
+                Evidence = @()
+                Message = 'nested-capability-inconclusive'
+            }
+        }
+        function Get-AzVmNestedVirtualizationGuestValidation {
+            param([string]$ResourceGroup, [string]$VmName, [string]$OsType, [int]$MaxAttempts, [int]$RetryDelaySeconds)
+            return [pscustomobject]@{
+                Known = $true
+                Enabled = $false
+                Evidence = @('VirtualizationFirmwareEnabled=False')
+                Data = $null
+                ErrorMessage = ''
+            }
+        }
+        function az {
+            $line = @($args) -join ' '
+            if ($line -match [regex]::Escape('get-instance-view')) {
+                $global:LASTEXITCODE = 0
+                return '{"provisioningCode":"ProvisioningState/succeeded","provisioningDisplay":"Provisioning succeeded","powerCode":"PowerState/running","powerDisplay":"VM running"}'
+            }
+            if ($line -match [regex]::Escape('securityProfile.securityType')) {
+                $global:LASTEXITCODE = 0
+                return '{"securityType":"Standard","secureBoot":true,"vTpm":true}'
+            }
+            if ($line -match [regex]::Escape('additionalCapabilities.hibernationEnabled')) {
+                $global:LASTEXITCODE = 0
+                return 'true'
+            }
+            if ($line -match [regex]::Escape('additionalCapabilities.nestedVirtualization')) {
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        $threw = $false
+        try {
+            Invoke-AzVmPostDeployFeatureEnablement -Context @{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+                VmDiskName = 'disk-samplevm'
+                AzLocation = 'austriaeast'
+                VmSize = 'Standard_D4as_v5'
+                VmSecurityType = 'Standard'
+                VmEnableHibernation = $true
+                VmEnableNestedVirtualization = $true
+            } -VmCreatedThisRun:$true | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*nested virtualization*') -Message 'Nested verification failure should mention nested virtualization.'
+        }
+
+        Assert-True -Condition $threw -Message 'Feature enablement must fail when nested virtualization stays unverified.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Invoke-TrackedAction',
+            'Get-AzVmHibernationSupportInfo',
+            'Get-AzVmNestedVirtualizationSupportInfo',
+            'Get-AzVmNestedVirtualizationGuestValidation',
+            'az'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Invoke-Test -Name "VM create security args are omitted for existing VMs" -Action {
+    try {
+        function Test-AzVmAzResourceExists {
+            param([string[]]$AzArgs)
+            return ([string]$AzArgs[-1] -eq 'existingvm')
+        }
+
+        $context = @{
+            VmSecurityType = 'Standard'
+            VmEnableSecureBoot = $false
+            VmEnableVtpm = $false
+        }
+
+        $existingVmArgs = @(Get-AzVmCreateSecurityArgumentsForCurrentVmState -Context $context -ResourceGroup 'rg-samplevm-ate1-g1' -VmName 'existingvm' -SuppressNotice)
+        $newVmArgs = @(Get-AzVmCreateSecurityArgumentsForCurrentVmState -Context $context -ResourceGroup 'rg-samplevm-ate1-g1' -VmName 'newvm' -SuppressNotice)
+
+        Assert-True -Condition ($existingVmArgs.Count -eq 0) -Message 'Existing VMs must omit security-type create arguments.'
+        Assert-True -Condition ($newVmArgs.Count -ge 2) -Message 'New VMs must keep security-type create arguments.'
+        Assert-True -Condition ($newVmArgs -contains '--security-type') -Message 'New VMs must keep the security-type argument.'
+    }
+    finally {
+        Remove-Item Function:\Test-AzVmAzResourceExists -ErrorAction SilentlyContinue
     }
 }
 
@@ -1120,6 +1428,242 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
     }
 }
 
+Invoke-Test -Name "Show report redacts password-bearing config values and prints nested state" -Action {
+    $script:ShowReportCapturedHostLines = @()
+    try {
+        function Write-Host {
+            param(
+                [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+                [object[]]$Object,
+                [ConsoleColor]$ForegroundColor,
+                [ConsoleColor]$BackgroundColor,
+                [switch]$NoNewline,
+                [object]$Separator
+            )
+
+            $script:ShowReportCapturedHostLines += ,((@($Object) | ForEach-Object { [string]$_ }) -join ' ')
+        }
+
+        $dump = [ordered]@{
+            GeneratedAtUtc = '2026-03-11T00:00:00Z'
+            Command = 'show'
+            Mode = 'auto'
+            RequestedPlatform = 'windows'
+            EnvFilePath = 'C:\repo\.env'
+            AzureAccount = [ordered]@{
+                SubscriptionName = 'sub'
+                SubscriptionId = 'sub-id'
+                TenantName = 'tenant'
+                TenantId = 'tenant-id'
+                UserName = '<email>'
+            }
+            Config = [ordered]@{
+                DotEnvValues = [ordered]@{
+                    VM_ADMIN_PASS = '<runtime-secret>'
+                    VM_ASSISTANT_PASS = '<runtime-secret>'
+                    VM_NAME = 'samplevm'
+                }
+                RuntimeOverrides = [ordered]@{
+                    VM_ADMIN_PASS = '<runtime-secret>'
+                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+                }
+            }
+            Selection = [ordered]@{
+                TargetGroup = 'rg-samplevm-ate1-g1'
+                IncludedResourceGroups = @('rg-samplevm-ate1-g1')
+            }
+            Summary = [ordered]@{
+                ResourceGroupCount = 1
+                TotalVmCount = 1
+                RunningVmCount = 1
+            }
+            ResourceGroups = @(
+                [ordered]@{
+                    Name = 'rg-samplevm-ate1-g1'
+                    Exists = $true
+                    Location = 'austriaeast'
+                    ProvisioningState = 'Succeeded'
+                    ResourceCount = 6
+                    VmCount = 1
+                    ResourceTypeCounts = [ordered]@{
+                        'Microsoft.Compute/virtualMachines' = 1
+                    }
+                    Resources = @()
+                    Vms = @(
+                        [ordered]@{
+                            Name = 'samplevm'
+                            PowerState = 'VM running'
+                            ProvisioningState = 'Succeeded'
+                            Location = 'austriaeast'
+                            VmSize = 'Standard_D4as_v5'
+                            SkuAvailability = 'yes'
+                            OsType = 'Windows'
+                            PublicIps = '1.2.3.4'
+                            PrivateIps = '10.0.0.4'
+                            Fqdns = 'samplevm.example'
+                            OsDiskName = 'disk-samplevm'
+                            DataDiskNames = @()
+                            NicIds = @()
+                            FeatureFlags = [ordered]@{
+                                HibernationEnabled = $true
+                                NestedVirtualizationEnabled = $true
+                                NestedVirtualizationValidationSource = 'guest'
+                                NestedVirtualizationEvidence = @(
+                                    'VMMonitorModeExtensions=True',
+                                    'VirtualizationFirmwareEnabled=True'
+                                )
+                            }
+                            FocusedCapabilities = @(
+                                [pscustomobject]@{ name = 'NestedVirtualization'; value = 'True' }
+                            )
+                        }
+                    )
+                }
+            )
+        }
+
+        Write-AzVmShowReport -Dump $dump
+
+        $outputText = $script:ShowReportCapturedHostLines -join "`n"
+        Assert-True -Condition ($outputText -match [regex]::Escape('VM_ADMIN_PASS: [redacted]')) -Message 'Show report must redact the admin password.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VM_ASSISTANT_PASS: [redacted]')) -Message 'Show report must redact the assistant password.'
+        Assert-True -Condition (-not ($outputText -match [regex]::Escape('<runtime-secret>'))) -Message 'Show report must not print the raw admin password.'
+        Assert-True -Condition (-not ($outputText -match [regex]::Escape('<runtime-secret>'))) -Message 'Show report must not print the raw assistant password.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('Nested virtualization enabled: True')) -Message 'Show report must print the nested virtualization enabled state.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('Nested virtualization validation source: guest')) -Message 'Show report must print the nested virtualization validation source.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VirtualizationFirmwareEnabled=True')) -Message 'Show report must print nested virtualization guest evidence.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VM_NAME: samplevm')) -Message 'Show report must keep non-secret config values visible.'
+    }
+    finally {
+        Remove-Item Function:\Write-Host -ErrorAction SilentlyContinue
+        Remove-Variable -Name ShowReportCapturedHostLines -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "SSH identity output matcher accepts machine-qualified usernames" -Action {
+    Assert-True -Condition (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName 'manager' -OutputText "samplevm\manager") -Message 'Identity matcher must accept machine-qualified usernames.'
+    Assert-True -Condition (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName 'assistant' -OutputText "assistant") -Message 'Identity matcher must accept plain usernames.'
+    Assert-True -Condition (-not (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName 'manager' -OutputText "samplevm\assistant")) -Message 'Identity matcher must reject a different user.'
+}
+
+Invoke-Test -Name "SSH test mode performs a non-interactive handshake without launching ssh.exe" -Action {
+    $script:SshTestStartedProcess = $false
+    $script:SshTestProcessInvocation = $null
+    try {
+        function Initialize-AzVmConnectionCommandContext {
+            param([hashtable]$Options, [string]$OperationName)
+            return [pscustomobject]@{
+                ConfigMap = @{
+                    PYSSH_CLIENT_PATH = 'tools/pyssh/ssh_client.py'
+                    SSH_MAX_RETRIES = '2'
+                    SSH_CONNECT_TIMEOUT_SECONDS = '30'
+                }
+                VmName = 'samplevm'
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                ConnectionHost = 'samplevm.example'
+                SelectedUserName = 'manager'
+                SelectedPassword = 'secret'
+                VmSshPort = '444'
+            }
+        }
+        function Wait-AzVmTcpPortReachable { param([string]$HostName, [int]$Port, [int]$MaxAttempts, [int]$DelaySeconds, [int]$TimeoutSeconds, [string]$Label) return $true }
+        function Get-AzVmRepoRoot { return $RepoRoot }
+        function Ensure-AzVmPySshTools { param([string]$RepoRoot, [string]$ConfiguredPySshClientPath) return @{ PythonPath = 'python.exe'; ClientPath = 'ssh_client.py' } }
+        function Invoke-AzVmProcessWithRetry {
+            param([string]$FilePath, [string[]]$Arguments, [string]$Label, [int]$MaxAttempts, [switch]$AllowFailure)
+            $script:SshTestProcessInvocation = [pscustomobject]@{
+                FilePath = $FilePath
+                Arguments = @($Arguments)
+                Label = $Label
+                MaxAttempts = $MaxAttempts
+                AllowFailure = [bool]$AllowFailure
+            }
+            return [pscustomobject]@{
+                ExitCode = 0
+                Output = "samplevm\manager"
+            }
+        }
+        function Start-Process {
+            param()
+            $script:SshTestStartedProcess = $true
+        }
+        function Resolve-AzVmLocalExecutablePath { throw 'Local SSH executable should not resolve in --test mode.' }
+
+        Invoke-AzVmSshConnectCommand -Options @{ test = $true; user = 'manager' }
+
+        Assert-True -Condition ($null -ne $script:SshTestProcessInvocation) -Message 'SSH test mode must invoke the pyssh process.'
+        Assert-True -Condition (-not $script:SshTestStartedProcess) -Message 'SSH test mode must not launch the external SSH client.'
+        Assert-True -Condition ((@($script:SshTestProcessInvocation.Arguments) -join ' ') -match [regex]::Escape('--command whoami')) -Message 'SSH test mode must execute a whoami handshake.'
+        Assert-True -Condition ([int]$script:SshTestProcessInvocation.MaxAttempts -eq 2) -Message 'SSH test mode must honor SSH_MAX_RETRIES.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmConnectionCommandContext',
+            'Wait-AzVmTcpPortReachable',
+            'Get-AzVmRepoRoot',
+            'Ensure-AzVmPySshTools',
+            'Invoke-AzVmProcessWithRetry',
+            'Start-Process',
+            'Resolve-AzVmLocalExecutablePath'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name SshTestStartedProcess -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name SshTestProcessInvocation -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "RDP test mode checks reachability without launching mstsc" -Action {
+    $script:RdpTestStartedProcess = $false
+    $script:RdpTestReachabilityCalls = @()
+    try {
+        function Initialize-AzVmConnectionCommandContext {
+            param([hashtable]$Options, [string]$OperationName)
+            return [pscustomobject]@{
+                VmName = 'samplevm'
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                ConnectionHost = 'samplevm.example'
+                SelectedUserName = 'manager'
+                SelectedPassword = 'secret'
+                VmRdpPort = '3389'
+                OsType = 'Windows'
+            }
+        }
+        function Wait-AzVmTcpPortReachable {
+            param([string]$HostName, [int]$Port, [int]$MaxAttempts, [int]$DelaySeconds, [int]$TimeoutSeconds, [string]$Label)
+            $script:RdpTestReachabilityCalls += ,([pscustomobject]@{
+                HostName = $HostName
+                Port = $Port
+                Label = $Label
+            })
+            return $true
+        }
+        function Start-Process {
+            param()
+            $script:RdpTestStartedProcess = $true
+        }
+        function Resolve-AzVmLocalExecutablePath { throw 'Local RDP executables should not resolve in --test mode.' }
+
+        Invoke-AzVmRdpConnectCommand -Options @{ test = $true; user = 'manager' }
+
+        Assert-True -Condition (@($script:RdpTestReachabilityCalls).Count -eq 1) -Message 'RDP test mode must perform a TCP reachability check.'
+        Assert-True -Condition ([int]$script:RdpTestReachabilityCalls[0].Port -eq 3389) -Message 'RDP test mode must probe the resolved RDP port.'
+        Assert-True -Condition (-not $script:RdpTestStartedProcess) -Message 'RDP test mode must not launch mstsc.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmConnectionCommandContext',
+            'Wait-AzVmTcpPortReachable',
+            'Start-Process',
+            'Resolve-AzVmLocalExecutablePath'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name RdpTestStartedProcess -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name RdpTestReachabilityCalls -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" -Action {
     $normalizedEnd = Normalize-AzVmProtocolLine -Text '   / AZ_VM_TASK_END:118-install-teams-system:4294967295'
     Assert-True -Condition ([string]$normalizedEnd -eq 'AZ_VM_TASK_END:118-install-teams-system:4294967295') -Message 'Spinner-prefixed task end markers must normalize back to the protocol marker.'
@@ -1480,7 +2024,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '123-install-windscribe-system' = 63
         '124-install-vlc-system' = 58
         '125-install-itunes-system' = 57
-        '126-install-be-my-eyes' = 35
+        '126-install-be-my-eyes' = 240
         '127-install-nvda-system' = 54
         '128-install-rclone-system' = 13
         '129-configure-unlocker-io' = 23
@@ -1490,7 +2034,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
         '10004-configure-settings-advanced-system' = 5
-        '10005-copy-settings-user' = 180
+        '10005-copy-settings-user' = 300
         '10099-capture-snapshot-health' = 120
     }
     $expectedTrackedOrder = @($expectedTrackedTimeouts.Keys)
@@ -1584,6 +2128,70 @@ Write-Host "gamma"
         Assert-True -Condition ([int]$deltaTask.Priority -eq 1001) -Message 'Local-only tasks without metadata priority or numbered filename must auto-detect the next free local priority.'
         Assert-True -Condition ([string]$betaTask.RelativePath -eq 'local/1002-beta-task.ps1') -Message 'Local-only active task must preserve its relative path.'
         Assert-True -Condition ([string]$disabled[0].RelativePath -eq 'local/disabled/1004-gamma-task.ps1') -Message 'Local-only disabled task must preserve its relative path.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Invoke-Test -Name "Task discovery keeps initial then normal then local then final order" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-task-order-test-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+    try {
+        $localDir = Join-Path $tempRoot 'local'
+        New-Item -Path $localDir -ItemType Directory -Force | Out-Null
+
+        Set-Content -Path (Join-Path $tempRoot '01-alpha-init.ps1') -Encoding UTF8 -Value "Write-Host 'alpha'"
+        Set-Content -Path (Join-Path $tempRoot '101-bravo-normal.ps1') -Encoding UTF8 -Value "Write-Host 'bravo'"
+        Set-Content -Path (Join-Path $tempRoot '10001-delta-final.ps1') -Encoding UTF8 -Value "Write-Host 'delta'"
+        Set-Content -Path (Join-Path $localDir '1002-charlie-local.ps1') -Encoding UTF8 -Value @'
+# az-vm-task-meta: {"priority":1002,"timeout":44,"enabled":true}
+Write-Host "charlie"
+'@
+
+        $catalogJson = @'
+{
+  "defaults": {
+    "priority": 1000,
+    "timeout": 180
+  },
+  "tasks": [
+    {
+      "name": "01-alpha-init",
+      "taskType": "initial",
+      "priority": 1,
+      "enabled": true,
+      "timeout": 30
+    },
+    {
+      "name": "101-bravo-normal",
+      "taskType": "normal",
+      "priority": 101,
+      "enabled": true,
+      "timeout": 40
+    },
+    {
+      "name": "10001-delta-final",
+      "taskType": "final",
+      "priority": 10001,
+      "enabled": true,
+      "timeout": 50
+    }
+  ]
+}
+'@
+        Set-Content -Path (Join-Path $tempRoot 'vm-update-task-catalog.json') -Value $catalogJson -Encoding UTF8
+
+        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage update
+        $activeNames = @(@($catalog.ActiveTasks) | ForEach-Object { [string]$_.Name })
+
+        Assert-True -Condition ($activeNames.Count -eq 4) -Message 'Expected tracked initial, tracked normal, local, and tracked final tasks to all be discovered.'
+        Assert-True -Condition ([string]$activeNames[0] -eq '01-alpha-init') -Message 'Initial tracked tasks must stay first.'
+        Assert-True -Condition ([string]$activeNames[1] -eq '101-bravo-normal') -Message 'Normal tracked tasks must stay after initial tasks.'
+        Assert-True -Condition ([string]$activeNames[2] -eq '1002-charlie-local') -Message 'Local untracked tasks must stay after normal tracked tasks.'
+        Assert-True -Condition ([string]$activeNames[3] -eq '10001-delta-final') -Message 'Tracked final tasks must stay after local untracked tasks.'
     }
     finally {
         if (Test-Path -LiteralPath $tempRoot) {
@@ -1719,8 +2327,11 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     Assert-True -Condition ($taskScript -like '*RedirectStandardOutput*') -Message 'Ollama install task must detach ollama serve stdout from the SSH session.'
     Assert-True -Condition ($taskScript -like '*RedirectStandardError*') -Message 'Ollama install task must detach ollama serve stderr from the SSH session.'
     Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Ollama install*') -Message 'Ollama install task must clear stale installer locks instead of waiting indefinitely.'
+    Assert-True -Condition ($taskScript -like '*Waiting for installer descendants to settle before Ollama readiness check*') -Message 'Ollama install task must wait briefly for post-winget installer descendants to settle.'
     Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'Ollama install task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*timed out after*') -Message 'Ollama install task must fail clearly when winget install exceeds the timeout.'
+    Assert-True -Condition ($taskScript -like '*Retrying after*') -Message 'Ollama install task must retry bounded serve readiness when the first cold-start probe misses.'
+    Assert-True -Condition ($taskScript -like '*detail=*') -Message 'Ollama install task must include serve failure detail when readiness still fails.'
 }
 
 Invoke-Test -Name "Windows VS Code task short-circuits healthy installs" -Action {
@@ -1739,6 +2350,16 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
+    Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
+}
+
+Invoke-Test -Name "Windows AnyDesk task verifies the executable after non-fatal winget exits" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\122-install-anydesk-system.ps1'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*post-install verification will determine whether the package is usable*') -Message 'AnyDesk task must treat transient winget failures as verification-required, not immediate hard failure.'
+    Assert-True -Condition ($taskScript -like '*install-anydesk-system-verified: executable*') -Message 'AnyDesk task must log executable-based verification after install.'
+    Assert-True -Condition ($taskScript -like '*winget list anydesk.anydesk*') -Message 'AnyDesk task must keep a package-list fallback verification path.'
+    Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'AnyDesk task must clear non-fatal native exit codes before completing.'
 }
 
 Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
@@ -1789,6 +2410,9 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($uxScriptBody -like '*UserAuthentication*') -Message "UX task must disable RDP NLA."
     Assert-True -Condition ($uxScriptBody -like '*shell-icons-hidden*') -Message "UX task must hide shell-managed desktop icons."
     Assert-True -Condition ($uxScriptBody -like '*System Volume Information*') -Message "UX task must attempt best-effort System Volume Information cleanup."
+    Assert-True -Condition ($uxScriptBody -like '*Convert-AzVmShellSortBytesToPropertyExpression*') -Message "UX task must normalize Windows shell sort binary values during validation."
+    Assert-True -Condition ($uxScriptBody -like '*b725f130-47ef-101a-a5f1-02608c9eebac:10*') -Message "UX task must recognize the shell property key for System.ItemNameDisplay."
+    Assert-True -Condition ($uxScriptBody -like '*Invoke-RegQuiet*') -Message "UX task must keep registry hive load and unload operations quiet under strict PowerShell native error handling."
     Assert-True -Condition (-not $resolvedUxTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "UX task must not publish reboot-resume metadata."
 
     $copyUserSettingsTaskPath = Join-Path $updateDir '10005-copy-settings-user.ps1'
@@ -1815,6 +2439,10 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*desktop.ini*') -Message "Copy user settings task must exclude desktop.ini from file copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Thumbs.db*') -Message "Copy user settings task must exclude Thumbs.db from file copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
+    Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Network*') -Message "Copy user settings task must exclude Ollama WebView network state from roaming copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Safe Browsing Network*') -Message "Copy user settings task must exclude Ollama WebView safe-browsing cookie state from roaming copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
+    Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
 
     $advancedTaskPath = Join-Path $updateDir '10004-configure-settings-advanced-system.ps1'
@@ -2097,12 +2725,12 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
     $installTaskMap = [ordered]@{
         '125-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
-        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths')
+        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'install-be-my-eyes-deferred', 'AzVmInstallBeMyEyes')
         '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd' )
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
         '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps')
+        '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'install-icloud-system-deferred', 'AzVmInstallICloud')
         '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
         '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
@@ -2246,6 +2874,40 @@ Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {
     Assert-True -Condition ($assetCopies.Count -eq 1) -Message "Be My Eyes task must publish exactly one helper asset."
     Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "Be My Eyes helper remote path mismatch."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "Be My Eyes task must call the interactive helper."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*Test-AzVmUserInteractiveDesktopReady*') -Message "Be My Eyes task must check for an interactive desktop before running the Store install."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*install-be-my-eyes-deferred*') -Message "Be My Eyes task must fall back to a deferred install when no interactive desktop is available."
+}
+
+Invoke-Test -Name "iCloud task publishes interactive helper asset" -Action {
+    $updateDir = Join-Path $RepoRoot 'windows\update'
+    $context = [ordered]@{
+        VM_NAME = 'samplevm'
+        VM_ADMIN_USER = 'manager'
+        VM_ADMIN_PASS = '<runtime-secret>'
+        ASSISTANT_USER = 'assistant'
+        ASSISTANT_PASS = '<runtime-secret>'
+        SSH_PORT = '22'
+        RDP_PORT = '3389'
+    }
+
+    $taskPath = Join-Path $updateDir '131-install-icloud-system.ps1'
+    $templates = @(
+        [pscustomobject]@{
+            Name = '131-install-icloud-system'
+            Script = [string](Get-Content -LiteralPath $taskPath -Raw)
+            RelativePath = '131-install-icloud-system.ps1'
+            DirectoryPath = $updateDir
+            TimeoutSeconds = 300
+        }
+    )
+
+    $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context)[0]
+    $assetCopies = @($resolvedTask.AssetCopies)
+    Assert-True -Condition ($assetCopies.Count -eq 1) -Message "iCloud task must publish exactly one helper asset."
+    Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "iCloud helper remote path mismatch."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "iCloud task must call the interactive helper."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*Test-AzVmUserInteractiveDesktopReady*') -Message "iCloud task must check for an interactive desktop before running the Store install."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*install-icloud-system-deferred*') -Message "iCloud task must fall back to a deferred install when no interactive desktop is available."
 }
 
 Write-Host ""
