@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.274] - 2026-03-11
+
+### Changed
+- Added the tracked Windows `130-autologon-manager-user` update task immediately after `129-configure-unlocker-io`, moved the tracked iCloud install task to `131-install-icloud-system`, and configured the new task to validate the `manager` credentials locally before calling Sysinternals `autologon /accepteula <user> . <password>`.
+- Expanded `10099-capture-snapshot-health` so Windows late-stage health snapshots now inventory the Winlogon autologon state for the `manager` user in addition to the existing UX and Public Desktop state.
+
+### Tests
+- Extended the Windows tracked-task timeout contract, the install-task contract, and the late-stage health contract so the new autologon task, the renumbered iCloud task, and the new autologon health readback are all enforced.
+
 ## [2026.3.11.273] - 2026-03-11
 
 ### Changed

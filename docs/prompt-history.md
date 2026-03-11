@@ -4446,3 +4446,16 @@ Add the following shortcuts to the public-desktop-icons vm-update task as well, 
 **Assistant Summary**
 
 Extended the Windows Public Desktop shortcut manifest on `dev` with the requested `e1`, `m1`, `n1`, `r1-r10`, and `u7Network and Sharing` entries, kept the shared Chrome-profile, run-maximized, run-as-admin, full-mirror, and per-user desktop cleanup contracts intact, expanded the Windows health snapshot and smoke coverage for the new shortcut set, and revalidated the result with the local validation suite plus isolated live reruns of `10002` and `10099`.
+
+### 2026-03-11 07:34 TRT
+
+**User Prompt**
+
+````text
+Feature request: add a new vm-update task that runs after IO Unlocker. Task name: `XXX-autologon-manager-user.ps1`.
+This task should run the PowerShell command `autologon /accepteula vm_admin_user(.env) . vm_admin_user_pass(.env)` by using Sysinternals Autologon with the correct syntax and usage details verified from the web, and it must guarantee success by checking the exit code and otherwise confirming the result.
+````
+
+**Assistant Summary**
+
+Added the tracked Windows `130-autologon-manager-user` task immediately after `129-configure-unlocker-io`, moved the tracked iCloud task forward to `131-install-icloud-system`, implemented local `manager` credential validation before invoking Sysinternals `autologon /accepteula <user> . <password>`, expanded the late Windows health snapshot with explicit Winlogon autologon readback, updated the tracked-task and install-task smoke contracts, and revalidated the change with the local validation suite plus isolated live reruns of `130` and `10099`.

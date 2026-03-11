@@ -1429,7 +1429,8 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '127-install-nvda-system' = 54
         '128-install-rclone-system' = 13
         '129-configure-unlocker-io' = 23
-        '130-install-icloud-system' = 120
+        '130-autologon-manager-user' = 20
+        '131-install-icloud-system' = 120
         '10001-configure-apps-startup' = 45
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
@@ -2021,7 +2022,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
         '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '130-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps')
+        '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps')
         '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
         '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
@@ -2034,6 +2035,39 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         foreach ($fragment in @($entry.Value)) {
             Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Task '{0}' must include fragment '{1}'." -f [string]$entry.Key, [string]$fragment)
         }
+    }
+}
+
+Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\130-autologon-manager-user.ps1'
+    $healthTaskPath = Join-Path $RepoRoot 'windows\update\10099-capture-snapshot-health.ps1'
+
+    Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Autologon manager task file was not found.'
+    $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+    $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+
+    foreach ($fragment in @(
+        '__VM_ADMIN_USER__',
+        '__VM_ADMIN_PASS__',
+        '/accepteula',
+        'LogonUser',
+        'AutoAdminLogon',
+        'DefaultUserName',
+        'DefaultDomainName',
+        'autologon-state =>',
+        'autologon-manager-user-completed',
+        'autologon.exe was not found',
+        'Ensure 108-install-sysinternals-suite completed successfully.'
+    )) {
+        Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Autologon manager task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($fragment in @(
+        'AUTOLOGON STATUS:',
+        'manager_autologon_configured',
+        'DefaultDomainName'
+    )) {
+        Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include autologon fragment '{0}'." -f [string]$fragment)
     }
 }
 

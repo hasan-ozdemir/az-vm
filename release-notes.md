@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.274 - 2026-03-11
+
+### Summary
+This release adds a tracked Windows autologon task right after the IO Unlocker step, validates the configured `manager` credentials before applying Sysinternals Autologon, renumbers the tracked iCloud task to keep the catalog order contiguous, and extends the Windows late health snapshot with explicit autologon readback.
+
+### Highlights
+- Added `130-autologon-manager-user` so the Windows update flow now resolves `autologon.exe`, validates `VM_ADMIN_USER` and `VM_ADMIN_PASS` locally, runs `autologon /accepteula <user> . <password>`, and then verifies the resulting Winlogon state.
+- Renamed the tracked iCloud task from `130-install-icloud-system` to `131-install-icloud-system` so the new autologon task can run immediately after `129-configure-unlocker-io`.
+- Expanded `10099-capture-snapshot-health` and the smoke contract so autologon status is now inventoried together with the rest of the Windows late-stage machine state.
+
 ## Release 2026.3.11.273 - 2026-03-11
 
 ### Summary

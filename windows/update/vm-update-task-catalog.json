@@ -222,9 +222,16 @@
       "timeout": 23
     },
     {
-      "name": "130-install-icloud-system",
+      "name": "130-autologon-manager-user",
       "taskType": "normal",
       "priority": 130,
+      "enabled": true,
+      "timeout": 20
+    },
+    {
+      "name": "131-install-icloud-system",
+      "taskType": "normal",
+      "priority": 131,
       "enabled": true,
       "timeout": 120
     },

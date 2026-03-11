@@ -244,6 +244,32 @@ $terminalServerRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
 Get-ItemProperty -Path $rdpTcpRoot -Name UserAuthentication,SecurityLayer,MinEncryptionLevel -ErrorAction SilentlyContinue | Format-List *
 Get-ItemProperty -Path $terminalServerRoot -Name fDenyTSConnections -ErrorAction SilentlyContinue | Format-List *
 
+Write-Host "AUTOLOGON STATUS:"
+$winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+$winlogon = Get-ItemProperty -Path $winlogonPath -ErrorAction SilentlyContinue
+if ($null -eq $winlogon) {
+    Write-Warning "Winlogon autologon state could not be read."
+}
+else {
+    $autologonDomain = ''
+    if ($winlogon.PSObject.Properties.Match('DefaultDomainName').Count -gt 0) {
+        $autologonDomain = [string]$winlogon.DefaultDomainName
+    }
+
+    $managerAutologonConfigured = (
+        [string]::Equals([string]$winlogon.AutoAdminLogon, '1', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$winlogon.DefaultUserName, $managerUser, [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not [string]::IsNullOrWhiteSpace([string]$autologonDomain)
+    )
+
+    [pscustomobject]@{
+        AutoAdminLogon = [string]$winlogon.AutoAdminLogon
+        DefaultUserName = [string]$winlogon.DefaultUserName
+        DefaultDomainName = [string]$autologonDomain
+        manager_autologon_configured = [bool]$managerAutologonConfigured
+    } | Format-List *
+}
+
 Write-Host "SYSTEM RESTORE STATUS:"
 Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name DisableSR -ErrorAction SilentlyContinue | Format-List *
 try {
