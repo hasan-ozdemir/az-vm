@@ -27,12 +27,13 @@ function Invoke-AzVmDoCommand {
     $resourceGroup = [string]$target.ResourceGroup
     $vmName = [string]$target.VmName
     $desiredState = ''
-    $successVerb = ''
+    $completionMessage = ''
+    $finalSnapshot = $null
 
     switch ($action) {
         'start' {
             $desiredState = 'started'
-            $successVerb = 'started'
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now started." -f $vmName, $resourceGroup)
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `
@@ -42,7 +43,7 @@ function Invoke-AzVmDoCommand {
         }
         'restart' {
             $desiredState = 'started'
-            $successVerb = 'restarted'
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now restarted." -f $vmName, $resourceGroup)
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `
@@ -52,7 +53,7 @@ function Invoke-AzVmDoCommand {
         }
         'stop' {
             $desiredState = 'stopped'
-            $successVerb = 'stopped'
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now stopped." -f $vmName, $resourceGroup)
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `
@@ -62,7 +63,7 @@ function Invoke-AzVmDoCommand {
         }
         'deallocate' {
             $desiredState = 'deallocated'
-            $successVerb = 'deallocated'
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now deallocated." -f $vmName, $resourceGroup)
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `
@@ -72,7 +73,7 @@ function Invoke-AzVmDoCommand {
         }
         'hibernate' {
             $desiredState = 'hibernated'
-            $successVerb = 'hibernated'
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now hibernated." -f $vmName, $resourceGroup)
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `
@@ -80,12 +81,24 @@ function Invoke-AzVmDoCommand {
                 -AzArguments @('vm','deallocate','-g',$resourceGroup,'-n',$vmName,'--hibernate','true','-o','none','--only-show-errors') `
                 -AzContext 'az vm deallocate --hibernate'
         }
+        'reapply' {
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' was reapplied. Current status:" -f $vmName, $resourceGroup)
+            Invoke-AzVmDoAzureAction `
+                -ActionName $action `
+                -ResourceGroup $resourceGroup `
+                -VmName $vmName `
+                -AzArguments @('vm','reapply','-g',$resourceGroup,'-n',$vmName,'-o','none','--only-show-errors') `
+                -AzContext 'az vm reapply'
+            $finalSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $resourceGroup -VmName $vmName
+        }
         default {
             throw ("Unsupported do action '{0}'." -f $action)
         }
     }
 
-    $finalSnapshot = Wait-AzVmDoLifecycleState -ResourceGroup $resourceGroup -VmName $vmName -DesiredState $desiredState -MaxAttempts 24 -DelaySeconds 10
+    if ($null -eq $finalSnapshot) {
+        $finalSnapshot = Wait-AzVmDoLifecycleState -ResourceGroup $resourceGroup -VmName $vmName -DesiredState $desiredState -MaxAttempts 24 -DelaySeconds 10
+    }
     if ($null -eq $finalSnapshot) {
         Throw-FriendlyError `
             -Detail ("VM '{0}' in resource group '{1}' did not reach expected '{2}' state after action '{3}'." -f $vmName, $resourceGroup, $desiredState, $action) `
@@ -94,6 +107,6 @@ function Invoke-AzVmDoCommand {
             -Hint "Check the VM status in Azure, run '--vm-action=status', then retry if needed."
     }
 
-    Write-Host ("Do completed: VM '{0}' in resource group '{1}' is now {2}." -f $vmName, $resourceGroup, $successVerb) -ForegroundColor Green
+    Write-Host $completionMessage -ForegroundColor Green
     Write-AzVmDoStatusReport -Snapshot $finalSnapshot
 }

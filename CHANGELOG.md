@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.284] - 2026-03-12
+
+### Added
+- Added `az-vm do --vm-action=reapply`, which calls `az vm reapply` for the resolved managed VM target and then prints a refreshed lifecycle status snapshot.
+
+### Changed
+- Expanded the `do` command contract so parser hints, interactive action selection, CLI help, and README examples all include `reapply` as a first-class lifecycle action.
+- Kept `reapply` available as the Azure repair path even when provisioning is not currently in the succeeded state, while the existing power-action validation rules remain unchanged for `start`, `restart`, `stop`, `deallocate`, and `hibernate`.
+
+### Tests
+- Revalidated the full non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
+
 ## [2026.3.12.283] - 2026-03-12
 
 ### Added

@@ -4725,3 +4725,15 @@ Go back to the large plan and close every remaining item one by one.
 **Assistant Summary**
 
 Closed the remaining implementation path by finishing the live Windows acceptance cycle for the updated shortcut/task contract and the private local-only accessibility flow: isolated local-only task reruns now pass, the full `update --single-step=vm-update --auto --windows` path completes cleanly, reboot validation confirms the manager console session returns, and post-reboot guest readback shows the manager startup shortcut, automatic utility service, and running local accessibility processes. I also finalized the tracked release/version documentation, refreshed prompt history, and prepared the repository for the last local-only maintenance steps around history redaction and branch alignment.
+
+### 2026-03-12 02:28 TRT
+
+**User Prompt**
+
+````text
+Please add a command like `az-vm do --vm-action=reapply`; in essence it should do something like `az vm reapply -g <resource-group> -n <vm-name>`, then show status at the end.
+````
+
+**Assistant Summary**
+
+Added `az-vm do --vm-action=reapply` to the managed VM lifecycle surface so the command now calls `az vm reapply` for the resolved target and then prints a refreshed lifecycle status snapshot. I also updated the interactive `do` action picker, parser hints, CLI help, README examples, changelog, and release notes to expose the new action explicitly, added smoke coverage for the `reapply` invocation path and its provisioning-guard bypass behavior, and revalidated the full non-live gate with code-quality, documentation-contract, PowerShell compatibility, and smoke checks.

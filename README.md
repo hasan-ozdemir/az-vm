@@ -82,7 +82,7 @@
 ### What It Does
 - Provisions Azure infrastructure for one managed Windows or Linux VM from one orchestrator.
 - Applies deterministic guest initialization and guest update task catalogs.
-- Gives operators lifecycle commands for status, start, restart, stop, deallocate, hibernate, move, resize, connect, inspect, and delete flows.
+- Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate, move, resize, connect, inspect, and delete flows.
 - Keeps command wording, configuration behavior, and execution semantics as parallel as possible across Windows and Linux.
 
 ### Problems It Solves
@@ -420,6 +420,7 @@ Supported actions:
 - `status`
 - `start`
 - `restart`
+- `reapply`
 - `stop`
 - `deallocate`
 - `hibernate`
@@ -429,6 +430,7 @@ Usage patterns:
 .\az-vm.cmd do -h
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=deallocate --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=hibernate --group=<resource-group> --vm-name=<vm-name>
 ```
@@ -436,6 +438,7 @@ Usage patterns:
 Behavior notes:
 - if parameters are omitted, the command falls back to interactive group/VM/action selection
 - mutating actions validate the current power/provisioning state before calling Azure
+- `reapply` calls `az vm reapply` and then prints a refreshed lifecycle snapshot; it stays available even when provisioning is not currently in the succeeded state
 - `hibernate` follows Azure hibernation semantics and deallocates the VM
 
 Friendly refusal examples:
@@ -678,6 +681,7 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 ```powershell
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=stop --group=<resource-group> --vm-name=<vm-name>
 ```
 

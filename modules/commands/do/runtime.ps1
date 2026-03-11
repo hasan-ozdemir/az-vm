@@ -1,5 +1,15 @@
 # Do command runtime helpers.
 
+# Handles Get-AzVmDoActionNames.
+function Get-AzVmDoActionNames {
+    return @('status','start','restart','stop','deallocate','hibernate','reapply')
+}
+
+# Handles Get-AzVmDoActionHintText.
+function Get-AzVmDoActionHintText {
+    return ("Use --vm-action={0}." -f ((Get-AzVmDoActionNames) -join '|'))
+}
+
 # Handles Resolve-AzVmDoActionName.
 function Resolve-AzVmDoActionName {
     param(
@@ -18,7 +28,7 @@ function Resolve-AzVmDoActionName {
             -Detail "Option '--vm-action' requires a value." `
             -Code 2 `
             -Summary "VM action is missing." `
-            -Hint "Use --vm-action=status|start|restart|stop|deallocate|hibernate."
+            -Hint (Get-AzVmDoActionHintText)
     }
 
     if ($normalized -eq 'release') {
@@ -29,12 +39,12 @@ function Resolve-AzVmDoActionName {
             -Hint "Use --vm-action=deallocate."
     }
 
-    if ($normalized -notin @('status','start','restart','stop','deallocate','hibernate')) {
+    if ($normalized -notin @(Get-AzVmDoActionNames)) {
         Throw-FriendlyError `
             -Detail ("Invalid --vm-action value '{0}'." -f $RawValue) `
             -Code 2 `
             -Summary "VM action is invalid." `
-            -Hint "Use --vm-action=status|start|restart|stop|deallocate|hibernate."
+            -Hint (Get-AzVmDoActionHintText)
     }
 
     return $normalized
@@ -222,6 +232,7 @@ function Get-AzVmDoAllowedSourceStates {
         'stop' { return @('started') }
         'deallocate' { return @('started','stopped','hibernated') }
         'hibernate' { return @('started') }
+        'reapply' { return @() }
         default { return @() }
     }
 }
@@ -245,7 +256,7 @@ function Assert-AzVmDoActionAllowed {
         $provisioningSucceeded = $true
     }
 
-    if (-not $provisioningSucceeded) {
+    if (($ActionName -ne 'reapply') -and -not $provisioningSucceeded) {
         Throw-FriendlyError `
             -Detail ("Requested action '{0}' cannot continue for VM '{1}' in resource group '{2}' because provisioning is not ready. {3}" -f $ActionName, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
             -Code 66 `
@@ -325,7 +336,8 @@ function Read-AzVmDoActionInteractive {
         [pscustomobject]@{ Number = 3; Action = 'restart'; Label = 'restart' },
         [pscustomobject]@{ Number = 4; Action = 'stop'; Label = 'stop' },
         [pscustomobject]@{ Number = 5; Action = 'deallocate'; Label = 'deallocate' },
-        [pscustomobject]@{ Number = 6; Action = 'hibernate'; Label = 'hibernate' }
+        [pscustomobject]@{ Number = 6; Action = 'hibernate'; Label = 'hibernate' },
+        [pscustomobject]@{ Number = 7; Action = 'reapply'; Label = 'reapply (Azure repair)' }
     )
 
     foreach ($choice in @($choices)) {

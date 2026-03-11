@@ -16,7 +16,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  configure  Configure precheck/preview flow for a target resource group."
     Write-Host "  group   List/select managed resource groups for active context."
     Write-Host "  show    Print system and configuration dump for resource groups and VMs."
-    Write-Host "  do      Apply one VM power action or print current VM state."
+    Write-Host "  do      Apply one VM lifecycle action or print current VM state."
     Write-Host "  task    List discovered init/update tasks in real execution order."
     Write-Host "  move    Move an existing VM to another Azure region; expect a health-gated cutover that can take tens of minutes."
     Write-Host "  resize  Change VM size for an existing VM in-place."
@@ -46,6 +46,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm group --list=<vm-name>"
     Write-Host "  az-vm group --select=<resource-group>"
     Write-Host "  az-vm do --vm-action=status --vm-name=<vm-name>"
+    Write-Host "  az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm do --vm-action=hibernate --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm move --vm-region=swedencentral --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=<resource-group> --vm-name=<vm-name>"
@@ -119,6 +120,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm group --list=<vm-name>"
         Write-Host "  az-vm group --select=<resource-group>"
         Write-Host "  az-vm do --vm-action=status --vm-name=<vm-name>"
+        Write-Host "  az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm do --vm-action=hibernate --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm move --vm-region=swedencentral --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm resize --vm-size=Standard_B2as_v2 --group=<resource-group> --vm-name=<vm-name>"
@@ -228,18 +230,19 @@ function Show-AzVmCommandHelpDetailed {
         }
         'do' {
             Write-Host "Command: do"
-            Write-Host "Description: apply one VM power action or print the current VM lifecycle state."
+            Write-Host "Description: apply one VM lifecycle action or print the current VM lifecycle state."
             Write-Host "Usage:"
-            Write-Host "  az-vm do [--group=<resource-group>] [--vm-name=<vm-name>] [--vm-action=<status|start|restart|stop|deallocate|hibernate>] [--perf]"
+            Write-Host "  az-vm do [--group=<resource-group>] [--vm-name=<vm-name>] [--vm-action=<status|start|restart|stop|deallocate|hibernate|reapply>] [--perf]"
             Write-Host "  az-vm do -h"
             Write-Host "  az-vm do --help"
             Write-Host "Examples:"
             Write-Host "  az-vm do"
             Write-Host "  az-vm do --vm-action=status --vm-name=<vm-name>"
             Write-Host "  az-vm do --vm-action=start --group=<resource-group> --vm-name=<vm-name>"
+            Write-Host "  az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>"
             Write-Host "  az-vm do --vm-action=deallocate --group=<resource-group> --vm-name=<vm-name>"
             Write-Host "  az-vm do --vm-action=hibernate --group=<resource-group> --vm-name=<vm-name>"
-            Write-Host "Notes: Azure hibernation deallocates the VM; use stop to keep the VM provisioned. If target parameters are omitted, the command selects the managed group, VM, and action interactively."
+            Write-Host "Notes: Azure hibernation deallocates the VM; use stop to keep the VM provisioned. Reapply calls 'az vm reapply' and then prints refreshed VM status; unlike the power actions, it remains available when provisioning is not currently succeeded. If target parameters are omitted, the command selects the managed group, VM, and action interactively."
             return
         }
         'task' {

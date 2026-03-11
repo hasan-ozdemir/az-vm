@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.284 - 2026-03-12
+
+### Summary
+This release adds `az-vm do --vm-action=reapply` as a repo-managed VM repair action, keeps it available when Azure provisioning is not currently succeeded, and aligns the interactive selector, help output, README examples, and smoke coverage with the new lifecycle-action contract.
+
+### Highlights
+- Added `do --vm-action=reapply`, which resolves the managed VM target, runs `az vm reapply`, and then prints a refreshed lifecycle status report.
+- Expanded the `do` parser hints, interactive action picker, CLI help pages, and README examples so `reapply` is documented alongside the existing lifecycle actions.
+- Added smoke coverage for the new action, including parser acceptance, provisioning-guard bypass behavior, interactive selection, help/docs visibility, and the concrete `az vm reapply` invocation path.
+
 ## Release 2026.3.12.283 - 2026-03-12
 
 ### Summary
