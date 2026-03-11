@@ -4360,7 +4360,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Moved intentionally local-only stage tasks into `local/` and `local/disabled/` directories, restored the local Windows private local accessibility asset folder name to `local-accessibility-files`, simplified `.gitignore` to stage-local tree rules only, extended the task loader so local tasks are discovered from disk and configured only by script metadata, updated the docs and contract checks to describe that model, and refreshed smoke coverage for local discovery, duplicate-name failures, nested-path rejection, and local asset resolution.
+Moved intentionally local-only stage tasks into `local/` and `local/disabled/` directories, restored the local Windows accessibility asset layout under the local update tree, simplified `.gitignore` to stage-local tree rules only, extended the task loader so local tasks are discovered from disk and configured only by script metadata, updated the docs and contract checks to describe that model, and refreshed smoke coverage for local discovery, duplicate-name failures, nested-path rejection, and local asset resolution.
 
 ### 2026-03-11 00:37 TRT
 
@@ -4488,12 +4488,12 @@ Expanded the Windows Public Desktop shortcut manifest with the requested `g1-g4`
 **User Prompt**
 
 ````text
-Implement the agreed plan so that `public-desktop-icons` preserves unmanaged Public Desktop shortcuts such as local `j0Accessibility`, keeps clearing the manager/assistant/default desktops, aligns the local `j0Accessibility` shortcut contract with the managed Public Desktop shortcuts, mirrors this host's startup methods on the guest for matching installed apps, and validate the result in isolation on the guest VM.
+Implement the agreed plan so that `public-desktop-icons` preserves unmanaged Public Desktop shortcuts such as a local-only accessibility shortcut, keeps clearing the manager/assistant/default desktops, aligns that local shortcut contract with the managed Public Desktop shortcuts, mirrors this host's startup methods on the guest for matching installed apps, and validate the result in isolation on the guest VM.
 ````
 
 **Assistant Summary**
 
-Changed the tracked Windows Public Desktop flow from a destructive full mirror into a managed-only reconcile pass, restored host-driven startup-profile discovery and method-based startup mirroring for supported guest apps, expanded the late health snapshot and smoke coverage for the new behavior, and updated the release docs to `2026.3.11.276`. Live guest validation confirmed that `10002-create-shortcuts-public-desktop` now preserves the local-only `j0Accessibility` shortcut while still clearing the manager, assistant, and default desktops, and that the guest now records the expected host-derived startup entries and compatibility scaffolding; however, repeated reboot-based probes on 2026-03-11 still did not produce running `local-accessibility.exe` or `iTunesHelper.exe` processes on the guest despite the added compatibility layers, so private local accessibility guest auto-start remains unconfirmed.
+Changed the tracked Windows Public Desktop flow from a destructive full mirror into a managed-only reconcile pass, restored host-driven startup-profile discovery and method-based startup mirroring for supported guest apps, expanded the late health snapshot and smoke coverage for the new behavior, and updated the release docs to `2026.3.11.276`. Live guest validation confirmed that `10002-create-shortcuts-public-desktop` now preserves the local-only accessibility shortcut while still clearing the manager, assistant, and default desktops, and that the guest now records the expected host-derived startup entries and compatibility scaffolding; however, repeated reboot-based probes on 2026-03-11 still did not produce the expected accessibility reader or `iTunesHelper.exe` processes on the guest despite the added compatibility layers, so the guest accessibility auto-start remained unconfirmed.
 
 ### 2026-03-11 16:28 TRT
 
@@ -4689,3 +4689,39 @@ Update the UI message: when `az-vm` runs, do not break to a new line after `scri
 **Assistant Summary**
 
 Changed the startup banner in `Invoke-AzVmMain` so `script description:` now prints as a single line instead of opening a multi-line block. While closing that prompt, I also finalized the outstanding live publish-gate hardening that was still in the working tree: the provisioning-ready poll now reads `instanceView.statuses` correctly, Windows task `10005-copy-settings-user` now skips deterministic blocker aliases/reparse points and tolerates best-effort ACL or in-use failures safely, the live release-acceptance requirement is now documented in `README.md` and `AGENTS.md` and enforced by `tests/documentation-contract-check.ps1`, and the full non-live gate plus a live `az-vm update --auto --windows` acceptance rerun completed successfully.
+
+### 2026-03-12 02:12 TRT
+
+**User Prompt**
+
+````text
+Extend the Windows update flow with additional corporate and personal web shortcuts, employee-driven Chrome profile routing, new CLI and Visual Studio prerequisites, local safety branch backups, and a strict rule that one private local-only accessibility flow must live only in ignored local vm-update tasks and never in tracked builtin tasks or docs.
+````
+
+**Assistant Summary**
+
+Updated the tracked Windows shortcut and configuration contract so `.env.example`, the command runtime, and task materialization now carry `employee_email_address`, `employee_full_name`, and a generic host-autostart discovery payload. The tracked Public Desktop task now creates the requested new shortcut set, routes every `Bireysel` Chrome shortcut through the employee email local-part while keeping `Kurumsal` shortcuts on `company_name`, renames `t10Azd CLI`, adds the Copilot and Visual Studio prerequisites, and keeps one private local-only accessibility flow out of tracked startup/profile-copy ownership. I also refreshed the smoke suite, startup-health readback, README, changelog, release notes, and engineering contract so the new shortcut/env/task contract is enforced without reintroducing tracked vendor-specific accessibility wording.
+
+### 2026-03-12 02:12 TRT
+
+**User Prompt**
+
+````text
+Rename the updated shortcut to `t10Azd CLI`.
+````
+
+**Assistant Summary**
+
+Adjusted the tracked Windows shortcut contract so the Azure Developer CLI shortcut is now named exactly `t10Azd CLI`, and refreshed the corresponding tracked snapshot and smoke assertions so the new case-sensitive name is enforced consistently.
+
+### 2026-03-12 02:12 TRT
+
+**User Prompt**
+
+````text
+Go back to the large plan and close every remaining item one by one.
+````
+
+**Assistant Summary**
+
+Closed the remaining implementation path by finishing the live Windows acceptance cycle for the updated shortcut/task contract and the private local-only accessibility flow: isolated local-only task reruns now pass, the full `update --single-step=vm-update --auto --windows` path completes cleanly, reboot validation confirms the manager console session returns, and post-reboot guest readback shows the manager startup shortcut, automatic utility service, and running local accessibility processes. I also finalized the tracked release/version documentation, refreshed prompt history, and prepared the repository for the last local-only maintenance steps around history redaction and branch alignment.

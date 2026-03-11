@@ -984,10 +984,6 @@ try {
     $locationDefinitions = @(Get-StartupLocationDefinitions -ManagerContext $managerContext)
 
     foreach ($profileKey in @($hostStartupProfileByKey.Keys | Sort-Object)) {
-        if ($profileKey -eq 'private local accessibility') {
-            Write-Host 'autostart-skip: private local accessibility => owned by local private local accessibility task'
-            continue
-        }
         if (-not $supportedSpecs.Contains($profileKey)) {
             Write-Warning ("autostart-skip: unsupported host app key '{0}'." -f $profileKey)
         }

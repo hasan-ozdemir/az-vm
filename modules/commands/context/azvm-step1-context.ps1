@@ -313,6 +313,8 @@ function Invoke-AzVmStep1Common {
 
     $vmDiskSize = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmDiskSizeConfigKey -DefaultValue $VmDiskSizeDefault) -Tokens $baseTokens
     $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue '')) -Tokens $baseTokens
+    $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'employee_email_address' -DefaultValue '')) -Tokens $baseTokens
+    $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'employee_full_name' -DefaultValue '')) -Tokens $baseTokens
     $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_USER' -Tokens $baseTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
     $vmPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_PASS' -Tokens $baseTokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
     $vmAssistantUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ASSISTANT_USER' -Tokens $baseTokens -Summary 'VM assistant user is required.' -Hint 'Set VM_ASSISTANT_USER in .env to the secondary VM username.'
@@ -373,6 +375,8 @@ function Invoke-AzVmStep1Common {
         VmDiskName = $vmDiskName
         VmDiskSize = $vmDiskSize
         CompanyName = [string]$companyName
+        EmployeeEmailAddress = [string]$employeeEmailAddress
+        EmployeeFullName = [string]$employeeFullName
         VmUser = $vmUser
         VmPass = $vmPass
         VmAssistantUser = $vmAssistantUser

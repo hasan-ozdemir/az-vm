@@ -46,12 +46,6 @@ function Get-AzVmStartupMirrorAppCatalog {
             MatchCommandFragments = @('ms-teams.exe', 'msteams:system-initiated')
         },
         [pscustomobject]@{
-            Key = 'private local accessibility'
-            DisplayName = 'private local accessibility'
-            MatchNames = @('private local accessibility')
-            MatchCommandFragments = @('local-accessibility.exe')
-        },
-        [pscustomobject]@{
             Key = 'itunes-helper'
             DisplayName = 'iTunesHelper'
             MatchNames = @('iTunesHelper')
@@ -272,6 +266,144 @@ function Get-AzVmHostStartupEntries {
     return @($entries)
 }
 
+# Handles Get-AzVmHostAccessibilityConfigurationValue.
+function Get-AzVmHostAccessibilityConfigurationValue {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return ''
+    }
+
+    $item = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+    if ($null -eq $item -or $item.PSObject.Properties.Match('Configuration').Count -eq 0) {
+        return ''
+    }
+
+    return [string]$item.Configuration
+}
+
+# Handles Get-AzVmHostAccessibilityAssistiveTechnologyEntries.
+function Get-AzVmHostAccessibilityAssistiveTechnologyEntries {
+    $entries = @()
+    $atRoot = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Accessibility\ATs'
+    if (-not (Test-Path -LiteralPath $atRoot)) {
+        return @()
+    }
+
+    foreach ($key in @(Get-ChildItem -LiteralPath $atRoot -ErrorAction SilentlyContinue | Sort-Object PSChildName)) {
+        if ($null -eq $key) {
+            continue
+        }
+
+        $item = Get-ItemProperty -Path $key.PSPath -ErrorAction SilentlyContinue
+        if ($null -eq $item) {
+            continue
+        }
+
+        $entries += [pscustomobject]@{
+            Key = [string]$key.PSChildName
+            ApplicationName = if ($item.PSObject.Properties.Match('ApplicationName').Count -gt 0) { [string]$item.ApplicationName } else { '' }
+            Description = if ($item.PSObject.Properties.Match('Description').Count -gt 0) { [string]$item.Description } else { '' }
+            SimpleProfile = if ($item.PSObject.Properties.Match('SimpleProfile').Count -gt 0) { [string]$item.SimpleProfile } else { '' }
+            StartExe = if ($item.PSObject.Properties.Match('StartExe').Count -gt 0) { [string]$item.StartExe } else { '' }
+            TerminateOnDesktopSwitch = if ($item.PSObject.Properties.Match('TerminateOnDesktopSwitch').Count -gt 0) { [string]$item.TerminateOnDesktopSwitch } else { '' }
+            Profile = if ($item.PSObject.Properties.Match('Profile').Count -gt 0) { [string]$item.Profile } else { '' }
+        }
+    }
+
+    return @($entries)
+}
+
+# Handles Get-AzVmHostAutostartScheduledTasks.
+function Get-AzVmHostAutostartScheduledTasks {
+    $results = @()
+
+    if (-not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) {
+        return @()
+    }
+
+    try {
+        $scheduledTasks = @(Get-ScheduledTask -ErrorAction Stop)
+    }
+    catch {
+        return @()
+    }
+
+    foreach ($task in @($scheduledTasks)) {
+        if ($null -eq $task) {
+            continue
+        }
+
+        $triggerSummaries = @()
+        foreach ($trigger in @($task.Triggers)) {
+            if ($null -eq $trigger) {
+                continue
+            }
+
+            $triggerType = ''
+            if ($trigger.PSObject.Properties.Match('TriggerType').Count -gt 0) {
+                $triggerType = [string]$trigger.TriggerType
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$triggerType)) {
+                $triggerType = [string]$trigger.GetType().Name
+            }
+            if ($triggerType -notmatch 'Logon|Boot') {
+                continue
+            }
+
+            $triggerSummaries += [pscustomobject]@{
+                TriggerType = [string]$triggerType
+                UserId = if ($trigger.PSObject.Properties.Match('UserId').Count -gt 0) { [string]$trigger.UserId } else { '' }
+                Enabled = if ($trigger.PSObject.Properties.Match('Enabled').Count -gt 0) { [string]$trigger.Enabled } else { '' }
+            }
+        }
+
+        if (@($triggerSummaries).Count -eq 0) {
+            continue
+        }
+
+        $actionSummaries = @()
+        foreach ($action in @($task.Actions)) {
+            if ($null -eq $action) {
+                continue
+            }
+
+            $actionSummaries += [pscustomobject]@{
+                Execute = if ($action.PSObject.Properties.Match('Execute').Count -gt 0) { [string]$action.Execute } else { '' }
+                Arguments = if ($action.PSObject.Properties.Match('Arguments').Count -gt 0) { [string]$action.Arguments } else { '' }
+                WorkingDirectory = if ($action.PSObject.Properties.Match('WorkingDirectory').Count -gt 0) { [string]$action.WorkingDirectory } else { '' }
+            }
+        }
+
+        $results += [pscustomobject]@{
+            TaskName = if ($task.PSObject.Properties.Match('TaskName').Count -gt 0) { [string]$task.TaskName } else { '' }
+            TaskPath = if ($task.PSObject.Properties.Match('TaskPath').Count -gt 0) { [string]$task.TaskPath } else { '' }
+            State = if ($task.PSObject.Properties.Match('State').Count -gt 0) { [string]$task.State } else { '' }
+            Enabled = if ($task.PSObject.Properties.Match('State').Count -gt 0) { -not [string]::Equals([string]$task.State, 'Disabled', [System.StringComparison]::OrdinalIgnoreCase) } else { $true }
+            UserId = if ($task.PSObject.Properties.Match('Principal').Count -gt 0 -and $null -ne $task.Principal -and $task.Principal.PSObject.Properties.Match('UserId').Count -gt 0) { [string]$task.Principal.UserId } else { '' }
+            RunLevel = if ($task.PSObject.Properties.Match('Principal').Count -gt 0 -and $null -ne $task.Principal -and $task.Principal.PSObject.Properties.Match('RunLevel').Count -gt 0) { [string]$task.Principal.RunLevel } else { '' }
+            Triggers = @($triggerSummaries)
+            Actions = @($actionSummaries)
+        }
+    }
+
+    return @($results)
+}
+
+# Handles Get-AzVmHostAutostartDiscovery.
+function Get-AzVmHostAutostartDiscovery {
+    return [pscustomobject]@{
+        CapturedAtUtc = [DateTime]::UtcNow.ToString('o')
+        StartupEntries = @(Get-AzVmHostStartupEntries)
+        ScheduledTasks = @(Get-AzVmHostAutostartScheduledTasks)
+        Accessibility = [pscustomobject]@{
+            LocalMachineConfiguration = (Get-AzVmHostAccessibilityConfigurationValue -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Accessibility')
+            CurrentUserConfiguration = (Get-AzVmHostAccessibilityConfigurationValue -Path 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Accessibility')
+            AssistiveTechnologies = @(Get-AzVmHostAccessibilityAssistiveTechnologyEntries)
+        }
+    }
+}
+
 # Handles Get-AzVmHostStartupMirrorProfile.
 function Get-AzVmHostStartupMirrorProfile {
     try {
@@ -289,6 +421,18 @@ function Get-AzVmHostStartupMirrorProfileJsonBase64 {
     $json = [string](ConvertTo-Json -InputObject @($profile) -Depth 6 -Compress)
     if ([string]::IsNullOrWhiteSpace([string]$json)) {
         $json = '[]'
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    return [Convert]::ToBase64String($bytes)
+}
+
+# Handles Get-AzVmHostAutostartDiscoveryJsonBase64.
+function Get-AzVmHostAutostartDiscoveryJsonBase64 {
+    $discovery = Get-AzVmHostAutostartDiscovery
+    $json = [string](ConvertTo-Json -InputObject $discovery -Depth 8 -Compress)
+    if ([string]::IsNullOrWhiteSpace([string]$json)) {
+        $json = '{}'
     }
 
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)

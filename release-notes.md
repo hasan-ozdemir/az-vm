@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.283 - 2026-03-12
+
+### Summary
+This release expands the tracked Windows shortcut/update contract with employee-aware Chrome profile routing, new marketplace and tooling shortcuts, new prerequisite install tasks, and a generic local-accessibility boundary that removes vendor-specific ownership from the tracked repo surface while preserving local-only flexibility.
+
+### Highlights
+- Added committed `employee_email_address` and `employee_full_name` placeholders and wired employee-aware token replacement through the command runtime and task materialization layer.
+- Expanded the tracked Public Desktop shortcut task with `i1Internet Kurumsal`, `i2Internet Bireysel`, `r11-r22`, `k3Github Copilot CLI`, `v1VS2022Com`, and the renamed `t10Azd CLI`; `e1Mail` and every `Bireysel` Chrome shortcut now use the employee email local-part for `--profile-directory`, while `Kurumsal` shortcuts continue using `company_name`.
+- Added tracked Windows task `132-install-vs2022community.ps1`, raised tracked task `115-install-npm-packages-global` to the new timeout contract, and extended it to install the GitHub Copilot CLI prerequisite.
+- Reworked the tracked startup/profile-copy surface so one private local-only accessibility flow is handled generically: tracked code now provides neutral host autostart discovery, keeps unmanaged public shortcuts intact, and no longer contains vendor-specific startup or profile-copy ownership.
+- Revalidated the whole non-live gate and completed a live Windows acceptance cycle on `rg-examplevm-sec1-g1/examplevm`, including isolated local-only accessibility reruns, a full `update --single-step=vm-update --auto --windows` pass with `success=45`, repo-managed restart validation, and post-reboot SSH/process readback confirming the active manager session, startup shortcut, automatic utility service, and running local accessibility processes.
+
 ## Release 2026.3.11.282 - 2026-03-11
 
 ### Summary
@@ -77,7 +89,7 @@ This release makes the repo publish-ready for GitHub by adding `-h` as a first-c
 This release changes the Windows Public Desktop shortcut task from a destructive full mirror into a managed-only reconcile pass, restores host-driven startup mirroring for installed guest apps, and expands the late health snapshot so preserved unmanaged shortcuts and host-observed startup surfaces are both inventoried explicitly.
 
 ### Highlights
-- Updated `10002-create-shortcuts-public-desktop` so it now preserves unmanaged Public Desktop shortcuts such as local-only `j0Accessibility` while still rebuilding the tracked managed shortcut set and clearing the manager, assistant, and default desktop roots.
+- Updated `10002-create-shortcuts-public-desktop` so it now preserves unmanaged Public Desktop shortcuts such as local-only accessibility shortcuts while still rebuilding the tracked managed shortcut set and clearing the manager, assistant, and default desktop roots.
 - Restored dynamic host startup-profile discovery and moved `10001-configure-apps-startup` to method-based host parity, including guest compatibility scaffolding for host apps that start from LocalMachine surfaces.
 - Expanded `10099-capture-snapshot-health` and the smoke contract so unmanaged Public Desktop shortcuts are inventoried instead of flagged as unexpected, and startup verification now reads back the decoded host startup profile instead of a static guest snapshot.
 
@@ -156,11 +168,11 @@ This release introduces the new shared task-band model across Windows and Linux,
 ## Release 2026.3.10.267 - 2026-03-10
 
 ### Summary
-This release moves intentionally local-only stage tasks under explicit `local/` directories, keeps them metadata-driven and disk-discovered, restores the `local-accessibility-files` local asset folder name, and simplifies stage-related `.gitignore` rules around that model.
+This release moves intentionally local-only stage tasks under explicit `local/` directories, keeps them metadata-driven and disk-discovered, restores the local accessibility asset layout, and simplifies stage-related `.gitignore` rules around that model.
 
 ### Highlights
 - Added `local/` and `local/disabled/` task locations to the stage loader while keeping tracked root tasks catalog-driven and duplicate tracked/local task names invalid.
-- Restored the Windows local private local accessibility asset layout to `local/local-accessibility-files/` and kept asset resolution relative to the local task file directory.
+- Restored the Windows local accessibility asset layout under `local/` and kept asset resolution relative to the local task file directory.
 - Updated `AGENTS.md`, `README.md`, and smoke/documentation checks so the repo now documents and enforces the new local-only task contract.
 
 ## Release 2026.3.10.266 - 2026-03-10

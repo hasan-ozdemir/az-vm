@@ -56,6 +56,7 @@ function Ensure-GlobalNpmPackage {
 
 Ensure-GlobalNpmPackage -PackageName "@openai/codex" -InstallSpec "@openai/codex@latest"
 Ensure-GlobalNpmPackage -PackageName "@google/gemini-cli" -InstallSpec "@google/gemini-cli@latest"
+Ensure-GlobalNpmPackage -PackageName "@github/copilot" -InstallSpec "@github/copilot@latest"
 
 Write-Host "install-npm-packages-global-completed"
 Write-Host "Update task completed: install-npm-packages-global"

@@ -63,7 +63,8 @@ Use these sources in this order when maintaining the repo:
 - Keep task-only customization in a clearly labeled config block at the top of the owning `vm-init` or `vm-update` script.
 - Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.
 - Use generic env keys whenever possible.
-- Use `company_name` for the default Windows Chrome profile directory used by repo-managed public desktop web shortcuts.
+- Use `company_name` for repo-managed Windows corporate web shortcuts and `employee_email_address` local-part for repo-managed Windows personal (`Bireysel`) web shortcuts.
+- Keep `employee_full_name` in `.env` as required operator identity metadata for the Windows public desktop shortcut contract.
 - Use shared keys such as `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION` for cross-platform VM feature intent instead of inventing platform-specific duplicates.
 - Use `WIN_` or `LIN_` keys only for true platform-specific settings.
 - Remove deprecated env keys instead of keeping compatibility fallbacks.

@@ -772,7 +772,6 @@ function Invoke-RepresentativeRegistryCopy {
         'Control Panel',
         'Environment',
         'Keyboard Layout',
-        'Software\local accessibility vendor',
         'Software\Microsoft\Notepad',
         'Software\Microsoft\Windows\CurrentVersion\Explorer',
         'Software\Microsoft\Windows\CurrentVersion\Search'
@@ -884,7 +883,6 @@ function Invoke-MainHiveRegCopy {
             'Control Panel',
             'Environment',
             'Keyboard Layout',
-            'Software\local accessibility vendor',
             'Software\Microsoft\Notepad',
             'Software\Microsoft\Windows\CurrentVersion\Explorer',
             'Software\Microsoft\Windows\CurrentVersion\Search'

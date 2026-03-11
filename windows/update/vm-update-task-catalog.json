@@ -121,7 +121,7 @@
       "taskType": "normal",
       "priority": 115,
       "enabled": true,
-      "timeout": 363
+      "timeout": 420
     },
     {
       "name": "116-install-ollama-system",
@@ -234,6 +234,13 @@
       "priority": 131,
       "enabled": true,
       "timeout": 120
+    },
+    {
+      "name": "132-install-vs2022community",
+      "taskType": "normal",
+      "priority": 132,
+      "enabled": true,
+      "timeout": 7200
     },
     {
       "name": "10001-configure-apps-startup",

@@ -236,7 +236,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Za-z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','VM_NAME','company_name','AZ_LOCATION',
+        'VM_OS_TYPE','VM_NAME','company_name','employee_email_address','employee_full_name','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
@@ -264,7 +264,9 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=true')) -Message '.env.example must expose VM_ENABLE_NESTED_VIRTUALIZATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_name is required for Windows public desktop shortcuts.')) -Message '.env.example must document company_name as required for the Windows public desktop shortcut flow.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_name is required for Windows corporate public desktop shortcuts.')) -Message '.env.example must document company_name as required for the Windows corporate public desktop shortcut flow.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('employee_email_address=<email>')) -Message '.env.example must keep the committed employee_email_address default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('employee_full_name=<person-name>')) -Message '.env.example must keep the committed employee_full_name default.'
     Assert-True -Condition (-not ($envExampleText -match [regex]::Escape('<runtime-secret>'))) -Message '.env.example must not keep the old committed assistant password.'
 }
 
@@ -284,7 +286,11 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     Assert-True -Condition ($mainText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Command main must consume the shared PYSSH client default.'
     Assert-True -Condition ($mainText -match [regex]::Escape('Write-Host ("script description: {0}" -f $scriptDescription)')) -Message 'Command main must render script description on a single line.'
     Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must not fall back company_name to VM_NAME.'
+    Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key ''employee_email_address'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must read employee_email_address from config.'
+    Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key ''employee_full_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must read employee_full_name from config.'
     Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''company_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must not fall back company_name to VM_NAME.'
+    Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''employee_email_address'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must read employee_email_address from config.'
+    Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''employee_full_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must read employee_full_name from config.'
 }
 
 Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {
@@ -1952,6 +1958,8 @@ Invoke-Test -Name "Task token replacement" -Action {
         ResourceGroup = "rg-samplevm"
         VmName = "samplevm"
         CompanyName = "orgprofile"
+        EmployeeEmailAddress = "<email>"
+        EmployeeFullName = "<person-name>"
         AzLocation = "austriaeast"
         VmSize = "Standard_B2as_v2"
         VmImage = "example:image:urn"
@@ -1959,10 +1967,11 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmDiskSize = "128"
         VmStorageSku = "StandardSSD_LRS"
         HostStartupProfileJsonBase64 = "W10="
+        HostAutostartDiscoveryJsonBase64 = "e30="
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __EMPLOYEE_EMAIL_ADDRESS__ __EMPLOYEE_FULL_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -1972,7 +1981,10 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*samplevm*") -Message "VM name token was not replaced."
     Assert-True -Condition ($scriptBody -like "*orgprofile*") -Message "Company name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*<email>*") -Message "Employee email token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*<person-name>*") -Message "Employee full name token was not replaced."
     Assert-True -Condition ($scriptBody -like "*W10=*") -Message "Host startup profile token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*e30=*") -Message "Host autostart discovery token was not replaced."
 }
 
 Invoke-Test -Name "Startup mirror profile resolution" -Action {
@@ -1980,7 +1992,6 @@ Invoke-Test -Name "Startup mirror profile resolution" -Action {
         [pscustomobject]@{ Name = 'Docker Desktop'; Command = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
         [pscustomobject]@{ Name = 'Ollama.lnk'; Command = 'C:\Users\operator\AppData\Local\Programs\Ollama\ollama app.exe'; EntryType = 'StartupFolder'; Scope = 'CurrentUser'; Enabled = $true },
         [pscustomobject]@{ Name = 'Teams'; Command = '"C:\Users\operator\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" msteams:system-initiated'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
-        [pscustomobject]@{ Name = 'private local accessibility'; Command = '"C:\Program Files\local accessibility vendor\private local accessibility\2025\local-accessibility.exe" /run'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
         [pscustomobject]@{ Name = 'iTunesHelper'; Command = '"C:\Program Files\iTunes\iTunesHelper.exe"'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
         [pscustomobject]@{ Name = 'OneDrive'; Command = '"C:\Program Files\Microsoft OneDrive\OneDrive.exe" /background'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
         [pscustomobject]@{ Name = 'Microsoft Lists'; Command = '"C:\Program Files\WindowsApps\Microsoft.Lists\Lists.exe"'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
@@ -1990,7 +2001,7 @@ Invoke-Test -Name "Startup mirror profile resolution" -Action {
     $profile = @(Resolve-AzVmHostStartupMirrorProfileFromEntries -Entries $entries)
     $keys = @($profile | ForEach-Object { [string]$_.Key })
 
-    foreach ($requiredKey in @('docker-desktop','ollama','teams','private local accessibility','itunes-helper','onedrive')) {
+    foreach ($requiredKey in @('docker-desktop','ollama','teams','itunes-helper','onedrive')) {
         Assert-True -Condition ($keys -contains $requiredKey) -Message ("Startup mirror profile must include '{0}'." -f $requiredKey)
     }
 
@@ -2045,7 +2056,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '112-install-azd-cli' = 88
         '113-install-wsl2-system' = 137
         '114-install-docker-desktop' = 1649
-        '115-install-npm-packages-global' = 363
+        '115-install-npm-packages-global' = 420
         '116-install-ollama-system' = 376
         '117-install-codex-app' = 120
         '118-install-teams-system' = 60
@@ -2062,6 +2073,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '129-configure-unlocker-io' = 23
         '130-autologon-manager-user' = 20
         '131-install-icloud-system' = 120
+        '132-install-vs2022community' = 7200
         '10001-configure-apps-startup' = 45
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
@@ -2237,14 +2249,14 @@ Invoke-Test -Name "Generic task metadata assets resolve into asset copies" -Acti
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
     try {
         $localDir = Join-Path $tempRoot 'local'
-        $assetDir = Join-Path $localDir 'local-accessibility-files'
+        $assetDir = Join-Path $localDir 'example-assets'
         New-Item -Path $assetDir -ItemType Directory -Force | Out-Null
         $assetPath = Join-Path $assetDir 'profile.zip'
         Set-Content -Path $assetPath -Value 'payload' -Encoding UTF8
 
         $taskPath = Join-Path $localDir '1002-local-config-task.ps1'
         Set-Content -Path $taskPath -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":1002,"timeout":7,"enabled":true,"assets":[{"local":"local-accessibility-files/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
+# az-vm-task-meta: {"priority":1002,"timeout":7,"enabled":true,"assets":[{"local":"example-assets/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
 Write-Host "__VM_ADMIN_USER__"
 '@
 
@@ -2537,14 +2549,16 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'd2One Drive',
         'd3Google Drive',
         'd4ICloud',
-        'e1Mail <email>',
+        'e1Mail {0}',
         'g1Apple Developer',
         'g2Google Developer',
         'g3Microsoft Developer',
         'g4Azure Portal',
-        'i1Internet',
+        'i1Internet Kurumsal',
+        'i2Internet Bireysel',
         'k1Codex CLI',
         'k2Gemini CLI',
+        'k3Github Copilot CLI',
         'm1Dijital Vergi Dairesi',
         'n1Notepad',
         'o1Outlook',
@@ -2570,6 +2584,18 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'r8Amazon TR Bireysel',
         'r9HepsiBurada Kurumsal',
         'r10HepsiBurada Bireysel',
+        'r11N11 Kurumsal',
+        'r12N11 Bireysel',
+        'r13Çiçek Sepeti Kurumsal',
+        'r14Çiçek Sepeti Bireysel',
+        'r15Pazarama Kurumsal',
+        'r16Pazarama Bireysel',
+        'r17PTT AVM Kurumsal',
+        'r18PTT AVM Bireysel',
+        'r19Ozon Kurumsal',
+        'r20Ozon Bireysel',
+        'r21Getir Kurumsal',
+        'r22Getir Bireysel',
         's1LinkedIn Kurumsal',
         's2LinkedIn Bireysel',
         's3YouTube Kurumsal',
@@ -2597,7 +2623,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         't7Azure CLI',
         't8WSL',
         't9Docker CLI',
-        't10AZD CLI',
+        't10Azd CLI',
         't11GH CLI',
         't12FFmpeg CLI',
         't13Seven Zip CLI',
@@ -2607,6 +2633,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'u2This PC',
         'u3Control Panel',
         'u7Network and Sharing',
+        'v1VS2022Com',
         'v5VS Code',
         'z1Google Account Setup',
         'z2Office365 Account Setup'
@@ -2651,8 +2678,14 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     )
     $expectedFragments = @(
         'company_name is required for the Windows public desktop shortcut flow',
+        'employee_email_address is required for the Windows public desktop shortcut flow',
+        'employee_full_name is required for the Windows public desktop shortcut flow',
+        'Get-EmployeeEmailBaseName',
+        'Test-PersonalChromeShortcutName',
+        'Get-ChromeArgsPrefix',
         'https://chatgpt.com',
         'https://www.google.com',
+        'https://www.exampleorg.com',
         'https://web.whatsapp.com',
         'chrome://settings/syncSetup',
         'https://portal.office.com',
@@ -2669,7 +2702,6 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://facebook.com/ozdemirhasan',
         'https://x.com/exampleorg',
         'https://x.com/hasanozdemirnet',
-        'https://www.exampleorg.com',
         'https://www.exampleorg.com/blog',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
@@ -2691,6 +2723,18 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://www.amazon.com.tr/ap/signin',
         'https://merchant.hepsiburada.com',
         'https://giris.hepsiburada.com',
+        'https://so.n11.com',
+        'https://www.n11.com/giris-yap',
+        'https://seller.ciceksepeti.com/giris',
+        'https://www.ciceksepeti.com/uye-girisi',
+        'https://isortagim.pazarama.com',
+        'https://account.pazarama.com/giris',
+        'https://merchant.pttavm.com/magaza-giris',
+        'https://www.pttavm.com',
+        'https://seller.ozon.ru/app/registration/signin?locale=en',
+        'https://www-ozon-ru.translate.goog/?_x_tr_sl=ru&_x_tr_tl=en&_x_tr_hl=en&_x_tr_hist=true',
+        'https://panel.getircarsi.com/login',
+        'https://getir.com',
         'Resolve-AppPackageExecutablePath',
         'Resolve-StoreAppId',
         'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
@@ -2698,7 +2742,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'WhatsApp.Root.exe',
         '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
         'iCloudHome.exe',
-        '/c start outlook.exe /select "outlook:\\<email>\\Inbox"',
+        '/c start outlook.exe /select "outlook:\\{0}\\Inbox"',
         'https://developer.apple.com/account',
         'https://play.google.com/console/signin',
         'https://aka.ms/submitwindowsapp',
@@ -2713,9 +2757,11 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://www.obilet.com/?giris',
         'TaskKill -im "ollama app.exe"',
         '/k cd /d %UserProfile% & docker info',
+        '%UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5',
         'C:\ProgramData\chocolatey\bin\7z.exe',
         '--enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search',
         '--screen-reader --yolo',
+        'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe',
         'Set-ShortcutRunAsAdministratorFlag',
         'Get-ShortcutRunAsAdministratorFlag',
         'WindowStyle',
@@ -2733,7 +2779,9 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         '%UserProfile%',
         '$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"',
         '--user-data-dir="{0}"',
-        '--profile-directory="{1}"'
+        '--profile-directory="{1}"',
+        'return [string]$employeeEmailBaseName',
+        'return [string]$companyName'
     )
 
     foreach ($shortcutName in @($expectedShortcutNames)) {
@@ -2745,6 +2793,10 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$legacyShortcutName, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Shortcut task must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
         Assert-True -Condition (($healthTaskScript.IndexOf([string]$legacyShortcutName, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Health snapshot must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)
     }
+
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('-Name "i1Internet"', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep the old i1Internet shortcut label.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('t10AZD CLI', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep the old t10AZD CLI shortcut label.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('t10AZD CLI', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Health snapshot must not keep the old t10AZD CLI shortcut label.'
 
     foreach ($fragment in @($expectedFragments)) {
         Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$fragment, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Shortcut task must include fragment '{0}'." -f $fragment)
@@ -2765,6 +2817,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
     $installTaskMap = [ordered]@{
+        '115-install-npm-packages-global.ps1' = @('@github/copilot@latest', '@openai/codex@latest', '@google/gemini-cli@latest')
         '125-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
         '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'install-be-my-eyes-deferred', 'AzVmInstallBeMyEyes')
         '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd' )
@@ -2772,6 +2825,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
         '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'install-icloud-system-deferred', 'AzVmInstallICloud')
+        '132-install-vs2022community.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-completed')
         '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
         '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
@@ -2838,7 +2892,6 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         'autostart-method =>',
         'Register-ScheduledTask',
         'ScheduledTask/AtLogOn',
-        'autostart-skip: private local accessibility => owned by local private local accessibility task',
         'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
         'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run32',
         'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp',
@@ -2879,12 +2932,70 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         'Ollama',
         'OneDrive',
         'Teams',
-        'private local accessibility',
         'iTunesHelper'
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
     Assert-True -Condition (($healthTaskText.IndexOf('Get-ManagerContext', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must read manager-scope startup locations through the manager hive."
+}
+
+Invoke-Test -Name "Tracked tree omits local-only accessibility vendor residue" -Action {
+    $trackedRelativePaths = @()
+    $gitCommand = Get-Command git -ErrorAction SilentlyContinue
+    if ($gitCommand) {
+        $trackedRelativePaths = @(
+            & $gitCommand.Source -C $RepoRoot ls-files --cached --others --exclude-standard
+        )
+    }
+
+    $repoFiles = @()
+    foreach ($relativePath in @($trackedRelativePaths)) {
+        $relativeText = [string]$relativePath
+        if ([string]::IsNullOrWhiteSpace([string]$relativeText)) {
+            continue
+        }
+        if ($relativeText.StartsWith('.git/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+        if ($relativeText.StartsWith('windows/update/local/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+        if ($relativeText.StartsWith('windows/init/local/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        $absolutePath = Join-Path $RepoRoot $relativeText
+        if (Test-Path -LiteralPath $absolutePath -PathType Leaf) {
+            $repoFiles += [string]$absolutePath
+        }
+    }
+
+    $legacyNeedles = @(
+        ('ja' + 'ws'),
+        ('j0' + 'ja' + 'ws'),
+        ('jfw' + '.exe'),
+        ('Freedom' + ' Scientific'),
+        ('ja' + 'ws2025files')
+    )
+
+    foreach ($needle in @($legacyNeedles)) {
+        $matchingFiles = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($file in @($repoFiles)) {
+            $fileText = ''
+            try {
+                $fileText = [string](Get-Content -LiteralPath $file -Raw -ErrorAction Stop)
+            }
+            catch {
+                $fileText = ''
+            }
+
+            if (-not [string]::IsNullOrEmpty([string]$fileText) -and $fileText.IndexOf([string]$needle, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+                [void]$matchingFiles.Add([string]$file)
+            }
+        }
+
+        Assert-True -Condition ($matchingFiles.Count -eq 0) -Message ("Tracked tree must not keep local-only accessibility vendor residue for needle '{0}'. Matches: {1}" -f [string]$needle, ($matchingFiles -join ', '))
+    }
 }
 
 Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {

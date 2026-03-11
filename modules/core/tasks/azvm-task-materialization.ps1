@@ -17,6 +17,13 @@ function Get-AzVmTaskTokenReplacements {
     if ([string]::IsNullOrWhiteSpace([string]$hostStartupProfileJsonBase64)) {
         $hostStartupProfileJsonBase64 = Get-AzVmHostStartupMirrorProfileJsonBase64
     }
+    $hostAutostartDiscoveryJsonBase64 = ''
+    if ($Context -and $Context.ContainsKey('HostAutostartDiscoveryJsonBase64')) {
+        $hostAutostartDiscoveryJsonBase64 = [string]$Context.HostAutostartDiscoveryJsonBase64
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$hostAutostartDiscoveryJsonBase64)) {
+        $hostAutostartDiscoveryJsonBase64 = Get-AzVmHostAutostartDiscoveryJsonBase64
+    }
 
     return @{
         VM_ADMIN_USER = [string]$Context.VmUser
@@ -31,6 +38,8 @@ function Get-AzVmTaskTokenReplacements {
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VM_NAME = [string]$Context.VmName
         COMPANY_NAME = [string]$Context.CompanyName
+        EMPLOYEE_EMAIL_ADDRESS = [string]$Context.EmployeeEmailAddress
+        EMPLOYEE_FULL_NAME = [string]$Context.EmployeeFullName
         AZ_LOCATION = [string]$Context.AzLocation
         VM_SIZE = [string]$Context.VmSize
         VM_IMAGE = [string]$Context.VmImage
@@ -38,6 +47,7 @@ function Get-AzVmTaskTokenReplacements {
         VM_DISK_SIZE = [string]$Context.VmDiskSize
         VM_STORAGE_SKU = [string]$Context.VmStorageSku
         HOST_STARTUP_PROFILE_JSON_B64 = [string]$hostStartupProfileJsonBase64
+        HOST_AUTOSTART_DISCOVERY_JSON_B64 = [string]$hostAutostartDiscoveryJsonBase64
     }
 }
 

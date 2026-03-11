@@ -2,12 +2,16 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: capture-snapshot-health"
 
 $companyName = "__COMPANY_NAME__"
+$employeeEmailAddress = "__EMPLOYEE_EMAIL_ADDRESS__"
+$employeeFullName = "__EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
+$unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
+$unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
 
 function Invoke-CommandWithTimeout {
     param(
@@ -45,6 +49,29 @@ function Test-InvalidCompanyName {
     $trimmed = $Value.Trim()
     if ([string]::Equals($trimmed, $unresolvedCompanyNameToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ([string]::Equals($trimmed, "company_name", [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
+    return $false
+}
+
+function Test-InvalidEmployeeEmailAddress {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedEmployeeEmailAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, 'employee_email_address', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
+    if (($trimmed -split '@').Count -lt 2) { return $true }
+    return $false
+}
+
+function Test-InvalidEmployeeFullName {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedEmployeeFullNameToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, 'employee_full_name', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
     return $false
 }
@@ -250,7 +277,6 @@ function Resolve-StartupDisplayName {
         'ollama' { return 'Ollama' }
         'onedrive' { return 'OneDrive' }
         'teams' { return 'Teams' }
-        'private local accessibility' { return 'private local accessibility' }
         'itunes-helper' { return 'iTunesHelper' }
         'google-drive' { return 'Google Drive' }
         'windscribe' { return 'Windscribe' }
@@ -458,6 +484,8 @@ function Write-DesktopState {
 }
 
 $resolvedCompanyName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { $companyName.Trim() }
+$resolvedEmployeeEmailAddress = if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) { $unresolvedEmployeeEmailAddressToken } else { $employeeEmailAddress.Trim() }
+$resolvedEmployeeFullName = if (Test-InvalidEmployeeFullName -Value $employeeFullName) { $unresolvedEmployeeFullNameToken } else { $employeeFullName.Trim() }
 $publicShortcutNames = @(
     "a1ChatGPT Web",
     "a2CodexApp",
@@ -484,14 +512,16 @@ $publicShortcutNames = @(
     "d2One Drive",
     "d3Google Drive",
     "d4ICloud",
-    "e1Mail <email>",
+    ("e1Mail {0}" -f $resolvedEmployeeEmailAddress),
     "g1Apple Developer",
     "g2Google Developer",
     "g3Microsoft Developer",
     "g4Azure Portal",
-    "i1Internet",
+    "i1Internet Kurumsal",
+    "i2Internet Bireysel",
     "k1Codex CLI",
     "k2Gemini CLI",
+    "k3Github Copilot CLI",
     "m1Dijital Vergi Dairesi",
     "n1Notepad",
     "o1Outlook",
@@ -517,6 +547,18 @@ $publicShortcutNames = @(
     "r8Amazon TR Bireysel",
     "r9HepsiBurada Kurumsal",
     "r10HepsiBurada Bireysel",
+    "r11N11 Kurumsal",
+    "r12N11 Bireysel",
+    "r13Çiçek Sepeti Kurumsal",
+    "r14Çiçek Sepeti Bireysel",
+    "r15Pazarama Kurumsal",
+    "r16Pazarama Bireysel",
+    "r17PTT AVM Kurumsal",
+    "r18PTT AVM Bireysel",
+    "r19Ozon Kurumsal",
+    "r20Ozon Bireysel",
+    "r21Getir Kurumsal",
+    "r22Getir Bireysel",
     "s1LinkedIn Kurumsal",
     "s2LinkedIn Bireysel",
     "s3YouTube Kurumsal",
@@ -544,7 +586,7 @@ $publicShortcutNames = @(
     "t7Azure CLI",
     "t8WSL",
     "t9Docker CLI",
-    "t10AZD CLI",
+    "t10Azd CLI",
     "t11GH CLI",
     "t12FFmpeg CLI",
     "t13Seven Zip CLI",
@@ -554,6 +596,7 @@ $publicShortcutNames = @(
     "u2This PC",
     "u3Control Panel",
     "u7Network and Sharing",
+    "v1VS2022Com",
     "v5VS Code",
     "z1Google Account Setup",
     "z2Office365 Account Setup"

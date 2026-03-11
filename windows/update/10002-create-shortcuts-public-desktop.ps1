@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: create-shortcuts-public-desktop"
 
 $companyName = "__COMPANY_NAME__"
+$employeeEmailAddress = "__EMPLOYEE_EMAIL_ADDRESS__"
+$employeeFullName = "__EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
@@ -13,6 +15,8 @@ $whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2
 $iCloudFallbackPath = "C:\Program Files\WindowsApps\AppleInc.iCloud_15.7.56.0_x64__nzyj5cx40ttqa\iCloud\iCloudHome.exe"
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
+$unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
+$unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
 
 function Test-InvalidCompanyName {
     param([string]$Value)
@@ -35,13 +39,112 @@ function Test-InvalidCompanyName {
     return $false
 }
 
+function Test-InvalidEmployeeEmailAddress {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $true
+    }
+
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedEmployeeEmailAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ([string]::Equals($trimmed, 'employee_email_address', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
+        return $true
+    }
+    if (($trimmed -split '@').Count -lt 2) {
+        return $true
+    }
+
+    return $false
+}
+
+function Test-InvalidEmployeeFullName {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $true
+    }
+
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedEmployeeFullNameToken, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ([string]::Equals($trimmed, 'employee_full_name', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
+        return $true
+    }
+
+    return $false
+}
+
+function Get-EmployeeEmailBaseName {
+    param([string]$EmailAddress)
+
+    if (Test-InvalidEmployeeEmailAddress -Value $EmailAddress) {
+        throw "employee_email_address must be a non-placeholder email address before running 10002-create-shortcuts-public-desktop."
+    }
+
+    return [string]($EmailAddress.Trim().Split('@')[0])
+}
+
+function Test-PersonalChromeShortcutName {
+    param([string]$ShortcutName)
+
+    return (-not [string]::IsNullOrWhiteSpace([string]$ShortcutName) -and $ShortcutName.IndexOf('Bireysel', [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+}
+
 if (Test-InvalidCompanyName -Value $companyName) {
     throw "company_name is required for the Windows public desktop shortcut flow. Set company_name in .env before running 10002-create-shortcuts-public-desktop."
 }
+if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) {
+    throw "employee_email_address is required for the Windows public desktop shortcut flow. Set employee_email_address in .env before running 10002-create-shortcuts-public-desktop."
+}
+if (Test-InvalidEmployeeFullName -Value $employeeFullName) {
+    throw "employee_full_name is required for the Windows public desktop shortcut flow. Set employee_full_name in .env before running 10002-create-shortcuts-public-desktop."
+}
 
-$chromeRemoteArgsPrefix = ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $companyName)
-$chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $companyName)
-$chromeBankArgsPrefix = ('--new-window --start-maximized --profile-directory="{0}"' -f $companyName)
+$companyName = $companyName.Trim()
+$employeeEmailAddress = $employeeEmailAddress.Trim()
+$employeeFullName = $employeeFullName.Trim()
+$employeeEmailBaseName = Get-EmployeeEmailBaseName -EmailAddress $employeeEmailAddress
+
+function Get-ChromeProfileDirectoryForShortcut {
+    param([string]$ShortcutName)
+
+    if (Test-PersonalChromeShortcutName -ShortcutName $ShortcutName) {
+        return [string]$employeeEmailBaseName
+    }
+
+    return [string]$companyName
+}
+
+function Get-ChromeArgsPrefix {
+    param(
+        [string]$ShortcutName,
+        [ValidateSet('remote','setup','bank')]
+        [string]$Variant = 'remote'
+    )
+
+    $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ShortcutName $ShortcutName
+    switch ([string]$Variant) {
+        'setup' {
+            return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
+        }
+        'bank' {
+            return ('--new-window --start-maximized --profile-directory="{0}"' -f $profileDirectory)
+        }
+        default {
+            return ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
+        }
+    }
+}
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
@@ -710,6 +813,7 @@ $windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCand
     "C:\Program Files\Windscribe\Windscribe.exe",
     "C:\Program Files (x86)\Windscribe\Windscribe.exe"
 )
+$vs2022CommunityExe = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
 $vsCodeCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd") -ResolvedPath (Resolve-CommandPath -CommandName "code.cmd" -FallbackCandidates @(
     ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $assistantUser)
@@ -822,7 +926,19 @@ $marketplaceWebShortcuts = @(
     @{ Name = "r7Amazon TR Kurumsal"; Url = "https://sellercentral.amazon.com.tr" },
     @{ Name = "r8Amazon TR Bireysel"; Url = "https://www.amazon.com.tr/ap/signin" },
     @{ Name = "r9HepsiBurada Kurumsal"; Url = "https://merchant.hepsiburada.com" },
-    @{ Name = "r10HepsiBurada Bireysel"; Url = "https://giris.hepsiburada.com" }
+    @{ Name = "r10HepsiBurada Bireysel"; Url = "https://giris.hepsiburada.com" },
+    @{ Name = "r11N11 Kurumsal"; Url = "https://so.n11.com" },
+    @{ Name = "r12N11 Bireysel"; Url = "https://www.n11.com/giris-yap" },
+    @{ Name = "r13Çiçek Sepeti Kurumsal"; Url = "https://seller.ciceksepeti.com/giris" },
+    @{ Name = "r14Çiçek Sepeti Bireysel"; Url = "https://www.ciceksepeti.com/uye-girisi" },
+    @{ Name = "r15Pazarama Kurumsal"; Url = "https://isortagim.pazarama.com" },
+    @{ Name = "r16Pazarama Bireysel"; Url = "https://account.pazarama.com/giris" },
+    @{ Name = "r17PTT AVM Kurumsal"; Url = "https://merchant.pttavm.com/magaza-giris" },
+    @{ Name = "r18PTT AVM Bireysel"; Url = "https://www.pttavm.com" },
+    @{ Name = "r19Ozon Kurumsal"; Url = "https://seller.ozon.ru/app/registration/signin?locale=en" },
+    @{ Name = "r20Ozon Bireysel"; Url = "https://www-ozon-ru.translate.goog/?_x_tr_sl=ru&_x_tr_tl=en&_x_tr_hl=en&_x_tr_hist=true" },
+    @{ Name = "r21Getir Kurumsal"; Url = "https://panel.getircarsi.com/login" },
+    @{ Name = "r22Getir Bireysel"; Url = "https://getir.com" }
 )
 $quickAccessWebShortcuts = @(
     @{ Name = "q2Spotify"; Url = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com" },
@@ -834,7 +950,7 @@ $quickAccessWebShortcuts = @(
     @{ Name = "q8OBilet Otobüs"; Url = "https://www.obilet.com/?giris" }
 )
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://chatgpt.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "a1ChatGPT Web" -Variant 'remote') + ' "https://chatgpt.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $beMyEyesAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
@@ -843,7 +959,7 @@ else {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments $beMyEyesStoreUri -IconLocation ($explorerExe + ",0") -ValidationKind "store-deeplink")
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Kurumsal" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a5WhatsApp Bireysel" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://web.whatsapp.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a5WhatsApp Bireysel" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "a5WhatsApp Bireysel" -Variant 'remote') + ' "https://web.whatsapp.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$windscribeExe)) {
@@ -861,7 +977,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -Target
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a12Itunes" -TargetPath $itunesExe -AllowMissingTargetPath $true -ValidationKind "app")
 
 foreach ($spec in @($bankShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-bank")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'bank') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-bank")
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "c1Cmd" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile%" -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -ValidationKind "console")
@@ -870,19 +986,21 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -Targ
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "e1Mail <email>" -TargetPath $cmdExe -Arguments '/c start outlook.exe /select "outlook:\\<email>\\Inbox"' -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ("e1Mail {0}" -f $employeeEmailAddress) -TargetPath $cmdExe -Arguments ('/c start outlook.exe /select "outlook:\\{0}\\Inbox"' -f $employeeEmailAddress) -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
 
 foreach ($spec in @($developerWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 }
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i1Internet" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://www.google.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i1Internet Kurumsal" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "i1Internet Kurumsal" -Variant 'remote') + ' "https://www.exampleorg.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i2Internet Bireysel" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "i2Internet Bireysel" -Variant 'remote') + ' "https://www.google.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k3Github Copilot CLI" -TargetPath $cmdExe -Arguments '/c cd /d %UserProfile% & %UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5' -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 
 foreach ($spec in @($marketplaceWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "n1Notepad" -TargetPath "C:\Windows\System32\notepad.exe" -ValidationKind "app")
@@ -901,11 +1019,11 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o5Power Point" -Tar
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o6OneNote" -TargetPath $oneNoteExe -AllowMissingTargetPath $true -ValidationKind "office")
 
 foreach ($spec in @($quickAccessWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 }
 
 foreach ($spec in @($socialWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t1Git Bash" -TargetPath $gitBashExe -WorkingDirectory "%UserProfile%" -AllowMissingTargetPath $true -ValidationKind "console")
@@ -917,7 +1035,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t6PS" -TargetPath $
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t7Azure CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & az" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t8WSL" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & wsl" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $wslExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t9Docker CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & docker info" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $dockerExe -FallbackPath $cmdExe) -ValidationKind "console")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t10AZD CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & azd" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azdExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t10Azd CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & azd" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azdExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t11GH CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & gh" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ghExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t12FFmpeg CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & ffmpeg -version" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ffmpegExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t13Seven Zip CLI" -TargetPath $cmdExe -Arguments ('/k cd /d %UserProfile% & "{0}"' -f $sevenZipCliPath) -WorkingDirectory "%UserProfile%" -IconLocation ($sevenZipCliPath + ",0") -ValidationKind "console")
@@ -929,10 +1047,11 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u2This PC" -TargetP
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u3Control Panel" -TargetPath $explorerExe -Arguments "shell:ControlPanelFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u7Network and Sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" -IconLocation ($controlExe + ",0") -ValidationKind "app")
 
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v1VS2022Com" -TargetPath $vs2022CommunityExe -WorkingDirectory (Split-Path -Path $vs2022CommunityExe -Parent) -IconLocation (Resolve-IconLocation -PreferredPath $vs2022CommunityExe -FallbackPath $powershellExe) -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments "-command ""&'%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd'""" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $cmdExe -Arguments $chromeSyncSetupCommand -IconLocation ($chromeTarget + ",0") -ValidationKind "chrome-setup")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z2Office365 Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "https://portal.office.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z2Office365 Account Setup" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "z2Office365 Account Setup" -Variant 'setup') + ' "https://portal.office.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
 
 $managedShortcutNames = @($shortcutSpecs | ForEach-Object { [string]$_.Name })
 if (@($managedShortcutNames | Select-Object -Unique).Count -ne @($managedShortcutNames).Count) {

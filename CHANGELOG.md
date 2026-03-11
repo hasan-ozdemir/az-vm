@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.283] - 2026-03-12
+
+### Added
+- Added committed `employee_email_address` and `employee_full_name` config placeholders, plus runtime token materialization for employee identity and generic host autostart discovery data used by operator-local flows.
+- Added tracked Windows task `132-install-vs2022community.ps1` and extended tracked npm bootstrap task `115-install-npm-packages-global.ps1` to install the GitHub Copilot CLI prerequisite.
+
+### Changed
+- Expanded the tracked Public Desktop shortcut contract so Windows update now creates `i1Internet Kurumsal`, `i2Internet Bireysel`, `r11-r22`, `k3Github Copilot CLI`, `v1VS2022Com`, and the renamed `t10Azd CLI`, while `e1Mail` and every Chrome shortcut labeled `Bireysel` now derive their personal profile routing from the employee email local-part.
+- Updated tracked shortcut health capture, smoke assertions, README contract, and engineering contract rules so the new employee-based Chrome profile behavior, renamed shortcuts, new task timeouts, and new prerequisite tasks are all enforced explicitly.
+- Shifted the tracked startup/profile-copy surface to a generic local-accessibility ownership model by removing vendor-specific behavior from startup mirroring, tracked profile-copy exclusions, tracked startup configuration, and maintained docs; tracked code now only provides generic host autostart discovery and unmanaged-shortcut preservation for one private local-only accessibility flow.
+
+### Tests
+- Revalidated the full non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
+- Completed live Windows acceptance on `rg-examplevm-sec1-g1/examplevm`: isolated `exec --update-task=1001..1005` reruns for one private local-only accessibility flow, a full `update --single-step=vm-update --auto --windows` pass with `success=45, failed=0, warning=0, error=0, reboot=0`, `do --vm-action=restart`, SSH/RDP connectivity checks, and post-reboot guest readback confirming the manager startup shortcut, automatic utility service, active console session, and running local accessibility processes.
+
 ## [2026.3.11.282] - 2026-03-11
 
 ### Changed
@@ -83,7 +98,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ## [2026.3.11.276] - 2026-03-11
 
 ### Changed
-- Changed `10002-create-shortcuts-public-desktop` from a full Public Desktop mirror into a managed-shortcut reconcile pass, so it now removes and recreates only the tracked shortcut names while preserving unmanaged Public Desktop entries such as local-only `j0Accessibility`; the same task still clears the manager, assistant, and default desktop roots.
+- Changed `10002-create-shortcuts-public-desktop` from a full Public Desktop mirror into a managed-shortcut reconcile pass, so it now removes and recreates only the tracked shortcut names while preserving unmanaged Public Desktop entries such as local-only accessibility shortcuts; the same task still clears the manager, assistant, and default desktop roots.
 - Restored host startup-profile discovery in `azvm-core-foundation`, replaced the static Windows auto-start snapshot with host-driven method mirroring in `10001-configure-apps-startup`, and added a guest compatibility layer for LocalMachine startup apps so the guest now applies the host-observed startup surfaces and approval state instead of relying on a hard-coded list.
 - Expanded `10099-capture-snapshot-health` so Windows late-stage health snapshots now inventory unmanaged Public Desktop shortcuts and host-driven startup entries instead of treating extra Public Desktop shortcuts as unexpected removable artifacts.
 
@@ -173,7 +188,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Changed
 - Moved intentionally local-only stage tasks under `local/` and local-only disabled tasks under `local/disabled/`, while keeping tracked root tasks catalog-driven.
-- Restored the local private local accessibility asset folder name to `local-accessibility-files` under the Windows update local subtree and kept local asset resolution relative to the local task file directory.
+- Restored the Windows local accessibility asset layout under the update local subtree and kept local asset resolution relative to the local task file directory.
 - Extended task discovery so stage roots now accept `local/*` and `local/disabled/*` script locations, ignore catalog state for local-only tasks, and fail fast on duplicate tracked/local task names.
 
 ### Documentation
