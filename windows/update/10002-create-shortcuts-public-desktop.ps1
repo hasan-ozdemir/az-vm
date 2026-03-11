@@ -805,6 +805,12 @@ $bankShortcuts = @(
     @{ Name = "b7ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" },
     @{ Name = "b8ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" }
 )
+$developerWebShortcuts = @(
+    @{ Name = "g1Apple Developer"; Url = "https://developer.apple.com/account" },
+    @{ Name = "g2Google Developer"; Url = "https://play.google.com/console/signin" },
+    @{ Name = "g3Microsoft Developer"; Url = "https://aka.ms/submitwindowsapp" },
+    @{ Name = "g4Azure Portal"; Url = "https://portal.azure.com" }
+)
 $marketplaceWebShortcuts = @(
     @{ Name = "m1Dijital Vergi Dairesi"; Url = "https://dijital.gib.gov.tr/portal/login" },
     @{ Name = "r1Sahibinden Kurumsal"; Url = "https://secure.sahibinden.com/giris" },
@@ -817,6 +823,15 @@ $marketplaceWebShortcuts = @(
     @{ Name = "r8Amazon TR Bireysel"; Url = "https://www.amazon.com.tr/ap/signin" },
     @{ Name = "r9HepsiBurada Kurumsal"; Url = "https://merchant.hepsiburada.com" },
     @{ Name = "r10HepsiBurada Bireysel"; Url = "https://giris.hepsiburada.com" }
+)
+$quickAccessWebShortcuts = @(
+    @{ Name = "q2Spotify"; Url = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com" },
+    @{ Name = "q3Netflix"; Url = "https://www.netflix.com/tr-en/login" },
+    @{ Name = "q4EDevlet"; Url = "https://www.turkiye.gov.tr" },
+    @{ Name = "q5Apple Account"; Url = "https://account.apple.com/sign-in" },
+    @{ Name = "q6AJet Uçak"; Url = "https://ajet.com" },
+    @{ Name = "q7TCDD Tren"; Url = "https://ebilet.tcddtasimacilik.gov.tr" },
+    @{ Name = "q8OBilet Otobüs"; Url = "https://www.obilet.com/?giris" }
 )
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://chatgpt.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
@@ -857,6 +872,10 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -Ta
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "e1Mail <email>" -TargetPath $cmdExe -Arguments '/c start outlook.exe /select "outlook:\\<email>\\Inbox"' -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
 
+foreach ($spec in @($developerWebShortcuts)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+}
+
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i1Internet" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://www.google.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
@@ -880,6 +899,10 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o3Word" -TargetPath
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o4Excel" -TargetPath $excelExe -AllowMissingTargetPath $true -ValidationKind "office")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o5Power Point" -TargetPath $powerPointExe -AllowMissingTargetPath $true -ValidationKind "office")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o6OneNote" -TargetPath $oneNoteExe -AllowMissingTargetPath $true -ValidationKind "office")
+
+foreach ($spec in @($quickAccessWebShortcuts)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+}
 
 foreach ($spec in @($socialWebShortcuts)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")

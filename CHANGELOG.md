@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.275] - 2026-03-11
+
+### Changed
+- Expanded `10002-create-shortcuts-public-desktop` so the managed Public Desktop set now also adds the requested `g1-g4` developer links and `q2-q8` quick-access web shortcuts, all using the same Chrome launcher contract as `i1Internet`.
+- Expanded `10099-capture-snapshot-health` so the late-stage Windows health snapshot now inventories the new `g` and `q` shortcut names together with the rest of the managed Public Desktop set.
+
+### Tests
+- Extended the Windows public-desktop smoke contract so the new shortcut names and URLs are enforced together with the existing launcher fragments and health inventory expectations.
+
 ## [2026.3.11.274] - 2026-03-11
 
 ### Changed

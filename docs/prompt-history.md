@@ -4459,3 +4459,26 @@ This task should run the PowerShell command `autologon /accepteula vm_admin_user
 **Assistant Summary**
 
 Added the tracked Windows `130-autologon-manager-user` task immediately after `129-configure-unlocker-io`, moved the tracked iCloud task forward to `131-install-icloud-system`, implemented local `manager` credential validation before invoking Sysinternals `autologon /accepteula <user> . <password>`, expanded the late Windows health snapshot with explicit Winlogon autologon readback, updated the tracked-task and install-task smoke contracts, and revalidated the change with the local validation suite plus isolated live reruns of `130` and `10099`.
+
+### 2026-03-11 08:33 TRT
+
+**User Prompt**
+
+````text
+Task: add the following shortcuts to the `public-desktop-icons` operations under `vm-update` as well; and for the target, use the same target as the `i1` shortcut again:
+*q2Spotify: https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com
+*q3Netflix: https://www.netflix.com/tr-en/login
+*q4EDevlet: https://www.turkiye.gov.tr
+*q5Apple Account: https://account.apple.com/sign-in
+*q6AJet Uçak: https://ajet.com
+*q7TCDD Tren: https://ebilet.tcddtasimacilik.gov.tr
+*q8OBilet Otobüs: https://www.obilet.com/?giris
+*g1Apple Developer: https://developer.apple.com/account
+*g2Google Developer: https://play.google.com/console/signin
+*g3Microsoft Developer: https://aka.ms/submitwindowsapp
+*g4Azure Portal: https://portal.azure.com
+````
+
+**Assistant Summary**
+
+Expanded the Windows Public Desktop shortcut manifest with the requested `g1-g4` developer links and `q2-q8` quick-access web shortcuts, all reusing the same Chrome launcher contract as `i1Internet`. Updated the Windows health snapshot and smoke contract to inventory and enforce the new shortcut names and URLs, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.11.275`, and revalidated the change with `code-quality-check`, `documentation-contract-check`, `powershell-compatibility-check`, and `az-vm-smoke-tests`.

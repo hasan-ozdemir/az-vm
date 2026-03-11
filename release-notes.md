@@ -2,6 +2,15 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.275 - 2026-03-11
+
+### Summary
+This release expands the managed Public Desktop contract again by adding the requested `g1-g4` developer shortcuts and `q2-q8` quick-access web shortcuts, all reusing the same Chrome launcher shape as `i1Internet`.
+
+### Highlights
+- Extended `10002-create-shortcuts-public-desktop` with `g1Apple Developer`, `g2Google Developer`, `g3Microsoft Developer`, `g4Azure Portal`, `q2Spotify`, `q3Netflix`, `q4EDevlet`, `q5Apple Account`, `q6AJet Uçak`, `q7TCDD Tren`, and `q8OBilet Otobüs`, each using the existing Public Desktop Chrome target and argument contract.
+- Expanded `10099-capture-snapshot-health` and the smoke contract so the new shortcut names and URLs are now read back and enforced together with the rest of the managed Public Desktop set.
+
 ## Release 2026.3.11.274 - 2026-03-11
 
 ### Summary
