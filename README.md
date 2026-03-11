@@ -71,6 +71,7 @@
 - [Developer Workflow](#developer-workflow)
   - [Branching And Local Hooks](#branching-and-local-hooks)
   - [Quality Gates](#quality-gates)
+  - [Support And Contribution Paths](#support-and-contribution-paths)
   - [Documentation Contract](#documentation-contract)
   - [Prompt History Rule](#prompt-history-rule)
 - [Documentation Set](#documentation-set)
@@ -148,6 +149,7 @@
 
 ### Daily Operator Shortcuts
 ```powershell
+.\az-vm.cmd -h
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd task --list --vm-update --windows
@@ -312,13 +314,14 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 - `--auto[=true|false]`: unattended create/update/delete.
 - `--perf[=true|false]`: timing output.
 - `--windows`, `--linux`: force platform for supported commands.
-- `--help`: show overview or command-specific help.
+- `-h`, `--help`: show overview or command-specific help.
 
 ### `configure`
 Purpose: preview and validate the target configuration before Azure mutation.
 
 Typical usage:
 ```powershell
+.\az-vm.cmd configure -h
 .\az-vm.cmd configure
 .\az-vm.cmd configure --windows
 ```
@@ -333,6 +336,7 @@ Purpose: build a managed VM flow from the selected step range.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd create -h
 .\az-vm.cmd create --auto --windows
 .\az-vm.cmd create --single-step=network --linux
 .\az-vm.cmd create --from-step=vm-deploy --to-step=vm-summary --perf
@@ -354,6 +358,7 @@ Purpose: rerun create-or-update logic against existing managed resources.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd update -h
 .\az-vm.cmd update --auto
 .\az-vm.cmd update --to-step=vm-init --auto
 .\az-vm.cmd update --single-step=vm-update --windows
@@ -369,6 +374,7 @@ Purpose: list or select managed resource groups.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd group -h
 .\az-vm.cmd group --list=<vm-name>
 .\az-vm.cmd group --select=<resource-group>
 ```
@@ -382,6 +388,7 @@ Purpose: print a readable system/configuration inventory for managed resources a
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd show -h
 .\az-vm.cmd show
 .\az-vm.cmd show --group=<resource-group>
 ```
@@ -404,6 +411,7 @@ Supported actions:
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd do -h
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=deallocate --group=<resource-group> --vm-name=<vm-name>
@@ -425,6 +433,7 @@ Purpose: list the real discovered task inventory and execution order without mut
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd task -h
 .\az-vm.cmd task --list
 .\az-vm.cmd task --list --vm-init
 .\az-vm.cmd task --list --vm-update --disabled --windows
@@ -441,6 +450,7 @@ Purpose: run one init task, one update task, or open an interactive remote shell
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd exec -h
 .\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd exec --update-task=10002 --group=<resource-group> --vm-name=<vm-name> --windows
 .\az-vm.cmd exec --linux
@@ -462,6 +472,7 @@ Purpose: launch the local Windows OpenSSH client for a managed VM.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd ssh -h
 .\az-vm.cmd ssh --vm-name=<vm-name>
 .\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
@@ -476,6 +487,7 @@ Purpose: launch the local Remote Desktop client for a managed Windows VM.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd rdp -h
 .\az-vm.cmd rdp --vm-name=<vm-name>
 .\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
@@ -490,6 +502,7 @@ Purpose: move a managed VM to another Azure region with a health-gated cutover.
 
 Usage pattern:
 ```powershell
+.\az-vm.cmd move -h
 .\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral
 ```
 
@@ -518,6 +531,7 @@ Purpose: change the VM size in-place within the current region.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd resize -h
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D2as_v5 --windows
 .\az-vm.cmd resize
@@ -538,6 +552,7 @@ Supported flags:
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd set -h
 .\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off
 .\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off
 .\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off
@@ -559,6 +574,7 @@ Supported targets:
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd delete -h
 .\az-vm.cmd delete --target=group --group=<resource-group> --yes
 .\az-vm.cmd delete --target=vm --group=<resource-group> --yes
 ```
@@ -573,7 +589,9 @@ Purpose: print the quick overview or one-command help.
 
 Usage patterns:
 ```powershell
+.\az-vm.cmd -h
 .\az-vm.cmd --help
+.\az-vm.cmd do -h
 .\az-vm.cmd help
 .\az-vm.cmd help move
 ```
@@ -694,6 +712,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\az-vm-smoke-tests.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\bash-syntax-check.ps1
 ```
 
+GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` workflow on pull requests, pushes to `main`, and manual dispatch. It covers static audit, PowerShell compatibility, Linux shell syntax, workflow linting, and the non-live smoke-contract suite.
+
+### Support And Contribution Paths
+- Read [SUPPORT.md](SUPPORT.md) before opening a public issue.
+- Read [SECURITY.md](SECURITY.md) for vulnerability reporting; do not post sensitive reports publicly.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request, especially for command-surface or workflow changes.
+- Read [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) before participating in repo discussions or reviews.
+- This repo uses a contact-first contribution model for large changes and a maintainer-curated review path.
+
 ### Documentation Contract
 When a prompt changes repo files:
 - update `README.md`, `AGENTS.md`, `.env.example`, tests, or help text when the contract changes
@@ -708,6 +735,11 @@ When a prompt changes repo files:
 ## Documentation Set
 - `AGENTS.md`: engineering contract and collaboration rules.
 - `README.md`: operator and contributor manual.
+- `LICENSE`: custom non-commercial repository license.
+- `CONTRIBUTING.md`: contributor workflow and review expectations.
+- `SUPPORT.md`: support and escalation guidance.
+- `SECURITY.md`: private vulnerability-reporting path.
+- `CODE_OF_CONDUCT.md`: participation expectations for repo spaces.
 - `CHANGELOG.md`: complete project history.
 - `release-notes.md`: current documented release summary.
 - `roadmap.md`: forward plan organized by business value.

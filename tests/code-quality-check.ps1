@@ -168,15 +168,22 @@ Invoke-AuditStep -Name "CLI help smoke" -Action {
     }
 
     $cases = @(
+        @("-h"),
         @("--help"),
         @("help"),
+        @("help","-h"),
         @("help","create"),
         @("help","configure"),
         @("help","do"),
+        @("create","-h"),
         @("create","--help"),
+        @("configure","-h"),
         @("configure","--help"),
+        @("do","-h"),
         @("do","--help"),
+        @("resize","-h"),
         @("resize","--help"),
+        @("delete","-h"),
         @("delete","--help")
     )
 

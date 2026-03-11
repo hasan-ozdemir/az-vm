@@ -322,10 +322,19 @@ Invoke-Test -Name "Task catalog discovery" -Action {
 Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedGlobalHelp = Parse-AzVmCliArguments -CommandToken "--help" -RawArgs @()
     Assert-True -Condition ([string]$parsedGlobalHelp.Command -eq "help") -Message "Global --help should resolve to help command."
+    Assert-True -Condition ([string]$parsedGlobalHelp.HelpTopic -eq "__overview__") -Message "Global --help should resolve to overview help."
+
+    $parsedGlobalShortHelp = Parse-AzVmCliArguments -CommandToken "-h" -RawArgs @()
+    Assert-True -Condition ([string]$parsedGlobalShortHelp.Command -eq "help") -Message "Global -h should resolve to help command."
+    Assert-True -Condition ([string]$parsedGlobalShortHelp.HelpTopic -eq "__overview__") -Message "Global -h should resolve to overview help."
 
     $parsedHelpTopic = Parse-AzVmCliArguments -CommandToken "help" -RawArgs @("create")
     Assert-True -Condition ([string]$parsedHelpTopic.Command -eq "help") -Message "help command parse failed."
     Assert-True -Condition ([string]$parsedHelpTopic.HelpTopic -eq "create") -Message "Help topic positional parse failed."
+
+    $parsedHelpShortFlag = Parse-AzVmCliArguments -CommandToken "help" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedHelpShortFlag.Command -eq "help") -Message "help -h parse failed."
+    Assert-True -Condition ([string]$parsedHelpShortFlag.HelpTopic -eq "") -Message "help -h should keep detailed-catalog behavior."
 
     $parsedDoTopic = Parse-AzVmCliArguments -CommandToken "help" -RawArgs @("do")
     Assert-True -Condition ([string]$parsedDoTopic.Command -eq "help") -Message "help do parse failed."
@@ -335,22 +344,43 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     Assert-True -Condition ([string]$parsedCommandHelp.Command -eq "create") -Message "Command with --help parse failed."
     Assert-True -Condition ($parsedCommandHelp.Options.ContainsKey("help")) -Message "Command --help option was not captured."
 
+    $parsedCommandShortHelp = Parse-AzVmCliArguments -CommandToken "create" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedCommandShortHelp.Command -eq "create") -Message "Command with -h parse failed."
+    Assert-True -Condition ($parsedCommandShortHelp.Options.ContainsKey("help")) -Message "Command -h option was not captured."
+
     $parsedConfigureHelp = Parse-AzVmCliArguments -CommandToken "configure" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedConfigureHelp.Command -eq "configure") -Message "Configure command with --help parse failed."
+
+    $parsedConfigureShortHelp = Parse-AzVmCliArguments -CommandToken "configure" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedConfigureShortHelp.Command -eq "configure") -Message "Configure command with -h parse failed."
 
     $parsedSshHelp = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedSshHelp.Command -eq "ssh") -Message "SSH command with --help parse failed."
 
+    $parsedSshShortHelp = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedSshShortHelp.Command -eq "ssh") -Message "SSH command with -h parse failed."
+
     $parsedRdpHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedRdpHelp.Command -eq "rdp") -Message "RDP command with --help parse failed."
+
+    $parsedRdpShortHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedRdpShortHelp.Command -eq "rdp") -Message "RDP command with -h parse failed."
 
     $parsedDoHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedDoHelp.Command -eq "do") -Message "Do command with --help parse failed."
     Assert-True -Condition ($parsedDoHelp.Options.ContainsKey("help")) -Message "Do command --help option was not captured."
 
+    $parsedDoShortHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedDoShortHelp.Command -eq "do") -Message "Do command with -h parse failed."
+    Assert-True -Condition ($parsedDoShortHelp.Options.ContainsKey("help")) -Message "Do command -h option was not captured."
+
     $parsedResizeHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedResizeHelp.Command -eq "resize") -Message "Resize command with --help parse failed."
     Assert-True -Condition ($parsedResizeHelp.Options.ContainsKey("help")) -Message "Resize command --help option was not captured."
+
+    $parsedResizeShortHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedResizeShortHelp.Command -eq "resize") -Message "Resize command with -h parse failed."
+    Assert-True -Condition ($parsedResizeShortHelp.Options.ContainsKey("help")) -Message "Resize command -h option was not captured."
 }
 
 Invoke-Test -Name "Task catalog fallback defaults" -Action {

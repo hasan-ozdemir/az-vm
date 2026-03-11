@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.277 - 2026-03-11
+
+### Summary
+This release makes the repo publish-ready for GitHub by adding `-h` as a first-class help alias, expanding the public community/support files, extending the non-live CI smoke gate, and redacting publish-inappropriate literals from maintained history docs without changing the product's current runtime contract.
+
+### Highlights
+- Added `-h` support next to `--help` for the global CLI surface and command-specific help pages, then refreshed the README and help examples so operators can rely on either form consistently.
+- Added `CONTRIBUTING.md`, `SUPPORT.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue templates, and a pull-request template shaped around the current custom non-commercial license, maintainer-curated contact-first workflow, and sponsorship/commercial-contact path.
+- Extended `.github/workflows/quality-gate.yml` so GitHub now runs the non-live smoke-contract suite alongside the existing static audit, PowerShell compatibility, Linux shell syntax, and workflow lint checks.
+- Redacted environment-specific VM names, profile examples, local filesystem paths, and other publish-unnecessary literals from `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md` while preserving the repo's technical history.
+- Normalized tracked Linux shell scripts to LF and added `*.sh text eol=lf` to `.gitattributes`, removing the CRLF-induced `bash -n` failures from the publish gate.
+
 ## Release 2026.3.11.276 - 2026-03-11
 
 ### Summary
@@ -124,7 +136,7 @@ This release removes selected private local-only Windows tasks and payloads from
 - Moved selected private local-only Windows tasks and payloads out of source control while keeping them runnable from disk through ignored local-only files.
 - Added generic script-local metadata support for local-only Windows tasks so they can declare `priority`, `enabled`, `timeout`, and asset copy requirements without re-entering tracked catalogs.
 - Replaced the runtime's old task-specific Windows asset-copy branch with generic metadata-driven asset resolution.
-- Rewrote the active `main` and `dev` histories to remove the selected private local-only tracked paths and their tracked textual references, while preserving `main2` and `dev2` as untouched backups.
+- Rewrote the active `main` and `dev` histories to remove the selected private local-only tracked paths and their tracked textual references, while preserving `backup-main` and `backup-dev` as untouched backups.
 - Expanded smoke and documentation checks to cover the normalized naming/order model, local-only metadata discovery, and the cleaned tracked surface.
 
 ## Release 2026.3.10.263 - 2026-03-10
@@ -202,7 +214,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - `do --vm-action=hibernate` remains the public hibernation action; Azure still executes it through the deallocation-based hibernate path, so `stop` remains the non-deallocated power-off path.
 - Corrected `resize` command syntax to use `--vm-name`, added `--windows`/`--linux` support, and kept resize interactive when parameters are omitted.
 - Direct `exec` task runs now accept `--vm-name` and skip the broader Step-1 resource inventory path so isolated task execution reaches pyssh more quickly.
-- Windows Chrome-based public desktop shortcuts now take their default `--profile-directory` from `.env` `company_name`, so shared web shortcuts can target a stable company profile such as `exampleorg` instead of deriving the profile name from `VM_NAME`.
+- Windows Chrome-based public desktop shortcuts now take their default `--profile-directory` from `.env` `company_name`, so shared web shortcuts can target a stable company profile such as `orgprofile` instead of deriving the profile name from `VM_NAME`.
 - Snapshot-based regional move now deallocates the source VM before snapshotting, validates that the source group is safe for automatic purge, creates target public IPs with explicit zonal intent to avoid Azure CLI warning noise, attaches copied OS disks without invalid admin-credential flags, and keeps post-cutover task validation strict before old-source cleanup.
 - `README.md` and `az-vm help move` now document the move cutover sequence and include an observed live timing reference: the `austriaeast -> swedencentral` move of a `Standard_D4as_v5` VM with a `127 GB` OS disk took about `25-30 minutes`, with cross-region snapshot copy as the dominant phase.
 - `ssh` and `rdp` now refuse politely unless the target VM is already running, with a direct hint to start it through `do`.

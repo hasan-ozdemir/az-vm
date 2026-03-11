@@ -1,0 +1,57 @@
+name: Bug report
+description: Report a reproducible bug in runtime behavior, help text, docs, or validation contracts.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please sanitize secrets, subscription identifiers, hostnames, and other sensitive VM details before submitting.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One-sentence description of the problem.
+      placeholder: az-vm do -h does not render command help
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Command or workflow
+      description: The exact command, help path, or workflow you ran.
+      placeholder: |
+        .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or evidence
+      description: Paste sanitized logs, help output, or screenshots if relevant.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - CLI and help surface
+        - Documentation
+        - Windows task flow
+        - Linux task flow
+        - Azure orchestration
+        - CI or repository workflow
+    validations:
+      required: true

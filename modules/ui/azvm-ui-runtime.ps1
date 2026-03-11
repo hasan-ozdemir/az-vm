@@ -5622,7 +5622,7 @@ function Invoke-AzVmCommandDispatcher {
 
         switch ($CommandName) {
             'help' {
-                if ($helpRequested) {
+                if ([string]::Equals([string]$HelpTopic, '__overview__', [System.StringComparison]::OrdinalIgnoreCase)) {
                     Show-AzVmCommandHelp -Overview
                 }
                 else {

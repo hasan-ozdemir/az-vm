@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.277] - 2026-03-11
+
+### Added
+- Added short-help alias support across the public CLI so `az-vm -h` and `az-vm <command> -h` now work alongside the existing `--help` contract.
+- Added a publish-facing GitHub community surface with `CONTRIBUTING.md`, `SUPPORT.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue templates, and a pull-request template aligned to the repo's contact-first contribution model and custom non-commercial license.
+
+### Changed
+- Refreshed the public help and README contract so command examples, global options, support paths, and publish-facing workflow guidance now reflect the current runtime and the new `-h` shorthand.
+- Extended `.github/workflows/quality-gate.yml` so GitHub Actions now also runs the non-live `tests/az-vm-smoke-tests.ps1` suite in addition to the existing static and compatibility checks.
+- Redacted publish-inappropriate literals in maintained history docs, replacing environment-specific VM names, profile names, local paths, and similar concrete examples with neutral placeholders while preserving chronology and technical meaning.
+- Normalized tracked Linux `.sh` files to LF and pinned that expectation in `.gitattributes` so the repository's bash-syntax gate passes consistently across environments.
+
+### Tests
+- Expanded CLI parse and help smoke coverage for `-h`, updated documentation-contract checks for the new community files and GitHub workflow coverage, and kept the existing non-live validation gates aligned with the refreshed publish surface.
+
 ## [2026.3.11.276] - 2026-03-11
 
 ### Changed
@@ -251,7 +266,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Documentation
 - Rebuilt `AGENTS.md` as the repository engineering contract for architecture, workflow, logging, testing, and documentation maintenance.
 - Upgraded `README.md` into a fuller operator and contributor guide aligned with the current CLI, step flow, task model, and configuration contract.
-- Documented the new `.env` `company_name` key in the config contract so Windows Chrome-based public desktop shortcuts can share a company-named default profile directory such as `exampleorg`.
+- Documented the new `.env` `company_name` key in the config contract so Windows Chrome-based public desktop shortcuts can share a company-named default profile directory such as `orgprofile`.
 - Added move timing/process guidance to `README.md` and `az-vm help move`, using the observed live `austriaeast -> swedencentral` `Standard_D4as_v5` / `127 GB` OS-disk move as an operator reference for expected duration and cutover phases.
 - Added `CHANGELOG.md`, `release-notes.md`, `roadmap.md`, and `docs/prompt-history.md` to formalize project history, release context, future direction, and dialog traceability.
 - Adopted commit-count version labels across `CHANGELOG.md` and `release-notes.md`.
@@ -527,7 +542,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Track run-command success-gating before advancing tasks
 - Record rg-reset-plus-step rerun requirement for root-cause analysis
 - Record windows step8 console-lock investigation demand
-- Log vm naming contract otherexamplevm and examplevm confirmation
+- Log vm naming contract examplelinuxvm and examplevm confirmation
 - Document linux auto mode graceful early exit in step2 conditions
 - Capture duplicate-safe machine path augmentation mechanism
 - Log refreshenv after each package installation and retest flow

@@ -315,12 +315,13 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  --auto[=true|false]    Auto mode (create/update/delete only)."
     Write-Host "  --perf[=true|false]    Print timing metrics."
     Write-Host "  --windows / --linux    Force VM platform (create/update/exec/resize)."
-    Write-Host "  --help                 Show this overview or command-specific help."
+    Write-Host "  -h, --help             Show this overview or command-specific help."
     Write-Host ""
     Write-Host "Step values for create/update:"
     Write-Host "  configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
     Write-Host ""
     Write-Host "Quick examples:"
+    Write-Host "  az-vm -h"
     Write-Host "  az-vm --help"
     Write-Host "  az-vm create --auto --windows"
     Write-Host "  az-vm configure"
@@ -342,6 +343,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host ""
     Write-Host "Detailed docs:"
     Write-Host "  az-vm help"
+    Write-Host "  az-vm do -h"
     Write-Host "  az-vm help create"
     Write-Host "  az-vm help group"
     Write-Host "  az-vm help move"
@@ -366,11 +368,13 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  --perf[=true|false]"
         Write-Host "  --windows[=true|false]   # create/update/exec/resize only"
         Write-Host "  --linux[=true|false]     # create/update/exec/resize only"
-        Write-Host "  --help"
+        Write-Host "  -h, --help"
         Write-Host ""
         Write-Host "Help usage:"
+        Write-Host "  az-vm -h                            # quick overview"
         Write-Host "  az-vm --help                       # quick overview"
         Write-Host "  az-vm help                         # full command catalog"
+        Write-Host "  az-vm create -h                    # one command details"
         Write-Host "  az-vm help create                  # one command details"
         Write-Host ""
         Write-Host "Command reference:"
@@ -429,6 +433,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm create --to-step=<step>"
             Write-Host "  az-vm create --from-step=<step>"
             Write-Host "  az-vm create --single-step=<step>"
+            Write-Host "  az-vm create -h"
             Write-Host "  az-vm create --help"
             Write-Host "Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
             Write-Host "Examples:"
@@ -446,6 +451,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm update --to-step=<step>"
             Write-Host "  az-vm update --from-step=<step>"
             Write-Host "  az-vm update --single-step=<step>"
+            Write-Host "  az-vm update -h"
             Write-Host "  az-vm update --help"
             Write-Host "Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary"
             Write-Host "Examples:"
@@ -461,6 +467,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: run configure precheck/preview for a target managed resource group."
             Write-Host "Usage:"
             Write-Host "  az-vm configure [--group=<resource-group>]"
+            Write-Host "  az-vm configure -h"
             Write-Host "  az-vm configure --help"
             Write-Host "Examples:"
             Write-Host "  az-vm configure --group=<resource-group>"
@@ -476,6 +483,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm group --list=<filter>"
             Write-Host "  az-vm group --select=<resource-group>"
             Write-Host "  az-vm group --select="
+            Write-Host "  az-vm group -h"
             Write-Host "  az-vm group --help"
             Write-Host "Examples:"
             Write-Host "  az-vm group --list=<vm-name>"
@@ -489,6 +497,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Usage:"
             Write-Host "  az-vm show [--perf]"
             Write-Host "  az-vm show --group=<resource-group>"
+            Write-Host "  az-vm show -h"
             Write-Host "  az-vm show --help"
             Write-Host "Examples:"
             Write-Host "  az-vm show"
@@ -501,6 +510,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: apply one VM power action or print the current VM lifecycle state."
             Write-Host "Usage:"
             Write-Host "  az-vm do [--group=<resource-group>] [--vm-name=<vm-name>] [--vm-action=<status|start|restart|stop|deallocate|hibernate>] [--perf]"
+            Write-Host "  az-vm do -h"
             Write-Host "  az-vm do --help"
             Write-Host "Examples:"
             Write-Host "  az-vm do"
@@ -516,6 +526,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: list discovered init/update tasks exactly as the runtime would order them."
             Write-Host "Usage:"
             Write-Host "  az-vm task --list [--vm-init] [--vm-update] [--disabled] [--windows|--linux] [--perf]"
+            Write-Host "  az-vm task -h"
             Write-Host "  az-vm task --help"
             Write-Host "Examples:"
             Write-Host "  az-vm task --list"
@@ -530,6 +541,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Usage:"
             Write-Host "  az-vm move --group=<resource-group> --vm-name=<vm-name> --vm-region=<azure-region>"
             Write-Host "  az-vm move --group=<resource-group> --vm-name=<vm-name> --vm-region="
+            Write-Host "  az-vm move -h"
             Write-Host "  az-vm move --help"
             Write-Host "Examples:"
             Write-Host "  az-vm move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral"
@@ -546,6 +558,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm resize [--group=<resource-group>] [--vm-name=<vm-name>] [--vm-size=<vm-sku>] [--windows|--linux] [--perf]"
             Write-Host "  az-vm resize [--group=<resource-group>] [--vm-name=<vm-name>] --vm-size="
             Write-Host "  az-vm resize"
+            Write-Host "  az-vm resize -h"
             Write-Host "  az-vm resize --help"
             Write-Host "Examples:"
             Write-Host "  az-vm resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_B2as_v5"
@@ -562,6 +575,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=on|off"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=on|off"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=on|off --nested-virtualization=on|off"
+            Write-Host "  az-vm set -h"
             Write-Host "  az-vm set --help"
             Write-Host "Examples:"
             Write-Host "  az-vm set --group=<resource-group> --vm-name=<vm-name> --hibernation=off"
@@ -576,6 +590,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm exec [--group=<resource-group>] [--vm-name=<vm-name>] [--windows|--linux] [--perf]"
             Write-Host "  az-vm exec --init-task=<task-number> [--group=<resource-group>] [--vm-name=<vm-name>]"
             Write-Host "  az-vm exec --update-task=<task-number> [--group=<resource-group>] [--vm-name=<vm-name>]"
+            Write-Host "  az-vm exec -h"
             Write-Host "  az-vm exec --help"
             Write-Host "Examples:"
             Write-Host "  az-vm exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>"
@@ -589,6 +604,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: launch Windows OpenSSH client for a managed VM."
             Write-Host "Usage:"
             Write-Host "  az-vm ssh [--group=<resource-group>] [--vm-name=<vm-name>] [--user=manager|assistant] [--perf]"
+            Write-Host "  az-vm ssh -h"
             Write-Host "  az-vm ssh --help"
             Write-Host "Examples:"
             Write-Host "  az-vm ssh --vm-name=<vm-name>"
@@ -601,6 +617,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: launch mstsc for a managed Windows VM."
             Write-Host "Usage:"
             Write-Host "  az-vm rdp [--group=<resource-group>] [--vm-name=<vm-name>] [--user=manager|assistant] [--perf]"
+            Write-Host "  az-vm rdp -h"
             Write-Host "  az-vm rdp --help"
             Write-Host "Examples:"
             Write-Host "  az-vm rdp --vm-name=<vm-name>"
@@ -613,6 +630,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Description: purge selected resources from a resource group."
             Write-Host "Usage:"
             Write-Host "  az-vm delete --target=<group|network|vm|disk> [--group=<resource-group>] [--yes]"
+            Write-Host "  az-vm delete -h"
             Write-Host "  az-vm delete --help"
             Write-Host "Examples:"
             Write-Host "  az-vm delete --target=group --group=<resource-group> --yes"
@@ -626,8 +644,10 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "Usage:"
             Write-Host "  az-vm help"
             Write-Host "  az-vm help <command>"
+            Write-Host "  az-vm -h"
             Write-Host "  az-vm --help"
             Write-Host "Examples:"
+            Write-Host "  az-vm do -h"
             Write-Host "  az-vm help create"
             Write-Host "  az-vm help configure"
             Write-Host "  az-vm help do"
@@ -719,11 +739,16 @@ function Parse-AzVmCliArguments {
             continue
         }
 
+        if ($rawArgText -eq '-h') {
+            $normalizedArgs += "--help=true"
+            continue
+        }
+
         Throw-FriendlyError `
             -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
             -Code 2 `
             -Summary "Invalid option format." `
-            -Hint "Supported short options: -g, -y, -a. Use long options for others."
+            -Hint "Supported short options: -g, -y, -a, -h. Use long options for others."
     }
 
     $options = @{}
@@ -762,6 +787,7 @@ function Parse-AzVmCliArguments {
     }
 
     $command = ''
+    $helpTopic = ''
     if (-not [string]::IsNullOrWhiteSpace($rawCommand)) {
         $command = $rawCommand.Trim().ToLowerInvariant()
         if ($validCommands -notcontains $command) {
@@ -774,6 +800,9 @@ function Parse-AzVmCliArguments {
     }
     elseif ($options.ContainsKey('help')) {
         $command = 'help'
+        if ($positionals.Count -eq 0) {
+            $helpTopic = '__overview__'
+        }
     }
     else {
         Throw-FriendlyError `
@@ -783,7 +812,6 @@ function Parse-AzVmCliArguments {
             -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete | help. Example: az-vm create --auto"
     }
 
-    $helpTopic = ''
     if ($command -eq 'help') {
         if ($positionals.Count -gt 1) {
             Throw-FriendlyError `
@@ -801,6 +829,9 @@ function Parse-AzVmCliArguments {
 
         if (-not [string]::IsNullOrWhiteSpace($positionalTopic)) {
             $helpTopic = $positionalTopic
+        }
+        elseif ($helpTopic -ne '__overview__') {
+            $helpTopic = ''
         }
     }
     else {

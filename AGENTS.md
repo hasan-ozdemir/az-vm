@@ -140,6 +140,10 @@ Use these sources in this order when maintaining the repo:
 - `AGENTS.md`: engineering contract and collaboration rules.
 - `README.md`: operator and contributor guide.
 - `LICENSE`: repository licensing terms.
+- `CONTRIBUTING.md`: contributor workflow, expectations, and review hygiene.
+- `SUPPORT.md`: operator/support routing and escalation guidance.
+- `SECURITY.md`: vulnerability-reporting policy and private disclosure path.
+- `CODE_OF_CONDUCT.md`: participation expectations for repository spaces.
 - `CHANGELOG.md`: full project history from first day to today.
 - `release-notes.md`: current release-oriented summary.
 - `roadmap.md`: forward-looking project plan.

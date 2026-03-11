@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest an improvement to runtime behavior, docs, or operator workflow.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please keep requests concrete. For large changes, the repository uses a contact-first model, so early alignment is preferred before implementation.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Short description of the requested improvement.
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What operator or maintainer problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the desired command, behavior, docs update, or workflow change.
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact area
+      options:
+        - Operator workflow
+        - Command surface
+        - Configuration contract
+        - Task catalogs
+        - Documentation
+        - Release or CI process
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Extra context
+      description: Include constraints, tradeoffs, or prior discussion links if relevant.

@@ -4,9 +4,9 @@ Human-readable prompt ledger for the `az-vm` repository. This file is reconstruc
 
 ## Source
 
-- Primary session file: `C:\Users\operator\.codex\sessions\2026\03\02\rollout-2026-03-02T04-21-51-019cac23-2998-72c2-9151-afb00eb84061.jsonl`
-- Supplemental session file: `C:\Users\operator\.codex\sessions\2026\03\08\rollout-2026-03-08T03-25-15-019ccad5-800b-7072-b5d8-10084e6d938c.jsonl`
-- Supplemental session file: `C:\Users\operator\.codex\sessions\2026\03\09\rollout-2026-03-09T05-26-15-019cd06a-a4c1-7cb3-8d91-193f457a5689.jsonl`
+- Primary session file: `<user-home>\.codex\sessions\2026\03\02\rollout-2026-03-02T04-21-51-019cac23-2998-72c2-9151-afb00eb84061.jsonl`
+- Supplemental session file: `<user-home>\.codex\sessions\2026\03\08\rollout-2026-03-08T03-25-15-019ccad5-800b-7072-b5d8-10084e6d938c.jsonl`
+- Supplemental session file: `<user-home>\.codex\sessions\2026\03\09\rollout-2026-03-09T05-26-15-019cd06a-a4c1-7cb3-8d91-193f457a5689.jsonl`
 - Timestamp format: local repository time (`TRT`).
 - Entry format: English-normalized user prompt followed by a concise assistant summary.
 
@@ -34,7 +34,7 @@ task: rename the az-vm-*.* script files to az-vm-lin*.*; because they are used o
 
 **Assistant Summary**
 
-Renaming is complete. - The `[az-vm-deploy.ps1]` file was renamed to `[az-vm-lin-deploy.ps1](C:/Users/hasan/source/az/az-vm/az-vm-lin-deploy.ps1)`. - The `[az-vm-deploy.cmd]` file was renamed to `[az-vm-lin-deploy.cmd](C:/Users/hasan/source/az/az-vm/az-vm-lin-deploy.cmd)`. - The script name/log inside `.ps1`...
+Renaming is complete. - The `[az-vm-deploy.ps1]` file was renamed to `[az-vm-lin-deploy.ps1](<user-home>/source/az/az-vm/az-vm-lin-deploy.ps1)`. - The `[az-vm-deploy.cmd]` file was renamed to `[az-vm-lin-deploy.cmd](<user-home>/source/az/az-vm/az-vm-lin-deploy.cmd)`. - The script name/log inside `.ps1`...
 
 ### 2026-03-02 01:58 TRT
 
@@ -47,7 +47,7 @@ a small correction: the files should end with `***lin.*`; the trailing `-deploy`
 
 **Assistant Summary**
 
-The fix has been applied; the `-deploy` suffix was removed. - `[az-vm-lin-deploy.ps1](C:/Users/hasan/source/az/az-vm/az-vm-lin-deploy.ps1)` -> `[az-vm-lin.ps1](C:/Users/hasan/source/az/az-vm/az-vm-lin.ps1)` - `[az-vm-lin-deploy.cmd](C:/Users/hasan/source/az/az-vm/az-vm-lin-deploy.cmd)` -> `[az-vm-lin.cmd](C:/Users/hasan/sourc...
+The fix has been applied; the `-deploy` suffix was removed. - `[az-vm-lin-deploy.ps1](<user-home>/source/az/az-vm/az-vm-lin-deploy.ps1)` -> `[az-vm-lin.ps1](<user-home>/source/az/az-vm/az-vm-lin.ps1)` - `[az-vm-lin-deploy.cmd](<user-home>/source/az/az-vm/az-vm-lin-deploy.cmd)` -> `[az-vm-lin.cmd](<user-home>/sourc...
 
 ### 2026-03-02 02:00 TRT
 
@@ -60,7 +60,7 @@ review: whether these two-stage file name and content changes caused any regress
 
 **Assistant Summary**
 
-**Findings** - No critical/major/minor findings: I did not detect broken references after the two-stage rename (static review). - The `cmd -> ps1` chain is correct: [az-vm-lin.cmd:13](C:/Users/hasan/source/az/az-vm/az-vm-lin.cmd:13) calls `az-vm-lin.ps1`. - In-script naming is consistent: - File name text: [az-...
+**Findings** - No critical/major/minor findings: I did not detect broken references after the two-stage rename (static review). - The `cmd -> ps1` chain is correct: [az-vm-lin.cmd:13](<user-home>/source/az/az-vm/az-vm-lin.cmd:13) calls `az-vm-lin.ps1`. - In-script naming is consistent: - File name text: [az-...
 
 ### 2026-03-02 02:43 TRT
 
@@ -73,7 +73,7 @@ task: now prepare the `az-vm-win.cmd` and `az-vm-win.ps1` scripts as well:
 *since the ready `.sh` init/update commands will not run on the Windows side, the `.sh` file that will be executed after VM creation should be converted into a PowerShell script.
 **in summary: exactly the same as the `az-vm-lin` scripts; while preserving the existing scripts, rewrite them into new files as `az-vm-win` scripts; refactor and adapt everything to be suitable for the Windows environment.
 **after the coding phase is finished, run these scripts, test them step by step, log their behaviors; whatever can be done on the Linux side should also be possible on the Windows side one for one; these scripts should make it possible to bring up Windows VMs.
-**please make the VM name / server name on the Windows side `examplevm`. As you know, our VM name on the Linux side was `otherexamplevm`...
+**please make the VM name / server name on the Windows side `examplevm`. As you know, our VM name on the Linux side was `examplelinuxvm`...
 **the Windows image you will put inside the Windows VM should be the Windows Datacenter version that is most compatible with all well-known server applications and frameworks on the market.
 **whatever the most optimal disk size is for the Windows image you choose and the applications that will run in it, please also update the SSD size part in the script accordingly. Also use the cheapest standard SSD type.
 **and please use `b2as_v2` as the VM SKU/size so that the Windows Server version can run comfortably on this VM.
@@ -82,7 +82,7 @@ task: now prepare the `az-vm-win.cmd` and `az-vm-win.ps1` scripts as well:
 
 **Assistant Summary**
 
-I prepared the `az-vm-win` script set, ran it, found and fixed an error, and verified it by running it again. **Generated Files** - [az-vm-win.ps1](C:/Users/hasan/source/az/az-vm/az-vm-win.ps1) - [az-vm-win.cmd](C:/Users/hasan/source/az/az-vm/az-vm-win.cmd) Files generated by the script during execution: - [az-vm-w...
+I prepared the `az-vm-win` script set, ran it, found and fixed an error, and verified it by running it again. **Generated Files** - [az-vm-win.ps1](<user-home>/source/az/az-vm/az-vm-win.ps1) - [az-vm-win.cmd](<user-home>/source/az/az-vm/az-vm-win.cmd) Files generated by the script during execution: - [az-vm-w...
 
 ### 2026-03-02 03:28 TRT
 
@@ -96,7 +96,7 @@ fix: do not install Python with a fallback; install it with a clear command like
 
 **Assistant Summary**
 
-The fix you requested has been applied. - Python installation is no longer a fallback; it now uses an explicit command: - `choco upgrade python312 -y --no-progress` - Location: [az-vm-win.ps1:294](C:/Users/hasan/source/az/az-vm/az-vm-win.ps1:294) - Chocolatey bootstrap + full unattended setup was added to the beginning of the VM update script: 1. `Ensure-Chocolatey` functio...
+The fix you requested has been applied. - Python installation is no longer a fallback; it now uses an explicit command: - `choco upgrade python312 -y --no-progress` - Location: [az-vm-win.ps1:294](<user-home>/source/az/az-vm/az-vm-win.ps1:294) - Chocolatey bootstrap + full unattended setup was added to the beginning of the VM update script: 1. `Ensure-Chocolatey` functio...
 
 ### 2026-03-02 03:33 TRT
 
@@ -109,7 +109,7 @@ fix update improve: now let's make sure this resource group and all resources ar
 
 **Assistant Summary**
 
-The requested fix was applied, and the script was rerun from the beginning and verified. **Applied changes** 1. The location was moved to a region within India that supports `Standard_B2as_v2`: `centralindia` - [az-vm-win.ps1:96](C:/Users/hasan/source/az/az-vm/az-vm-win.ps1:96) 2. The Python installation was changed to an explicit command: `choco upgrade python...
+The requested fix was applied, and the script was rerun from the beginning and verified. **Applied changes** 1. The location was moved to a region within India that supports `Standard_B2as_v2`: `centralindia` - [az-vm-win.ps1:96](<user-home>/source/az/az-vm/az-vm-win.ps1:96) 2. The Python installation was changed to an explicit command: `choco upgrade python...
 
 ### 2026-03-02 05:38 TRT
 
@@ -122,7 +122,7 @@ update: the folder structure and code file organization here have changed and be
 
 **Assistant Summary**
 
-I synced up, reviewed the new folder structure, and verified the references. - New structure: 1. [lin-vm](C:/Users/hasan/source/az/az-vm/lin-vm) 2. [win-vm](C:/Users/hasan/source/az/az-vm/win-vm) - Files are grouped correctly: 1. [az-vm-lin.cmd](C:/Users/hasan/source/az/az-vm/lin-vm/az-vm-lin.cmd), [az-vm-lin.ps1](C:/Users/hasa...
+I synced up, reviewed the new folder structure, and verified the references. - New structure: 1. [lin-vm](<user-home>/source/az/az-vm/lin-vm) 2. [win-vm](<user-home>/source/az/az-vm/win-vm) - Files are grouped correctly: 1. [az-vm-lin.cmd](<user-home>/source/az/az-vm/lin-vm/az-vm-lin.cmd), [az-vm-lin.ps1](C:/Users/hasa...
 
 ### 2026-03-02 05:40 TRT
 
@@ -162,7 +162,7 @@ Let's set the Win11 25H2 AVD M365 image; then delete the relevant resource group
 
 **Assistant Summary**
 
-Done. - I verified the `westindia` (Mumbai/West India) region: available. - I verified the `win11-25h2-avd-m365` image: available. - I updated the script: - Region: [az-vm-win.ps1:96](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:96) - Image: [az-vm-win.ps1:105](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:105) S...
+Done. - I verified the `westindia` (Mumbai/West India) region: available. - I verified the `win11-25h2-avd-m365` image: available. - I updated the script: - Region: [az-vm-win.ps1:96](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:96) - Image: [az-vm-win.ps1:105](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:105) S...
 
 ### 2026-03-02 11:12 TRT
 
@@ -175,7 +175,7 @@ question: is there currently any fallback in the scripts? 2- what types of VM SK
 
 **Assistant Summary**
 
-Yes, in the current state there are fallbacks in the scripts. 1. **Are there fallbacks in the scripts?** - In the `win-vm` script, **yes**: - automatic installation if `choco` is missing: [az-vm-win.ps1:287](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:287) - trying multiple candidate paths for `refreshenv.cmd`: [az-vm-win.ps1:316](C:/Users/hasan/so...
+Yes, in the current state there are fallbacks in the scripts. 1. **Are there fallbacks in the scripts?** - In the `win-vm` script, **yes**: - automatic installation if `choco` is missing: [az-vm-win.ps1:287](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:287) - trying multiple candidate paths for `refreshenv.cmd`: [az-vm-win.ps1:316](<user-home>/so...
 
 ### 2026-03-02 11:23 TRT
 
@@ -190,7 +190,7 @@ Leave the e2e integration testing for the end: first make the bulk fixes; then y
 
 **Assistant Summary**
 
-I completed the bulk fix, then ran E2E. 1. The `choco-only` installation flow was set up: - [az-vm-win.ps1](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1):394 `Ensure-Chocolatey` - [az-vm-win.ps1](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1):382 `Invoke-ChocoUpgrade` - Packages: `git`, `python312`, `no...
+I completed the bulk fix, then ran E2E. 1. The `choco-only` installation flow was set up: - [az-vm-win.ps1](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1):394 `Ensure-Chocolatey` - [az-vm-win.ps1](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1):382 `Invoke-ChocoUpgrade` - Packages: `git`, `python312`, `no...
 
 ### 2026-03-02 12:18 TRT
 
@@ -204,7 +204,7 @@ This way, before resource deletion, resource group deletion, and resource creati
 
 **Assistant Summary**
 
-The update was made and verified. What changed: 1. An **availability precheck at the very beginning** was added to the `win-vm` script (before deleting/creating the RG): - Is the region available? - Is the image accessible? - Is the VM size available in the region? (with `az rest` and `Microsoft.Compute/skus`) Relevant locations: - [az-vm-win.ps1](C:/Users/hasan/source/az/az-vm/w...
+The update was made and verified. What changed: 1. An **availability precheck at the very beginning** was added to the `win-vm` script (before deleting/creating the RG): - Is the region available? - Is the image accessible? - Is the VM size available in the region? (with `az rest` and `Microsoft.Compute/skus`) Relevant locations: - [az-vm-win.ps1](<user-home>/source/az/az-vm/w...
 
 ### 2026-03-02 12:34 TRT
 
@@ -217,7 +217,7 @@ fix: It waited too long in step 2; let's filter by region and size, handle the l
 
 **Assistant Summary**
 
-I applied the fixes you requested and verified them. **What Changed** 1. I made error handling structured and user-friendly (`exit code + reason + what to do`): - [az-vm-win.ps1:61](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:61) - [az-vm-win.ps1:747](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:747)...
+I applied the fixes you requested and verified them. **What Changed** 1. I made error handling structured and user-friendly (`exit code + reason + what to do`): - [az-vm-win.ps1:61](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:61) - [az-vm-win.ps1:747](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:747)...
 
 ### 2026-03-02 13:41 TRT
 
@@ -230,7 +230,7 @@ feat: the script should have two modes of operation: default=interactive; the se
 
 **Assistant Summary**
 
-The two modes you requested were added: default `interactive`, and the second mode `auto` (`--auto` or `-a`). **Updates** - The `Auto` parameter and short alias were added (`-a`), the default remained interactive: - [az-vm-win.ps1:7](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:7) - [az-vm-lin.ps1:7](C:/Users/hasan/source/az/az-v...
+The two modes you requested were added: default `interactive`, and the second mode `auto` (`--auto` or `-a`). **Updates** - The `Auto` parameter and short alias were added (`-a`), the default remained interactive: - [az-vm-win.ps1:7](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:7) - [az-vm-lin.ps1:7](<user-home>/source/az/az-v...
 
 ### 2026-03-02 14:21 TRT
 
@@ -250,13 +250,13 @@ fix: likewise, set the region on the lin side to westindia as well; make both sc
 **User Prompt**
 
 ````text
-question: the VM name on the Linux side should remain `otherexamplevm`, and the VM name on the Windows side should remain `examplevm`; if that is not the case, can you fix it?
+question: the VM name on the Linux side should remain `examplelinuxvm`, and the VM name on the Windows side should remain `examplevm`; if that is not the case, can you fix it?
 
 ````
 
 **Assistant Summary**
 
-The situation is correct, no fix is needed. - `lin` side: `$serverName = "otherexamplevm"` → [az-vm-lin.ps1:182](C:/Users/hasan/source/az/az-vm/lin-vm/az-vm-lin.ps1:182) - `win` side: `$serverName = "examplevm"` → [az-vm-win.ps1:182](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:182)
+The situation is correct, no fix is needed. - `lin` side: `$serverName = "examplelinuxvm"` → [az-vm-lin.ps1:182](<user-home>/source/az/az-vm/lin-vm/az-vm-lin.ps1:182) - `win` side: `$serverName = "examplevm"` → [az-vm-win.ps1:182](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:182)
 
 ### 2026-03-02 14:28 TRT
 
@@ -269,7 +269,7 @@ Use region=austriaeast on both sides.
 
 **Assistant Summary**
 
-Okay, the region has been updated to `austriaeast` on both sides. - Linux: [az-vm-lin.ps1:207](C:/Users/hasan/source/az/az-vm/lin-vm/az-vm-lin.ps1:207) - Windows: [az-vm-win.ps1:207](C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:207)
+Okay, the region has been updated to `austriaeast` on both sides. - Linux: [az-vm-lin.ps1:207](<user-home>/source/az/az-vm/lin-vm/az-vm-lin.ps1:207) - Windows: [az-vm-win.ps1:207](<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:207)
 
 ### 2026-03-02 17:53 TRT
 
@@ -284,7 +284,7 @@ update: I made some changes in the Linux-side `.ps1` code. For example: I added 
 
 **Assistant Summary**
 
-I made the port-sync refactor you wanted; the network policy on the `lin` and `win` sides now uses the same port set (NSG + OS firewall). Updated points: - Linux NSG port list was expanded: [az-vm-lin.ps1:259](C:/Users/hasan/source/az/az-vm/lin-vm/az-vm-lin.ps1:259) - The Linux OS firewall (UFW) side now uses the same via a loop...
+I made the port-sync refactor you wanted; the network policy on the `lin` and `win` sides now uses the same port set (NSG + OS firewall). Updated points: - Linux NSG port list was expanded: [az-vm-lin.ps1:259](<user-home>/source/az/az-vm/lin-vm/az-vm-lin.ps1:259) - The Linux OS firewall (UFW) side now uses the same via a loop...
 
 ### 2026-03-02 18:12 TRT
 
@@ -300,7 +300,7 @@ put the PowerShell commands to be run into an array; if the `--step` parameter i
 
 **Assistant Summary**
 
-The refactor is complete; in both scripts, `--step/-s` and the normal flow are now tied to the same `commandBlocks` logic. - `win` side: - `Step 8` now creates a single `commandBlocks` array and runs the same blocks in both step and normal mode: [az-vm-win.ps1:793](C:\Users\operator\source\az\az-vm\win-vm\az-vm-win.ps1:793) - Common...
+The refactor is complete; in both scripts, `--step/-s` and the normal flow are now tied to the same `commandBlocks` logic. - `win` side: - `Step 8` now creates a single `commandBlocks` array and runs the same blocks in both step and normal mode: [az-vm-win.ps1:793](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1:793) - Common...
 
 ### 2026-03-02 18:27 TRT
 
@@ -369,7 +369,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Plan implementation is complete and the code has been updated. **What Was Done** - The `.env` loading flow was kept intact in the `win` and `lin` main scripts. - [az-vm-win.ps1](/C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1):365, [az-vm-win.ps1](/C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1):463 - [az-vm-lin.ps1](/C:/...
+Plan implementation is complete and the code has been updated. **What Was Done** - The `.env` loading flow was kept intact in the `win` and `lin` main scripts. - [az-vm-win.ps1](/<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1):365, [az-vm-win.ps1](/<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1):463 - [az-vm-lin.ps1](/C:/...
 
 ### 2026-03-02 22:37 TRT
 
@@ -383,7 +383,7 @@ test: the test on the Windows side should run like this: disk size should be upd
 
 **Assistant Summary**
 
-I implemented it and tested it. - `VM_DISK_SIZE_GB` was updated to `128`: - [win-vm/.env](/C:/Users/hasan/source/az/az-vm/win-vm/.env):15 - [win-vm/.env.example](/C:/Users/hasan/source/az/az-vm/win-vm/.env.example):15 - [az-vm-win.ps1](/C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1):521 (`DefaultValue "128"`) - C...
+I implemented it and tested it. - `VM_DISK_SIZE_GB` was updated to `128`: - [win-vm/.env](/<user-home>/source/az/az-vm/win-vm/.env):15 - [win-vm/.env.example](/<user-home>/source/az/az-vm/win-vm/.env.example):15 - [az-vm-win.ps1](/<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1):521 (`DefaultValue "128"`) - C...
 
 ### 2026-03-02 23:04 TRT
 
@@ -412,7 +412,7 @@ But don't test it. I'll do it.
 
 **Assistant Summary**
 
-Yes, you're right: it had been reversed. I fixed it, and the behavior is now as follows: 1. If `--step` is provided: Step 8 substeps run **one by one** with separate `az vm run-command invoke` calls. [az-vm-win.ps1:327](/C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1:327) 2. If `--step` is not provided: Step 8 substeps run with **a single** `az vm...
+Yes, you're right: it had been reversed. I fixed it, and the behavior is now as follows: 1. If `--step` is provided: Step 8 substeps run **one by one** with separate `az vm run-command invoke` calls. [az-vm-win.ps1:327](/<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1:327) 2. If `--step` is not provided: Step 8 substeps run with **a single** `az vm...
 
 ### 2026-03-02 23:45 TRT
 
@@ -451,7 +451,7 @@ Between win and lin, aside from the differences that naturally need to exist due
 
 **Assistant Summary**
 
-Short answer: **not completely identical**, there are still a few logic differences that are not platform-specific. 1. `Step 8` task orchestration is different. - `win`: the tasks are defined inline in the script (10 tasks) and run that way. [az-vm-win.ps1](/C:/Users/hasan/source/az/az-vm/win-vm/az-vm-win.ps1):1148 - `lin`: there is a single task, directly...
+Short answer: **not completely identical**, there are still a few logic differences that are not platform-specific. 1. `Step 8` task orchestration is different. - `win`: the tasks are defined inline in the script (10 tasks) and run that way. [az-vm-win.ps1](/<user-home>/source/az/az-vm/win-vm/az-vm-win.ps1):1148 - `lin`: there is a single task, directly...
 
 ### 2026-03-02 23:59 TRT
 
@@ -480,7 +480,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-The plan was implemented. - Linux Step 8 no longer runs as a single-piece script; it now works in a multi-`taskBlocks` structure like on the Windows side: split into user/password, packages, SSHD, firewall, capability, service restart, and health snapshot. File: [lin-vm/az-vm-lin.ps1](C:\Users\operator\source\az\az-vm\lin-vm\az-vm-lin.ps1) (oz...
+The plan was implemented. - Linux Step 8 no longer runs as a single-piece script; it now works in a multi-`taskBlocks` structure like on the Windows side: split into user/password, packages, SSHD, firewall, capability, service restart, and health snapshot. File: [lin-vm/az-vm-lin.ps1](<user-home>\source\az\az-vm\lin-vm\az-vm-lin.ps1) (oz...
 
 ### 2026-03-03 00:14 TRT
 
@@ -506,7 +506,7 @@ fix: when in combine mode, that is, when the `--step` parameter is not provided;
 
 **Assistant Summary**
 
-Done. When `--step` is not provided (in the combine/auto flow), Step 8 now runs the update script file directly from disk instead of using inline concatenation. Updated location: - [az-vm-win.ps1](C:\Users\operator\source\az\az-vm\win-vm\az-vm-win.ps1:1141) - Auto-mode invocation: `az vm run-command invoke --scripts "@$vmUpdateScri...
+Done. When `--step` is not provided (in the combine/auto flow), Step 8 now runs the update script file directly from disk instead of using inline concatenation. Updated location: - [az-vm-win.ps1](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1:1141) - Auto-mode invocation: `az vm run-command invoke --scripts "@$vmUpdateScri...
 
 ### 2026-03-03 01:11 TRT
 
@@ -533,7 +533,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. ## Changes Made - Shared layer created: - [az-vm-co-core.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-core.ps1) - [az-vm-co-config.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-config.ps1) - [az-vm-co-azure.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-azure.ps1) - [az-vm-co-runcommand.p...
+Implemented. ## Changes Made - Shared layer created: - [az-vm-co-core.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-core.ps1) - [az-vm-co-config.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-config.ps1) - [az-vm-co-azure.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-azure.ps1) - [az-vm-co-runcommand.p...
 
 ### 2026-03-03 01:25 TRT
 
@@ -546,7 +546,7 @@ update: let's move our `*.cmd` launcher files to the root here, namely the `az-v
 
 **Assistant Summary**
 
-Completed. - I moved the launcher files to the root: - [az-vm-lin.cmd](C:\Users\operator\source\az\az-vm\az-vm-lin.cmd) - [az-vm-win.cmd](C:\Users\operator\source\az\az-vm\az-vm-win.cmd) - I removed the old subfolder launchers: - `lin-vm/az-vm-lin.cmd` (deleted) - `win-vm/az-vm-win.cmd` (deleted) - New launcher targets...
+Completed. - I moved the launcher files to the root: - [az-vm-lin.cmd](<user-home>\source\az\az-vm\az-vm-lin.cmd) - [az-vm-win.cmd](<user-home>\source\az\az-vm\az-vm-win.cmd) - I removed the old subfolder launchers: - `lin-vm/az-vm-lin.cmd` (deleted) - `win-vm/az-vm-win.cmd` (deleted) - New launcher targets...
 
 ### 2026-03-03 01:27 TRT
 
@@ -559,7 +559,7 @@ scan and fix: are there any files left here and in the subfolders that are not u
 
 **Assistant Summary**
 
-The scan is complete. Files that currently appear to be “unreferenced”: 1. [lin-vm/.env.example](C:\Users\operator\source\az\az-vm\lin-vm\.env.example) 2. [win-vm/.env.example](C:\Users\operator\source\az\az-vm\win-vm\.env.example) Notes: - [az-vm-lin.cmd](C:\Users\operator\source\az\az-vm\az-vm-lin.cmd) and [az-vm-win.cmd](C:\Users\operator\source\az\az-vm\...
+The scan is complete. Files that currently appear to be “unreferenced”: 1. [lin-vm/.env.example](<user-home>\source\az\az-vm\lin-vm\.env.example) 2. [win-vm/.env.example](<user-home>\source\az\az-vm\win-vm\.env.example) Notes: - [az-vm-lin.cmd](<user-home>\source\az\az-vm\az-vm-lin.cmd) and [az-vm-win.cmd](<user-home>\source\az\az-vm\...
 
 ### 2026-03-03 01:29 TRT
 
@@ -572,7 +572,7 @@ No, don't delete it; create a real `.env.example` template file with all current
 
 **Assistant Summary**
 
-I didn't delete it. I turned it into a real template as you requested. Updated files: - [lin-vm/.env.example](C:\Users\operator\source\az\az-vm\lin-vm\.env.example) - [win-vm/.env.example](C:\Users\operator\source\az\az-vm\win-vm\.env.example) Improvements I made: - All valid variables were preserved and organized by section. -...
+I didn't delete it. I turned it into a real template as you requested. Updated files: - [lin-vm/.env.example](<user-home>\source\az\az-vm\lin-vm\.env.example) - [win-vm/.env.example](<user-home>\source\az\az-vm\win-vm\.env.example) Improvements I made: - All valid variables were preserved and organized by section. -...
 
 ### 2026-03-03 01:33 TRT
 
@@ -598,7 +598,7 @@ Please now also add port 11434 on both the Linux and Windows sides, to both the 
 
 **Assistant Summary**
 
-Okay, I added port `11434` on both sides. Updated locations: - Linux: - [az-vm-lin.ps1](C:\Users\operator\source\az\az-vm\lin-vm\az-vm-lin.ps1:111) added `11434` to `defaultPortsCsv` - [lin-vm/.env](C:\Users\operator\source\az\az-vm\lin-vm\.env) - [lin-vm/.env.example](C:\Users\operator\source\az\az-vm\lin-vm\.env.example...)
+Okay, I added port `11434` on both sides. Updated locations: - Linux: - [az-vm-lin.ps1](<user-home>\source\az\az-vm\lin-vm\az-vm-lin.ps1:111) added `11434` to `defaultPortsCsv` - [lin-vm/.env](<user-home>\source\az\az-vm\lin-vm\.env) - [lin-vm/.env.example](<user-home>\source\az\az-vm\lin-vm\.env.example...)
 
 ### 2026-03-03 02:15 TRT
 
@@ -613,7 +613,7 @@ update and test: please use port 444 instead of 443 for the SSH port; make this 
 
 **Assistant Summary**
 
-I made the requested updates and tested both sides in parallel with `--auto`. ## Code updates - Both the win and lin sides were made parameterized so that the SSH port is `444` (`SSH_PORT`, default `444`): - [az-vm-win.ps1](C:\Users\operator\source\az\az-vm\win-vm\az-vm-win.ps1:105) - [az-vm-lin.ps1](C:\Users\hasan...
+I made the requested updates and tested both sides in parallel with `--auto`. ## Code updates - Both the win and lin sides were made parameterized so that the SSH port is `444` (`SSH_PORT`, default `444`): - [az-vm-win.ps1](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1:105) - [az-vm-lin.ps1](<user-home>...
 
 ### 2026-03-03 02:44 TRT
 
@@ -652,7 +652,7 @@ fix nit: choco enable global confirmation should be in only one place: immediate
 
 **Assistant Summary**
 
-Fixed. - I removed the extra `allowGlobalConfirmation` call from where it was redundant. - Right now this setting remains in only one place in the Win script: - [az-vm-win.ps1](C:\Users\operator\source\az\az-vm\win-vm\az-vm-win.ps1:879) As requested, I only performed a syntax check: - `win-vm/az-vm-win.ps1` → `SYNTAX_OK`
+Fixed. - I removed the extra `allowGlobalConfirmation` call from where it was redundant. - Right now this setting remains in only one place in the Win script: - [az-vm-win.ps1](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1:879) As requested, I only performed a syntax check: - `win-vm/az-vm-win.ps1` → `SYNTAX_OK`
 
 ### 2026-03-03 02:58 TRT
 
@@ -680,7 +680,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-I implemented the plan you requested. - A new git repo was created under `C:\Users\operator\source\az\az-vm` (`main` branch). - An incremental history totaling **108 commits** was produced. - First commit: `c304092` - Last commit: `067565a` - The working tree is clean (`git status` is empty). - `.env` files are untracked, `.env.example` files are tracked...
+I implemented the plan you requested. - A new git repo was created under `<user-home>\source\az\az-vm` (`main` branch). - An incremental history totaling **108 commits** was produced. - First commit: `c304092` - Last commit: `067565a` - The working tree is clean (`git status` is empty). - `.env` files are untracked, `.env.example` files are tracked...
 
 ### 2026-03-03 03:09 TRT
 
@@ -693,7 +693,7 @@ question: what is in those `.md` files you added?
 
 **Assistant Summary**
 
-The contents of the `.md` files I added are briefly as follows: - [AGENTS.md](C:\Users\operator\source\az\az-vm\AGENTS.md) The project's development rules: folder structure, lin/win parity principles, `interactive/auto/step` mode semantics, `.env` precedence order, port/firewall rules, error handling, commit standards, and “final summary...
+The contents of the `.md` files I added are briefly as follows: - [AGENTS.md](<user-home>\source\az\az-vm\AGENTS.md) The project's development rules: folder structure, lin/win parity principles, `interactive/auto/step` mode semantics, `.env` precedence order, port/firewall rules, error handling, commit standards, and “final summary...
 
 ### 2026-03-03 03:16 TRT
 
@@ -706,7 +706,7 @@ update docs: starting with a fast quick start section: prepare a `readme.md` doc
 
 **Assistant Summary**
 
-`README.md` was prepared and committed. - File: [README.md](C:\Users\operator\source\az\az-vm\README.md) - Commit: `6592ce9` - Content: Quick Start, prerequisites, installation/configuration, `interactive/--auto/--step` modes, step/task semantics, lin/win flow architecture, port-security model, usage examples, log/exit da...
+`README.md` was prepared and committed. - File: [README.md](<user-home>\source\az\az-vm\README.md) - Commit: `6592ce9` - Content: Quick Start, prerequisites, installation/configuration, `interactive/--auto/--step` modes, step/task semantics, lin/win flow architecture, port-security model, usage examples, log/exit da...
 
 ### 2026-03-03 11:29 TRT
 
@@ -714,7 +714,7 @@ update docs: starting with a fast quick start section: prepare a `readme.md` doc
 
 ````text
 feat: while running in interactive mode, I want to see Azure regions and Azure VM SKUs together with their size and pricing information:
-*for this, I want to move my PowerShell script code from this location here: "C:\Users\operator\source\test\az\az-vm-ls.ps1"
+*for this, I want to move my PowerShell script code from this location here: "<user-home>\source\test\az\az-vm-ls.ps1"
 -just like there; Azure regions should appear in the same layout, numbered the same way; I should be able to select the target region by entering its number; including the default region, the exact code from my source location should be integrated here.
 *after that, it should ask me which VM type I am looking for: I should be able to enter partial values like "b2a", "d2", or leave it blank for all VM types.
 *then, just like in my code at the source, it should list the available VM SKUs in the selected region, filtered according to the partial VM type value I entered, together with their sizes and prices, and with their availability statuses, numbered as well. When calculating the price, it should use 730 as the total number of hours in a month, without asking the user. It should read that automatically from the settings.
@@ -725,7 +725,7 @@ feat: while running in interactive mode, I want to see Azure regions and Azure V
 
 **Assistant Summary**
 
-<proposed_plan> # Interactive Region + SKU Selector Integration Plan (lin/win parity, max reuse) ## Summary Integrate an interactive Azure region + VM SKU discovery/selection flow into **both** `lin-vm/az-vm-lin.ps1` and `win-vm/az-vm-win.ps1`, using logic adapted from `C:\Users\operator\source\test\az\az-vm-ls.ps1`. B...
+<proposed_plan> # Interactive Region + SKU Selector Integration Plan (lin/win parity, max reuse) ## Summary Integrate an interactive Azure region + VM SKU discovery/selection flow into **both** `lin-vm/az-vm-lin.ps1` and `win-vm/az-vm-win.ps1`, using logic adapted from `<user-home>\source\test\az\az-vm-ls.ps1`. B...
 
 ### 2026-03-03 11:37 TRT
 
@@ -751,7 +751,7 @@ fix: I ran the Windows side; during region selection, it did not show any region
 
 **Assistant Summary**
 
-The fix has been applied. - Commit: `190a334` - File: [co-vm/az-vm-co-sku-picker.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) What was fixed: - The region list is now written directly to the host instead of using `Format-Table`. - The list is displayed in a numbered grid format with 10 columns (10 regions/line). - Default r...
+The fix has been applied. - Commit: `190a334` - File: [co-vm/az-vm-co-sku-picker.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) What was fixed: - The region list is now written directly to the host instead of using `Format-Table`. - The list is displayed in a numbered grid format with 10 columns (10 regions/line). - Default r...
 
 ### 2026-03-03 11:49 TRT
 
@@ -764,7 +764,7 @@ fix: there are different names among Azure regions, such as country names; I onl
 
 **Assistant Summary**
 
-Fix completed. - Commit: `0a1e393` - File: [co-vm/az-vm-co-sku-picker.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) What changed: - The region source now shows only deployment regions where `metadata.regionType == Physical`. - This excludes edge/special types; the list is ~50-60...
+Fix completed. - Commit: `0a1e393` - File: [co-vm/az-vm-co-sku-picker.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) What changed: - The region source now shows only deployment regions where `metadata.regionType == Physical`. - This excludes edge/special types; the list is ~50-60...
 
 ### 2026-03-03 11:58 TRT
 
@@ -777,7 +777,7 @@ fix: even though I typed "standard_b2" or "b2a" into the partial filtering field
 
 **Assistant Summary**
 
-You're right, I fixed this and tested it myself. - Commit: `856b30f` - File: [co-vm/az-vm-co-sku-picker.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) Fix applied: - Partial SKU search is now more tolerant: - quoted inputs: `"b2a"`, `"standard_b2"` - separator variations: `standard_b2`, `sta...
+You're right, I fixed this and tested it myself. - Commit: `856b30f` - File: [co-vm/az-vm-co-sku-picker.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) Fix applied: - Partial SKU search is now more tolerant: - quoted inputs: `"b2a"`, `"standard_b2"` - separator variations: `standard_b2`, `sta...
 
 ### 2026-03-03 12:02 TRT
 
@@ -793,7 +793,7 @@ if it is the default, it should be shown as *2-x.
 
 Format fixed.
 - Commit: `f213f0b`
-- File: [co-vm/az-vm-co-sku-picker.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1)
+- File: [co-vm/az-vm-co-sku-picker.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1)
 
 The new region display is now in this format:
 - normal: `1-eastus.`
@@ -832,7 +832,7 @@ Available VM SKUs in region 'austriaeast' (prices use 730 hours/month):
 
 **Assistant Summary**
 
-The root cause was clearly identified and fixed. - Commit: `8dcc0cd` - File: [co-vm/az-vm-co-sku-picker.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) Why was it breaking for you while working for me? - The host you ran it on: **Windows PowerShell 5.1** - My previous validation host: **pwsh 7** - `ConvertFr...
+The root cause was clearly identified and fixed. - Commit: `8dcc0cd` - File: [co-vm/az-vm-co-sku-picker.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-sku-picker.ps1) Why was it breaking for you while working for me? - The host you ran it on: **Windows PowerShell 5.1** - My previous validation host: **pwsh 7** - `ConvertFr...
 
 ### 2026-03-03 12:34 TRT
 
@@ -845,7 +845,7 @@ fix bugs proactively: if there are other potential incompatibilities in this cod
 
 **Assistant Summary**
 
-I performed a proactive compatibility scan and fixed critical differences caused by PS5.1 vs PS7. - Last commit: `0c3af9f` - Working tree is clean. Main points fixed: 1. The JSON parse layer was made host-independent - [az-vm-co-core.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-core.ps1) - New shared helpers: - `Co...`
+I performed a proactive compatibility scan and fixed critical differences caused by PS5.1 vs PS7. - Last commit: `0c3af9f` - Working tree is clean. Main points fixed: 1. The JSON parse layer was made host-independent - [az-vm-co-core.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-core.ps1) - New shared helpers: - `Co...`
 
 ### 2026-03-03 12:41 TRT
 
@@ -910,7 +910,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Plan applied: I removed the UTF-8 BOM difference between PS5/PS7 deterministically. **What I changed** - Added a shared helper: `Write-TextFileNormalized` [az-vm-co-core.ps1](C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-core.ps1) - `.env` writing was moved to the helper so it uses UTF-8 no-BOM + CRLF [az-vm-co-co...
+Plan applied: I removed the UTF-8 BOM difference between PS5/PS7 deterministically. **What I changed** - Added a shared helper: `Write-TextFileNormalized` [az-vm-co-core.ps1](<user-home>/source/az/az-vm/co-vm/az-vm-co-core.ps1) - `.env` writing was moved to the helper so it uses UTF-8 no-BOM + CRLF [az-vm-co-co...
 
 ### 2026-03-03 14:03 TRT
 
@@ -975,7 +975,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-I implemented the Step 3 UI flow you wanted. **What Was Done** - A shared confirmation helper was added: `Confirm-YesNo` [az-vm-co-core.ps1](C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-core.ps1) - Linux Step 3 was updated: - If the RG exists, a "will be deleted" message is shown. - In interactive mode, a clear confirmation is requested. - `yes` => delete + wait + continue...
+I implemented the Step 3 UI flow you wanted. **What Was Done** - A shared confirmation helper was added: `Confirm-YesNo` [az-vm-co-core.ps1](<user-home>/source/az/az-vm/co-vm/az-vm-co-core.ps1) - Linux Step 3 was updated: - If the RG exists, a "will be deleted" message is shown. - In interactive mode, a clear confirmation is requested. - `yes` => delete + wait + continue...
 
 ### 2026-03-03 15:10 TRT
 
@@ -1018,7 +1018,7 @@ update git repo: the currently pending modified files were created as auto-gener
 
 **Assistant Summary**
 
-Completed. - I added the auto-generated files to the ignore list: [.gitignore](C:\Users\operator\source\az\az-vm\.gitignore) - I removed these files from repo tracking (they remain locally): - [lin-vm/az-vm-lin-cloud-init.yaml](C:\Users\operator\source\az\az-vm\lin-vm\az-vm-lin-cloud-init.yaml) - [lin-vm/az-vm-lin-update.sh](C...
+Completed. - I added the auto-generated files to the ignore list: [.gitignore](<user-home>\source\az\az-vm\.gitignore) - I removed these files from repo tracking (they remain locally): - [lin-vm/az-vm-lin-cloud-init.yaml](<user-home>\source\az\az-vm\lin-vm\az-vm-lin-cloud-init.yaml) - [lin-vm/az-vm-lin-update.sh](C...
 
 ### 2026-03-03 15:35 TRT
 
@@ -1096,7 +1096,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-The plan was implemented and the consolidation refactor was completed; the shared main steps in the `lin` and `win` flows were moved under `co-vm` in a behavior-preserving manner. Main files changed: - [az-vm-co-orchestration.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-orchestration.ps1) - [az-vm-lin.ps1](C:\Users\operator\source\az\az-vm...
+The plan was implemented and the consolidation refactor was completed; the shared main steps in the `lin` and `win` flows were moved under `co-vm` in a behavior-preserving manner. Main files changed: - [az-vm-co-orchestration.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-orchestration.ps1) - [az-vm-lin.ps1](<user-home>\source\az\az-vm...
 
 ### 2026-03-03 17:09 TRT
 
@@ -1149,7 +1149,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-I implemented the plan: I moved the large Step `5/6/8` bodies on the `lin`/`win` side to a shared task-first structure and turned the two scripts into thin wrappers. **What Was Done** - Added a new shared module: [co-vm/az-vm-co-guest.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-guest.ps1) - Linux cloud-init content generation - W...
+I implemented the plan: I moved the large Step `5/6/8` bodies on the `lin`/`win` side to a shared task-first structure and turned the two scripts into thin wrappers. **What Was Done** - Added a new shared module: [co-vm/az-vm-co-guest.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-guest.ps1) - Linux cloud-init content generation - W...
 
 ### 2026-03-03 17:49 TRT
 
@@ -1218,7 +1218,7 @@ update: contextually in different steps as well; whichever values are being read
 
 **Assistant Summary**
 
-I applied the update you wanted: on a step basis, contextual values are now printed to the console on first reference. - Shared first-use tracing was added and wired into Step 2/3/4/7/9: [az-vm-co-orchestration.ps1](/C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-orchestration.ps1:157), [az-vm-co-orchestration.ps1](/C:/Users/has...
+I applied the update you wanted: on a step basis, contextual values are now printed to the console on first reference. - Shared first-use tracing was added and wired into Step 2/3/4/7/9: [az-vm-co-orchestration.ps1](/<user-home>/source/az/az-vm/co-vm/az-vm-co-orchestration.ps1:157), [az-vm-co-orchestration.ps1](/C:/Users/has...
 
 ### 2026-03-03 18:16 TRT
 
@@ -1260,13 +1260,13 @@ At C:\Packages\Plugins\Microsoft.CPlat.Core.RunCommandWindows\1.1.22\Downloads\s
     + CategoryInfo          : OperationStopped: (Adding 'examplevm\...th exit code 2.:String) [], RuntimeException
     + FullyQualifiedErrorId : Adding 'examplevm\manager' to 'Administrators' failed with exit code 2.
 Suggested action: Review the related task in the log file and fix the command.
-C:\Users\operator\source\az\az-vm>
+<user-home>\source\az\az-vm>
 
 ````
 
 **Assistant Summary**
 
-I ran the Windows side live and fixed the error. **Root cause** - In the Windows guest update script at Step 8, the `Ensure-GroupMembership` check could not correctly detect membership for some identity formats (`manager`, `.\\manager`, `examplevm\\manager`). - Because of this, `net localgroup ... /add` is attempted again, the member is already ...
+I ran the Windows side live and fixed the error. **Root cause** - In the Windows guest update script at Step 8, the `Ensure-GroupMembership` check could not correctly detect membership for some identity formats (`manager`, `.\\manager`, `EXAMPLEVM\\manager`). - Because of this, `net localgroup ... /add` is attempted again, the member is already ...
 
 ### 2026-03-03 19:17 TRT
 
@@ -1329,7 +1329,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-I implemented the plan. - A new comprehensive UX/performance task was added to the Windows VM update flow: `09-configure-ux-windows` - File: [az-vm-co-guest.ps1](/C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-guest.ps1:515) - The following headings were added within this task: - Explorer: `This PC`, hidden+protected files, extensions visible...
+I implemented the plan. - A new comprehensive UX/performance task was added to the Windows VM update flow: `09-configure-ux-windows` - File: [az-vm-co-guest.ps1](/<user-home>/source/az/az-vm/co-vm/az-vm-co-guest.ps1:515) - The following headings were added within this task: - Explorer: `This PC`, hidden+protected files, extensions visible...
 
 ### 2026-03-03 21:42 TRT
 
@@ -1395,7 +1395,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Plan implemented and committed. - Windows Step 8 task catalog was expanded in [co-vm/az-vm-co-guest.ps1](C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-guest.ps1): - Added one private local-only accessibility package, extra Chocolatey packages (`ollama`, `sysinternals`, `powershell-core`, `io-unlocker`, `gh`, `ffmpeg`, `7zip`, `azure-cli`), Chrome install ...
+Plan implemented and committed. - Windows Step 8 task catalog was expanded in [co-vm/az-vm-co-guest.ps1](<user-home>/source/az/az-vm/co-vm/az-vm-co-guest.ps1): - Added one private local-only accessibility package, extra Chocolatey packages (`ollama`, `sysinternals`, `powershell-core`, `io-unlocker`, `gh`, `ffmpeg`, `7zip`, `azure-cli`), Chrome install ...
 
 ### 2026-03-03 22:13 TRT
 
@@ -1408,7 +1408,7 @@ feat: just as "f" enables re-filtering on the VM type SKU selection screen; plea
 
 **Assistant Summary**
 
-Completed. - `r=change region` was added to the SKU selection screen. - When `r` is entered, it goes back one step from the SKU screen to region selection. - The existing `f=change filter` behavior is preserved. Updated files: - [co-vm/az-vm-co-sku-picker.ps1](C:/Users/hasan/source/az/az-vm/co-vm/az-vm-co-sku-picker.ps1) - [co-vm/az-...
+Completed. - `r=change region` was added to the SKU selection screen. - When `r` is entered, it goes back one step from the SKU screen to region selection. - The existing `f=change filter` behavior is preserved. Updated files: - [co-vm/az-vm-co-sku-picker.ps1](<user-home>/source/az/az-vm/co-vm/az-vm-co-sku-picker.ps1) - [co-vm/az-...
 
 ### 2026-03-03 22:55 TRT
 
@@ -1507,7 +1507,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. - In the Windows Step 8 `--ssh --substep` flow, a single SSH session is now opened, task scripts are sent one by one over stdin, live stdout/stderr is read, and if necessary the session is reopened and processing continues: [az-vm-co-ssh.ps1](C:\Users\operator\source\az\az-vm\co-vm\az-vm-co-ssh.ps1:279), [az-vm-co-ssh.ps...
+Implemented. - In the Windows Step 8 `--ssh --substep` flow, a single SSH session is now opened, task scripts are sent one by one over stdin, live stdout/stderr is read, and if necessary the session is reopened and processing continues: [az-vm-co-ssh.ps1](<user-home>\source\az\az-vm\co-vm\az-vm-co-ssh.ps1:279), [az-vm-co-ssh.ps...
 
 ### 2026-03-04 10:38 TRT
 
@@ -1555,7 +1555,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-The plan was implemented and committed. **What Changed** - The Win flow was migrated to the new semantics: `--auto`, `--update/-u`, `explicit destructive rebuild flow`; `--ssh` and `--substep` were removed on the Win side. [C:\Users\operator\source\az\az-vm\win-vm\az-vm-win.ps1](C:\Users\operator\source\az\az-vm\win-vm\az-vm-win.ps1) - Step 8 Win behavior was clarified: ...
+The plan was implemented and committed. **What Changed** - The Win flow was migrated to the new semantics: `--auto`, `--update/-u`, `explicit destructive rebuild flow`; `--ssh` and `--substep` were removed on the Win side. [<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1) - Step 8 Win behavior was clarified: ...
 
 ### 2026-03-04 12:34 TRT
 
@@ -1625,7 +1625,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-I implemented the plan and completed the transition to a single architecture. **Implemented** - Switched to a single entrypoint: - [az-vm.cmd](/C:/Users/hasan/source/az/az-vm/az-vm.cmd) - [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/az-vm.ps1) - Linux/Windows flows were unified in a single script (`--windows` / `--linux`, `VM_OS_TYPE` support from `.env`...
+I implemented the plan and completed the transition to a single architecture. **Implemented** - Switched to a single entrypoint: - [az-vm.cmd](/<user-home>/source/az/az-vm/az-vm.cmd) - [az-vm.ps1](/<user-home>/source/az/az-vm/az-vm.ps1) - Linux/Windows flows were unified in a single script (`--windows` / `--linux`, `VM_OS_TYPE` support from `.env`...
 
 ### 2026-03-04 14:26 TRT
 
@@ -1695,7 +1695,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented and committed. Commit: - `8d8416a` — `refactor(win): split init/update tasks, remove output suppression, and optimize docker/wsl checks` What I changed: - Split Windows init into standalone tasks under `windows/init`: - [00-ensure-users-local.ps1](C:\Users\operator\source\az\az-vm\windows\init\00-ensu...
+Implemented and committed. Commit: - `8d8416a` — `refactor(win): split init/update tasks, remove output suppression, and optimize docker/wsl checks` What I changed: - Split Windows init into standalone tasks under `windows/init`: - [00-ensure-users-local.ps1](<user-home>\source\az\az-vm\windows\init\00-ensu...
 
 ### 2026-03-04 16:38 TRT
 
@@ -1709,7 +1709,7 @@ continue the remaining --auto test from where you left off after this change...
 
 **Assistant Summary**
 
-I implemented it, tested it, and committed it. - Commit: `23d6e44` - Main changes: - Step 8 init now runs in batch in a single `az vm run-command` call: [az-vm.ps1:644](C:\Users\operator\source\az\az-vm\az-vm.ps1:644) - The `wmic not recognized` output is treated as benign in the run-command parser, preventing a false fail: [az-vm....
+I implemented it, tested it, and committed it. - Commit: `23d6e44` - Main changes: - Step 8 init now runs in batch in a single `az vm run-command` call: [az-vm.ps1:644](<user-home>\source\az\az-vm\az-vm.ps1:644) - The `wmic not recognized` output is treated as benign in the run-command parser, preventing a false fail: [az-vm....
 
 ### 2026-03-04 19:14 TRT
 
@@ -1765,7 +1765,7 @@ it is still stuck at the same place; you can also check the logs: for God's sake
 
 **Assistant Summary**
 
-I found and fixed the root cause: the hang was not inside `Task15`, but because the parser sometimes could not see the end due to `NUL` (`\0`) appearing at the start of the `CO_VM_TASK_END` marker line. Because of this, the e2e flow was timing out. The fixes I made: - Added marker/parsing cleanup: [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm...
+I found and fixed the root cause: the hang was not inside `Task15`, but because the parser sometimes could not see the end due to `NUL` (`\0`) appearing at the start of the `CO_VM_TASK_END` marker line. Because of this, the e2e flow was timing out. The fixes I made: - Added marker/parsing cleanup: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm...
 
 ### 2026-03-05 00:08 TRT
 
@@ -1778,7 +1778,7 @@ analysis: aside from the issue of using different SSH clients; is there anything
 
 **Assistant Summary**
 
-Yes, aside from the SSH client issue, a few lingering points remain. 1. The `substep/ssh` legacy still leaves traces in the code (even if it is not used in the active flow). - In [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1:5233), `Show-CoVmRuntimeConfigurationSnapshot` still carries the `SubstepMode` / `SshMode` parameters. - [az-vm....
+Yes, aside from the SSH client issue, a few lingering points remain. 1. The `substep/ssh` legacy still leaves traces in the code (even if it is not used in the active flow). - In [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1:5233), `Show-CoVmRuntimeConfigurationSnapshot` still carries the `SubstepMode` / `SshMode` parameters. - [az-vm....
 
 ### 2026-03-05 01:22 TRT
 
@@ -1804,7 +1804,7 @@ task: let's make another improvement on pyssh like this: if the other side happe
 
 **Assistant Summary**
 
-Implemented and committed: `195e5cf` What changed: 1. I kept the progress spinner lines out of the transcript - Transient lines like `|\-/` are no longer written to the log; they are shown only in the live console. - Implementation: [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) 2. I adjusted the Windows update task order to the arrangement you wanted...
+Implemented and committed: `195e5cf` What changed: 1. I kept the progress spinner lines out of the transcript - Transient lines like `|\-/` are no longer written to the log; they are shown only in the live console. - Implementation: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) 2. I adjusted the Windows update task order to the arrangement you wanted...
 
 ### 2026-03-05 02:22 TRT
 
@@ -1818,7 +1818,7 @@ test: then run the az-vm --auto explicit destructive rebuild flow test, confirm 
 
 **Assistant Summary**
 
-I implemented it and tested it. 1. Code update - [install-pyssh-tools.ps1](C:\Users\operator\source\az\az-vm\tools\install-pyssh-tools.ps1): - Creates `tools/pyssh/.venv` with the system Python. - Installs the pip dependencies in [requirements.txt](C:\Users\operator\source\az\az-vm\tools\pyssh\requirements.txt) (`parami...
+I implemented it and tested it. 1. Code update - [install-pyssh-tools.ps1](<user-home>\source\az\az-vm\tools\install-pyssh-tools.ps1): - Creates `tools/pyssh/.venv` with the system Python. - Installs the pip dependencies in [requirements.txt](<user-home>\source\az\az-vm\tools\pyssh\requirements.txt) (`parami...
 
 ### 2026-03-05 03:02 TRT
 
@@ -1831,7 +1831,7 @@ fix: when writing logs to the screen, you don't need to write " [new]" for newly
 
 **Assistant Summary**
 
-I made the requested fix. - The ` [new]` / ` [updated]` tags were removed from the log lines. - The rest of the line formatting was preserved. - Updated file: [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) Commit: - `a00f492` — `fix: remove [new]/[updated] suffixes from console value logs` I did not run tests (...
+I made the requested fix. - The ` [new]` / ` [updated]` tags were removed from the log lines. - The rest of the line formatting was preserved. - Updated file: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) Commit: - `a00f492` — `fix: remove [new]/[updated] suffixes from console value logs` I did not run tests (...
 
 ### 2026-03-05 03:03 TRT
 
@@ -1844,7 +1844,7 @@ fix: you don't need to phrase it as "Step value usage " in the logs; clean up th
 
 **Assistant Summary**
 
-I made the fix. - The `Step value usage ...` headings in the log were removed entirely. - The value lines (`- Key = Value`) are preserved exactly. - File: [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) Commit: - `a6b910b` — `fix: remove step value usage heading from console logs`
+I made the fix. - The `Step value usage ...` headings in the log were removed entirely. - The value lines (`- Key = Value`) are preserved exactly. - File: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) Commit: - `a6b910b` — `fix: remove step value usage heading from console logs`
 
 ### 2026-03-05 03:10 TRT
 
@@ -1858,7 +1858,7 @@ fix: there is a phrase like this in the logs: "VM power state: VM running (attem
 
 **Assistant Summary**
 
-I fixed it. - The `VM power state ... (attempt x/y)` check is now capped at a maximum of `3` attempts. - Both the call site and the function itself are capped: - Post-reboot call: `-MaxAttempts 3` - `Wait-CoVmVmRunningState` default: `3` and hard cap: `if ($MaxAttempts -gt 3) { $MaxAttempts = 3 }` - File: [az-vm.ps1](C:\Users\operator\so...
+I fixed it. - The `VM power state ... (attempt x/y)` check is now capped at a maximum of `3` attempts. - Both the call site and the function itself are capped: - Post-reboot call: `-MaxAttempts 3` - `Wait-CoVmVmRunningState` default: `3` and hard cap: `if ($MaxAttempts -gt 3) { $MaxAttempts = 3 }` - File: [az-vm.ps1](<user-home>\so...
 
 ### 2026-03-05 03:12 TRT
 
@@ -1871,7 +1871,7 @@ task: please make explicit destructive rebuild flow the default behavior when az
 
 **Assistant Summary**
 
-Completed. - In interactive runs (when `--auto` is not used), if `--update` or `explicit destructive rebuild flow` is not specified, the default mode is now `destructive rebuild`. - The current default behavior of auto mode is preserved. - File: [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) Commit: - `15247a9` — `feat: default interactive runs to destructive rebuild mode`
+Completed. - In interactive runs (when `--auto` is not used), if `--update` or `explicit destructive rebuild flow` is not specified, the default mode is now `destructive rebuild`. - The current default behavior of auto mode is preserved. - File: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) Commit: - `15247a9` — `feat: default interactive runs to destructive rebuild mode`
 
 ### 2026-03-05 03:27 TRT
 
@@ -1884,7 +1884,7 @@ fix: in the `.env` and `.env.example` files; remove all env variables that are c
 
 **Assistant Summary**
 
-Completed. - Based on the usage scan, unused keys in `.env` were cleaned up: - `PUTTY_PLINK_PATH` - `PUTTY_PSCP_PATH` - File: [.env](C:\Users\operator\source\az\az-vm\.env) - No unused keys were found in `.env.example`, so no changes were needed. - File: [.env.example](C:\Users\operator\sou...
+Completed. - Based on the usage scan, unused keys in `.env` were cleaned up: - `PUTTY_PLINK_PATH` - `PUTTY_PSCP_PATH` - File: [.env](<user-home>\source\az\az-vm\.env) - No unused keys were found in `.env.example`, so no changes were needed. - File: [.env.example](<user-home>\sou...
 
 ### 2026-03-05 03:29 TRT
 
@@ -1897,7 +1897,7 @@ task: add `ssh_port=444` to the `.env` file; also make sure we use this value fr
 
 **Assistant Summary**
 
-Done. - I wrote `ssh_port=444` into `.env` (I changed the existing `SSH_PORT=444` line to this). - The application now actively uses this value: - It reads `ssh_port` first; if not present, it falls back to `SSH_PORT`. - Updated files: - [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) - [install-pyssh-tools.ps1](C:\Users...
+Done. - I wrote `ssh_port=444` into `.env` (I changed the existing `SSH_PORT=444` line to this). - The application now actively uses this value: - It reads `ssh_port` first; if not present, it falls back to `SSH_PORT`. - Updated files: - [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) - [install-pyssh-tools.ps1](C:\Users...
 
 ### 2026-03-05 03:33 TRT
 
@@ -1910,7 +1910,7 @@ task: the install_pyssh_tool.ps1 script should be able to bring the pyssh tool t
 
 **Assistant Summary**
 
-The work is complete. - I cleaned the `tools/pyssh` folder and left only `ssh_client.py`. - Then I performed a fresh installation with [install-pyssh-tools.ps1](C:\Users\operator\source\az\az-vm\tools\install-pyssh-tools.ps1): - `.venv` was recreated - `pip` and `requirements.txt` dependencies were installed - Isolated SSH tes...
+The work is complete. - I cleaned the `tools/pyssh` folder and left only `ssh_client.py`. - Then I performed a fresh installation with [install-pyssh-tools.ps1](<user-home>\source\az\az-vm\tools\install-pyssh-tools.ps1): - `.venv` was recreated - `pip` and `requirements.txt` dependencies were installed - Isolated SSH tes...
 
 ### 2026-03-05 03:36 TRT
 
@@ -1923,7 +1923,7 @@ fix: the name of the file that installs the tool should be exactly install-pyssh
 
 **Assistant Summary**
 
-I updated it as you requested. What changed: - Installer file name changed: - `tools/install-pyssh-tool.ps1` (new) - `tools/install-pyssh-tools.ps1` (old, removed) - Application reference updated: - [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) now calls the new file name. - Default behavior chan...
+I updated it as you requested. What changed: - Installer file name changed: - `tools/install-pyssh-tool.ps1` (new) - `tools/install-pyssh-tools.ps1` (old, removed) - Application reference updated: - [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) now calls the new file name. - Default behavior chan...
 
 ### 2026-03-05 03:59 TRT
 
@@ -1982,7 +1982,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented in [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1). What changed: - New CLI model: `az-vm <command> --option=value` with strict long options. - Command parsing/help: [az-vm.ps1:10](C:\Users\operator\source\az\az-vm\az-vm.ps1:10), [az-vm.ps1:1113](C:\Users\operator\source\az\az-vm\az-vm.ps1:1113), [az-vm....
+Implemented in [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1). What changed: - New CLI model: `az-vm <command> --option=value` with strict long options. - Command parsing/help: [az-vm.ps1:10](<user-home>\source\az\az-vm\az-vm.ps1:10), [az-vm.ps1:1113](<user-home>\source\az\az-vm\az-vm.ps1:1113), [az-vm....
 
 ### 2026-03-05 14:14 TRT
 
@@ -2017,7 +2017,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. ### What I changed - Added `--multi-action` and `--single-action` support for `create` and `update` in [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1). - Supported action values (both params): - `config`, `group`, `network`, `deploy`, `init`, `update`, `finish` - Semantics implemented: - `--multi-...
+Implemented. ### What I changed - Added `--multi-action` and `--single-action` support for `create` and `update` in [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1). - Supported action values (both params): - `config`, `group`, `network`, `deploy`, `init`, `update`, `finish` - Semantics implemented: - `--multi-...
 
 ### 2026-03-05 14:33 TRT
 
@@ -2030,7 +2030,7 @@ test: now let's try create --single-action=finish
 
 **Assistant Summary**
 
-The test completed successfully. Command I ran: - `az-vm.cmd create --single-action=finish --auto` Result: - As expected, only `Step 9/9` ran. - The flow stopped with `Stopped after single-action target 'finish'.` - The VM connection information was generated successfully. Key output: - Public IP: `20.235.96.15` - SSH: - `..."
+The test completed successfully. Command I ran: - `az-vm.cmd create --single-action=finish --auto` Result: - As expected, only `Step 9/9` ran. - The flow stopped with `Stopped after single-action target 'finish'.` - The VM connection information was generated successfully. Key output: - Public IP: `<example-public-ip>` - SSH: - `..."
 
 ### 2026-03-05 14:35 TRT
 
@@ -2095,7 +2095,7 @@ fix: don't make me provide the `--auto` parameter when using `exec`; `--auto` sh
 
 **Assistant Summary**
 
-Fix applied. Change made: - In [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1), the default `auto` value for the `exec` command was set to `true`. - That means you no longer have to write `--auto` in the `exec` invocation. - If you want, you can still return to interactive behavior by passing `--auto=false`. Verification: - PS5 ...
+Fix applied. Change made: - In [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1), the default `auto` value for the `exec` command was set to `true`. - That means you no longer have to write `--auto` in the `exec` invocation. - If you want, you can still return to interactive behavior by passing `--auto=false`. Verification: - PS5 ...
 
 ### 2026-03-05 15:01 TRT
 
@@ -2135,7 +2135,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented and committed. Commit: - `073f0d4` — `fix: harden region-change resource mover orchestration and stale cleanup` What I changed: - Updated [`az-vm.ps1`](C:/Users/hasan/source/az/az-vm/az-vm.ps1): - Added robust stale Resource Mover cleanup before new `change --vm-region` runs. - Enforced your requested be...
+Implemented and committed. Commit: - `073f0d4` — `fix: harden region-change resource mover orchestration and stale cleanup` What I changed: - Updated [`az-vm.ps1`](<user-home>/source/az/az-vm/az-vm.ps1): - Added robust stale Resource Mover cleanup before new `change --vm-region` runs. - Enforced your requested be...
 
 ### 2026-03-05 20:23 TRT
 
@@ -2253,7 +2253,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented in commit `12f2dd5` with the planned refactor. - Updated naming engine in [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1): - Added static `REGION_CODE` map + resolver. - Added template/token resolvers for `{SERVER_NAME}`, `{REGION_CODE}`, `{N}`. - Added per-resource-type `nX` auto-index allocator. ...
+Implemented in commit `12f2dd5` with the planned refactor. - Updated naming engine in [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1): - Added static `REGION_CODE` map + resolver. - Added template/token resolvers for `{SERVER_NAME}`, `{REGION_CODE}`, `{N}`. - Added per-resource-type `nX` auto-index allocator. ...
 
 ### 2026-03-05 22:22 TRT
 
@@ -2285,7 +2285,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented and committed. Commit: - `84e221e` — `feat: add delete command and interactive change/exec flows` What I changed: - Updated CLI surface in [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1): - Added `delete` command with `--target=group|network|vm|disk`, `--group`, `--yes`. - Removed `--purge` behavio...
+Implemented and committed. Commit: - `84e221e` — `feat: add delete command and interactive change/exec flows` What I changed: - Updated CLI surface in [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1): - Added `delete` command with `--target=group|network|vm|disk`, `--group`, `--yes`. - Removed `--purge` behavio...
 
 ### 2026-03-05 22:59 TRT
 
@@ -2418,7 +2418,7 @@ fix: the Azure Retail Pricing API keeps giving a 429 Too Many Requests error; is
 
 **Assistant Summary**
 
-I implemented the fix to reduce the 429 risk and committed it. - `Get-SkuPriceMap` no longer makes repeated chunk calls; it reads from the location-based cache: [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/az-vm.ps1):5434 - A new throttling-aware call was added for Retail Pricing (HTTP `429/5xx` retry + `Retry-After` handling...
+I implemented the fix to reduce the 429 risk and committed it. - `Get-SkuPriceMap` no longer makes repeated chunk calls; it reads from the location-based cache: [az-vm.ps1](/<user-home>/source/az/az-vm/az-vm.ps1):5434 - A new throttling-aware call was added for Retail Pricing (HTTP `429/5xx` retry + `Retry-After` handling...
 
 ### 2026-03-06 00:42 TRT
 
@@ -2444,7 +2444,7 @@ fix bug: when I select the centralindia region and the b4as_v2 VM size in intera
 
 **Assistant Summary**
 
-I ran an isolated test and applied the patch that eliminates the crash risk with `AZ_LOCATION=''`. - The region picker now safely resolves the region name from the selected item (Name/name/DisplayName/fallback): [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/az-vm.ps1:5202) - If `Select-AzLocationInteractive` returns an empty value, the user now...
+I ran an isolated test and applied the patch that eliminates the crash risk with `AZ_LOCATION=''`. - The region picker now safely resolves the region name from the selected item (Name/name/DisplayName/fallback): [az-vm.ps1](/<user-home>/source/az/az-vm/az-vm.ps1:5202) - If `Select-AzLocationInteractive` returns an empty value, the user now...
 
 ### 2026-03-06 01:17 TRT
 
@@ -2462,7 +2462,7 @@ Reason: Region name is invalid or unavailable.
 Detail: Region '' was not found.
 Suggested action: Select a valid region with az account list-locations.
 
-C:\Users\operator\source\az\az-vm>
+<user-home>\source\az\az-vm>
 
 ````
 
@@ -2481,7 +2481,7 @@ test: now I want you to execute the az-vm create --to-step=vm-deploy --auto comm
 
 **Assistant Summary**
 
-The test completed and the command finished successfully: - Command run: `.\az-vm.cmd create --to-step=vm-deploy --auto` - Result: `exit code 0` (successful) - The flow stopped at the `vm-deploy` step as planned. - Log file: `C:\Users\operator\source\az\az-vm\az-vm-log-06mar26-042606.txt` Created VM details: - VM: `examplevm` - R...
+The test completed and the command finished successfully: - Command run: `.\az-vm.cmd create --to-step=vm-deploy --auto` - Result: `exit code 0` (successful) - The flow stopped at the `vm-deploy` step as planned. - Log file: `<user-home>\source\az\az-vm\az-vm-log-06mar26-042606.txt` Created VM details: - VM: `examplevm` - R...
 
 ### 2026-03-06 01:32 TRT
 
@@ -2541,7 +2541,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-The plan was implemented and committed. - `--perf` telemetry was expanded: - Command-level duration: [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/az-vm.ps1:7818), [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/az-vm.ps1:7923) - Step-level duration: [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/az-vm.ps1:1393), [az-vm.ps1](/C:/Users/hasan/source/az/az-vm/...)
+The plan was implemented and committed. - `--perf` telemetry was expanded: - Command-level duration: [az-vm.ps1](/<user-home>/source/az/az-vm/az-vm.ps1:7818), [az-vm.ps1](/<user-home>/source/az/az-vm/az-vm.ps1:7923) - Step-level duration: [az-vm.ps1](/<user-home>/source/az/az-vm/az-vm.ps1:1393), [az-vm.ps1](/<user-home>/source/az/az-vm/...)
 
 ### 2026-03-06 02:17 TRT
 
@@ -2626,7 +2626,7 @@ task: remove the --force parameters from the winget calls in the vm-update tasks
 
 **Assistant Summary**
 
-The update you requested has been made: `--force` was removed from all `winget` calls in the `vm-update` tasks. Places where `--force` was present (before): 1. [01-bootstrap-winget-system.ps1](C:\Users\operator\source\az\az-vm\windows\update\01-bootstrap-winget-system.ps1) lines 161-162 `winget source reset --force` 2. one private local-only accessibility check task ...
+The update you requested has been made: `--force` was removed from all `winget` calls in the `vm-update` tasks. Places where `--force` was present (before): 1. [01-bootstrap-winget-system.ps1](<user-home>\source\az\az-vm\windows\update\01-bootstrap-winget-system.ps1) lines 161-162 `winget source reset --force` 2. one private local-only accessibility check task ...
 
 ### 2026-03-06 03:54 TRT
 
@@ -2639,7 +2639,7 @@ task: restore the --force parameters in the winget bootstrap; if there are any o
 
 **Assistant Summary**
 
-Completed. Change I made: - I restored the following call in [01-bootstrap-winget-system.ps1](C:\Users\operator\source\az\az-vm\windows\update\01-bootstrap-winget-system.ps1): - `winget source reset --force` Report: - Among the `winget` calls in this file, the only call that supports `--force` is `winget source reset`. - `winget sourc...
+Completed. Change I made: - I restored the following call in [01-bootstrap-winget-system.ps1](<user-home>\source\az\az-vm\windows\update\01-bootstrap-winget-system.ps1): - `winget source reset --force` Report: - Among the `winget` calls in this file, the only call that supports `--force` is `winget source reset`. - `winget sourc...
 
 ### 2026-03-06 03:56 TRT
 
@@ -2653,7 +2653,7 @@ task: in the `vm-init` task, right after Chocolatey is installed, do we make a c
 **Assistant Summary**
 
 Yes, we do. In Windows `vm-init`, in the Chocolatey bootstrap task, immediately after installation, there is this call:
-- [02-bootstrap-choco-system.ps1](C:\Users\operator\source\az\az-vm\windows\init\02-bootstrap-choco-system.ps1:17) `& $chocoExe feature enable -n allowGlobalConfirmation`
+- [02-bootstrap-choco-system.ps1](<user-home>\source\az\az-vm\windows\init\02-bootstrap-choco-system.ps1:17) `& $chocoExe feature enable -n allowGlobalConfirmation`
 This setting enables **global confirmation**. However, despite this, s...
 
 ### 2026-03-06 12:28 TRT
@@ -2756,7 +2756,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented and committed: `7c76541` **What changed** - CLI surface finalized and legacy command surface removed in [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1): - Removed `change` command from public CLI. - Added `move`, `resize`, `set` commands. - `config`, `exec`, `show` no longer accept `--auto`. - Help...
+Implemented and committed: `7c76541` **What changed** - CLI surface finalized and legacy command surface removed in [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1): - Removed `change` command from public CLI. - Added `move`, `resize`, `set` commands. - `config`, `exec`, `show` no longer accept `--auto`. - Help...
 
 ### 2026-03-06 15:47 TRT
 
@@ -2867,7 +2867,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. I applied the entire plan in the code and committed it. **What Changed** - I added a catalog-based synchronization mechanism for task execution. - [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) - Sync runs immediately before each `vm-init` / `vm-update` task catalog is read. - File add/delete/rename situ...
+Implemented. I applied the entire plan in the code and committed it. **What Changed** - I added a catalog-based synchronization mechanism for task execution. - [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) - Sync runs immediately before each `vm-init` / `vm-update` task catalog is read. - File add/delete/rename situ...
 
 ### 2026-03-06 18:45 TRT
 
@@ -2934,7 +2934,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. The changes within the scope of the plan have been completed and committed: `918c54f`. - `AZ_LOCATION` is now required: - In Step-1, if it is empty, it exits gracefully ([az-vm.ps1:3361](/C:/Users/hasan/source/az/az-vm/az-vm.ps1:3361)). - There is also additional protection in the resource group step ([az-vm.ps1:3555](/C:/Users/hasan/source/az/az-vm/az-vm.p...
+Implemented. The changes within the scope of the plan have been completed and committed: `918c54f`. - `AZ_LOCATION` is now required: - In Step-1, if it is empty, it exits gracefully ([az-vm.ps1:3361](/<user-home>/source/az/az-vm/az-vm.ps1:3361)). - There is also additional protection in the resource group step ([az-vm.ps1:3555](/<user-home>/source/az/az-vm/az-vm.p...
 
 ### 2026-03-06 20:06 TRT
 
@@ -2965,7 +2965,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-The plan was implemented and committed. - Changes: [az-vm.ps1](C:/Users/hasan/source/az/az-vm/az-vm.ps1) 1. `group` command added. - `az-vm group --list[=filter]` - `az-vm group --select=<name>` and `--select=` (interactive picker) - The selection is written to the `RESOURCE_GROUP` value in `.env` as the active group. 2. `--gro...
+The plan was implemented and committed. - Changes: [az-vm.ps1](<user-home>/source/az/az-vm/az-vm.ps1) 1. `group` command added. - `az-vm group --list[=filter]` - `az-vm group --select=<name>` and `--select=` (interactive picker) - The selection is written to the `RESOURCE_GROUP` value in `.env` as the active group. 2. `--gro...
 
 ### 2026-03-06 20:41 TRT
 
@@ -3035,7 +3035,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. Changes made: - Added platform task directory fallback logic: - [az-vm.ps1](C:/Users/hasan/source/az/az-vm/az-vm.ps1) - New resolution order: `VM_INIT_TASK_DIR/VM_UPDATE_TASK_DIR` > `WIN_/LIN_` task dir keys > built-in default. - Expanded the PS compat tests for this new behavior: - [ps-compat-...
+Implemented. Changes made: - Added platform task directory fallback logic: - [az-vm.ps1](<user-home>/source/az/az-vm/az-vm.ps1) - New resolution order: `VM_INIT_TASK_DIR/VM_UPDATE_TASK_DIR` > `WIN_/LIN_` task dir keys > built-in default. - Expanded the PS compat tests for this new behavior: - [ps-compat-...
 
 ### 2026-03-06 21:27 TRT
 
@@ -3048,7 +3048,7 @@ Why didn't you implement the rest of the plan above? Could you implement that to
 
 **Assistant Summary**
 
-You're right; in the previous turn I had only implemented the request focused on `.env + task-dir fallback`. I have now also implemented the main refactor part of the remaining plan. What was done: - The monolithic structure was split into modules: - [az-vm.ps1](C:/Users/hasan/source/az/az-vm/az-vm.ps1) is now entrypoint + module loader. - [modules/core/azvm-core-foundation.ps1...
+You're right; in the previous turn I had only implemented the request focused on `.env + task-dir fallback`. I have now also implemented the main refactor part of the remaining plan. What was done: - The monolithic structure was split into modules: - [az-vm.ps1](<user-home>/source/az/az-vm/az-vm.ps1) is now entrypoint + module loader. - [modules/core/azvm-core-foundation.ps1...
 
 ### 2026-03-06 21:34 TRT
 
@@ -3119,7 +3119,7 @@ update: I want you to proceed with and complete the remaining work from our late
 
 **Assistant Summary**
 
-I closed out the remaining work. I centralized repo root resolution; modules no longer accidentally look for paths like `modules/ui/.env`. This fix touches [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1), [modules/core/azvm-core-foundation.ps1](C:\Users\operator\source\az\az-vm\modules\core\azvm-core-foundation.ps1), [module...
+I closed out the remaining work. I centralized repo root resolution; modules no longer accidentally look for paths like `modules/ui/.env`. This fix touches [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1), [modules/core/azvm-core-foundation.ps1](<user-home>\source\az\az-vm\modules\core\azvm-core-foundation.ps1), [module...
 
 ### 2026-03-06 21:59 TRT
 
@@ -3159,7 +3159,7 @@ check fix update: does this folder name appear anywhere in the code? If it does,
 
 **Assistant Summary**
 
-Generic task-dir handling was removed. - Shared config resolution no longer produces `VM_INIT_TASK_DIR` / `VM_UPDATE_TASK_DIR`; only platform keys are used: [azvm-core-foundation.ps1](C:\Users\operator\source\az\az-vm\modules\core\azvm-core-foundation.ps1) - Step 1 context directs the init/update catalog paths...
+Generic task-dir handling was removed. - Shared config resolution no longer produces `VM_INIT_TASK_DIR` / `VM_UPDATE_TASK_DIR`; only platform keys are used: [azvm-core-foundation.ps1](<user-home>\source\az\az-vm\modules\core\azvm-core-foundation.ps1) - Step 1 context directs the init/update catalog paths...
 
 ### 2026-03-06 22:22 TRT
 
@@ -3185,7 +3185,7 @@ I have a question: what is the difference between `vm_name` and `server_name`? H
 
 **Assistant Summary**
 
-Short answer: - `SERVER_NAME`: the application's **logical primary name / naming seed**. - `VM_NAME`: the **actual VM resource name** in Azure. In the code, the distinction works like this: 1. `SERVER_NAME` is selected and stored first [azvm-orchestration-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1:20) ...
+Short answer: - `SERVER_NAME`: the application's **logical primary name / naming seed**. - `VM_NAME`: the **actual VM resource name** in Azure. In the code, the distinction works like this: 1. `SERVER_NAME` is selected and stored first [azvm-orchestration-runtime.ps1](<user-home>\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1:20) ...
 
 ### 2026-03-06 22:30 TRT
 
@@ -3211,7 +3211,7 @@ update: let's do one final UX pass; let's confirm that this change is consistent
 
 **Assistant Summary**
 
-The latest UX pass is complete. What was updated: - The `VM_NAME` prompt now explicitly says that this is the actual Azure VM name: [modules/commands/azvm-orchestration-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1) - The Step 1 confirmation message now says that `VM_NAME` is both the VM name and the default...
+The latest UX pass is complete. What was updated: - The `VM_NAME` prompt now explicitly says that this is the actual Azure VM name: [modules/commands/azvm-orchestration-runtime.ps1](<user-home>\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1) - The Step 1 confirmation message now says that `VM_NAME` is both the VM name and the default...
 
 ### 2026-03-06 22:48 TRT
 
@@ -3224,7 +3224,7 @@ update: ensure that the name of the desktop shortcut created for VSCode in the p
 
 **Assistant Summary**
 
-VS Code public desktop shortcut name updated. Change: - [windows/update/33-create-shortcuts-public-desktop.ps1](C:\Users\operator\source\az\az-vm\windows\update\33-create-shortcuts-public-desktop.ps1) - `i6vscode` -> `v5vscode` Verification: - File parse check passed. - Repo is clean. Commit: - `d97...
+VS Code public desktop shortcut name updated. Change: - [windows/update/33-create-shortcuts-public-desktop.ps1](<user-home>\source\az\az-vm\windows\update\33-create-shortcuts-public-desktop.ps1) - `i6vscode` -> `v5vscode` Verification: - File parse check passed. - Repo is clean. Commit: - `d97...
 
 ### 2026-03-06 22:50 TRT
 
@@ -3237,7 +3237,7 @@ check: okay, within the same task, is there also a `u7network and sharing` short
 
 **Assistant Summary**
 
-Yes. - The shortcut is defined in the same task: [33-create-shortcuts-public-desktop.ps1](C:\Users\operator\source\az\az-vm\windows\update\33-create-shortcuts-public-desktop.ps1:295) - The target executable resolves to `control.exe`: [33-create-shortcuts-public-desktop.ps1](C:\Users\operator\source\az\az-vm\windows\...
+Yes. - The shortcut is defined in the same task: [33-create-shortcuts-public-desktop.ps1](<user-home>\source\az\az-vm\windows\update\33-create-shortcuts-public-desktop.ps1:295) - The target executable resolves to `control.exe`: [33-create-shortcuts-public-desktop.ps1](<user-home>\source\az\az-vm\windows\...
 
 ### 2026-03-06 22:52 TRT
 
@@ -3250,7 +3250,7 @@ question: what does NAMING_TEMPLATE_ACTIVE=regional_v1 in the .env file control?
 
 **Assistant Summary**
 
-Short answer: right now `NAMING_TEMPLATE_ACTIVE=regional_v1` is **not a real multiple-choice mechanism**. In the code, it only checks "is this the active naming profile?". How it works: - The value is read inside Step 1: [azvm-orchestration-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\commands\azvm-orchestration-runtim...
+Short answer: right now `NAMING_TEMPLATE_ACTIVE=regional_v1` is **not a real multiple-choice mechanism**. In the code, it only checks "is this the active naming profile?". How it works: - The value is read inside Step 1: [azvm-orchestration-runtime.ps1](<user-home>\source\az\az-vm\modules\commands\azvm-orchestration-runtim...
 
 ### 2026-03-06 22:54 TRT
 
@@ -3263,7 +3263,7 @@ Okay, can we completely remove this variable from everywhere while preserving al
 
 **Assistant Summary**
 
-Yes, I removed it. What changed: - `NAMING_TEMPLATE_ACTIVE` was removed entirely from the code: - [modules/commands/azvm-orchestration-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1) - It was removed from the `.env.example` contract: - [.env.example](C:\Users\operator\source\az\az-vm\.env.example...
+Yes, I removed it. What changed: - `NAMING_TEMPLATE_ACTIVE` was removed entirely from the code: - [modules/commands/azvm-orchestration-runtime.ps1](<user-home>\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1) - It was removed from the `.env.example` contract: - [.env.example](<user-home>\source\az\az-vm\.env.example...
 
 ### 2026-03-06 22:58 TRT
 
@@ -3276,7 +3276,7 @@ question: starting with the resource group; can you list, one by one, the templa
 
 **Assistant Summary**
 
-Yes. The current naming system essentially works like this. **Core Logic** - The main input value is `VM_NAME`. - The second required naming input is `AZ_LOCATION`; `REGION_CODE` is derived from it. The region code comes from the static map: [azvm-config-runtime.ps1:134](C:\Users\operator\source\az\az-vm\modules\config\azvm-config-r...
+Yes. The current naming system essentially works like this. **Core Logic** - The main input value is `VM_NAME`. - The second required naming input is `AZ_LOCATION`; `REGION_CODE` is derived from it. The region code comes from the static map: [azvm-config-runtime.ps1:134](<user-home>\source\az\az-vm\modules\config\azvm-config-r...
 
 ### 2026-03-06 23:10 TRT
 
@@ -3289,7 +3289,7 @@ update: apply both of these suggestions; then come back to me with numbered sugg
 
 **Assistant Summary**
 
-I applied two changes. **Applied** - The dead `NamingTemplateActive` field in the Step 1 context was removed: [azvm-orchestration-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1) - In the normal `create/update` flow, the following resources now use the real template resolver + `{N}` ind...
+I applied two changes. **Applied** - The dead `NamingTemplateActive` field in the Step 1 context was removed: [azvm-orchestration-runtime.ps1](<user-home>\source\az\az-vm\modules\commands\azvm-orchestration-runtime.ps1) - In the normal `create/update` flow, the following resources now use the real template resolver + `{N}` ind...
 
 ### 2026-03-06 23:18 TRT
 
@@ -3374,7 +3374,7 @@ update: by the way, the expression "TASK_OUTCOME_MODE" is not descriptive enough
 
 **Assistant Summary**
 
-`TASK_OUTCOME_MODE` is now used as `VM_TASK_OUTCOME_MODE` throughout the application. Updated locations: - config reading and validation: - [azvm-command-main.ps1](C:\Users\operator\source\az\az-vm\modules\commands\azvm-command-main.ps1) - [azvm-ui-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\ui\azvm-ui-runtime.p...
+`TASK_OUTCOME_MODE` is now used as `VM_TASK_OUTCOME_MODE` throughout the application. Updated locations: - config reading and validation: - [azvm-command-main.ps1](<user-home>\source\az\az-vm\modules\commands\azvm-command-main.ps1) - [azvm-ui-runtime.ps1](<user-home>\source\az\az-vm\modules\ui\azvm-ui-runtime.p...
 
 ### 2026-03-07 00:23 TRT
 
@@ -3405,7 +3405,7 @@ Added. At the end of the `vm-update` stage, if a reboot is now needed:
 - then, it lists the tasks requesting a restart one by one
 - finally, it gives the user an actionable restart hint
 Updated file:
-- [azvm-core-foundation.ps1](C:\Users\operator\source\az\az-vm\modules\core...
+- [azvm-core-foundation.ps1](<user-home>\source\az\az-vm\modules\core...
 
 ### 2026-03-07 00:26 TRT
 
@@ -3418,7 +3418,7 @@ update: also, at the end of that stage; how many tasks succeeded; how many tasks
 
 **Assistant Summary**
 
-Added. At the end of the `vm-update` stage, the following information is now reported together: - how many tasks succeeded - how many tasks failed - the names of the failed tasks - the names of the tasks requesting a restart - a restart hint if needed Updated file: - [azvm-core-foundation.ps1](C:\Users\operator\source\az\az-vm\modules\core\azvm-core-fo...
+Added. At the end of the `vm-update` stage, the following information is now reported together: - how many tasks succeeded - how many tasks failed - the names of the failed tasks - the names of the tasks requesting a restart - a restart hint if needed Updated file: - [azvm-core-foundation.ps1](<user-home>\source\az\az-vm\modules\core\azvm-core-fo...
 
 ### 2026-03-07 00:29 TRT
 
@@ -3498,7 +3498,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented. **What changed** - Added `ssh` and `rdp` commands to the CLI surface, help, parser, dispatcher, and validation: - [modules/core/azvm-core-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\core\azvm-core-runtime.ps1) - [modules/ui/azvm-ui-runtime.ps1](C:\Users\operator\source\az\az-vm\modules\ui\azvm-ui-r...
+Implemented. **What changed** - Added `ssh` and `rdp` commands to the CLI surface, help, parser, dispatcher, and validation: - [modules/core/azvm-core-runtime.ps1](<user-home>\source\az\az-vm\modules\core\azvm-core-runtime.ps1) - [modules/ui/azvm-ui-runtime.ps1](<user-home>\source\az\az-vm\modules\ui\azvm-ui-r...
 
 ### 2026-03-07 01:25 TRT
 
@@ -3524,7 +3524,7 @@ Okay, can we also write the code that prevents generating this cache file for ou
 
 **Assistant Summary**
 
-A no-bytecode policy was applied for repo-managed Python executions. **What I changed** - [az-vm.ps1](C:\Users\operator\source\az\az-vm\az-vm.ps1) - `PYTHONDONTWRITEBYTECODE=1` is set at the start of the process - [tools/install-pyssh-tool.ps1](C:\Users\operator\source\az\az-vm\tools\install-pyssh-tool.ps1) - the same env policy was added - p...
+A no-bytecode policy was applied for repo-managed Python executions. **What I changed** - [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) - `PYTHONDONTWRITEBYTECODE=1` is set at the start of the process - [tools/install-pyssh-tool.ps1](<user-home>\source\az\az-vm\tools\install-pyssh-tool.ps1) - the same env policy was added - p...
 
 ### 2026-03-07 02:13 TRT
 
@@ -3619,7 +3619,7 @@ test: let's perform our re-create test above with this d2as_v5 VM SKU; let's als
 
 **Assistant Summary**
 
-Test completed. Results: **Live Result** - Final VM: `examplevm` - Resource group: `rg-examplevm-ate1-g1` - Region: `austriaeast` - SKU: `Standard_D2as_v5` - Security type: `Standard` - Public IP: `68.210.226.123` - FQDN: `examplevm.austriaeast.cloudapp.azure.com` - Power state: `VM running` **Hibernation / Nested** - `Tru...
+Test completed. Results: **Live Result** - Final VM: `examplevm` - Resource group: `rg-examplevm-ate1-g1` - Region: `austriaeast` - SKU: `Standard_D2as_v5` - Security type: `Standard` - Public IP: `<example-public-ip>` - FQDN: `<example-fqdn>` - Power state: `VM running` **Hibernation / Nested** - `Tru...
 
 ### 2026-03-07 13:24 TRT
 
@@ -4232,14 +4232,14 @@ Updated the `move` operator guidance in both `README.md` and `az-vm help move` t
 **User Prompt**
 
 ````text
-update: throughout this repo; everywhere in VM tasks; places where --profile-directory=examplevm appears should be changed to the --profile-directory=_company_name_ form and replaced with the content of the "company_name" variable coming from the .env file; for now, let's set company_name=exampleorg in .env; I can update it later if I want; this way, let the default Google Chrome profile be set to "exampleorg" for all Chrome shortcuts.
+update: throughout this repo; everywhere in VM tasks; places where --profile-directory=examplevm appears should be changed to the --profile-directory=_company_name_ form and replaced with the content of the "company_name" variable coming from the .env file; for now, let's set company_name=orgprofile in .env; I can update it later if I want; this way, let the default Google Chrome profile be set to "orgprofile" for all Chrome shortcuts.
 *this feature should also be mentioned in the relevant documentation
 
 ````
 
 **Assistant Summary**
 
-Reworked the Windows Chrome-based public desktop shortcut task so all repo-managed web shortcuts now resolve their default `--profile-directory` from `.env` `company_name` instead of binding it to `VM_NAME`, while keeping a safe fallback to `VM_NAME` if the key is left empty. Added `company_name` to the committed `.env.example` contract, updated the local `.env` to `company_name=exampleorg`, extended task-token runtime plumbing plus smoke coverage for the new token, and documented the feature in `README.md`, `AGENTS.md`, `CHANGELOG.md`, and `release-notes.md`.
+Reworked the Windows Chrome-based public desktop shortcut task so all repo-managed web shortcuts now resolve their default `--profile-directory` from `.env` `company_name` instead of binding it to `VM_NAME`, while keeping a safe fallback to `VM_NAME` if the key is left empty. Added `company_name` to the committed `.env.example` contract, updated the local `.env` to `company_name=orgprofile`, extended task-token runtime plumbing plus smoke coverage for the new token, and documented the feature in `README.md`, `AGENTS.md`, `CHANGELOG.md`, and `release-notes.md`.
 
 ### 2026-03-10 15:28 TRT
 
@@ -4324,7 +4324,7 @@ Update: move selected private local-only Windows update tasks and payloads out o
 
 **Assistant Summary**
 
-Renamed the tracked Windows init/update scripts to the normalized `NN-verb-noun-target` pattern, rebuilt the tracked Windows update catalog around the requested first/last tasks, removed selected private local-only Windows tasks and payloads from tracked catalogs and runtime ownership, added script-local metadata plus generic asset resolution for local-only tasks, updated the maintained docs/tests to match, and rewrote the active `main` and `dev` histories to drop the selected tracked paths and their tracked textual references while preserving `main2` and `dev2` as untouched backups. Re-ran smoke, documentation-contract, code-quality, and PowerShell compatibility checks successfully before the rewrite and verified afterward that the cleaned identifiers remain only on the untouched backup branches.
+Renamed the tracked Windows init/update scripts to the normalized `NN-verb-noun-target` pattern, rebuilt the tracked Windows update catalog around the requested first/last tasks, removed selected private local-only Windows tasks and payloads from tracked catalogs and runtime ownership, added script-local metadata plus generic asset resolution for local-only tasks, updated the maintained docs/tests to match, and rewrote the active `main` and `dev` histories to drop the selected tracked paths and their tracked textual references while preserving `backup-main` and `backup-dev` as untouched backups. Re-ran smoke, documentation-contract, code-quality, and PowerShell compatibility checks successfully before the rewrite and verified afterward that the cleaned identifiers remain only on the untouched backup branches.
 
 ### 2026-03-10 21:41 TRT
 
@@ -4416,7 +4416,7 @@ Completed the interrupted Windows late-stage update overhaul: added the tracked 
 
 ````text
 Fix/update/test the `z1` public desktop shortcut so its target becomes:
-c:\windows\system32\cmd.exe /c start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --new-window --start-maximized --user-data-dir="C:\Users\Public\AppData\Local\Google\Chrome\UserData" --profile-directory=exampleorg "chrome://settings/syncSetup"
+c:\windows\system32\cmd.exe /c start "" "C:\Program Files\Google\Chrome\Application\chrome.exe" --new-window --start-maximized --user-data-dir="C:\Users\Public\AppData\Local\Google\Chrome\UserData" --profile-directory=orgprofile "chrome://settings/syncSetup"
 ````
 
 **Assistant Summary**
@@ -4440,7 +4440,7 @@ Resynced `dev` with `main`, continued the work on `dev`, and closed the remainin
 **User Prompt**
 
 ````text
-Add the following shortcuts to the public-desktop-icons vm-update task as well, with the same general shortcut properties as the others: `e1Mail <email>`, `n1Notepad`, `m1Dijital Vergi Dairesi`, `r1-r10` marketplace shortcuts, and restore `u7Network and Sharing`.
+Add the following shortcuts to the public-desktop-icons vm-update task as well, with the same general shortcut properties as the others: `e1Mail <example-email>`, `n1Notepad`, `m1Dijital Vergi Dairesi`, `r1-r10` marketplace shortcuts, and restore `u7Network and Sharing`.
 ````
 
 **Assistant Summary**
@@ -4494,3 +4494,15 @@ Implement the agreed plan so that `public-desktop-icons` preserves unmanaged Pub
 **Assistant Summary**
 
 Changed the tracked Windows Public Desktop flow from a destructive full mirror into a managed-only reconcile pass, restored host-driven startup-profile discovery and method-based startup mirroring for supported guest apps, expanded the late health snapshot and smoke coverage for the new behavior, and updated the release docs to `2026.3.11.276`. Live guest validation confirmed that `10002-create-shortcuts-public-desktop` now preserves the local-only `j0Accessibility` shortcut while still clearing the manager, assistant, and default desktops, and that the guest now records the expected host-derived startup entries and compatibility scaffolding; however, repeated reboot-based probes on 2026-03-11 still did not produce running `local-accessibility.exe` or `iTunesHelper.exe` processes on the guest despite the added compatibility layers, so private local accessibility guest auto-start remains unconfirmed.
+
+### 2026-03-11 16:28 TRT
+
+**User Prompt**
+
+````text
+Update the repo for a full publish-ready documentation sync: scan the development history in reverse chronological order, refresh all maintained `.md` documents, help surfaces, and UI/help messaging so they are fully current, add `-h` as a shorthand help alias both for `az-vm -h` and command-specific forms such as `az-vm do -h`, and make the repository ready for public GitHub publishing with refreshed release docs, roadmap, prompt history, GitHub Actions, licensing/support/community files, and neutralized public-facing documentation. Then implement the agreed plan.
+````
+
+**Assistant Summary**
+
+Implemented the publish-ready sync plan end to end: added `-h` support next to `--help` across the CLI and help docs, refreshed `README.md` and the maintained help contract, added `CONTRIBUTING.md`, `SUPPORT.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, issue templates, and a pull-request template, extended GitHub Actions with the non-live smoke-contract suite, normalized tracked Linux shell scripts to LF and pinned `*.sh text eol=lf` in `.gitattributes`, redacted environment-specific VM/profile/path literals from `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md`, updated the documented release to `2026.3.11.277`, and revalidated the result with `bash-syntax-check`, `documentation-contract-check`, `code-quality-check`, `az-vm-smoke-tests`, and `powershell-compatibility-check`.
