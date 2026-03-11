@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.282] - 2026-03-11
+
+### Changed
+- Changed the `Invoke-AzVmMain` startup banner so `script description:` is rendered on a single line instead of opening a multi-line bullet block.
+- Added an explicit live release-acceptance requirement to `README.md`, `AGENTS.md`, and the documentation contract: release-readiness now requires a real create/update/status/show/connection verification cycle when live confidence is part of the claim.
+
+### Fixed
+- Fixed the post-deploy provisioning readiness check so existing-VM feature verification now reads `az vm get-instance-view` from `instanceView.statuses` and honors the top-level `provisioningState`, removing the false blank retry loop seen during live create/update runs.
+- Fixed `10005-copy-settings-user` so live Windows update runs now classify required profile roots separately, skip deterministic blocker aliases and reparse-point shell paths, tolerate missing HKCU source branches during assistant hive seeding, and ignore access/in-use failures only for best-effort profile artifacts instead of failing the whole stage.
+
+### Tests
+- Revalidated the runtime and docs with `tests/az-vm-smoke-tests.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/documentation-contract-check.ps1`.
+- Completed a live Windows acceptance rerun with `az-vm update --auto --windows`; the full natural-order `vm-update` stage finished `success=41, failed=0, warning=0, error=0, reboot=0`.
+
 ## [2026.3.11.281] - 2026-03-11
 
 ### Changed

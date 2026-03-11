@@ -134,6 +134,7 @@ Use these sources in this order when maintaining the repo:
 - Keep non-live quality checks runnable locally.
 - Keep CI non-destructive and non-live; do not run real Azure provisioning in GitHub Actions.
 - Maintain a local hook path and a GitHub Actions quality gate together.
+- For live publish or release-readiness claims, require one successful end-to-end live acceptance cycle against the active profile: clean `create` when safe, full natural-order `update`, `show` redaction check, `do --vm-action=status`, connection tests, and enabled feature verification.
 - Update audit/contract checks when command names, docs, env keys, or task catalog behavior change.
 
 ## Documentation Responsibilities

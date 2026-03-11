@@ -282,6 +282,7 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Feature support must honor disabling nested virtualization by config.'
     Assert-True -Condition ($commandContextText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'Command context must use the nsg-rule naming prefix.'
     Assert-True -Condition ($mainText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Command main must consume the shared PYSSH client default.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('Write-Host ("script description: {0}" -f $scriptDescription)')) -Message 'Command main must render script description on a single line.'
     Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must not fall back company_name to VM_NAME.'
     Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''company_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must not fall back company_name to VM_NAME.'
 }
@@ -829,6 +830,7 @@ Invoke-Test -Name "Post-deploy feature enablement verifies desired flags even on
         Assert-True -Condition ([bool]$result.NestedAttempted) -Message 'Feature enablement must still evaluate nested virtualization on existing VMs.'
         Assert-True -Condition ([bool]$result.NestedEnabled) -Message 'Feature enablement must verify nested virtualization.'
         Assert-True -Condition ([bool]$script:FeatureEnablementGuestValidationCalled) -Message 'Feature enablement must validate nested virtualization through guest checks.'
+        Assert-True -Condition ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('instanceView.statuses[?starts_with(code,''ProvisioningState/'')]')) -Message 'Feature enablement must read provisioning state from instanceView.statuses in get-instance-view output.'
         Assert-True -Condition ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('--enable-hibernation true')) -Message 'Feature enablement must call the Azure hibernation update.'
         Assert-True -Condition (-not ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('additionalCapabilities.nestedVirtualization'))) -Message 'Feature enablement must not call the removed Azure nested virtualization property path.'
         Assert-True -Condition ((@($script:FeatureEnablementAzCalls) | Where-Object { $_ -like '*vm deallocate*' }).Count -eq 1) -Message 'Feature enablement should deallocate the VM once before applying feature updates.'
@@ -895,6 +897,7 @@ Invoke-Test -Name "Windows nested virtualization guest validation accepts an act
 
 Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualization cannot be verified" -Action {
     try {
+        $script:FeatureEnablementFailureAzCalls = @()
         function Invoke-TrackedAction {
             param([string]$Label, [scriptblock]$Action)
             & $Action
@@ -930,6 +933,7 @@ Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualizati
         }
         function az {
             $line = @($args) -join ' '
+            $script:FeatureEnablementFailureAzCalls += ,$line
             if ($line -match [regex]::Escape('get-instance-view')) {
                 $global:LASTEXITCODE = 0
                 return '{"provisioningCode":"ProvisioningState/succeeded","provisioningDisplay":"Provisioning succeeded","powerCode":"PowerState/running","powerDisplay":"VM running"}'
@@ -970,6 +974,7 @@ Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualizati
         }
 
         Assert-True -Condition $threw -Message 'Feature enablement must fail when nested virtualization stays unverified.'
+        Assert-True -Condition ((@($script:FeatureEnablementFailureAzCalls) -join "`n") -match [regex]::Escape('instanceView.statuses[?starts_with(code,''ProvisioningState/'')]')) -Message 'Feature enablement failure path must still read provisioning state from instanceView.statuses.'
     }
     finally {
         foreach ($functionName in @(
@@ -981,6 +986,7 @@ Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualizati
         )) {
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
         }
+        Remove-Variable -Name FeatureEnablementFailureAzCalls -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
@@ -2461,9 +2467,18 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*SearchboxTaskbarMode*') -Message "Copy user settings task must propagate taskbar search visibility."
     Assert-True -Condition ($copyUserSettingsBody -like '*TaskManager\settings.json*') -Message "Copy user settings task must propagate Task Manager settings."
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
-    Assert-True -Condition ($copyUserSettingsBody -like '*desktop kept empty*') -Message "Copy user settings task must keep per-user desktops empty."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Desktop*') -Message "Copy user settings task must explicitly copy required profile roots such as Desktop."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Documents*') -Message "Copy user settings task must explicitly copy required profile roots such as Documents."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AllowSkipOnAccessOrInUseError*') -Message "Copy user settings task must mark best-effort profile branches as skippable on ACL or in-use failures."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Skipping best-effort copy*') -Message "Copy user settings task must log best-effort copy skips clearly."
     Assert-True -Condition ($copyUserSettingsBody -like '*desktop.ini*') -Message "Copy user settings task must exclude desktop.ini from file copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Thumbs.db*') -Message "Copy user settings task must exclude Thumbs.db from file copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Microsoft\Windows\WebCacheLock.dat*') -Message "Copy user settings task must exclude the locked WebCacheLock.dat path from local profile copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Ignoring locked WebCacheLock.dat*') -Message "Copy user settings task must treat the locked WebCacheLock.dat file as a non-fatal skip."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Assert-RequiredRelativePathCopied*') -Message "Copy user settings task must validate that required profile roots were copied."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Application Data*') -Message "Copy user settings task must deterministically skip blocker compatibility-alias roots such as Application Data."
+    Assert-True -Condition ($copyUserSettingsBody -like '*source reparse-point*') -Message "Copy user settings task must skip required profile aliases that resolve through source reparse points."
+    Assert-True -Condition ($copyUserSettingsBody -like '*root reparse-point*') -Message "Copy user settings task must skip root reparse-point aliases instead of treating them as copy failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Network*') -Message "Copy user settings task must exclude Ollama WebView network state from roaming copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Safe Browsing Network*') -Message "Copy user settings task must exclude Ollama WebView safe-browsing cookie state from roaming copies."

@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.282 - 2026-03-11
+
+### Summary
+This release closes the live Windows publish-gate blockers uncovered during end-to-end acceptance, tightens the `copy-settings-user` profile-sync rules around deterministic skip paths, fixes the provisioning-ready poll used by post-deploy feature verification, documents the required live release bar, and compresses the startup `script description:` banner into a single line.
+
+### Highlights
+- Fixed the provisioning-ready wait so post-deploy feature verification now reads `az vm get-instance-view` from `instanceView.statuses` and the top-level `provisioningState`, eliminating the false empty-state retry loop observed on real existing VMs.
+- Hardened Windows task `10005-copy-settings-user` so required profile roots are copied explicitly, compatibility-alias/reparse-point paths are skipped deterministically, missing HKCU source branches no longer abort assistant hive seeding, and best-effort profile artifacts can be skipped safely on ACL or in-use failures.
+- Added a written live release-acceptance gate to `README.md`, `AGENTS.md`, and the documentation contract checks, requiring a real create/update/status/show/connection verification cycle whenever live release-readiness is claimed.
+- Changed the startup banner in `Invoke-AzVmMain` so `script description:` now stays on one line with the rest of its explanatory text.
+- Revalidated the change set with `tests/az-vm-smoke-tests.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/documentation-contract-check.ps1`, then completed a live `az-vm update --auto --windows` acceptance run with `vm-update` finishing `success=41, failed=0, warning=0, error=0, reboot=0`.
+
 ## Release 2026.3.11.281 - 2026-03-11
 
 ### Summary

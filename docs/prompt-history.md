@@ -4677,3 +4677,15 @@ Fix and update: I do not want any old behavior or legacy remnants left behind. I
 **Assistant Summary**
 
 Finalized the modular-runtime cutover by removing the transitional root loader files from `modules/`, adding `modules/azvm-runtime-manifest.ps1` as the single ordered source of truth for leaf-file loading, and updating `az-vm.ps1` to load that manifest directly instead of chaining through legacy wrappers. I also refreshed the smoke suite so it now fails if any deleted root loader path comes back, updated the current README and release docs to describe the manifest-based runtime architecture, and revalidated the final tree with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1` to keep the cutover behavior-preserving.
+
+### 2026-03-11 23:50 TRT
+
+**User Prompt**
+
+````text
+Update the UI message: when `az-vm` runs, do not break to a new line after `script description:`; keep the content on the same line, like `script description: xxx yyyy`.
+````
+
+**Assistant Summary**
+
+Changed the startup banner in `Invoke-AzVmMain` so `script description:` now prints as a single line instead of opening a multi-line block. While closing that prompt, I also finalized the outstanding live publish-gate hardening that was still in the working tree: the provisioning-ready poll now reads `instanceView.statuses` correctly, Windows task `10005-copy-settings-user` now skips deterministic blocker aliases/reparse points and tolerates best-effort ACL or in-use failures safely, the live release-acceptance requirement is now documented in `README.md` and `AGENTS.md` and enforced by `tests/documentation-contract-check.ps1`, and the full non-live gate plus a live `az-vm update --auto --windows` acceptance rerun completed successfully.

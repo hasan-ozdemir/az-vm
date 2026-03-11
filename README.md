@@ -733,6 +733,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\bash-syntax-check.ps
 
 GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` workflow on pull requests, pushes to `main`, and manual dispatch. It covers static audit, PowerShell compatibility, Linux shell syntax, workflow linting, and the non-live smoke-contract suite.
 
+### Live Release Acceptance
+Before calling the repo or the active profile release-ready for a live publish, run one end-to-end live acceptance cycle against the current `.env` target:
+- if the target group is safe to purge, clear it first and then run a clean `az-vm create --auto --windows` or `az-vm create --auto --linux`
+- rerun `az-vm update --auto --windows` or `az-vm update --auto --linux` without changing the natural task order
+- confirm `az-vm show` prints the expected inventory while password-bearing `.env` values stay redacted
+- confirm `az-vm do --vm-action=status --vm-name=<vm-name>` reports the VM as started
+- confirm `az-vm ssh --vm-name=<vm-name> --user=manager --test`; for Windows also confirm `az-vm rdp --vm-name=<vm-name> --user=manager --test`
+- when `VM_ENABLE_HIBERNATION=true` or `VM_ENABLE_NESTED_VIRTUALIZATION=true`, verify those outcomes after the live run before declaring release readiness
+
 ### Support And Contribution Paths
 - Read [SUPPORT.md](SUPPORT.md) before opening a public issue.
 - Read [SECURITY.md](SECURITY.md) for vulnerability reporting; do not post sensitive reports publicly.

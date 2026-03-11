@@ -20,17 +20,19 @@ function Invoke-AzVmMain {
         $Host.UI.RawUI.WindowTitle = 'az vm'
 
         Write-Host 'script filename: az-vm.ps1'
-        Write-Host "script description:
-- A unified Linux/Windows virtual machine deployment flow is executed.
-- OS type is selected by --windows/--linux or VM_OS_TYPE from .env.
-- Init tasks run in full create/update flow via Azure Run Command task-batch.
-- Update tasks run via persistent pyssh task-by-task.
-- SSH and RDP (Windows) access are prepared from VM_SSH_PORT / VM_RDP_PORT.
-- Command mode: $CommandName.
-- Run mode: interactive (default), auto (--auto).
-- Performance timing mode: --perf.
-- Create mode: keep existing resources by default.
-- Update mode: always run create-or-update commands without delete."
+        $scriptDescription = @(
+            'A unified Linux/Windows virtual machine deployment flow is executed',
+            'OS type is selected by --windows/--linux or VM_OS_TYPE from .env',
+            'Init tasks run in full create/update flow via Azure Run Command task-batch',
+            'Update tasks run via persistent pyssh task-by-task',
+            'SSH and RDP (Windows) access are prepared from VM_SSH_PORT / VM_RDP_PORT',
+            ("Command mode: {0}" -f $CommandName),
+            'Run mode: interactive (default), auto (--auto)',
+            'Performance timing mode: --perf',
+            'Create mode: keep existing resources by default',
+            'Update mode: always run create-or-update commands without delete'
+        ) -join '; '
+        Write-Host ("script description: {0}" -f $scriptDescription)
 
         $effectiveActionPlan = $ActionPlan
         if ($null -eq $effectiveActionPlan) {
