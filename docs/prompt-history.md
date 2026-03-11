@@ -4542,3 +4542,126 @@ Commit the pending prompt-driven updates with a pragmatic, contextual commit mes
 **Assistant Summary**
 
 Committed the pending runtime and Windows task hardening work with a contextual feature commit, fast-forwarded `main` to `dev` without rewriting history, reran the non-live validation suite, and checked the repository's publish surface. The repo now has matching `dev` and `main` tips for the current code line, the publish-facing docs and help surface remain aligned, and the remaining release assessment is limited to whether a separate live Azure recreate test is still required before shipping.
+
+### 2026-03-11 22:26 TRT
+
+**User Prompt**
+
+````text
+PLEASE IMPLEMENT THIS PLAN:
+# Behavior-Preserving Command- and Parameter-Level Modular Refactor for `modules/`
+
+## Summary
+Refactor only the `modules/` runtime into a deeper, smaller, domain-oriented tree without changing the public command surface, current function signatures, operator wording, or runtime behavior.
+Use a phased, low-regression approach: each phase extracts one concern at a time behind compatibility loaders, runs the existing checks, and only then proceeds to the next phase.
+
+Current baseline on **March 11, 2026**: `dev` and `main` already point to the same commit (`513454e`), so branch alignment after the refactor is a verified same-commit sync, not a merge-reconciliation task.
+
+## Implementation Changes
+- Keep `az-vm.ps1` as the only entrypoint and keep the current root runtime files present as compatibility loaders:
+  - `modules/core/azvm-core-foundation.ps1`
+  - `modules/core/azvm-core-runtime.ps1`
+  - `modules/commands/azvm-orchestration-runtime.ps1`
+  - `modules/commands/azvm-command-main.ps1`
+  - `modules/ui/azvm-ui-runtime.ps1`
+  - `modules/tasks/azvm-ssh-runtime.ps1`
+  - `modules/tasks/azvm-run-command-runtime.ps1`
+
+- Move command ownership out of the `ui` monolith and reorganize `modules/commands/` around the public command surface.
+  Every supported command gets its own subtree under `modules/commands/`:
+  - `configure`
+  - `create`
+  - `update`
+  - `group`
+  - `show`
+  - `do`
+  - `task`
+  - `exec`
+  - `ssh`
+  - `rdp`
+  - `move`
+  - `resize`
+  - `set`
+  - `delete`
+  - `help`
+
+- For each command subtree, create this structure:
+  - `entry.ps1` for the public command handler
+  - `contract.ps1` for allowed options and command-scoped validation rules
+  - `runtime.ps1` for command-local context/bootstrap
+  - `parameters/` containing one file per supported CLI parameter for that command
+- Each parameter file owns that parameter’s parsing, normalization, validation, defaulting, and command-scoped semantics.
+- If a parameter is reused identically across commands, keep the reusable logic in `modules/commands/shared/parameters/`, but preserve a command-local parameter file as the binding layer for that command.
+
+- Keep `modules/ui/` strictly for UI concerns after extraction:
+  - prompts and interactive selection
+  - grids, show/report rendering, display formatting
+  - connection display models
+  - shared interaction helpers
+- Keep `modules/tasks/` organized by transport internals:
+  - `modules/tasks/ssh/` for pyssh tooling, process retry, asset copy, session, protocol, runner
+  - `modules/tasks/run-command/` for script prep, parser, replacement, wait, runner
+- Keep `modules/core/` for shared non-command runtime:
+  - system/Azure CLI wrappers
+  - CLI/help/action-plan shared primitives
+  - JSON/file/error helpers
+  - task catalog parsing/materialization
+  - host startup-profile helpers
+- Keep `modules/commands/features/`, `modules/commands/steps/`, and `modules/commands/context/` for create/update orchestration internals.
+
+- Phase the extraction in this order:
+  1. Build loader skeletons only, no behavior change.
+  2. Extract pure shared helpers first: config/template/naming, CLI/help, JSON/file helpers.
+  3. Extract task internals: catalog parsing, replacement, run-command runner, SSH transport runner.
+  4. Split `modules/commands/` by command, then split each command by parameter files.
+  5. Move shared command-selection/prompt/render helpers back into `modules/ui/`.
+  6. Extract create/update pipeline internals into `commands/context`, `commands/steps`, `commands/features`, and `commands/pipeline`.
+  7. Refactor large handlers like `move`, `resize`, `delete`, `exec`, `show`, and dispatcher last, after shared pieces are stable.
+
+- Keep ambient `$script:*` runtime state and current public façades in this refactor; do not also perform a full global-state rewrite or remove `Invoke-Step` variable promotion in the same change set.
+
+## Public Interfaces To Preserve
+- Preserve all current public function names and parameter contracts used across the repo and tests, especially:
+  - `Invoke-AzVmMain`
+  - `Parse-AzVmCliArguments`
+  - `Invoke-AzVmCommandDispatcher`
+  - `Initialize-AzVmCommandRuntimeContext`
+  - `Resolve-AzVmManagedVmTarget`
+  - `Get-AzVmTaskBlocksFromDirectory`
+  - `Resolve-AzVmRuntimeTaskBlocks`
+  - `Invoke-VmRunCommandBlocks`
+  - `Invoke-AzVmSshTaskBlocks`
+  - `Invoke-AzVmTaskCommand`
+  - `Invoke-AzVmExecCommand`
+  - `Invoke-AzVmSshConnectCommand`
+  - `Invoke-AzVmRdpConnectCommand`
+- Preserve command names, CLI options, `.env` precedence, text output semantics, and PowerShell 5.1 compatibility.
+- Preserve the existing root module file paths because smoke tests currently inspect those files directly.
+
+## Test Plan
+- After each phase, run at minimum:
+  - `tests/code-quality-check.ps1`
+  - `tests/powershell-compatibility-check.ps1`
+  - `tests/az-vm-smoke-tests.ps1`
+- Add minimal coupled test updates outside `modules/` only when the current tests are path-text fragile and would otherwise block a behavior-preserving extraction.
+- For each command subtree, verify:
+  - command help output is unchanged
+  - allowed-option validation is unchanged
+  - each parameter file preserves current normalization/defaulting/error text
+  - create/update step selection still works for full/range/single-step modes
+  - init/update task discovery order, timeout defaults, disabled handling, and asset-copy behavior are unchanged
+  - SSH/RDP/test connection flows preserve current guardrails and wording
+  - move/resize/set/delete/show/do behaviors remain text- and contract-compatible
+
+## Assumptions And Defaults
+- Chosen approach: phased safe extraction with repeated verification after each step.
+- Added structural rule: command implementation belongs under `modules/commands/`, and command parameters are split into separate command-scoped files.
+- Allowed outside `modules/`: only minimal coupled test/doc/reference updates required to keep the refactor safe; unrelated repo areas remain untouched.
+- `dev` is the implementation branch; once all phases pass, align `main` to the exact verified refactor commit so both branches stay synchronized.
+- This refactor does not include command-surface changes, config-contract changes, or a full runtime-state model rewrite.
+- `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md` must be updated in the final implementation turn because shipped architecture, tests, and workflow contracts will change.
+````
+
+**Assistant Summary**
+
+Implemented the behavior-preserving modular refactor for `modules/` by keeping the existing root runtime files as compatibility loaders while redistributing the implementation into smaller domain files under `modules/core/`, `modules/config/`, `modules/commands/`, `modules/ui/`, and `modules/tasks/`. Each supported public command now has its own subtree with command-scoped `entry`, `contract`, `runtime`, and per-parameter files, `modules/ui/` is restricted to interaction/rendering concerns, the create/update pipeline and shared command runtime were split into dedicated helper areas, the smoke suite was updated only where it still inspected old monolithic root files, and the final tree was revalidated with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1` so the refactor lands without intended behavior regression.

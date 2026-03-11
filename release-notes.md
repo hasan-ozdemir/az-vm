@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.280 - 2026-03-11
+
+### Summary
+This release is a behavior-preserving modularization of the `modules/` runtime: the historical root module paths stay loadable as compatibility shims, but the implementation now lives in smaller domain files with command-level and parameter-level ownership, so the repo is easier to extend without reintroducing large monolithic PowerShell files.
+
+### Highlights
+- Kept the existing entrypoint and root runtime file paths, then turned those roots into deterministic compatibility loaders that dot-source the new leaf files in a fixed order.
+- Split `modules/commands/` by public command so each supported command now has its own `entry.ps1`, `contract.ps1`, `runtime.ps1`, and `parameters/` directory, with reusable shared parameter logic staying under `modules/commands/shared/parameters/`.
+- Moved create/update orchestration internals into dedicated `context`, `steps`, `features`, `pipeline`, and shared-runtime helpers, and limited `modules/ui/` to prompts, selection flows, show rendering, and connection-facing helpers.
+- Split task transport internals into `modules/tasks/run-command/` and `modules/tasks/ssh/`, while isolating shared system, config, naming, runtime, and task-discovery helpers under `modules/core/` and `modules/config/`.
+- Revalidated the refactor with the full non-live gate: `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1`.
+
 ## Release 2026.3.11.279 - 2026-03-11
 
 ### Summary

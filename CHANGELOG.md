@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.280] - 2026-03-11
+
+### Changed
+- Refactored the `modules/` runtime into compatibility loaders plus a deeper domain tree under `modules/core/`, `modules/config/`, `modules/commands/`, `modules/ui/`, and `modules/tasks/`, keeping the existing root import paths and public function surface intact while moving implementation into smaller leaf files.
+- Split the public command runtime by command ownership so each supported command now lives under its own subtree with `entry.ps1`, `contract.ps1`, `runtime.ps1`, and command-scoped `parameters/` files, while shared create/update orchestration now lives in dedicated `context`, `steps`, `features`, `pipeline`, and shared-runtime helpers.
+- Restricted `modules/ui/` to prompts, selection flows, show/report rendering, and connection presentation concerns, and moved non-UI command/runtime logic out of the former monolithic UI/runtime paths.
+- Updated the operator and release documentation to describe the new modular runtime layout and the compatibility-loader contract accurately.
+
+### Tests
+- Revalidated the refactor with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1`, and refreshed the smoke assertions so they target the new leaf-file locations instead of the old monolithic root files.
+
 ## [2026.3.11.279] - 2026-03-11
 
 ### Added

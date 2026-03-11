@@ -1,0 +1,77 @@
+# Shared runtime task materialization helpers.
+
+# Handles Get-AzVmTaskTokenReplacements.
+function Get-AzVmTaskTokenReplacements {
+    param(
+        [hashtable]$Context
+    )
+
+    $tcpPorts = @(@($Context.TcpPorts) | ForEach-Object { [string]$_ } | Where-Object { $_ -match '^\d+$' })
+    $tcpPortsBash = $tcpPorts -join ' '
+    $tcpRegex = (($tcpPorts | ForEach-Object { [regex]::Escape([string]$_) }) -join '|')
+    $tcpPortsPsArray = $tcpPorts -join ','
+    $hostStartupProfileJsonBase64 = ''
+    if ($Context -and $Context.ContainsKey('HostStartupProfileJsonBase64')) {
+        $hostStartupProfileJsonBase64 = [string]$Context.HostStartupProfileJsonBase64
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$hostStartupProfileJsonBase64)) {
+        $hostStartupProfileJsonBase64 = Get-AzVmHostStartupMirrorProfileJsonBase64
+    }
+
+    return @{
+        VM_ADMIN_USER = [string]$Context.VmUser
+        VM_ADMIN_PASS = [string]$Context.VmPass
+        ASSISTANT_USER = [string]$Context.VmAssistantUser
+        ASSISTANT_PASS = [string]$Context.VmAssistantPass
+        SSH_PORT = [string]$Context.SshPort
+        RDP_PORT = [string]$Context.RdpPort
+        TCP_PORTS_BASH = [string]$tcpPortsBash
+        TCP_PORTS_REGEX = [string]$tcpRegex
+        TCP_PORTS_PS_ARRAY = [string]$tcpPortsPsArray
+        RESOURCE_GROUP = [string]$Context.ResourceGroup
+        VM_NAME = [string]$Context.VmName
+        COMPANY_NAME = [string]$Context.CompanyName
+        AZ_LOCATION = [string]$Context.AzLocation
+        VM_SIZE = [string]$Context.VmSize
+        VM_IMAGE = [string]$Context.VmImage
+        VM_DISK_NAME = [string]$Context.VmDiskName
+        VM_DISK_SIZE = [string]$Context.VmDiskSize
+        VM_STORAGE_SKU = [string]$Context.VmStorageSku
+        HOST_STARTUP_PROFILE_JSON_B64 = [string]$hostStartupProfileJsonBase64
+    }
+}
+
+# Handles Resolve-AzVmRuntimeTaskBlocks.
+function Resolve-AzVmRuntimeTaskBlocks {
+    param(
+        [object[]]$TemplateTaskBlocks,
+        [hashtable]$Context
+    )
+
+    if (-not $TemplateTaskBlocks -or @($TemplateTaskBlocks).Count -eq 0) {
+        throw 'Task template block list is empty.'
+    }
+
+    $replacements = Get-AzVmTaskTokenReplacements -Context $Context
+    return @(Apply-AzVmTaskBlockReplacements -TaskBlocks $TemplateTaskBlocks -Replacements $replacements)
+}
+
+
+
+# Handles Get-AzVmTaskTimeoutSeconds.
+function Get-AzVmTaskTimeoutSeconds {
+    param(
+        [psobject]$TaskBlock,
+        [int]$DefaultTimeoutSeconds = 180
+    )
+
+    $taskTimeout = $DefaultTimeoutSeconds
+    if ($null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0) {
+        $taskTimeout = [int](Convert-AzVmTaskCatalogTimeout -Value $TaskBlock.TimeoutSeconds -DefaultValue $DefaultTimeoutSeconds)
+    }
+    else {
+        $taskTimeout = [int](Convert-AzVmTaskCatalogTimeout -Value $DefaultTimeoutSeconds -DefaultValue 180)
+    }
+
+    return [int]$taskTimeout
+}

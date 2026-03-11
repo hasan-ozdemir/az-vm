@@ -246,20 +246,21 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 }
 
 Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime defaults" -Action {
-    $foundationText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\azvm-core-foundation.ps1') -Raw
-    $orchestrationText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\azvm-orchestration-runtime.ps1') -Raw
-    $uiText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\ui\azvm-ui-runtime.ps1') -Raw
-    $mainText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\azvm-command-main.ps1') -Raw
+    $platformDefaultsText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\platform\azvm-platform-defaults.ps1') -Raw
+    $commandContextText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\context\azvm-step1-context.ps1') -Raw
+    $featureSupportText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\features\azvm-feature-support.ps1') -Raw
+    $commandRuntimeText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\shared\runtime\azvm-command-runtime-context.ps1') -Raw
+    $mainText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1') -Raw
 
-    Assert-True -Condition ($foundationText -match [regex]::Escape("return 'tools/pyssh/ssh_client.py'")) -Message 'Foundation defaults must publish a non-empty PYSSH client path.'
-    Assert-True -Condition ($orchestrationText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'Orchestration runtime must read VM_ENABLE_HIBERNATION.'
-    Assert-True -Condition ($orchestrationText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'Orchestration runtime must read VM_ENABLE_NESTED_VIRTUALIZATION.'
-    Assert-True -Condition ($orchestrationText -match [regex]::Escape('disabled by VM_ENABLE_HIBERNATION=false')) -Message 'Orchestration runtime must support disabling hibernation by config.'
-    Assert-True -Condition ($orchestrationText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Orchestration runtime must support disabling nested virtualization by config.'
-    Assert-True -Condition ($uiText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'UI runtime must use the nsg-rule naming prefix.'
+    Assert-True -Condition ($platformDefaultsText -match [regex]::Escape("return 'tools/pyssh/ssh_client.py'")) -Message 'Platform defaults must publish a non-empty PYSSH client path.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'Command context must read VM_ENABLE_HIBERNATION.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'Command context must read VM_ENABLE_NESTED_VIRTUALIZATION.'
+    Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_HIBERNATION=false')) -Message 'Feature support must honor disabling hibernation by config.'
+    Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Feature support must honor disabling nested virtualization by config.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'Command context must use the nsg-rule naming prefix.'
     Assert-True -Condition ($mainText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Command main must consume the shared PYSSH client default.'
-    Assert-True -Condition (($orchestrationText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Orchestration runtime must not fall back company_name to VM_NAME.'
-    Assert-True -Condition (($uiText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''company_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'UI runtime must not fall back company_name to VM_NAME.'
+    Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must not fall back company_name to VM_NAME.'
+    Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''company_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must not fall back company_name to VM_NAME.'
 }
 
 Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {
@@ -1175,11 +1176,11 @@ Invoke-Test -Name "Resize target size selection stays in current region" -Action
     $script:ResizePickerCallCount = 0
 
     try {
-        function global:Select-AzLocationInteractive {
+        function script:Select-AzLocationInteractive {
             throw "Resize target size selection must not call region picker."
         }
 
-        function global:Select-VmSkuInteractive {
+        function script:Select-VmSkuInteractive {
             param(
                 [string]$Location,
                 [string]$DefaultVmSize,
@@ -1199,6 +1200,8 @@ Invoke-Test -Name "Resize target size selection stays in current region" -Action
         Assert-True -Condition ($script:ResizePickerCallCount -eq 2) -Message "Resize interactive size selection should retry after back token without invoking region picker."
     }
     finally {
+        Remove-Item Function:\script:Select-AzLocationInteractive -ErrorAction SilentlyContinue
+        Remove-Item Function:\script:Select-VmSkuInteractive -ErrorAction SilentlyContinue
         Remove-Item Function:\global:Select-AzLocationInteractive -ErrorAction SilentlyContinue
         Remove-Item Function:\global:Select-VmSkuInteractive -ErrorAction SilentlyContinue
         Remove-Variable ResizePickerCallCount -Scope Script -ErrorAction SilentlyContinue
