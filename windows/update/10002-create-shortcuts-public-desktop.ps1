@@ -1,114 +1,57 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: create-shortcuts-public-desktop"
 
-$vmName = "__VM_NAME__"
-$chromeProfileDirectoryName = "__COMPANY_NAME__"
+$companyName = "__COMPANY_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
-$chromeRemoteArgsPrefix = ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $chromeProfileDirectoryName)
-$chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $chromeProfileDirectoryName)
-$chromeBankArgsPrefix = ('--new-window --start-maximized --profile-directory="{0}"' -f $chromeProfileDirectoryName)
 $beMyEyesStoreProductId = "9MSW46LTDWGF"
 $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
 $codexAppFallbackPath = Join-Path $env:ProgramFiles "WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
 $whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe"
-$q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
-$commonWebShortcuts = @(
-    @{ Name = 'a1ChatGPT Web'; Url = 'https://chatgpt.com'; Profile = 'remote' },
-    @{ Name = 'i0Internet'; Url = 'https://www.google.com'; Profile = 'remote' },
-    @{ Name = 'i2WhatsApp Bireysel'; Url = 'https://web.whatsapp.com'; Profile = 'remote' },
-    @{ Name = 'z1Google Account Setup'; Url = 'chrome://settings/syncSetup'; Profile = 'setup' },
-    @{ Name = 'z2Office365 Account Setup'; Url = 'https://portal.office.com'; Profile = 'setup' }
-)
-$socialWebShortcuts = @(
-    @{ Name = "s1LinkedIn Kurumsal"; Url = "https://tr.linkedin.com/company/exampleorg" },
-    @{ Name = "s2LinkedIn Bireysel"; Url = "https://linkedin.com/in/<social-handle>" },
-    @{ Name = "s3YouTube Kurumsal"; Url = "https://www.youtube.com/@exampleorg" },
-    @{ Name = "s4YouTube Bireysel"; Url = "https://www.youtube.com/@hasanozdemir8" },
-    @{ Name = "s5GitHub Kurumsal"; Url = "https://github.com/exampleorg" },
-    @{ Name = "s6GitHub Bireysel"; Url = "https://github.com/" },
-    @{ Name = "s7TikTok Kurumsal"; Url = "https://www.tiktok.com/@exampleorg" },
-    @{ Name = "s8TikTok Bireysel"; Url = "https://www.tiktok.com/@exampleorg" },
-    @{ Name = "s9Instagram Kurumsal"; Url = "https://instagram.com/exampleorg" },
-    @{ Name = "s10Instagram Bireysel"; Url = "https://instagram.com/hasanozdemirnet" },
-    @{ Name = "s11Facebook Kurumsal"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447" },
-    @{ Name = "s12Facebook Bireysel"; Url = "https://facebook.com/ozdemirhasan" },
-    @{ Name = "s13X-Twitter Kurumsal"; Url = "https://x.com/exampleorg" },
-    @{ Name = "s14X-Twitter Bireysel"; Url = "https://x.com/hasanozdemirnet" },
-    @{ Name = "s15Web Sitesi Kurumsal"; Url = "https://www.exampleorg.com" },
-    @{ Name = "s16Blog Sitesi Kurumsal"; Url = "https://www.exampleorg.com/blog" },
-    @{ Name = $q1EksisozlukName; Url = "https://www.eksisozluk.com" }
-)
-$bankShortcuts = @(
-    @{ Name = "b1GarantiBank Bireysel"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr" },
-    @{ Name = "b2GarantiBank Kurumsal"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr" },
-    @{ Name = "b3QnbBank Bireysel"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx" },
-    @{ Name = "b4QnbBank Kurumsal"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true" },
-    @{ Name = "b5AktifBank Bireysel"; Url = "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR" },
-    @{ Name = "b6AktifBank Kurumsal"; Url = "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR" },
-    @{ Name = "b7ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" },
-    @{ Name = "b8ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" }
-)
-$managedShortcutNames = @(
-    'a2Be My Eyes',
-    'a3CodexApp',
-    'a7Docker Desktop',
-    'a10NVDA',
-    'a11MS Edge',
-    'a14VLC Player',
-    'a17Itunes',
-    'c0Cmd',
-    'd0Rclone CLI',
-    'd1One Drive',
-    'd2Google Drive',
-    'i1WhatsApp Kurumsal',
-    'i8AnyDesk',
-    'i9Windscribe',
-    'o0Outlook',
-    'o1Teams',
-    'o2Word',
-    'o3Excel',
-    'o4Power Point',
-    'o5OneNote',
-    't0Git Bash',
-    't1Python CLI',
-    't2Nodejs CLI',
-    't3Ollama App',
-    't4Pwsh',
-    't5PS',
-    't6Azure CLI',
-    't7WSL',
-    't8Docker CLI',
-    't9AZD CLI',
-    't10GH CLI',
-    't11FFmpeg CLI',
-    't12SevenZip CLI',
-    't13Sysinternals',
-    't14Io Unlocker',
-    't15Codex CLI',
-    't16Gemini CLI',
-    'u7Network and Sharing',
-    'v5VS Code'
-)
-$managedShortcutNames += @($commonWebShortcuts | ForEach-Object { [string]$_.Name })
-$managedShortcutNames += @($socialWebShortcuts | ForEach-Object { [string]$_.Name })
-$managedShortcutNames += @($bankShortcuts | ForEach-Object { [string]$_.Name })
+$iCloudFallbackPath = "C:\Program Files\WindowsApps\AppleInc.iCloud_15.7.56.0_x64__nzyj5cx40ttqa\iCloud\iCloudHome.exe"
+$shortcutRunAsAdminFlag = 0x00002000
+$unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 
-if ([string]::IsNullOrWhiteSpace([string]$chromeProfileDirectoryName) -or [string]::Equals([string]$chromeProfileDirectoryName, "__COMPANY_NAME__", [System.StringComparison]::Ordinal)) {
-    $chromeProfileDirectoryName = $vmName
+function Test-InvalidCompanyName {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $true
+    }
+
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedCompanyNameToken, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ([string]::Equals($trimmed, "company_name", [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) {
+        return $true
+    }
+
+    return $false
 }
+
+if (Test-InvalidCompanyName -Value $companyName) {
+    throw "company_name is required for the Windows public desktop shortcut flow. Set company_name in .env before running 10002-create-shortcuts-public-desktop."
+}
+
+$chromeRemoteArgsPrefix = ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $companyName)
+$chromeSetupArgsPrefix = ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $companyName)
+$chromeBankArgsPrefix = ('--new-window --start-maximized --profile-directory="{0}"' -f $companyName)
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`""
+        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace($userPath)) {
+    if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
         $env:Path = $machinePath
     }
     else {
@@ -133,7 +76,9 @@ function Resolve-CommandPath {
     }
 
     foreach ($candidate in @($FallbackCandidates)) {
-        if ([string]::IsNullOrWhiteSpace([string]$candidate)) { continue }
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
         if (Test-Path -LiteralPath $candidate) {
             return [string]$candidate
         }
@@ -207,7 +152,10 @@ function Resolve-StartAppId {
     $normalized = $NameFragment.Trim().ToLowerInvariant()
     $startApps = @(Get-StartApps | Where-Object {
         $nameText = [string]$_.Name
-        if ([string]::IsNullOrWhiteSpace([string]$nameText)) { return $false }
+        if ([string]::IsNullOrWhiteSpace([string]$nameText)) {
+            return $false
+        }
+
         return $nameText.ToLowerInvariant().Contains($normalized)
     })
 
@@ -248,8 +196,12 @@ function Resolve-AppxAppIdFromPackage {
             $pkgName = [string]$_.Name
             $pkgFamily = [string]$_.PackageFamilyName
             $installLocation = [string]$_.InstallLocation
-            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) { return $false }
-            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) { return $false }
+            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+                return $false
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) {
+                return $false
+            }
 
             $pkgNameLower = $pkgName.ToLowerInvariant()
             $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
@@ -287,7 +239,8 @@ function Resolve-AppxAppIdFromPackage {
                 return ("{0}!{1}" -f [string]$package.PackageFamilyName, $applicationId)
             }
         }
-        catch { }
+        catch {
+        }
     }
 
     return ""
@@ -340,8 +293,12 @@ function Resolve-AppPackageExecutablePath {
             $pkgName = [string]$_.Name
             $pkgFamily = [string]$_.PackageFamilyName
             $installLocation = [string]$_.InstallLocation
-            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) { return $false }
-            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) { return $false }
+            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+                return $false
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) {
+                return $false
+            }
 
             $pkgNameLower = $pkgName.ToLowerInvariant()
             $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
@@ -401,89 +358,146 @@ function Resolve-ExistingOrFallbackPath {
     return ""
 }
 
-function Convert-StringToCharCodeLiteral {
-    param([string]$Value)
-
-    $codes = @()
-    if ($null -ne $Value) {
-        $codes = @([int[]][char[]][string]$Value)
+function Resolve-ICloudExecutablePath {
+    $resolvedFromPackage = Resolve-AppPackageExecutablePath -NameFragment "icloud" -PackageNameHints @("icloud", "AppleInc.iCloud", "9PKTQ5699M62") -ExecutableName "iCloudHome.exe"
+    $resolvedPath = Resolve-ExistingOrFallbackPath -PreferredPath "" -ResolvedPath $resolvedFromPackage -FallbackPath ""
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+        return [string]$resolvedPath
     }
 
-    if (@($codes).Count -eq 0) {
-        return '@()'
+    foreach ($candidate in @(
+        "C:\Program Files\iCloud\iCloudHome.exe",
+        "C:\Program Files (x86)\iCloud\iCloudHome.exe",
+        $iCloudFallbackPath
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [string]$candidate
+        }
     }
 
-    return ('@(' + (($codes | ForEach-Object { [string]$_ }) -join ',') + ')')
+    return [string]$iCloudFallbackPath
 }
 
-function New-DesktopShortcutViaPwsh {
+function Ensure-Directory {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path)) {
+        return
+    }
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -ItemType Directory -Force | Out-Null
+    }
+}
+
+function Get-ShortcutDetails {
+    param([string]$ShortcutPath)
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    return [pscustomobject]@{
+        TargetPath = [string]$shortcut.TargetPath
+        Arguments = [string]$shortcut.Arguments
+        WorkingDirectory = [string]$shortcut.WorkingDirectory
+        IconLocation = [string]$shortcut.IconLocation
+        Hotkey = [string]$shortcut.Hotkey
+        WindowStyle = [int]$shortcut.WindowStyle
+    }
+}
+
+function Set-ShortcutRunAsAdministratorFlag {
     param(
-        [string]$Name,
-        [string]$TargetPath,
-        [string]$Arguments = "",
-        [string]$WorkingDirectory = "",
-        [string]$IconLocation = "",
-        [string]$Hotkey = ""
+        [string]$ShortcutPath,
+        [bool]$Enabled = $true
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$pwshExe) -or -not (Test-Path -LiteralPath $pwshExe)) {
-        throw "pwsh.exe is required for non-ASCII shortcut creation."
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
+        throw ("Shortcut path was not found for admin flag patching: {0}" -f $ShortcutPath)
     }
 
-    $nameChars = Convert-StringToCharCodeLiteral -Value $Name
-    $targetChars = Convert-StringToCharCodeLiteral -Value $TargetPath
-    $argumentsChars = Convert-StringToCharCodeLiteral -Value $Arguments
-    $workingDirectoryChars = Convert-StringToCharCodeLiteral -Value $WorkingDirectory
-    $iconChars = Convert-StringToCharCodeLiteral -Value $IconLocation
-    $hotkeyChars = Convert-StringToCharCodeLiteral -Value $Hotkey
-    $desktopChars = Convert-StringToCharCodeLiteral -Value $publicDesktop
-
-    $scriptText = @"
-`$publicDesktop = -join ($desktopChars | ForEach-Object { [char]`$_ })
-`$name = -join ($nameChars | ForEach-Object { [char]`$_ })
-`$targetPath = -join ($targetChars | ForEach-Object { [char]`$_ })
-`$arguments = -join ($argumentsChars | ForEach-Object { [char]`$_ })
-`$workingDirectory = -join ($workingDirectoryChars | ForEach-Object { [char]`$_ })
-`$iconLocation = -join ($iconChars | ForEach-Object { [char]`$_ })
-`$hotkey = -join ($hotkeyChars | ForEach-Object { [char]`$_ })
-if (-not (Test-Path -LiteralPath `$publicDesktop)) {
-    New-Item -Path `$publicDesktop -ItemType Directory -Force | Out-Null
-}
-`$shortcutPath = Join-Path `$publicDesktop (`$name + '.lnk')
-`$tempShortcutPath = Join-Path `$publicDesktop (('az-vm-shortcut-{0}.lnk' -f [System.Guid]::NewGuid().ToString('N')))
-`$shell = New-Object -ComObject WScript.Shell
-`$shortcut = `$shell.CreateShortcut(`$tempShortcutPath)
-`$shortcut.TargetPath = `$targetPath
-`$shortcut.Arguments = `$arguments
-if ([string]::IsNullOrWhiteSpace([string]`$workingDirectory)) {
-    `$parentPath = Split-Path -Path `$targetPath -Parent
-    if (-not [string]::IsNullOrWhiteSpace([string]`$parentPath)) {
-        `$shortcut.WorkingDirectory = `$parentPath
+    $bytes = [System.IO.File]::ReadAllBytes($ShortcutPath)
+    if ($bytes.Length -lt 0x18) {
+        throw ("Shortcut header is too small for admin flag patching: {0}" -f $ShortcutPath)
     }
-}
-else {
-    `$shortcut.WorkingDirectory = `$workingDirectory
-}
-if ([string]::IsNullOrWhiteSpace([string]`$iconLocation)) {
-    `$shortcut.IconLocation = ('{0},0' -f `$targetPath)
-}
-else {
-    `$shortcut.IconLocation = `$iconLocation
-}
-if (-not [string]::IsNullOrWhiteSpace([string]`$hotkey)) {
-    `$shortcut.Hotkey = `$hotkey
-}
-`$shortcut.Save()
-Move-Item -LiteralPath `$tempShortcutPath -Destination `$shortcutPath -Force
-"@
 
-    & $pwshExe -NoProfile -Command $scriptText | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw ("pwsh-based shortcut creation failed for '{0}'." -f $Name)
+    $linkFlags = [System.BitConverter]::ToUInt32($bytes, 0x14)
+    if ($Enabled) {
+        $linkFlags = $linkFlags -bor [uint32]$shortcutRunAsAdminFlag
     }
+    else {
+        $linkFlags = $linkFlags -band (-bnot [uint32]$shortcutRunAsAdminFlag)
+    }
+
+    $flagBytes = [System.BitConverter]::GetBytes([uint32]$linkFlags)
+    [System.Array]::Copy($flagBytes, 0, $bytes, 0x14, $flagBytes.Length)
+    [System.IO.File]::WriteAllBytes($ShortcutPath, $bytes)
 }
 
-function New-DesktopShortcut {
+function Get-ShortcutRunAsAdministratorFlag {
+    param([string]$ShortcutPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
+        return $false
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($ShortcutPath)
+    if ($bytes.Length -lt 0x18) {
+        return $false
+    }
+
+    $linkFlags = [System.BitConverter]::ToUInt32($bytes, 0x14)
+    return (($linkFlags -band [uint32]$shortcutRunAsAdminFlag) -ne 0)
+}
+
+function Test-ShortcutValueMatch {
+    param(
+        [string]$ExpectedValue,
+        [string]$ActualValue
+    )
+
+    return [string]::Equals([string]$ExpectedValue, [string]$ActualValue, [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+function Normalize-ShortcutHotkey {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ""
+    }
+
+    $parts = @(
+        $Value -split '\+' |
+        ForEach-Object { [string]$_ } |
+        ForEach-Object { $_.Trim() } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+    if (-not $parts -or $parts.Count -eq 0) {
+        return ""
+    }
+
+    $modifierOrder = @('CTRL', 'ALT', 'SHIFT')
+    $normalizedParts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($modifier in $modifierOrder) {
+        foreach ($part in $parts) {
+            if ([string]::Equals($part, $modifier, [System.StringComparison]::OrdinalIgnoreCase)) {
+                [void]$normalizedParts.Add($modifier)
+            }
+        }
+    }
+
+    foreach ($part in $parts) {
+        $upperPart = $part.ToUpperInvariant()
+        if ($modifierOrder -contains $upperPart) {
+            continue
+        }
+
+        [void]$normalizedParts.Add($upperPart)
+    }
+
+    return ($normalizedParts -join '+')
+}
+
+function New-ShortcutSpec {
     param(
         [string]$Name,
         [string]$TargetPath,
@@ -491,158 +505,134 @@ function New-DesktopShortcut {
         [string]$WorkingDirectory = "",
         [string]$IconLocation = "",
         [string]$Hotkey = "",
-        [switch]$AllowMissingTargetPath
+        [int]$ShowCmd = 3,
+        [bool]$RunAsAdmin = $true,
+        [bool]$AllowMissingTargetPath = $false,
+        [string]$ValidationKind = "generic"
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$Name)) {
+    return [pscustomobject]@{
+        Name = [string]$Name
+        TargetPath = [string]$TargetPath
+        Arguments = [string]$Arguments
+        WorkingDirectory = [string]$WorkingDirectory
+        IconLocation = [string]$IconLocation
+        Hotkey = [string]$Hotkey
+        ShowCmd = [int]$ShowCmd
+        RunAsAdmin = [bool]$RunAsAdmin
+        AllowMissingTargetPath = [bool]$AllowMissingTargetPath
+        ValidationKind = [string]$ValidationKind
+    }
+}
+
+function New-ShortcutFromSpec {
+    param(
+        [pscustomobject]$Spec,
+        [string]$OutputDirectory
+    )
+
+    if ($null -eq $Spec) {
+        throw "Shortcut spec is required."
+    }
+
+    $name = [string]$Spec.Name
+    $targetPath = [string]$Spec.TargetPath
+    if ([string]::IsNullOrWhiteSpace([string]$name)) {
         throw "Shortcut name is empty."
     }
-    if ([string]::IsNullOrWhiteSpace([string]$TargetPath)) {
-        throw "Shortcut target is empty."
+    if ([string]::IsNullOrWhiteSpace([string]$targetPath)) {
+        throw ("Shortcut target is empty for '{0}'." -f $name)
     }
-    if (-not $AllowMissingTargetPath -and -not (Test-Path -LiteralPath $TargetPath)) {
-        throw "Shortcut target was not found: $TargetPath"
-    }
-
-    if (-not (Test-Path -LiteralPath $publicDesktop)) {
-        New-Item -Path $publicDesktop -ItemType Directory -Force | Out-Null
+    if (-not [bool]$Spec.AllowMissingTargetPath -and -not (Test-Path -LiteralPath $targetPath)) {
+        throw ("Shortcut target was not found for '{0}': {1}" -f $name, $targetPath)
     }
 
-    if ($Name -cmatch '[^\u0000-\u007F]') {
-        New-DesktopShortcutViaPwsh -Name $Name -TargetPath $TargetPath -Arguments $Arguments -WorkingDirectory $WorkingDirectory -IconLocation $IconLocation -Hotkey $Hotkey
+    Ensure-Directory -Path $OutputDirectory
+    $shortcutPath = Join-Path $OutputDirectory ($name + ".lnk")
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($shortcutPath)
+    $shortcut.TargetPath = $targetPath
+    $shortcut.Arguments = [string]$Spec.Arguments
+    $expectedWorkingDirectory = ""
+    if (-not [string]::IsNullOrWhiteSpace([string]$Spec.WorkingDirectory)) {
+        $expectedWorkingDirectory = [string]$Spec.WorkingDirectory
+        $shortcut.WorkingDirectory = $expectedWorkingDirectory
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace([string](Split-Path -Path $targetPath -Parent))) {
+        $expectedWorkingDirectory = [string](Split-Path -Path $targetPath -Parent)
+        $shortcut.WorkingDirectory = $expectedWorkingDirectory
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Spec.IconLocation)) {
+        $shortcut.IconLocation = [string]$Spec.IconLocation
+    }
+    else {
+        $shortcut.IconLocation = ("{0},0" -f $targetPath)
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$Spec.Hotkey)) {
+        $shortcut.Hotkey = [string]$Spec.Hotkey
+    }
+    $shortcut.WindowStyle = [int]$Spec.ShowCmd
+    $shortcut.Save()
+
+    if ([bool]$Spec.RunAsAdmin) {
+        Set-ShortcutRunAsAdministratorFlag -ShortcutPath $shortcutPath -Enabled $true
+    }
+
+    $writtenDetails = Get-ShortcutDetails -ShortcutPath $shortcutPath
+    if (-not (Test-ShortcutValueMatch -ExpectedValue $targetPath -ActualValue ([string]$writtenDetails.TargetPath))) {
+        throw ("Shortcut target validation failed for '{0}'." -f $name)
+    }
+    if (-not (Test-ShortcutValueMatch -ExpectedValue ([string]$Spec.Arguments) -ActualValue ([string]$writtenDetails.Arguments))) {
+        throw ("Shortcut arguments validation failed for '{0}'." -f $name)
+    }
+    if (-not (Test-ShortcutValueMatch -ExpectedValue $expectedWorkingDirectory -ActualValue ([string]$writtenDetails.WorkingDirectory))) {
+        throw ("Shortcut working directory validation failed for '{0}'." -f $name)
+    }
+    if ((Normalize-ShortcutHotkey -Value ([string]$Spec.Hotkey)) -ne (Normalize-ShortcutHotkey -Value ([string]$writtenDetails.Hotkey))) {
+        throw ("Shortcut hotkey validation failed for '{0}'." -f $name)
+    }
+    if ([int]$writtenDetails.WindowStyle -ne [int]$Spec.ShowCmd) {
+        throw ("Shortcut window style validation failed for '{0}'." -f $name)
+    }
+    if ([bool]$Spec.RunAsAdmin -ne (Get-ShortcutRunAsAdministratorFlag -ShortcutPath $shortcutPath)) {
+        throw ("Shortcut admin flag validation failed for '{0}'." -f $name)
+    }
+
+    Write-Host ("shortcut-ok: {0}" -f $name)
+}
+
+function Add-Spec {
+    param(
+        [System.Collections.Generic.List[object]]$List,
+        [pscustomobject]$Spec
+    )
+
+    if ($null -eq $List -or $null -eq $Spec) {
         return
     }
 
-    $shortcutPath = Join-Path $publicDesktop ($Name + ".lnk")
-    $tempShortcutPath = Join-Path $publicDesktop (("az-vm-shortcut-{0}.lnk" -f [System.Guid]::NewGuid().ToString("N")))
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($tempShortcutPath)
-    $shortcut.TargetPath = $TargetPath
-    $shortcut.Arguments = $Arguments
-    if ([string]::IsNullOrWhiteSpace([string]$WorkingDirectory)) {
-        $parentPath = Split-Path -Path $TargetPath -Parent
-        if (-not [string]::IsNullOrWhiteSpace([string]$parentPath)) {
-            $shortcut.WorkingDirectory = $parentPath
-        }
-    }
-    else {
-        $shortcut.WorkingDirectory = $WorkingDirectory
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$IconLocation)) {
-        $shortcut.IconLocation = "$TargetPath,0"
-    }
-    else {
-        $shortcut.IconLocation = $IconLocation
-    }
-    if (-not [string]::IsNullOrWhiteSpace([string]$Hotkey)) {
-        $shortcut.Hotkey = [string]$Hotkey
-    }
-    $shortcut.Save()
-    Move-Item -LiteralPath $tempShortcutPath -Destination $shortcutPath -Force
+    [void]$List.Add($Spec)
 }
 
-function New-DesktopShortcutFromAppId {
+function Resolve-IconLocation {
     param(
-        [string]$Name,
-        [string]$AppId
+        [string]$PreferredPath,
+        [string]$FallbackPath
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$AppId)) {
-        throw "AppId was not found for '$Name'."
+    $iconTarget = [string]$FallbackPath
+    if (-not [string]::IsNullOrWhiteSpace([string]$PreferredPath)) {
+        $iconTarget = [string]$PreferredPath
     }
 
-    $explorerExe = Join-Path $env:WINDIR "explorer.exe"
-    if (-not (Test-Path -LiteralPath $explorerExe)) {
-        throw "explorer.exe was not found."
-    }
-
-    New-DesktopShortcut -Name $Name -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $AppId)
-}
-
-function New-StoreDeeplinkShortcut {
-    param(
-        [string]$Name,
-        [string]$StoreUri
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$StoreUri)) {
-        throw "Store URI is empty."
-    }
-
-    $explorerExe = Join-Path $env:WINDIR "explorer.exe"
-    if (-not (Test-Path -LiteralPath $explorerExe)) {
-        throw "explorer.exe was not found."
-    }
-
-    New-DesktopShortcut -Name $Name -TargetPath $explorerExe -Arguments $StoreUri -IconLocation "$explorerExe,0"
-}
-
-function New-ConsoleToolShortcut {
-    param(
-        [string]$Name,
-        [string]$CommandText,
-        [string]$IconLocation = ""
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$CommandText)) {
-        throw "Console command text is empty."
-    }
-
-    New-DesktopShortcut -Name $Name -TargetPath $cmdExe -Arguments ("/k " + $CommandText) -IconLocation $IconLocation
-}
-
-function New-CmdWrappedShortcut {
-    param(
-        [string]$Name,
-        [string]$CommandArguments,
-        [string]$IconLocation = "",
-        [string]$WorkingDirectory = ""
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$cmdExe)) {
-        throw "cmd.exe was not found."
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$CommandArguments)) {
-        throw "Wrapped command arguments are empty."
-    }
-
-    New-DesktopShortcut -Name $Name -TargetPath $cmdExe -Arguments $CommandArguments -IconLocation $IconLocation -WorkingDirectory $WorkingDirectory
-}
-
-function Invoke-ShortcutAction {
-    param(
-        [string]$Name,
-        [scriptblock]$Action
-    )
-
-    try {
-        & $Action
-        Write-Host "shortcut-ok: $Name"
-    }
-    catch {
-        Write-Warning "shortcut-skip: $Name => $($_.Exception.Message)"
-    }
+    return ($iconTarget + ",0")
 }
 
 Refresh-SessionPath
-
-if (-not (Test-Path -LiteralPath $publicDesktop)) {
-    New-Item -Path $publicDesktop -ItemType Directory -Force | Out-Null
-}
-
-Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
-    $shortcutName = [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name)
-    if ($managedShortcutNames -notcontains $shortcutName) {
-        return
-    }
-
-    try {
-        Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
-    }
-    catch {
-        Write-Warning "public-desktop-cleanup-skip: $($_.FullName) => $($_.Exception.Message)"
-    }
-}
+Ensure-Directory -Path $publicDesktop
+Ensure-Directory -Path $publicChromeUserDataDir
 
 $explorerExe = Resolve-CommandPath -CommandName "explorer.exe" -FallbackCandidates @("C:\Windows\explorer.exe")
 $chromeExe = Resolve-CommandPath -CommandName "chrome.exe" -FallbackCandidates @(
@@ -675,7 +665,7 @@ $sevenZipExe = Resolve-CommandPath -CommandName "7z.exe" -FallbackCandidates @(
     "C:\Program Files\7-Zip\7z.exe",
     "C:\Program Files\7-Zip\7zFM.exe"
 )
-$sysinternalsExe = Resolve-CommandPath -CommandName "procexp64.exe" -FallbackCandidates @(
+$processExplorerExe = Resolve-CommandPath -CommandName "procexp64.exe" -FallbackCandidates @(
     "C:\ProgramData\chocolatey\lib\sysinternals\tools\procexp64.exe",
     "C:\ProgramData\chocolatey\bin\procexp64.exe",
     "C:\ProgramData\chocolatey\bin\procexp.exe",
@@ -694,52 +684,44 @@ $windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCand
     "C:\Program Files\Windscribe\Windscribe.exe",
     "C:\Program Files (x86)\Windscribe\Windscribe.exe"
 )
-$vsCodeExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Microsoft VS Code\Code.exe" -ResolvedPath (Resolve-CommandPath -CommandName "code.exe" -FallbackCandidates @(
-    "C:\Program Files\Microsoft VS Code\Code.exe",
-    ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\Code.exe" -f $managerUser),
-    ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\Code.exe" -f $assistantUser)
-)) -FallbackPath "C:\Program Files\Microsoft VS Code\Code.exe"
-$codexExe = Resolve-CommandPath -CommandName "codex.cmd" -FallbackCandidates @(
+$vsCodeCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd") -ResolvedPath (Resolve-CommandPath -CommandName "code.cmd" -FallbackCandidates @(
+    ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $managerUser),
+    ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $assistantUser)
+)) -FallbackPath ("%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd")
+$codexCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser) -ResolvedPath (Resolve-CommandPath -CommandName "codex.cmd" -FallbackCandidates @(
     ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $assistantUser),
     "C:\Program Files\nodejs\codex.cmd"
-)
-$geminiExe = Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @(
+)) -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser)
+$geminiCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser) -ResolvedPath (Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @(
     ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $assistantUser),
     "C:\Program Files\nodejs\gemini.cmd"
-)
-$itunesResolvedExe = Resolve-CommandPath -CommandName "iTunes.exe" -FallbackCandidates @(
+)) -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser)
+$itunesExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\iTunes\iTunes.exe" -ResolvedPath (Resolve-CommandPath -CommandName "iTunes.exe" -FallbackCandidates @(
     "C:\Program Files\iTunes\iTunes.exe",
     "C:\Program Files (x86)\iTunes\iTunes.exe"
-)
-$itunesExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\iTunes\iTunes.exe" -ResolvedPath $itunesResolvedExe -FallbackPath "C:\Program Files\iTunes\iTunes.exe"
-$nvdaResolvedExe = Resolve-CommandPath -CommandName "nvda.exe" -FallbackCandidates @(
-    "C:\Program Files\NVDA\nvda.exe",
-    "C:\Program Files (x86)\NVDA\nvda.exe"
-)
-$nvdaExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\NVDA\nvda.exe" -ResolvedPath $nvdaResolvedExe -FallbackPath "C:\Program Files\NVDA\nvda.exe"
-$edgeResolvedExe = Resolve-CommandPath -CommandName "msedge.exe" -FallbackCandidates @(
+)) -FallbackPath "C:\Program Files\iTunes\iTunes.exe"
+$nvdaExe = "C:\Program Files (x86)\NVDA\nvda.exe"
+$edgeExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -ResolvedPath (Resolve-CommandPath -CommandName "msedge.exe" -FallbackCandidates @(
     "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
-)
-$edgeExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -ResolvedPath $edgeResolvedExe -FallbackPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-$vlcResolvedExe = Resolve-CommandPath -CommandName "vlc.exe" -FallbackCandidates @(
+)) -FallbackPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+$vlcExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\VideoLAN\VLC\vlc.exe" -ResolvedPath (Resolve-CommandPath -CommandName "vlc.exe" -FallbackCandidates @(
     "C:\Program Files\VideoLAN\VLC\vlc.exe",
     "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe"
-)
-$vlcExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\VideoLAN\VLC\vlc.exe" -ResolvedPath $vlcResolvedExe -FallbackPath "C:\Program Files\VideoLAN\VLC\vlc.exe"
-$oneDriveResolvedExe = Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @(
+)) -FallbackPath "C:\Program Files\VideoLAN\VLC\vlc.exe"
+$oneDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe" -ResolvedPath (Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @(
     "C:\Program Files\Microsoft OneDrive\OneDrive.exe",
     ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser),
     ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $assistantUser)
-)
-$oneDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe" -ResolvedPath $oneDriveResolvedExe -FallbackPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe"
+)) -FallbackPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe"
 $googleDriveResolvedExe = Resolve-CommandPath -CommandName "GoogleDriveFS.exe" -FallbackCandidates @("C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe")
 if ([string]::IsNullOrWhiteSpace([string]$googleDriveResolvedExe)) {
     $googleDriveResolvedExe = Resolve-ExecutableUnderDirectory -RootPaths @("C:\Program Files\Google\Drive File Stream") -ExecutableName "GoogleDriveFS.exe"
 }
 $googleDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe" -ResolvedPath $googleDriveResolvedExe -FallbackPath "C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe"
+$iCloudExe = Resolve-ICloudExecutablePath
 
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
 $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
@@ -752,7 +734,6 @@ $wordExe = Resolve-OfficeExecutable -ExeName "WINWORD.EXE"
 $excelExe = Resolve-OfficeExecutable -ExeName "EXCEL.EXE"
 $powerPointExe = Resolve-OfficeExecutable -ExeName "POWERPNT.EXE"
 $oneNoteExe = Resolve-OfficeExecutable -ExeName "ONENOTE.EXE"
-$controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 
 $codexAppExe = if (Test-Path -LiteralPath $codexAppFallbackPath) {
     [string]$codexAppFallbackPath
@@ -765,113 +746,182 @@ else {
 }
 $whatsAppBusinessTarget = Resolve-ExistingOrFallbackPath -PreferredPath $whatsAppRootExe -ResolvedPath $whatsAppRootExe -FallbackPath $whatsAppFallbackPath
 $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData\chocolatey\bin\7z.exe" -ResolvedPath $sevenZipExe -FallbackPath "C:\ProgramData\chocolatey\bin\7z.exe"
-$codexCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser) -ResolvedPath $codexExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser)
-$geminiCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser) -ResolvedPath $geminiExe -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser)
 
-Invoke-ShortcutAction -Name "a2Be My Eyes" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
-        New-DesktopShortcutFromAppId -Name "a2Be My Eyes" -AppId $beMyEyesAppId
-    }
-    else {
-        New-StoreDeeplinkShortcut -Name "a2Be My Eyes" -StoreUri $beMyEyesStoreUri
-    }
+$shortcutSpecs = New-Object 'System.Collections.Generic.List[object]'
+
+$socialWebShortcuts = @(
+    @{ Name = "s1LinkedIn Kurumsal"; Url = "https://tr.linkedin.com/company/exampleorg" },
+    @{ Name = "s2LinkedIn Bireysel"; Url = "https://linkedin.com/in/<social-handle>" },
+    @{ Name = "s3YouTube Kurumsal"; Url = "https://www.youtube.com/@exampleorg" },
+    @{ Name = "s4YouTube Bireysel"; Url = "https://www.youtube.com/@hasanozdemir8" },
+    @{ Name = "s5GitHub Kurumsal"; Url = "https://github.com/exampleorg" },
+    @{ Name = "s6GitHub Bireysel"; Url = "https://github.com/" },
+    @{ Name = "s7TikTok Kurumsal"; Url = "https://www.tiktok.com/@exampleorg" },
+    @{ Name = "s8TikTok Bireysel"; Url = "https://www.tiktok.com/@exampleorg" },
+    @{ Name = "s9Instagram Kurumsal"; Url = "https://instagram.com/exampleorg" },
+    @{ Name = "s10Instagram Bireysel"; Url = "https://instagram.com/hasanozdemirnet" },
+    @{ Name = "s11Facebook Kurumsal"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447" },
+    @{ Name = "s12Facebook Bireysel"; Url = "https://facebook.com/ozdemirhasan" },
+    @{ Name = "s13X-Twitter Kurumsal"; Url = "https://x.com/exampleorg" },
+    @{ Name = "s14X-Twitter Bireysel"; Url = "https://x.com/hasanozdemirnet" },
+    @{ Name = ("s15{0} Web" -f $companyName); Url = "https://www.exampleorg.com" },
+    @{ Name = ("s16{0} Blog" -f $companyName); Url = "https://www.exampleorg.com/blog" },
+    @{ Name = "s17SnapChat Kurumsal"; Url = "https://www.snapchat.com/@exampleorg" },
+    @{ Name = "s18Next Sosyal"; Url = "https://sosyal.teknofest.app/@exampleorg" }
+)
+$bankShortcuts = @(
+    @{ Name = "b1GarantiBank Kurumsal"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr" },
+    @{ Name = "b2GarantiBank Bireysel"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr" },
+    @{ Name = "b3QnbBank Kurumsal"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true" },
+    @{ Name = "b4QnbBank Bireysel"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx" },
+    @{ Name = "b5AktifBank Kurumsal"; Url = "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR" },
+    @{ Name = "b6AktifBank Bireysel"; Url = "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR" },
+    @{ Name = "b7ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" },
+    @{ Name = "b8ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" }
+)
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://chatgpt.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath $true -ValidationKind "app")
+if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $beMyEyesAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
 }
-Invoke-ShortcutAction -Name "a3CodexApp" -Action { New-DesktopShortcut -Name "a3CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "a7Docker Desktop" -Action { New-DesktopShortcut -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "a10NVDA" -Action { New-DesktopShortcut -Name "a10NVDA" -TargetPath $nvdaExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "a11MS Edge" -Action { New-DesktopShortcut -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "a14VLC Player" -Action { New-DesktopShortcut -Name "a14VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "a17Itunes" -Action { New-DesktopShortcut -Name "a17Itunes" -TargetPath $itunesExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "i1WhatsApp Kurumsal" -Action { New-DesktopShortcut -Name "i1WhatsApp Kurumsal" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath }
-
-foreach ($spec in @($commonWebShortcuts)) {
-    $shortcutName = [string]$spec.Name
-    $shortcutUrl = [string]$spec.Url
-    $profileMode = [string]$spec.Profile
-    $argumentsPrefix = if ([string]::Equals($profileMode, 'setup', [System.StringComparison]::OrdinalIgnoreCase)) {
-        $chromeSetupArgsPrefix
-    }
-    else {
-        $chromeRemoteArgsPrefix
-    }
-
-    Invoke-ShortcutAction -Name $shortcutName -Action {
-        New-DesktopShortcut -Name $shortcutName -TargetPath $chromeTarget -Arguments ($argumentsPrefix + ' "' + $shortcutUrl + '"') -IconLocation "$chromeTarget,0"
-    }
+else {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments $beMyEyesStoreUri -IconLocation ($explorerExe + ",0") -ValidationKind "store-deeplink")
 }
-
-foreach ($spec in @($socialWebShortcuts)) {
-    $shortcutName = [string]$spec.Name
-    $shortcutUrl = [string]$spec.Url
-    Invoke-ShortcutAction -Name $shortcutName -Action { New-DesktopShortcut -Name $shortcutName -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + $shortcutUrl + '"') -IconLocation "$chromeTarget,0" }
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Kurumsal" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a5WhatsApp Bireysel" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://web.whatsapp.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath $true -ValidationKind "app")
+if (-not [string]::IsNullOrWhiteSpace([string]$windscribeExe)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $windscribeExe -AllowMissingTargetPath $true -ValidationKind "app")
 }
+elseif (-not [string]::IsNullOrWhiteSpace([string]$windscribeAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $windscribeAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
+}
+else {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath "C:\Program Files\Windscribe\Windscribe.exe" -AllowMissingTargetPath $true -ValidationKind "app")
+}
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a9VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a10NVDA" -TargetPath $nvdaExe -Hotkey "Ctrl+Alt+N" -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a12Itunes" -TargetPath $itunesExe -AllowMissingTargetPath $true -ValidationKind "app")
 
 foreach ($spec in @($bankShortcuts)) {
-    $shortcutName = [string]$spec.Name
-    $shortcutUrl = [string]$spec.Url
-    Invoke-ShortcutAction -Name $shortcutName -Action { New-DesktopShortcut -Name $shortcutName -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "' + $shortcutUrl + '"') -IconLocation "$chromeTarget,0" }
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeBankArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-bank")
 }
 
-Invoke-ShortcutAction -Name "c0Cmd" -Action { New-DesktopShortcut -Name "c0Cmd" -TargetPath $cmdExe }
-Invoke-ShortcutAction -Name "d0Rclone CLI" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$rcloneExe)) {
-        New-CmdWrappedShortcut -Name "d0Rclone CLI" -CommandArguments ('/k "{0}" version' -f $rcloneExe) -IconLocation "$rcloneExe,0"
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "c1Cmd" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile%" -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -ValidationKind "console")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & rclone" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $rcloneExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i1Internet" -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "https://www.google.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o1Outlook" -TargetPath $outlookExe -AllowMissingTargetPath $true -ValidationKind "office")
+if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o2Teams" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $teamsAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
+}
+else {
+    $teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @("C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o2Teams" -TargetPath $teamsExe -AllowMissingTargetPath $true -ValidationKind "app")
+}
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o3Word" -TargetPath $wordExe -AllowMissingTargetPath $true -ValidationKind "office")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o4Excel" -TargetPath $excelExe -AllowMissingTargetPath $true -ValidationKind "office")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o5Power Point" -TargetPath $powerPointExe -AllowMissingTargetPath $true -ValidationKind "office")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o6OneNote" -TargetPath $oneNoteExe -AllowMissingTargetPath $true -ValidationKind "office")
+
+foreach ($spec in @($socialWebShortcuts)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ($chromeRemoteArgsPrefix + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+}
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t1Git Bash" -TargetPath $gitBashExe -WorkingDirectory "%UserProfile%" -AllowMissingTargetPath $true -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t2Python CLI" -TargetPath $cmdExe -Arguments "/c cd /d %UserProfile% & python" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $pythonExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t3NodeJS CLI" -TargetPath $cmdExe -Arguments "/c cd /d %UserProfile% & node" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $nodeExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t4Ollama App" -TargetPath $cmdExe -Arguments '/c cd /d %UserProfile% & TaskKill -im "ollama app.exe" & start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"' -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t5Pwsh" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & pwsh" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $pwshExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t6PS" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & powershell" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t7Azure CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & az" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t8WSL" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & wsl" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $wslExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t9Docker CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & docker info" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $dockerExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t10AZD CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & azd" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azdExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t11GH CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & gh" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ghExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t12FFmpeg CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & ffmpeg -version" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ffmpegExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t13Seven Zip CLI" -TargetPath $cmdExe -Arguments ('/k cd /d %UserProfile% & "{0}"' -f $sevenZipCliPath) -WorkingDirectory "%UserProfile%" -IconLocation ($sevenZipCliPath + ",0") -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t14Process Explorer" -TargetPath $processExplorerExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t15Io Unlocker" -TargetPath $ioUnlockerExe -AllowMissingTargetPath $true -ValidationKind "app")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u1User Files" -TargetPath $explorerExe -Arguments "shell:UsersFilesFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u2This PC" -TargetPath $explorerExe -Arguments "shell:MyComputerFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u3Control Panel" -TargetPath $explorerExe -Arguments "shell:ControlPanelFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments "-command ""&'%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd'""" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
+
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "chrome://settings/syncSetup"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z2Office365 Account Setup" -TargetPath $chromeTarget -Arguments ($chromeSetupArgsPrefix + ' "https://portal.office.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
+
+$managedShortcutNames = @($shortcutSpecs | ForEach-Object { [string]$_.Name })
+if (@($managedShortcutNames | Select-Object -Unique).Count -ne @($managedShortcutNames).Count) {
+    throw "The public desktop shortcut manifest contains duplicate shortcut names."
+}
+
+$stagingRoot = Join-Path $env:TEMP ("az-vm-public-desktop-" + [guid]::NewGuid().ToString("N"))
+Ensure-Directory -Path $stagingRoot
+
+try {
+    foreach ($shortcutSpec in $shortcutSpecs) {
+        try {
+            New-ShortcutFromSpec -Spec $shortcutSpec -OutputDirectory $stagingRoot
+        }
+        catch {
+            throw ("Failed while creating public shortcut '{0}': {1}" -f [string]$shortcutSpec.Name, $_.Exception.Message)
+        }
     }
-    else {
-        New-CmdWrappedShortcut -Name "d0Rclone CLI" -CommandArguments '/k rclone version'
+
+    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+            Write-Host ("public-desktop-removed: {0}" -f $_.Name)
+        }
+        catch {
+            throw ("Failed to remove existing public shortcut '{0}': {1}" -f $_.FullName, $_.Exception.Message)
+        }
+    }
+
+    Get-ChildItem -LiteralPath $stagingRoot -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
+        Move-Item -LiteralPath $_.FullName -Destination (Join-Path $publicDesktop $_.Name) -Force
+    }
+
+    foreach ($expectedShortcutName in @($managedShortcutNames)) {
+        $expectedShortcutPath = Join-Path $publicDesktop ($expectedShortcutName + ".lnk")
+        if (-not (Test-Path -LiteralPath $expectedShortcutPath)) {
+            throw ("Managed public shortcut was not created: {0}" -f $expectedShortcutPath)
+        }
+    }
+
+    $unexpectedShortcutPaths = @(
+        Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
+            Where-Object { $managedShortcutNames -notcontains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }
+    )
+    foreach ($unexpectedShortcut in @($unexpectedShortcutPaths)) {
+        try {
+            Remove-Item -LiteralPath $unexpectedShortcut.FullName -Force -ErrorAction Stop
+            Write-Host ("unexpected-shortcut-removed: {0}" -f $unexpectedShortcut.FullName)
+        }
+        catch {
+            throw ("Failed to remove unexpected public shortcut '{0}': {1}" -f $unexpectedShortcut.FullName, $_.Exception.Message)
+        }
     }
 }
-Invoke-ShortcutAction -Name "d1One Drive" -Action { New-DesktopShortcut -Name "d1One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "d2Google Drive" -Action { New-DesktopShortcut -Name "d2Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "o0Outlook" -Action { New-DesktopShortcut -Name "o0Outlook" -TargetPath $outlookExe }
-Invoke-ShortcutAction -Name "o1Teams" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) {
-        New-DesktopShortcutFromAppId -Name "o1Teams" -AppId $teamsAppId
-    }
-    else {
-        $teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @("C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe")
-        New-DesktopShortcut -Name "o1Teams" -TargetPath $teamsExe
+finally {
+    if (Test-Path -LiteralPath $stagingRoot) {
+        Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
-Invoke-ShortcutAction -Name "o2Word" -Action { New-DesktopShortcut -Name "o2Word" -TargetPath $wordExe }
-Invoke-ShortcutAction -Name "o3Excel" -Action { New-DesktopShortcut -Name "o3Excel" -TargetPath $excelExe }
-Invoke-ShortcutAction -Name "o4Power Point" -Action { New-DesktopShortcut -Name "o4Power Point" -TargetPath $powerPointExe }
-Invoke-ShortcutAction -Name "o5OneNote" -Action { New-DesktopShortcut -Name "o5OneNote" -TargetPath $oneNoteExe }
-Invoke-ShortcutAction -Name "t0Git Bash" -Action { New-DesktopShortcut -Name "t0Git Bash" -TargetPath $gitBashExe }
-Invoke-ShortcutAction -Name "t1Python CLI" -Action { New-ConsoleToolShortcut -Name "t1Python CLI" -CommandText "python" -IconLocation "$pythonExe,0" }
-Invoke-ShortcutAction -Name "t2Nodejs CLI" -Action { New-ConsoleToolShortcut -Name "t2Nodejs CLI" -CommandText "node" -IconLocation "$nodeExe,0" }
-Invoke-ShortcutAction -Name "t3Ollama App" -Action { New-CmdWrappedShortcut -Name "t3Ollama App" -CommandArguments '/c TaskKill -im "ollama app.exe" & "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"' }
-Invoke-ShortcutAction -Name "t4Pwsh" -Action { New-DesktopShortcut -Name "t4Pwsh" -TargetPath $pwshExe }
-Invoke-ShortcutAction -Name "t5PS" -Action { New-DesktopShortcut -Name "t5PS" -TargetPath $powershellExe }
-Invoke-ShortcutAction -Name "t6Azure CLI" -Action { New-CmdWrappedShortcut -Name "t6Azure CLI" -CommandArguments '/k cd /d c:\users\public & az --version' -IconLocation "$azExe,0" -WorkingDirectory "C:\Users\Public" }
-Invoke-ShortcutAction -Name "t7WSL" -Action { New-DesktopShortcut -Name "t7WSL" -TargetPath $wslExe }
-Invoke-ShortcutAction -Name "t8Docker CLI" -Action { New-ConsoleToolShortcut -Name "t8Docker CLI" -CommandText "docker" -IconLocation "$dockerExe,0" }
-Invoke-ShortcutAction -Name "t9AZD CLI" -Action { New-ConsoleToolShortcut -Name "t9AZD CLI" -CommandText "azd" -IconLocation "$azdExe,0" }
-Invoke-ShortcutAction -Name "t10GH CLI" -Action { New-ConsoleToolShortcut -Name "t10GH CLI" -CommandText "gh" -IconLocation "$ghExe,0" }
-Invoke-ShortcutAction -Name "t11FFmpeg CLI" -Action { New-ConsoleToolShortcut -Name "t11FFmpeg CLI" -CommandText "ffmpeg -version" -IconLocation "$ffmpegExe,0" }
-Invoke-ShortcutAction -Name "t12SevenZip CLI" -Action { New-CmdWrappedShortcut -Name "t12SevenZip CLI" -CommandArguments ('/c "{0}"' -f $sevenZipCliPath) -IconLocation "$sevenZipCliPath,0" }
-Invoke-ShortcutAction -Name "t13Sysinternals" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$sysinternalsExe)) {
-        New-DesktopShortcut -Name "t13Sysinternals" -TargetPath $sysinternalsExe
-    }
-    else {
-        New-ConsoleToolShortcut -Name "t13Sysinternals" -CommandText "procexp64"
-    }
-}
-Invoke-ShortcutAction -Name "t14Io Unlocker" -Action { New-DesktopShortcut -Name "t14Io Unlocker" -TargetPath $ioUnlockerExe }
-Invoke-ShortcutAction -Name "t15Codex CLI" -Action { New-CmdWrappedShortcut -Name "t15Codex CLI" -CommandArguments ('/c start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "c:\users\public" --search' -f $codexCmdPath) }
-Invoke-ShortcutAction -Name "t16Gemini CLI" -Action { New-CmdWrappedShortcut -Name "t16Gemini CLI" -CommandArguments ('/c start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) }
-Invoke-ShortcutAction -Name "i8AnyDesk" -Action { New-DesktopShortcut -Name "i8AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath }
-Invoke-ShortcutAction -Name "i9Windscribe" -Action {
-    if (-not [string]::IsNullOrWhiteSpace([string]$windscribeExe)) {
-        New-DesktopShortcut -Name "i9Windscribe" -TargetPath $windscribeExe
-    }
-    else {
-        New-DesktopShortcutFromAppId -Name "i9Windscribe" -AppId $windscribeAppId
-    }
-}
-Invoke-ShortcutAction -Name "u7Network and Sharing" -Action { New-DesktopShortcut -Name "u7Network and Sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" }
-Invoke-ShortcutAction -Name "v5VS Code" -Action { New-DesktopShortcut -Name "v5VS Code" -TargetPath $vsCodeExe -AllowMissingTargetPath }
 
 Write-Host "create-shortcuts-public-desktop-completed"
 Write-Host "Update task completed: create-shortcuts-public-desktop"

@@ -222,6 +222,13 @@
       "timeout": 23
     },
     {
+      "name": "130-install-icloud-system",
+      "taskType": "normal",
+      "priority": 130,
+      "enabled": true,
+      "timeout": 120
+    },
+    {
       "name": "10001-configure-apps-startup",
       "taskType": "final",
       "priority": 10001,
@@ -233,14 +240,14 @@
       "taskType": "final",
       "priority": 10002,
       "enabled": true,
-      "timeout": 10
+      "timeout": 60
     },
     {
       "name": "10003-configure-ux-windows",
       "taskType": "final",
       "priority": 10003,
       "enabled": true,
-      "timeout": 13
+      "timeout": 60
     },
     {
       "name": "10004-configure-settings-advanced-system",
@@ -254,14 +261,14 @@
       "taskType": "final",
       "priority": 10005,
       "enabled": true,
-      "timeout": 27
+      "timeout": 180
     },
     {
       "name": "10099-capture-snapshot-health",
       "taskType": "final",
       "priority": 10099,
       "enabled": true,
-      "timeout": 30
+      "timeout": 120
     }
   ]
 }

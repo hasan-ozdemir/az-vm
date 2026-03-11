@@ -53,11 +53,35 @@ function Get-ConfigValue {
             return $overrideValue
         }
     }
+    elseif ($script:ConfigOverrides) {
+        foreach ($overrideKey in @($script:ConfigOverrides.Keys)) {
+            if (-not [string]::Equals([string]$overrideKey, [string]$Key, [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $overrideValue = [string]$script:ConfigOverrides[$overrideKey]
+            if (-not [string]::IsNullOrWhiteSpace($overrideValue)) {
+                return $overrideValue
+            }
+        }
+    }
 
     if ($Config -and $Config.ContainsKey($Key)) {
         $configValue = [string]$Config[$Key]
         if (-not [string]::IsNullOrWhiteSpace($configValue)) {
             return $configValue
+        }
+    }
+    elseif ($Config) {
+        foreach ($configKey in @($Config.Keys)) {
+            if (-not [string]::Equals([string]$configKey, [string]$Key, [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $configValue = [string]$Config[$configKey]
+            if (-not [string]::IsNullOrWhiteSpace($configValue)) {
+                return $configValue
+            }
         }
     }
 

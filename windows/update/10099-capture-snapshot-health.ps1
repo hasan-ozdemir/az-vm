@@ -1,6 +1,13 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: capture-snapshot-health"
 
+$companyName = "__COMPANY_NAME__"
+$managerUser = "__VM_ADMIN_USER__"
+$assistantUser = "__ASSISTANT_USER__"
+$publicDesktop = "C:\Users\Public\Desktop"
+$shortcutRunAsAdminFlag = 0x00002000
+$unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
+
 function Invoke-CommandWithTimeout {
     param(
         [scriptblock]$Action,
@@ -20,10 +27,8 @@ function Invoke-CommandWithTimeout {
     if ($output) {
         $output | ForEach-Object { Write-Host ([string]$_) }
     }
-    if (@($jobReceiveErrors).Count -gt 0) {
-        foreach ($jobError in @($jobReceiveErrors)) {
-            Write-Warning ([string]$jobError)
-        }
+    foreach ($jobError in @($jobReceiveErrors)) {
+        Write-Warning ([string]$jobError)
     }
 
     $state = $job.ChildJobs[0].JobStateInfo.State
@@ -32,7 +37,171 @@ function Invoke-CommandWithTimeout {
     return [pscustomobject]@{ Success = ($state -ne 'Failed' -and -not $hadErrors); TimedOut = $false }
 }
 
-$sshdConfig = "C:\ProgramData\ssh\sshd_config"
+function Test-InvalidCompanyName {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedCompanyNameToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, "company_name", [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
+    return $false
+}
+
+function Get-ShortcutRunAsAdministratorFlag {
+    param([string]$ShortcutPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
+        return $false
+    }
+
+    $bytes = [System.IO.File]::ReadAllBytes($ShortcutPath)
+    if ($bytes.Length -lt 0x18) {
+        return $false
+    }
+
+    $linkFlags = [System.BitConverter]::ToUInt32($bytes, 0x14)
+    return (($linkFlags -band [uint32]$shortcutRunAsAdminFlag) -ne 0)
+}
+
+function Get-ShortcutDetails {
+    param([string]$ShortcutPath)
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    return [pscustomobject]@{
+        TargetPath = [string]$shortcut.TargetPath
+        Arguments = [string]$shortcut.Arguments
+        WorkingDirectory = [string]$shortcut.WorkingDirectory
+        Hotkey = [string]$shortcut.Hotkey
+        WindowStyle = [int]$shortcut.WindowStyle
+        RunAsAdmin = [bool](Get-ShortcutRunAsAdministratorFlag -ShortcutPath $ShortcutPath)
+    }
+}
+
+function Write-DesktopArtifactScan {
+    param(
+        [string]$Label,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        Write-Host ("desktop-artifacts-skip => {0} => {1}" -f $Label, $Path)
+        return
+    }
+
+    $matches = @(
+        Get-ChildItem -LiteralPath $Path -Force -File -ErrorAction SilentlyContinue |
+            Where-Object {
+                [string]::Equals([string]$_.Name, 'desktop.ini', [System.StringComparison]::OrdinalIgnoreCase) -or
+                [string]::Equals([string]$_.Name, 'Thumbs.db', [System.StringComparison]::OrdinalIgnoreCase)
+            }
+    )
+    if (@($matches).Count -eq 0) {
+        Write-Host ("desktop-artifacts-clean => {0} => {1}" -f $Label, $Path)
+        return
+    }
+
+    foreach ($match in @($matches)) {
+        Write-Host ("desktop-artifact => {0} => {1}" -f $Label, $match.FullName)
+    }
+}
+
+function Write-DesktopState {
+    param(
+        [string]$Label,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        Write-Host ("desktop-state-skip => {0} => {1}" -f $Label, $Path)
+        return
+    }
+
+    $entries = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue)
+    Write-Host ("desktop-state => {0} => count={1}" -f $Label, @($entries).Count)
+    foreach ($entry in @($entries)) {
+        Write-Host (" desktop-entry => {0}" -f $entry.FullName)
+    }
+}
+
+$resolvedCompanyName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { $companyName.Trim() }
+$publicShortcutNames = @(
+    "a1ChatGPT Web",
+    "a2CodexApp",
+    "a3Be My Eyes",
+    "a4WhatsApp Kurumsal",
+    "a5WhatsApp Bireysel",
+    "a6AnyDesk",
+    "a7Docker Desktop",
+    "a8WindScribe",
+    "a9VLC Player",
+    "a10NVDA",
+    "a11MS Edge",
+    "a12Itunes",
+    "b1GarantiBank Kurumsal",
+    "b2GarantiBank Bireysel",
+    "b3QnbBank Kurumsal",
+    "b4QnbBank Bireysel",
+    "b5AktifBank Kurumsal",
+    "b6AktifBank Bireysel",
+    "b7ZiraatBank Kurumsal",
+    "b8ZiraatBank Bireysel",
+    "c1Cmd",
+    "d1RClone CLI",
+    "d2One Drive",
+    "d3Google Drive",
+    "d4ICloud",
+    "i1Internet",
+    "k1Codex CLI",
+    "k2Gemini CLI",
+    "o1Outlook",
+    "o2Teams",
+    "o3Word",
+    "o4Excel",
+    "o5Power Point",
+    "o6OneNote",
+    "s1LinkedIn Kurumsal",
+    "s2LinkedIn Bireysel",
+    "s3YouTube Kurumsal",
+    "s4YouTube Bireysel",
+    "s5GitHub Kurumsal",
+    "s6GitHub Bireysel",
+    "s7TikTok Kurumsal",
+    "s8TikTok Bireysel",
+    "s9Instagram Kurumsal",
+    "s10Instagram Bireysel",
+    "s11Facebook Kurumsal",
+    "s12Facebook Bireysel",
+    "s13X-Twitter Kurumsal",
+    "s14X-Twitter Bireysel",
+    ("s15{0} Web" -f $resolvedCompanyName),
+    ("s16{0} Blog" -f $resolvedCompanyName),
+    "s17SnapChat Kurumsal",
+    "s18Next Sosyal",
+    "t1Git Bash",
+    "t2Python CLI",
+    "t3NodeJS CLI",
+    "t4Ollama App",
+    "t5Pwsh",
+    "t6PS",
+    "t7Azure CLI",
+    "t8WSL",
+    "t9Docker CLI",
+    "t10AZD CLI",
+    "t11GH CLI",
+    "t12FFmpeg CLI",
+    "t13Seven Zip CLI",
+    "t14Process Explorer",
+    "t15Io Unlocker",
+    "u1User Files",
+    "u2This PC",
+    "u3Control Panel",
+    "v5VS Code",
+    "z1Google Account Setup",
+    "z2Office365 Account Setup"
+)
+
 Write-Host "Version Info:"
 try {
     $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
@@ -52,288 +221,40 @@ foreach ($commandName in @("choco", "git", "node", "python", "py", "pwsh", "gh",
 
 Write-Host "OPEN Ports:"
 Get-NetTCPConnection -LocalPort __RDP_PORT__,__SSH_PORT__ -State Listen | Select-Object LocalAddress,LocalPort,OwningProcess | Format-Table -AutoSize
-Write-Host "Firewall STATUS:"
+Write-Host "FIREWALL STATUS:"
 Get-NetFirewallProfile | Select-Object Name,Enabled,DefaultInboundAction,DefaultOutboundAction | Format-Table -AutoSize
-Write-Host "RDP STATUS:"
-Get-Service TermService | Select-Object Name,Status,StartType | Format-List
-Write-Host "SSHD STATUS:"
-Get-Service sshd | Select-Object Name,Status,StartType | Format-List
 
-Write-Host "SSHD CONFIG:"
-if (Test-Path -LiteralPath $sshdConfig) {
-    Get-Content $sshdConfig | Select-String -Pattern "^(Port|PasswordAuthentication|PubkeyAuthentication|PermitEmptyPasswords|AllowTcpForwarding|GatewayPorts)" | ForEach-Object { Write-Host $_.Line }
-}
-else {
-    Write-Host "sshd config file not found"
-}
+Write-Host "RDP COMPATIBILITY:"
+$rdpTcpRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+$terminalServerRoot = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+Get-ItemProperty -Path $rdpTcpRoot -Name UserAuthentication,SecurityLayer,MinEncryptionLevel -ErrorAction SilentlyContinue | Format-List *
+Get-ItemProperty -Path $terminalServerRoot -Name fDenyTSConnections -ErrorAction SilentlyContinue | Format-List *
 
-Write-Host "POWER STATUS:"
-powercfg /getactivescheme
-
-Write-Host "DOCKER STATUS:"
-if (Get-Service -Name "com.docker.service" -ErrorAction SilentlyContinue) {
-    Get-Service -Name "com.docker.service" | Select-Object Name,Status,StartType | Format-List
+Write-Host "SYSTEM RESTORE STATUS:"
+Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore' -Name DisableSR -ErrorAction SilentlyContinue | Format-List *
+try {
+    $restorePoints = @(Get-ComputerRestorePoint -ErrorAction Stop)
+    Write-Host ("restore-point-count={0}" -f @($restorePoints).Count)
 }
-else {
-    Write-Host "com.docker.service => not-found"
+catch {
+    Write-Warning ("Get-ComputerRestorePoint => {0}" -f $_.Exception.Message)
+}
+$shadowStatus = Invoke-CommandWithTimeout -TimeoutSeconds 20 -Action { vssadmin.exe list shadows }
+if (-not $shadowStatus.Success) {
+    Write-Warning "vssadmin list shadows did not complete successfully"
 }
 
-if (Get-Command docker -ErrorAction SilentlyContinue) {
-    $dockerCli = Invoke-CommandWithTimeout -TimeoutSeconds 15 -Action { docker --version }
-    if (-not $dockerCli.Success) {
-        Write-Warning "docker --version did not complete successfully"
-    }
-
-    $dockerDaemon = Invoke-CommandWithTimeout -TimeoutSeconds 20 -Action { docker version }
-    if (-not $dockerDaemon.Success) {
-        Write-Warning "docker version did not complete successfully"
-    }
-}
-else {
-    Write-Host "docker command not found"
-}
-
-Write-Host "WSL STATUS:"
-if (Get-Command wsl -ErrorAction SilentlyContinue) {
-    $wslVersion = Invoke-CommandWithTimeout -TimeoutSeconds 15 -Action { wsl --version }
-    if (-not $wslVersion.Success) {
-        Write-Warning "wsl --version did not complete successfully"
-    }
-}
-else {
-    Write-Host "wsl command not found"
-}
-
-Write-Host "OLLAMA STATUS:"
-if (Get-Command ollama -ErrorAction SilentlyContinue) {
-    $ollamaStatus = Invoke-CommandWithTimeout -TimeoutSeconds 10 -Action { ollama --version }
-    if (-not $ollamaStatus.Success) {
-        Write-Warning "ollama --version did not complete successfully"
-    }
-}
-else {
-    Write-Host "ollama command not found"
+Write-Host "EXPLORER BAG STATUS:"
+foreach ($registryPath in @(
+    'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell',
+    'HKCU:\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\1\Shell',
+    'HKCU:\Software\Microsoft\Windows\Shell\Bags\1\Desktop'
+)) {
+    Write-Host ("bag => {0}" -f $registryPath)
+    Get-ItemProperty -Path $registryPath -ErrorAction SilentlyContinue | Format-List Mode,LogicalViewMode,GroupView,Sort,SortDirection,FolderType,IconSize
 }
 
 Write-Host "PUBLIC DESKTOP SHORTCUT STATUS:"
-$pwshExe = Get-Command pwsh.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -ErrorAction SilentlyContinue
-$q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
-
-if (-not ("AzVmNativePaths" -as [type])) {
-    Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-using System.Text;
-
-public static class AzVmNativePaths {
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern uint GetShortPathName(string lpszLongPath, StringBuilder lpszShortPath, uint cchBuffer);
-}
-"@
-}
-
-function Convert-StringToCharCodeLiteral {
-    param([string]$Value)
-
-    $codes = @()
-    if ($null -ne $Value) {
-        $codes = @([int[]][char[]][string]$Value)
-    }
-
-    if (@($codes).Count -eq 0) {
-        return '@()'
-    }
-
-    return ('@(' + (($codes | ForEach-Object { [string]$_ }) -join ',') + ')')
-}
-
-function Get-ShortcutDetailsViaPwsh {
-    param([string]$ShortcutPath)
-
-    if ([string]::IsNullOrWhiteSpace([string]$pwshExe) -or [string]::IsNullOrWhiteSpace([string]$ShortcutPath)) {
-        return $null
-    }
-
-    $shortcutChars = Convert-StringToCharCodeLiteral -Value $ShortcutPath
-    $scriptText = @"
-`$shortcutPath = -join ($shortcutChars | ForEach-Object { [char]`$_ })
-`$shell = New-Object -ComObject WScript.Shell
-`$shortcut = `$shell.CreateShortcut(`$shortcutPath)
-[pscustomobject]@{
-    TargetPath = [string]`$shortcut.TargetPath
-    Arguments = [string]`$shortcut.Arguments
-    Hotkey = [string]`$shortcut.Hotkey
-} | ConvertTo-Json -Compress
-"@
-
-    $json = & $pwshExe -NoProfile -Command $scriptText
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$json)) {
-        return $null
-    }
-
-    return ($json | ConvertFrom-Json -ErrorAction Stop)
-}
-
-function Get-ShortcutDetailsViaShellApplication {
-    param([string]$ShortcutPath)
-
-    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
-        return $null
-    }
-
-    $shellApp = New-Object -ComObject Shell.Application
-    $parentPath = Split-Path -Path $ShortcutPath -Parent
-    $leafName = Split-Path -Path $ShortcutPath -Leaf
-    $folder = $shellApp.Namespace($parentPath)
-    if ($null -eq $folder) {
-        return $null
-    }
-
-    $item = $folder.ParseName($leafName)
-    if ($null -eq $item) {
-        return $null
-    }
-
-    try {
-        $link = $item.GetLink()
-        return [pscustomobject]@{
-            TargetPath = [string]$link.Path
-            Arguments = [string]$link.Arguments
-            Hotkey = [string]$link.Hotkey
-        }
-    }
-    catch {
-        return $null
-    }
-}
-
-function Get-ShortPath {
-    param([string]$Path)
-
-    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
-        return ""
-    }
-
-    $builder = New-Object System.Text.StringBuilder 4096
-    $result = [AzVmNativePaths]::GetShortPathName([string]$Path, $builder, [uint32]$builder.Capacity)
-    if ($result -eq 0) {
-        return ""
-    }
-
-    return [string]$builder.ToString()
-}
-
-function Get-ShortcutDetails {
-    param(
-        [string]$ShortcutName,
-        [string]$ShortcutPath,
-        [object]$ShellObject
-    )
-
-    $details = $null
-    if ($ShortcutName -cmatch '[^\u0000-\u007F]') {
-        $details = Get-ShortcutDetailsViaShellApplication -ShortcutPath $ShortcutPath
-        if ($null -eq $details) {
-            $details = Get-ShortcutDetailsViaPwsh -ShortcutPath $ShortcutPath
-        }
-    }
-
-    if ($null -eq $details) {
-        $details = $ShellObject.CreateShortcut($ShortcutPath)
-    }
-
-    $targetPath = [string]$details.TargetPath
-    $arguments = [string]$details.Arguments
-    $hotkey = [string]$details.Hotkey
-    if (($ShortcutName -cmatch '[^\u0000-\u007F]') -and [string]::IsNullOrWhiteSpace([string]$targetPath)) {
-        $shortPath = Get-ShortPath -Path $ShortcutPath
-        if (-not [string]::IsNullOrWhiteSpace([string]$shortPath)) {
-            $fallbackDetails = $ShellObject.CreateShortcut($shortPath)
-            $targetPath = [string]$fallbackDetails.TargetPath
-            $arguments = [string]$fallbackDetails.Arguments
-            $hotkey = [string]$fallbackDetails.Hotkey
-        }
-    }
-
-    return [pscustomobject]@{
-        TargetPath = [string]$targetPath
-        Arguments = [string]$arguments
-        Hotkey = [string]$hotkey
-    }
-}
-$publicShortcutNames = @(
-    "a1ChatGPT Web",
-    "a2Be My Eyes",
-    "a3CodexApp",
-    "a7Docker Desktop",
-    "a10NVDA",
-    "a11MS Edge",
-    "a14VLC Player",
-    "a17Itunes",
-    "b1GarantiBank Bireysel",
-    "b2GarantiBank Kurumsal",
-    "b3QnbBank Bireysel",
-    "b4QnbBank Kurumsal",
-    "b5AktifBank Bireysel",
-    "b6AktifBank Kurumsal",
-    "b7ZiraatBank Bireysel",
-    "b8ZiraatBank Kurumsal",
-    "c0Cmd",
-    "d0Rclone CLI",
-    "d1One Drive",
-    "d2Google Drive",
-    "i0Internet",
-    "i1WhatsApp Kurumsal",
-    "i2WhatsApp Bireysel",
-    "i8AnyDesk",
-    "i9Windscribe",
-    "o0Outlook",
-    "o1Teams",
-    "o2Word",
-    "o3Excel",
-    "o4Power Point",
-    "o5OneNote",
-    $q1EksisozlukName,
-    "s1LinkedIn Kurumsal",
-    "s2LinkedIn Bireysel",
-    "s3YouTube Kurumsal",
-    "s4YouTube Bireysel",
-    "s5GitHub Kurumsal",
-    "s6GitHub Bireysel",
-    "s7TikTok Kurumsal",
-    "s8TikTok Bireysel",
-    "s9Instagram Kurumsal",
-    "s10Instagram Bireysel",
-    "s11Facebook Kurumsal",
-    "s12Facebook Bireysel",
-    "s13X-Twitter Kurumsal",
-    "s14X-Twitter Bireysel",
-    "s15Web Sitesi Kurumsal",
-    "s16Blog Sitesi Kurumsal",
-    "t0Git Bash",
-    "t1Python CLI",
-    "t2Nodejs CLI",
-    "t3Ollama App",
-    "t4Pwsh",
-    "t5PS",
-    "t6Azure CLI",
-    "t7WSL",
-    "t8Docker CLI",
-    "t9AZD CLI",
-    "t10GH CLI",
-    "t11FFmpeg CLI",
-    "t12SevenZip CLI",
-    "t13Sysinternals",
-    "t14Io Unlocker",
-    "t15Codex CLI",
-    "t16Gemini CLI",
-    "u7Network and Sharing",
-    "v5VS Code",
-    "z1Google Account Setup",
-    "z2Office365 Account Setup"
-)
-$publicDesktop = "C:\Users\Public\Desktop"
-$wsh = New-Object -ComObject WScript.Shell
 foreach ($shortcutName in @($publicShortcutNames)) {
     $shortcutPath = Join-Path $publicDesktop ($shortcutName + ".lnk")
     if (-not (Test-Path -LiteralPath $shortcutPath)) {
@@ -341,48 +262,63 @@ foreach ($shortcutName in @($publicShortcutNames)) {
         continue
     }
 
-    $shortcut = Get-ShortcutDetails -ShortcutName $shortcutName -ShortcutPath $shortcutPath -ShellObject $wsh
+    $shortcut = Get-ShortcutDetails -ShortcutPath $shortcutPath
     Write-Host "shortcut => $shortcutPath"
     Write-Host " target => $([string]$shortcut.TargetPath)"
     Write-Host " args => $([string]$shortcut.Arguments)"
     Write-Host " hotkey => $([string]$shortcut.Hotkey)"
+    Write-Host " start-in => $([string]$shortcut.WorkingDirectory)"
+    Write-Host " show => $([int]$shortcut.WindowStyle)"
+    Write-Host " run-as-admin => $([bool]$shortcut.RunAsAdmin)"
+}
+
+Write-Host "PUBLIC DESKTOP MIRROR STATUS:"
+$actualPublicShortcutNames = @(
+    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
+        ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }
+)
+$unexpectedShortcutNames = @($actualPublicShortcutNames | Where-Object { $publicShortcutNames -notcontains [string]$_ })
+if (@($unexpectedShortcutNames).Count -eq 0) {
+    Write-Host "unexpected-public-shortcut-count=0"
+}
+else {
+    foreach ($shortcutName in @($unexpectedShortcutNames)) {
+        Write-Host ("unexpected-public-shortcut => {0}" -f $shortcutName)
+    }
+}
+
+Write-Host "PER-USER DESKTOP STATUS:"
+Write-DesktopState -Label 'manager' -Path ("C:\Users\{0}\Desktop" -f $managerUser)
+Write-DesktopState -Label 'assistant' -Path ("C:\Users\{0}\Desktop" -f $assistantUser)
+Write-DesktopState -Label 'default' -Path 'C:\Users\Default\Desktop'
+Write-DesktopState -Label 'public' -Path $publicDesktop
+
+Write-Host "DESKTOP ARTIFACT STATUS:"
+Write-DesktopArtifactScan -Label 'manager' -Path ("C:\Users\{0}\Desktop" -f $managerUser)
+Write-DesktopArtifactScan -Label 'assistant' -Path ("C:\Users\{0}\Desktop" -f $assistantUser)
+Write-DesktopArtifactScan -Label 'default' -Path 'C:\Users\Default\Desktop'
+Write-DesktopArtifactScan -Label 'public' -Path $publicDesktop
+
+Write-Host "SYSTEM VOLUME INFORMATION STATUS:"
+foreach ($drive in @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DeviceID)) {
+    $sviPath = ("{0}\System Volume Information" -f [string]$drive)
+    Write-Host ("svi => {0} => {1}" -f $sviPath, (Test-Path -LiteralPath $sviPath))
 }
 
 Write-Host "AUTO-START APP STATUS:"
 $machineStartupFolder = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp"
-$expectedStartupShortcutNames = @(
-    'Docker Desktop',
-    'Ollama',
-    'OneDrive',
-    'Teams',
-    'iTunesHelper'
-)
-
-foreach ($startupShortcutName in @($expectedStartupShortcutNames)) {
+foreach ($startupShortcutName in @('Docker Desktop', 'Ollama', 'OneDrive', 'Teams', 'iTunesHelper')) {
     $startupShortcutPath = Join-Path $machineStartupFolder ($startupShortcutName + ".lnk")
     if (-not (Test-Path -LiteralPath $startupShortcutPath)) {
         Write-Host "missing-startup-shortcut => $startupShortcutPath"
         continue
     }
 
-    $startupShortcut = Get-ShortcutDetails -ShortcutName $startupShortcutName -ShortcutPath $startupShortcutPath -ShellObject $wsh
+    $startupShortcut = Get-ShortcutDetails -ShortcutPath $startupShortcutPath
     Write-Host "startup-shortcut => $startupShortcutPath"
     Write-Host " target => $([string]$startupShortcut.TargetPath)"
     Write-Host " args => $([string]$startupShortcut.Arguments)"
     Write-Host " hotkey => $([string]$startupShortcut.Hotkey)"
-}
-
-Write-Host "NOTEPAD STATUS:"
-if (Test-Path "$env:WINDIR\System32\notepad.exe") {
-    Write-Host "legacy-notepad-exe-found"
-}
-else {
-    Write-Host "legacy-notepad-exe-not-found"
-}
-
-if (Get-Command Get-AppxPackage -ErrorAction SilentlyContinue) {
-    $notepadPkgs = @(Get-AppxPackage -AllUsers | Where-Object { [string]$_.Name -like "Microsoft.WindowsNotepad*" })
-    Write-Host ("modern-notepad-package-count=" + @($notepadPkgs).Count)
 }
 
 Write-Host "capture-snapshot-health-completed"

@@ -14,6 +14,7 @@ $managerPassword = "__VM_ADMIN_PASS__"
 $notepadPath = Join-Path $env:WINDIR "System32\notepad.exe"
 $helperPath = "C:\Windows\Temp\az-vm-interactive-session-helper.ps1"
 $textExtensions = @(".txt", ".log", ".ini", ".cfg", ".conf", ".csv", ".xml", ".json", ".yaml", ".yml", ".md", ".ps1", ".cmd", ".bat", ".reg", ".sql")
+$artifactFileNames = @('desktop.ini', 'Thumbs.db')
 $details = New-Object 'System.Collections.Generic.List[string]'
 
 if (-not (Test-Path -LiteralPath $helperPath)) {
@@ -389,6 +390,107 @@ function Restart-ExplorerShell {
     }
 }
 
+function Get-FixedDriveRoots {
+    $drives = @(Get-CimInstance Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DeviceID)
+    if (@($drives).Count -eq 0) {
+        $drives = @('C:')
+    }
+
+    return @(
+        $drives |
+            ForEach-Object {
+                $value = [string]$_
+                if ([string]::IsNullOrWhiteSpace([string]$value)) {
+                    return
+                }
+
+                if ($value.EndsWith('\', [System.StringComparison]::Ordinal)) {
+                    return $value
+                }
+
+                return ($value + '\')
+            } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Select-Object -Unique
+    )
+}
+
+function Invoke-BestEffortStep {
+    param(
+        [string]$Label,
+        [scriptblock]$Action
+    )
+
+    try {
+        & $Action
+        Add-Detail ("best-effort-ok:{0}" -f $Label)
+    }
+    catch {
+        Add-Detail ("best-effort-warning:{0}:{1}" -f $Label, $_.Exception.Message)
+    }
+}
+
+function Remove-KnownArtifactFiles {
+    param([string[]]$RootPaths)
+
+    foreach ($rootPath in @($RootPaths)) {
+        if ([string]::IsNullOrWhiteSpace([string]$rootPath) -or -not (Test-Path -LiteralPath $rootPath)) {
+            continue
+        }
+
+        foreach ($artifactFileName in @($artifactFileNames)) {
+            Get-ChildItem -LiteralPath $rootPath -Filter $artifactFileName -Force -File -ErrorAction SilentlyContinue | ForEach-Object {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+                Add-Detail ("artifact-file-removed:{0}" -f $_.FullName)
+            }
+        }
+    }
+}
+
+function Remove-SystemVolumeInformationBestEffort {
+    param([string[]]$DriveRoots)
+
+    foreach ($driveRoot in @($DriveRoots)) {
+        if ([string]::IsNullOrWhiteSpace([string]$driveRoot)) {
+            continue
+        }
+
+        $sviPath = Join-Path $driveRoot 'System Volume Information'
+        if (-not (Test-Path -LiteralPath $sviPath)) {
+            continue
+        }
+
+        Invoke-BestEffortStep -Label ("system-volume-information:{0}" -f $driveRoot) -Action {
+            cmd.exe /d /c "attrib -h -s `"$sviPath`"" | Out-Null
+            Remove-Item -LiteralPath $sviPath -Recurse -Force -ErrorAction Stop
+        }
+    }
+}
+
+function Disable-SystemRestoreAndDeleteShadows {
+    param([string[]]$DriveRoots)
+
+    foreach ($driveRoot in @($DriveRoots)) {
+        if ([string]::IsNullOrWhiteSpace([string]$driveRoot)) {
+            continue
+        }
+
+        Disable-ComputerRestore -Drive $driveRoot -ErrorAction Stop
+        $volumeName = $driveRoot.TrimEnd('\')
+        & vssadmin.exe delete shadows /for=$volumeName /all /quiet | Out-Null
+        $shadowDeleteExit = [int]$LASTEXITCODE
+        if ($shadowDeleteExit -ne 0) {
+            Add-Detail ("shadow-delete-warning:{0}:exit={1}" -f $volumeName, $shadowDeleteExit)
+        }
+        else {
+            Add-Detail ("shadow-delete-ok:{0}" -f $volumeName)
+        }
+    }
+
+    $systemRestoreRoot = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore'
+    Set-AzVmRegistryValue -Path $systemRestoreRoot -Name 'DisableSR' -Value 1 -Kind DWord
+}
+
 function Invoke-WindowsUxPerformanceTuning {
     $managerRoots = $null
 
@@ -396,6 +498,11 @@ function Invoke-WindowsUxPerformanceTuning {
         Add-Detail 'ux-worker-begin'
         $managerProfileInfo = Get-LocalUserProfileInfo -UserName $managerUser
         $managerProfilePath = [string]$managerProfileInfo.ProfilePath
+        $assistantDesktopPath = Join-Path ("C:\Users\__ASSISTANT_USER__") 'Desktop'
+        $defaultDesktopPath = 'C:\Users\Default\Desktop'
+        $publicDesktopPath = 'C:\Users\Public\Desktop'
+        $knownDesktopRoots = @($publicDesktopPath, (Join-Path $managerProfilePath 'Desktop'), $assistantDesktopPath, $defaultDesktopPath)
+        $fixedDriveRoots = @(Get-FixedDriveRoots)
         $currentUserName = [string][Environment]::UserName
         Add-Detail ("ux-worker-profile-info:{0}" -f $managerProfilePath)
         if ([string]::Equals($currentUserName, $managerUser, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -429,8 +536,20 @@ function Invoke-WindowsUxPerformanceTuning {
         $widgetsPolicy = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Dsh'
         Set-AzVmRegistryValue -Path $widgetsPolicy -Name 'AllowNewsAndInterests' -Value 0 -Kind DWord
 
+        $explorerPolicy = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows\Explorer'
+        Set-AzVmRegistryValue -Path $explorerPolicy -Name 'DisableThumbsDBOnNetworkFolders' -Value 1 -Kind DWord
+        Set-AzVmRegistryValue -Path $explorerPolicy -Name 'DisableThumbnailCache' -Value 1 -Kind DWord
+
+        $systemRestoreRoot = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SystemRestore'
         $systemPolicy = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System"
         Set-AzVmRegistryValue -Path $systemPolicy -Name "EnableFirstLogonAnimation" -Value 0 -Kind DWord
+
+        $terminalServerRoot = 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Terminal Server'
+        $rdpTcpRoot = Join-Path $terminalServerRoot 'WinStations\RDP-Tcp'
+        Set-AzVmRegistryValue -Path $terminalServerRoot -Name 'fDenyTSConnections' -Value 0 -Kind DWord
+        Set-AzVmRegistryValue -Path $rdpTcpRoot -Name 'UserAuthentication' -Value 0 -Kind DWord
+        Set-AzVmRegistryValue -Path $rdpTcpRoot -Name 'SecurityLayer' -Value 1 -Kind DWord
+        Set-AzVmRegistryValue -Path $rdpTcpRoot -Name 'MinEncryptionLevel' -Value 2 -Kind DWord
 
         $className = "AzVmTextFile"
         $classRoot = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\$className"
@@ -444,6 +563,9 @@ function Invoke-WindowsUxPerformanceTuning {
         }
 
         Clear-DesktopEntries -DesktopPath (Join-Path $managerProfilePath 'Desktop')
+        Disable-SystemRestoreAndDeleteShadows -DriveRoots $fixedDriveRoots
+        Remove-KnownArtifactFiles -RootPaths $knownDesktopRoots
+        Remove-SystemVolumeInformationBestEffort -DriveRoots $fixedDriveRoots
 
         powercfg.exe /hibernate on
         if ($LASTEXITCODE -ne 0) {
@@ -485,9 +607,9 @@ function Invoke-WindowsUxPerformanceTuning {
             (Join-Path $managerMainRoot 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu')
         )
         foreach ($desktopIconRoot in @($desktopIconRoots)) {
-            Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{59031a47-3f72-44a7-89c5-5595fe6b30ee}' -Value 0 -Kind DWord
-            Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{20D04FE0-3AEA-1069-A2D8-08002B30309D}' -Value 0 -Kind DWord
-            Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}' -Value 0 -Kind DWord
+            Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{59031a47-3f72-44a7-89c5-5595fe6b30ee}' -Value 1 -Kind DWord
+            Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{20D04FE0-3AEA-1069-A2D8-08002B30309D}' -Value 1 -Kind DWord
+            Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}' -Value 1 -Kind DWord
             Set-AzVmRegistryValue -Path $desktopIconRoot -Name '{645FF040-5081-101B-9F08-00AA002F954E}' -Value 1 -Kind DWord
         }
 
@@ -512,6 +634,14 @@ function Invoke-WindowsUxPerformanceTuning {
         Set-AzVmRegistryValue -Path $allFoldersShell -Name 'SortDirection' -Value 0 -Kind DWord
         Set-AzVmRegistryValue -Path $allFoldersShell -Name 'GroupView' -Value 0 -Kind DWord
 
+        $bagOneShell = Join-Path $managerClassesRoot 'Local Settings\Software\Microsoft\Windows\Shell\Bags\1\Shell'
+        Set-AzVmRegistryValue -Path $bagOneShell -Name 'FolderType' -Value 'NotSpecified' -Kind String
+        Set-AzVmRegistryValue -Path $bagOneShell -Name 'LogicalViewMode' -Value 1 -Kind DWord
+        Set-AzVmRegistryValue -Path $bagOneShell -Name 'Mode' -Value 4 -Kind DWord
+        Set-AzVmRegistryValue -Path $bagOneShell -Name 'Sort' -Value 'prop:System.ItemNameDisplay' -Kind String
+        Set-AzVmRegistryValue -Path $bagOneShell -Name 'SortDirection' -Value 0 -Kind DWord
+        Set-AzVmRegistryValue -Path $bagOneShell -Name 'GroupView' -Value 0 -Kind DWord
+
         $desktopBag = Join-Path $managerMainRoot 'Software\Microsoft\Windows\Shell\Bags\1\Desktop'
         Set-AzVmRegistryValue -Path $desktopBag -Name 'IconSize' -Value 48 -Kind DWord
         Set-AzVmRegistryValue -Path $desktopBag -Name 'Sort' -Value 'prop:System.ItemNameDisplay' -Kind String
@@ -524,11 +654,18 @@ function Invoke-WindowsUxPerformanceTuning {
 
         Ensure-TaskManagerFullViewSetting -ProfilePath $managerProfilePath
         Restart-ExplorerShell
+        Remove-KnownArtifactFiles -RootPaths $knownDesktopRoots
 
         Assert-RegistryValue -Path $tsPolicy -Name "fDisableWallpaper" -ExpectedValue 1
         Assert-RegistryValue -Path $cloudContent -Name "DisableWindowsConsumerFeatures" -ExpectedValue 1
         Assert-RegistryValue -Path $widgetsPolicy -Name 'AllowNewsAndInterests' -ExpectedValue 0
+        Assert-RegistryValue -Path $explorerPolicy -Name 'DisableThumbsDBOnNetworkFolders' -ExpectedValue 1
+        Assert-RegistryValue -Path $explorerPolicy -Name 'DisableThumbnailCache' -ExpectedValue 1
+        Assert-RegistryValue -Path $systemRestoreRoot -Name 'DisableSR' -ExpectedValue 1
         Assert-RegistryValue -Path $systemPolicy -Name "EnableFirstLogonAnimation" -ExpectedValue 0
+        Assert-RegistryValue -Path $terminalServerRoot -Name 'fDenyTSConnections' -ExpectedValue 0
+        Assert-RegistryValue -Path $rdpTcpRoot -Name 'UserAuthentication' -ExpectedValue 0
+        Assert-RegistryValue -Path $rdpTcpRoot -Name 'SecurityLayer' -ExpectedValue 1
         Assert-RegistryValue -Path $commandPath -Name "(default)" -ExpectedValue ("`"$notepadPath`" `"%1`"")
         Assert-RegistryValue -Path $flyoutPath -Name 'ShowHibernateOption' -ExpectedValue 1
         Assert-RegistryValue -Path $advanced -Name 'LaunchTo' -ExpectedValue 1
@@ -545,11 +682,18 @@ function Invoke-WindowsUxPerformanceTuning {
         Assert-RegistryValue -Path $allFoldersShell -Name 'Mode' -ExpectedValue 4
         Assert-RegistryValue -Path $allFoldersShell -Name 'LogicalViewMode' -ExpectedValue 1
         Assert-RegistryValue -Path $allFoldersShell -Name 'GroupView' -ExpectedValue 0
+        Assert-RegistryValue -Path $bagOneShell -Name 'Mode' -ExpectedValue 4
+        Assert-RegistryValue -Path $bagOneShell -Name 'LogicalViewMode' -ExpectedValue 1
+        Assert-RegistryValue -Path $bagOneShell -Name 'GroupView' -ExpectedValue 0
         Assert-RegistryValue -Path $desktopBag -Name 'Sort' -ExpectedValue 'prop:System.ItemNameDisplay'
         Assert-RegistryValue -Path $desktopBag -Name 'SortDirection' -ExpectedValue 0
         Assert-RegistryValue -Path $desktopBag -Name 'GroupView' -ExpectedValue 0
 
         Add-Detail 'hibernate-option-visible'
+        Add-Detail 'system-restore-disabled'
+        Add-Detail 'rdp-nla-disabled'
+        Add-Detail 'desktop-shell-icons-hidden'
+        Add-Detail 'thumbnail-cache-disabled'
         Add-Detail 'explorer-group-none-default'
         Add-Detail 'explorer-details-view-default'
         Add-Detail 'desktop-sort-name-auto-arrange-grid'

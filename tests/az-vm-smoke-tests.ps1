@@ -241,6 +241,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=true')) -Message '.env.example must expose VM_ENABLE_NESTED_VIRTUALIZATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_name is required for Windows public desktop shortcuts.')) -Message '.env.example must document company_name as required for the Windows public desktop shortcut flow.'
     Assert-True -Condition (-not ($envExampleText -match [regex]::Escape('<runtime-secret>'))) -Message '.env.example must not keep the old committed assistant password.'
 }
 
@@ -257,6 +258,8 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     Assert-True -Condition ($orchestrationText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Orchestration runtime must support disabling nested virtualization by config.'
     Assert-True -Condition ($uiText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'UI runtime must use the nsg-rule naming prefix.'
     Assert-True -Condition ($mainText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Command main must consume the shared PYSSH client default.'
+    Assert-True -Condition (($orchestrationText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Orchestration runtime must not fall back company_name to VM_NAME.'
+    Assert-True -Condition (($uiText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''company_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'UI runtime must not fall back company_name to VM_NAME.'
 }
 
 Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {
@@ -1426,12 +1429,13 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '127-install-nvda-system' = 54
         '128-install-rclone-system' = 13
         '129-configure-unlocker-io' = 23
+        '130-install-icloud-system' = 120
         '10001-configure-apps-startup' = 45
-        '10002-create-shortcuts-public-desktop' = 10
-        '10003-configure-ux-windows' = 13
+        '10002-create-shortcuts-public-desktop' = 60
+        '10003-configure-ux-windows' = 60
         '10004-configure-settings-advanced-system' = 5
-        '10005-copy-settings-user' = 27
-        '10099-capture-snapshot-health' = 30
+        '10005-copy-settings-user' = 180
+        '10099-capture-snapshot-health' = 120
     }
     $expectedTrackedOrder = @($expectedTrackedTimeouts.Keys)
 
@@ -1722,6 +1726,13 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($uxScriptBody -like '*SearchboxTaskbarMode*') -Message "UX task must hide the taskbar search control."
     Assert-True -Condition ($uxScriptBody -like '*AllowNewsAndInterests*') -Message "UX task must hide Widgets through machine policy."
     Assert-True -Condition ($uxScriptBody -like '*ShowTaskViewButton*') -Message "UX task must hide Task View."
+    Assert-True -Condition ($uxScriptBody -like '*Disable-ComputerRestore*') -Message "UX task must disable System Restore."
+    Assert-True -Condition ($uxScriptBody -like '*vssadmin.exe delete shadows*') -Message "UX task must delete existing shadow copies."
+    Assert-True -Condition ($uxScriptBody -like '*DisableThumbsDBOnNetworkFolders*') -Message "UX task must suppress Thumbs.db creation on known Windows Explorer policy paths."
+    Assert-True -Condition ($uxScriptBody -like '*DisableThumbnailCache*') -Message "UX task must suppress thumbnail cache generation."
+    Assert-True -Condition ($uxScriptBody -like '*UserAuthentication*') -Message "UX task must disable RDP NLA."
+    Assert-True -Condition ($uxScriptBody -like '*shell-icons-hidden*') -Message "UX task must hide shell-managed desktop icons."
+    Assert-True -Condition ($uxScriptBody -like '*System Volume Information*') -Message "UX task must attempt best-effort System Volume Information cleanup."
     Assert-True -Condition (-not $resolvedUxTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "UX task must not publish reboot-resume metadata."
 
     $copyUserSettingsTaskPath = Join-Path $updateDir '10005-copy-settings-user.ps1'
@@ -1744,6 +1755,10 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*SearchboxTaskbarMode*') -Message "Copy user settings task must propagate taskbar search visibility."
     Assert-True -Condition ($copyUserSettingsBody -like '*TaskManager\settings.json*') -Message "Copy user settings task must propagate Task Manager settings."
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
+    Assert-True -Condition ($copyUserSettingsBody -like '*desktop kept empty*') -Message "Copy user settings task must keep per-user desktops empty."
+    Assert-True -Condition ($copyUserSettingsBody -like '*desktop.ini*') -Message "Copy user settings task must exclude desktop.ini from file copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Thumbs.db*') -Message "Copy user settings task must exclude Thumbs.db from file copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
 
     $advancedTaskPath = Join-Path $updateDir '10004-configure-settings-advanced-system.ps1'
@@ -1770,40 +1785,42 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
     $healthTaskPath = Join-Path $RepoRoot 'windows\update\10099-capture-snapshot-health.ps1'
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
-    $q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)
 
     $expectedShortcutNames = @(
         'a1ChatGPT Web',
-        'a2Be My Eyes',
-        'a3CodexApp',
+        'a2CodexApp',
+        'a3Be My Eyes',
+        'a4WhatsApp Kurumsal',
+        'a5WhatsApp Bireysel',
+        'a6AnyDesk',
         'a7Docker Desktop',
+        'a8WindScribe',
+        'a9VLC Player',
         'a10NVDA',
         'a11MS Edge',
-        'a14VLC Player',
-        'a17Itunes',
-        'b1GarantiBank Bireysel',
-        'b2GarantiBank Kurumsal',
-        'b3QnbBank Bireysel',
-        'b4QnbBank Kurumsal',
-        'b5AktifBank Bireysel',
-        'b6AktifBank Kurumsal',
-        'b7ZiraatBank Bireysel',
-        'b8ZiraatBank Kurumsal',
-        'c0Cmd',
-        'd0Rclone CLI',
-        'd1One Drive',
-        'd2Google Drive',
-        'i0Internet',
-        'i1WhatsApp Kurumsal',
-        'i2WhatsApp Bireysel',
-        'i8AnyDesk',
-        'i9Windscribe',
-        'o0Outlook',
-        'o1Teams',
-        'o2Word',
-        'o3Excel',
-        'o4Power Point',
-        'o5OneNote',
+        'a12Itunes',
+        'b1GarantiBank Kurumsal',
+        'b2GarantiBank Bireysel',
+        'b3QnbBank Kurumsal',
+        'b4QnbBank Bireysel',
+        'b5AktifBank Kurumsal',
+        'b6AktifBank Bireysel',
+        'b7ZiraatBank Kurumsal',
+        'b8ZiraatBank Bireysel',
+        'c1Cmd',
+        'd1RClone CLI',
+        'd2One Drive',
+        'd3Google Drive',
+        'd4ICloud',
+        'i1Internet',
+        'k1Codex CLI',
+        'k2Gemini CLI',
+        'o1Outlook',
+        'o2Teams',
+        'o3Word',
+        'o4Excel',
+        'o5Power Point',
+        'o6OneNote',
         's1LinkedIn Kurumsal',
         's2LinkedIn Bireysel',
         's3YouTube Kurumsal',
@@ -1818,26 +1835,28 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         's12Facebook Bireysel',
         's13X-Twitter Kurumsal',
         's14X-Twitter Bireysel',
-        's15Web Sitesi Kurumsal',
-        's16Blog Sitesi Kurumsal',
-        't0Git Bash',
-        't1Python CLI',
-        't2Nodejs CLI',
-        't3Ollama App',
-        't4Pwsh',
-        't5PS',
-        't6Azure CLI',
-        't7WSL',
-        't8Docker CLI',
-        't9AZD CLI',
-        't10GH CLI',
-        't11FFmpeg CLI',
-        't12SevenZip CLI',
-        't13Sysinternals',
-        't14Io Unlocker',
-        't15Codex CLI',
-        't16Gemini CLI',
-        'u7Network and Sharing',
+        's15{0} Web',
+        's16{0} Blog',
+        's17SnapChat Kurumsal',
+        's18Next Sosyal',
+        't1Git Bash',
+        't2Python CLI',
+        't3NodeJS CLI',
+        't4Ollama App',
+        't5Pwsh',
+        't6PS',
+        't7Azure CLI',
+        't8WSL',
+        't9Docker CLI',
+        't10AZD CLI',
+        't11GH CLI',
+        't12FFmpeg CLI',
+        't13Seven Zip CLI',
+        't14Process Explorer',
+        't15Io Unlocker',
+        'u1User Files',
+        'u2This PC',
+        'u3Control Panel',
         'v5VS Code',
         'z1Google Account Setup',
         'z2Office365 Account Setup'
@@ -1882,6 +1901,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         't16gemini-cli'
     )
     $expectedFragments = @(
+        'company_name is required for the Windows public desktop shortcut flow',
         'https://chatgpt.com',
         'https://www.google.com',
         'https://web.whatsapp.com',
@@ -1902,28 +1922,34 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://x.com/hasanozdemirnet',
         'https://www.exampleorg.com',
         'https://www.exampleorg.com/blog',
-        'https://www.eksisozluk.com',
-        'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
-        'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx',
+        'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true',
-        'https://online.aktifbank.com.tr/default.aspx?lang=tr-TR',
+        'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx',
         'https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR',
-        'https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx',
+        'https://online.aktifbank.com.tr/default.aspx?lang=tr-TR',
         'https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp',
+        'https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx',
+        'https://www.snapchat.com/@exampleorg',
+        'https://sosyal.teknofest.app/@exampleorg',
         'Resolve-AppPackageExecutablePath',
         'Resolve-StoreAppId',
-        'New-StoreDeeplinkShortcut',
         'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
         'OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe',
         'WhatsApp.Root.exe',
         '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
+        'iCloudHome.exe',
         'TaskKill -im "ollama app.exe"',
-        '/k cd /d c:\users\public & az --version',
+        '/k cd /d %UserProfile% & docker info',
         'C:\ProgramData\chocolatey\bin\7z.exe',
-        '--enable multi_agent --yolo -s danger-full-access --cd "c:\users\public" --search',
+        '--enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search',
         '--screen-reader --yolo',
-        '$chromeProfileDirectoryName = "__COMPANY_NAME__"',
+        'Set-ShortcutRunAsAdministratorFlag',
+        'Get-ShortcutRunAsAdministratorFlag',
+        'WindowStyle',
+        'RunAsAdmin = [bool]$RunAsAdmin',
+        'ShowCmd = [int]$ShowCmd',
+        '%UserProfile%',
         '$publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"',
         '--user-data-dir="{0}"',
         '--profile-directory="{1}"'
@@ -1940,16 +1966,17 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     }
 
     foreach ($fragment in @($expectedFragments)) {
-        Assert-True -Condition ($shortcutTaskScript -like ('*' + $fragment + '*')) -Message ("Shortcut task must include fragment '{0}'." -f $fragment)
+        Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$fragment, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Shortcut task must include fragment '{0}'." -f $fragment)
     }
-
-    $q1VariableDefinition = '$q1EksisozlukName = ("q1Ek{0}iS{1}zl{2}k" -f [char]0x015F, [char]0x00F6, [char]0x00FC)'
-    $q1ShortcutUsage = '@{ Name = $q1EksisozlukName; Url = "https://www.eksisozluk.com" }'
-    Assert-True -Condition (($shortcutTaskScript.IndexOf($q1VariableDefinition, [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must declare q1EkşiSözlük through the shared Unicode-safe variable.'
-    Assert-True -Condition (($shortcutTaskScript.IndexOf($q1ShortcutUsage, [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must create q1EkşiSözlük through the shared Unicode-safe variable.'
-    Assert-True -Condition (($healthTaskScript.IndexOf('$q1EksisozlukName,', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must inventory q1EkşiSözlük through the shared Unicode-safe variable.'
-    Assert-True -Condition ($shortcutTaskScript -like '*New-CmdWrappedShortcut*') -Message 'Shortcut task must use cmd.exe wrappers for command-style shortcuts.'
+    Assert-True -Condition ($shortcutTaskScript -like '*RunAsAdmin*') -Message 'Shortcut task must model RunAsAdmin in the manifest.'
+    Assert-True -Condition ($shortcutTaskScript -like '*ShowCmd*') -Message 'Shortcut task must model ShowCmd in the manifest.'
     Assert-True -Condition ($healthTaskScript -like '*hotkey =>*') -Message 'Health snapshot must read back shortcut hotkeys.'
+    Assert-True -Condition ($healthTaskScript -like '*start-in =>*') -Message 'Health snapshot must read back shortcut working directories.'
+    Assert-True -Condition ($healthTaskScript -like '*show =>*') -Message 'Health snapshot must read back shortcut show commands.'
+    Assert-True -Condition ($healthTaskScript -like '*run-as-admin =>*') -Message 'Health snapshot must read back shortcut admin flags.'
+    Assert-True -Condition ($healthTaskScript -like '*unexpected-public-shortcut*') -Message 'Health snapshot must report unexpected Public Desktop shortcuts.'
+    Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
 }
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
@@ -1960,6 +1987,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
         '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
+        '130-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps')
         '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
         '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')

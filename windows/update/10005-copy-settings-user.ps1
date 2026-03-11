@@ -44,6 +44,24 @@ function Assert-RegistryValue {
     }
 }
 
+function Assert-HiddenShellDesktopIcons {
+    param(
+        [string]$RootPath,
+        [string]$Label
+    )
+
+    foreach ($desktopIconRoot in @(
+        (Join-Path $RootPath 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'),
+        (Join-Path $RootPath 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu')
+    )) {
+        Assert-RegistryValue -Path $desktopIconRoot -Name '{59031a47-3f72-44a7-89c5-5595fe6b30ee}' -ExpectedValue 1
+        Assert-RegistryValue -Path $desktopIconRoot -Name '{20D04FE0-3AEA-1069-A2D8-08002B30309D}' -ExpectedValue 1
+        Assert-RegistryValue -Path $desktopIconRoot -Name '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}' -ExpectedValue 1
+    }
+
+    Write-Detail ("copy-settings-user-shell-icons-hidden: {0}" -f $Label)
+}
+
 function Ensure-LocalUserExists {
     param([string]$UserName)
 
@@ -55,6 +73,25 @@ function Ensure-LocalUserExists {
     if ($null -eq $user) {
         throw ("Local user was not found: {0}" -f $UserName)
     }
+}
+
+function Clear-DesktopEntries {
+    param([string]$DesktopPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$DesktopPath) -or -not (Test-Path -LiteralPath $DesktopPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $DesktopPath -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        if ($_.PSIsContainer) {
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+        }
+        else {
+            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+        }
+    }
+
+    Write-Detail ("copy-settings-user-desktop-cleared: {0}" -f $DesktopPath)
 }
 
 function Get-LocalUserProfilePath {
@@ -252,10 +289,16 @@ function Dismount-RegistryHive {
         return
     }
 
-    foreach ($attempt in 1..5) {
+    try {
+        Set-Location -Path 'C:\'
+    }
+    catch {
+    }
+
+    foreach ($attempt in 1..15) {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 750
 
         & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
         if ($LASTEXITCODE -eq 0) {
@@ -263,6 +306,12 @@ function Dismount-RegistryHive {
         }
 
         Start-Sleep -Seconds 2
+    }
+
+    $fallbackCommand = ('reg unload "HKU\{0}"' -f $MountName)
+    cmd.exe /d /c $fallbackCommand | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        return
     }
 
     throw ("reg unload failed for HKU\{0}" -f $MountName)
@@ -567,6 +616,157 @@ function Invoke-LogonScreenRegistryCopy {
     }
 }
 
+function Invoke-ClassesHiveRegCopy {
+    param(
+        [string]$HiveFilePath,
+        [string]$MountName,
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
+        Write-Detail ("copy-settings-user-classes-skip: {0}" -f $Label)
+        return
+    }
+
+    $mountPath = "HKU\$MountName"
+    & reg.exe load $mountPath $HiveFilePath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("reg load failed for {0}: {1}" -f $Label, $HiveFilePath)
+    }
+
+    try {
+        foreach ($branch in @(
+            'Local Settings\Software\Microsoft\Windows\Shell',
+            'CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}'
+        )) {
+            & reg.exe copy ("HKEY_CURRENT_USER\Software\Classes\{0}" -f $branch) ("{0}\{1}" -f $mountPath, $branch) /s /f | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw ("reg copy failed for {0}: {1}" -f $Label, $branch)
+            }
+        }
+
+        $allFoldersQuery = @(& reg.exe query ("{0}\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell" -f $mountPath) /v GroupView 2>&1)
+        if (($allFoldersQuery -join ' ') -notmatch '0x0\b') {
+            throw ("Classes hive validation failed for {0}: AllFolders GroupView is not 0." -f $Label)
+        }
+
+        $bagOneQuery = @(& reg.exe query ("{0}\Local Settings\Software\Microsoft\Windows\Shell\Bags\1\Shell" -f $mountPath) /v GroupView 2>&1)
+        if (($bagOneQuery -join ' ') -notmatch '0x0\b') {
+            throw ("Classes hive validation failed for {0}: bag one GroupView is not 0." -f $Label)
+        }
+
+        Write-Detail ("copy-settings-user-classes-ok: {0}" -f $Label)
+    }
+    finally {
+        & reg.exe unload $mountPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw ("reg unload failed for {0}: {1}" -f $Label, $mountPath)
+        }
+    }
+}
+
+function Invoke-MainHiveRegCopy {
+    param(
+        [string]$HiveFilePath,
+        [string]$MountName,
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
+        throw ("Main hive file was not found for {0}: {1}" -f $Label, $HiveFilePath)
+    }
+
+    $mountPath = "HKU\$MountName"
+    & reg.exe load $mountPath $HiveFilePath | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw ("reg load failed for {0}: {1}" -f $Label, $HiveFilePath)
+    }
+
+    try {
+        foreach ($branch in @(
+            'Control Panel',
+            'Environment',
+            'Keyboard Layout',
+            'Software\local accessibility vendor',
+            'Software\Microsoft\Notepad',
+            'Software\Microsoft\Windows\CurrentVersion\Explorer',
+            'Software\Microsoft\Windows\CurrentVersion\Search'
+        )) {
+            & reg.exe copy ("HKEY_CURRENT_USER\{0}" -f $branch) ("{0}\{1}" -f $mountPath, $branch) /s /f | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw ("reg copy failed for {0}: {1}" -f $Label, $branch)
+            }
+        }
+
+        $keyboardQuery = @(& reg.exe query ("{0}\Control Panel\Keyboard" -f $mountPath) /v KeyboardDelay 2>&1)
+        if (($keyboardQuery -join ' ') -notmatch '\bKeyboardDelay\b.*\b0\b') {
+            throw ("Main hive validation failed for {0}: KeyboardDelay is not 0." -f $Label)
+        }
+
+        $advancedQuery = @(& reg.exe query ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -f $mountPath) /v ShowTaskViewButton 2>&1)
+        if (($advancedQuery -join ' ') -notmatch '0x0\b') {
+            throw ("Main hive validation failed for {0}: ShowTaskViewButton is not 0." -f $Label)
+        }
+
+        $searchQuery = @(& reg.exe query ("{0}\Software\Microsoft\Windows\CurrentVersion\Search" -f $mountPath) /v SearchboxTaskbarMode 2>&1)
+        if (($searchQuery -join ' ') -notmatch '0x0\b') {
+            throw ("Main hive validation failed for {0}: SearchboxTaskbarMode is not 0." -f $Label)
+        }
+
+        foreach ($desktopIconQueryPath in @(
+            ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel" -f $mountPath),
+            ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu" -f $mountPath)
+        )) {
+            foreach ($desktopIconGuid in @(
+                '{59031a47-3f72-44a7-89c5-5595fe6b30ee}',
+                '{20D04FE0-3AEA-1069-A2D8-08002B30309D}',
+                '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'
+            )) {
+                $desktopIconQuery = @(& reg.exe query $desktopIconQueryPath /v $desktopIconGuid 2>&1)
+                if (($desktopIconQuery -join ' ') -notmatch '0x1\b') {
+                    throw ("Main hive validation failed for {0}: hidden desktop icon state missing for {1}." -f $Label, $desktopIconGuid)
+                }
+            }
+        }
+
+        Write-Detail ("copy-settings-user-main-hive-ok: {0}" -f $Label)
+    }
+    finally {
+        & reg.exe unload $mountPath | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            throw ("reg unload failed for {0}: {1}" -f $Label, $mountPath)
+        }
+    }
+}
+
+function Get-LoadedUserHiveRoots {
+    param([string]$UserName)
+
+    Ensure-LocalUserExists -UserName $UserName
+    $user = Get-LocalUser -Name $UserName -ErrorAction Stop
+    $sid = [string]$user.SID
+    $mainRoot = ''
+    $classesRoot = ''
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$sid)) {
+        $candidateMainRoot = "Registry::HKEY_USERS\$sid"
+        if (Test-Path -LiteralPath $candidateMainRoot) {
+            $mainRoot = $candidateMainRoot
+        }
+
+        $candidateClassesRoot = "Registry::HKEY_USERS\${sid}_Classes"
+        if (Test-Path -LiteralPath $candidateClassesRoot) {
+            $classesRoot = $candidateClassesRoot
+        }
+    }
+
+    return [pscustomobject]@{
+        Sid = [string]$sid
+        MainRoot = [string]$mainRoot
+        ClassesRoot = [string]$classesRoot
+    }
+}
+
 function Invoke-ProfileFileCopy {
     param(
         [string]$SourceProfilePath,
@@ -575,8 +775,10 @@ function Invoke-ProfileFileCopy {
     )
 
     Ensure-AzVmDirectory -Path $TargetProfilePath
-
-    Invoke-RobocopyBranch -SourcePath (Join-Path $SourceProfilePath 'Desktop') -TargetPath (Join-Path $TargetProfilePath 'Desktop') -Label ($Label + ' desktop')
+    $targetDesktopPath = Join-Path $TargetProfilePath 'Desktop'
+    Ensure-AzVmDirectory -Path $targetDesktopPath
+    Clear-DesktopEntries -DesktopPath $targetDesktopPath
+    Write-Detail ("copy-settings-user-file-skip: {0} desktop kept empty" -f $Label)
     Invoke-RobocopyBranch -SourcePath (Join-Path $SourceProfilePath 'AppData\Roaming') -TargetPath (Join-Path $TargetProfilePath 'AppData\Roaming') -Label ($Label + ' roaming') -ExcludedDirectories @(
         'Microsoft\Credentials',
         'Microsoft\Protect',
@@ -584,6 +786,8 @@ function Invoke-ProfileFileCopy {
         'Microsoft\IdentityCRL',
         'npm-cache'
     ) -ExcludedFiles @(
+        'desktop.ini',
+        'Thumbs.db',
         'NTUSER.DAT*',
         'UsrClass.dat*',
         '*.log',
@@ -598,20 +802,25 @@ function Invoke-ProfileFileCopy {
         'Microsoft\Windows\WebCache',
         'Microsoft\Windows\CloudStore',
         'Microsoft\WindowsApps',
+        'Microsoft\Windows\Notifications',
         'Microsoft\Credentials',
         'CrashDumps',
         'D3DSCache',
+        'Docker\run',
         'Google\Chrome\User Data\Default\Cache',
         'Google\Chrome\User Data\Default\Code Cache',
         'Google\Chrome\User Data\Default\GPUCache',
         'Google\Chrome\User Data\Default\Service Worker\CacheStorage',
         'Google\Chrome\User Data\ShaderCache',
+        'docker-secrets-engine',
         'npm-cache',
         'OneAuth',
         'IdentityCache',
         'ConnectedDevicesPlatform',
         'SquirrelTemp'
     ) -ExcludedFiles @(
+        'desktop.ini',
+        'Thumbs.db',
         'NTUSER.DAT*',
         'UsrClass.dat*',
         '*.log',
@@ -626,6 +835,8 @@ function Invoke-ProfileFileCopy {
     Invoke-RobocopyBranch -SourcePath (Join-Path $SourceProfilePath 'AppData\LocalLow') -TargetPath (Join-Path $TargetProfilePath 'AppData\LocalLow') -Label ($Label + ' locallow') -ExcludedDirectories @(
         'Temp'
     ) -ExcludedFiles @(
+        'desktop.ini',
+        'Thumbs.db',
         'NTUSER.DAT*',
         'UsrClass.dat*',
         '*.log',
@@ -637,84 +848,36 @@ function Invoke-ProfileFileCopy {
 function Invoke-AssistantInteractiveSeed {
     param(
         [string]$UserName,
-        [string]$UserPassword
+        [string]$UserPassword,
+        [string]$ProfilePath
     )
 
-    $interactiveTaskName = "{0}-assistant-hkcu" -f $taskName
-    $paths = Get-AzVmInteractivePaths -TaskName $interactiveTaskName
-    $workerScript = @'
-$ErrorActionPreference = "Stop"
-$helperPath = "__HELPER_PATH__"
-$resultPath = "__RESULT_PATH__"
-$taskName = "__TASK_NAME__"
+    if ([string]::IsNullOrWhiteSpace([string]$ProfilePath) -or -not (Test-Path -LiteralPath $ProfilePath)) {
+        throw ("Assistant profile path was not found for hive seed: {0}" -f $ProfilePath)
+    }
 
-. $helperPath
+    $assistantNtUserPath = Join-Path $ProfilePath 'NTUSER.DAT'
+    if (-not (Test-Path -LiteralPath $assistantNtUserPath)) {
+        throw ("Assistant NTUSER.DAT was not found: {0}" -f $assistantNtUserPath)
+    }
 
-$advanced = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-Set-AzVmRegistryValue -Path $advanced -Name 'LaunchTo' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'Hidden' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'ShowSuperHidden' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'HideFileExt' -Value 0 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'ShowInfoTip' -Value 0 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'IconsOnly' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'AutoArrange' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'SnapToGrid' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $advanced -Name 'ShowTaskViewButton' -Value 0 -Kind DWord
-
-$searchPath = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Search'
-Set-AzVmRegistryValue -Path $searchPath -Name 'SearchboxTaskbarMode' -Value 0 -Kind DWord
-
-$controlPanel = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\ControlPanel'
-Set-AzVmRegistryValue -Path $controlPanel -Name 'AllItemsIconView' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $controlPanel -Name 'StartupPage' -Value 1 -Kind DWord
-
-$operationStatus = 'Registry::HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\OperationStatusManager'
-Set-AzVmRegistryValue -Path $operationStatus -Name 'EnthusiastMode' -Value 1 -Kind DWord
-
-$keyboard = 'Registry::HKEY_CURRENT_USER\Control Panel\Keyboard'
-Set-AzVmRegistryValue -Path $keyboard -Name 'KeyboardDelay' -Value '0' -Kind String
-
-$allFoldersShell = 'Registry::HKEY_CURRENT_USER\Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell'
-Set-AzVmRegistryValue -Path $allFoldersShell -Name 'FolderType' -Value 'NotSpecified' -Kind String
-Set-AzVmRegistryValue -Path $allFoldersShell -Name 'LogicalViewMode' -Value 1 -Kind DWord
-Set-AzVmRegistryValue -Path $allFoldersShell -Name 'Mode' -Value 4 -Kind DWord
-Set-AzVmRegistryValue -Path $allFoldersShell -Name 'Sort' -Value 'prop:System.ItemNameDisplay' -Kind String
-Set-AzVmRegistryValue -Path $allFoldersShell -Name 'SortDirection' -Value 0 -Kind DWord
-Set-AzVmRegistryValue -Path $allFoldersShell -Name 'GroupView' -Value 0 -Kind DWord
-
-$contextMenuPath = 'Registry::HKEY_CURRENT_USER\Software\Classes\CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}\InprocServer32'
-Set-AzVmRegistryValue -Path $contextMenuPath -Name '(default)' -Value '' -Kind String
-
-if ([string](Get-ItemProperty -Path $advanced -Name 'ShowTaskViewButton' -ErrorAction Stop).ShowTaskViewButton -ne '0') {
-    throw 'Assistant HKCU validation failed for ShowTaskViewButton.'
-}
-if ([string](Get-ItemProperty -Path $searchPath -Name 'SearchboxTaskbarMode' -ErrorAction Stop).SearchboxTaskbarMode -ne '0') {
-    throw 'Assistant HKCU validation failed for SearchboxTaskbarMode.'
-}
-if ([string](Get-ItemProperty -Path $controlPanel -Name 'AllItemsIconView' -ErrorAction Stop).AllItemsIconView -ne '1') {
-    throw 'Assistant HKCU validation failed for AllItemsIconView.'
-}
-if ([string](Get-ItemProperty -Path $keyboard -Name 'KeyboardDelay' -ErrorAction Stop).KeyboardDelay -ne '0') {
-    throw 'Assistant HKCU validation failed for KeyboardDelay.'
-}
-if ([string](Get-ItemProperty -Path $allFoldersShell -Name 'GroupView' -ErrorAction Stop).GroupView -ne '0') {
-    throw 'Assistant HKCU validation failed for GroupView.'
-}
-
-Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary ("HKCU settings seeded for secondary user '{0}'." -f $assistantUser) -Details @('assistant-hkcu-seeded')
-'@
-
-    $workerScript = $workerScript.Replace('__HELPER_PATH__', $helperPath)
-    $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
-    $workerScript = $workerScript.Replace('__TASK_NAME__', $interactiveTaskName)
-
-    $null = Invoke-AzVmInteractiveDesktopAutomation `
-        -TaskName $interactiveTaskName `
-        -RunAsUser $UserName `
-        -RunAsPassword $UserPassword `
-        -WorkerScriptText $workerScript `
-        -WaitTimeoutSeconds 180
-
+    $assistantUsrClassPath = Join-Path $ProfilePath 'AppData\Local\Microsoft\Windows\UsrClass.dat'
+    $loadedRoots = Get-LoadedUserHiveRoots -UserName $UserName
+    if (-not [string]::IsNullOrWhiteSpace([string]$loadedRoots.MainRoot)) {
+        Invoke-RepresentativeRegistryCopy -MainTargetRoot ([string]$loadedRoots.MainRoot) -ClassesTargetRoot ([string]$loadedRoots.ClassesRoot) -Label 'assistant-profile'
+        Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.MainRoot) 'Control Panel\Keyboard') -Name 'KeyboardDelay' -ExpectedValue '0'
+        Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.MainRoot) 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced') -Name 'ShowTaskViewButton' -ExpectedValue 0
+        Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.MainRoot) 'Software\Microsoft\Windows\CurrentVersion\Search') -Name 'SearchboxTaskbarMode' -ExpectedValue 0
+        Assert-HiddenShellDesktopIcons -RootPath ([string]$loadedRoots.MainRoot) -Label 'assistant-profile'
+        if (-not [string]::IsNullOrWhiteSpace([string]$loadedRoots.ClassesRoot)) {
+            Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.ClassesRoot) 'Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell') -Name 'GroupView' -ExpectedValue 0
+            Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.ClassesRoot) 'Local Settings\Software\Microsoft\Windows\Shell\Bags\1\Shell') -Name 'GroupView' -ExpectedValue 0
+        }
+    }
+    else {
+        Invoke-MainHiveRegCopy -HiveFilePath $assistantNtUserPath -MountName 'AzVmAssistantNtUser' -Label 'assistant-profile'
+        Invoke-ClassesHiveRegCopy -HiveFilePath $assistantUsrClassPath -MountName 'AzVmAssistantUsrClass' -Label 'assistant-profile'
+    }
     Write-Detail ("copy-settings-user-interactive-hkcu-ok: {0}" -f $UserName)
 }
 
@@ -742,6 +905,10 @@ $defaultMainMountName = 'AzVmDefaultNtUser'
 $defaultMainRoot = $null
 
 try {
+    Clear-DesktopEntries -DesktopPath (Join-Path $managerProfilePath 'Desktop')
+    Clear-DesktopEntries -DesktopPath (Join-Path $assistantProfilePath 'Desktop')
+    Clear-DesktopEntries -DesktopPath (Join-Path $defaultProfilePath 'Desktop')
+
     $defaultMainRoot = Mount-RegistryHive -MountName $defaultMainMountName -HiveFilePath $defaultNtUserPath
 
     Invoke-RepresentativeRegistryCopy -MainTargetRoot $defaultMainRoot -ClassesTargetRoot '' -Label 'default-profile'
@@ -749,15 +916,17 @@ try {
 
     Invoke-ProfileFileCopy -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -Label 'assistant'
     Invoke-ProfileFileCopy -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -Label 'default-profile'
-    Invoke-AssistantInteractiveSeed -UserName $assistantUser -UserPassword $assistantPassword
+    Invoke-AssistantInteractiveSeed -UserName $assistantUser -UserPassword $assistantPassword -ProfilePath $assistantProfilePath
 
     Assert-RegistryValue -Path (Join-Path $defaultMainRoot 'Control Panel\Keyboard') -Name 'KeyboardDelay' -ExpectedValue '0'
     Assert-RegistryValue -Path (Join-Path $defaultMainRoot 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced') -Name 'ShowTaskViewButton' -ExpectedValue 0
     Assert-RegistryValue -Path (Join-Path $defaultMainRoot 'Software\Microsoft\Windows\CurrentVersion\Search') -Name 'SearchboxTaskbarMode' -ExpectedValue 0
+    Assert-HiddenShellDesktopIcons -RootPath $defaultMainRoot -Label 'default-profile'
 
     Assert-RegistryValue -Path 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard' -Name 'KeyboardDelay' -ExpectedValue '0'
     Assert-RegistryValue -Path 'Registry::HKEY_USERS\.DEFAULT\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ShowTaskViewButton' -ExpectedValue 0
     Assert-RegistryValue -Path 'Registry::HKEY_USERS\.DEFAULT\Software\Microsoft\Windows\CurrentVersion\Search' -Name 'SearchboxTaskbarMode' -ExpectedValue 0
+    Assert-HiddenShellDesktopIcons -RootPath 'Registry::HKEY_USERS\.DEFAULT' -Label 'logon-screen'
 
     Assert-TaskManagerSettingsCopied -SourceProfilePath $managerProfilePath -ProfilePath $assistantProfilePath -Label 'assistant'
     Assert-TaskManagerSettingsCopied -SourceProfilePath $managerProfilePath -ProfilePath $defaultProfilePath -Label 'default-profile'
@@ -765,6 +934,12 @@ try {
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\Microsoft\Credentials'
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\Microsoft\Credentials'
+    if (@(Get-ChildItem -LiteralPath (Join-Path $assistantProfilePath 'Desktop') -Force -ErrorAction SilentlyContinue).Count -ne 0) {
+        throw 'Assistant desktop must remain empty after settings copy.'
+    }
+    if (@(Get-ChildItem -LiteralPath (Join-Path $defaultProfilePath 'Desktop') -Force -ErrorAction SilentlyContinue).Count -ne 0) {
+        throw 'Default profile desktop must remain empty after settings copy.'
+    }
 }
 finally {
     foreach ($mountName in @($defaultMainMountName)) {

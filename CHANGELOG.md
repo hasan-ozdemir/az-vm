@@ -3,6 +3,24 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.270] - 2026-03-11
+
+### Added
+- Added the tracked Windows update task `130-install-icloud-system` so the Store-backed iCloud install now follows the repo's unattended `winget` pattern and resolves `iCloudHome.exe` for shortcut and health-readback use.
+
+### Changed
+- Reworked the Windows final update flow so `10002-create-shortcuts-public-desktop`, `10003-configure-ux-windows`, `10005-copy-settings-user`, and `10099-capture-snapshot-health` now enforce the new public-desktop contract: `company_name` is required with no `VM_NAME` fallback, the shortcut set uses the requested 1-based naming scheme, managed `.lnk` files are rebuilt with full Public Desktop mirroring, and per-user desktops are kept empty.
+- Expanded the public shortcut manifest to the requested final `a/b/c/d/i/k/o/s/t/u/v/z` layout, including iCloud, dynamic `s15/s16` company shortcuts, the new `s17/s18` web entries, updated CLI targets, NVDA hotkey handling, run-maximized defaults, run-as-admin link flags, and `%UserProfile%` start-in handling for console shortcuts.
+- Extended Windows UX tuning to disable System Restore and existing shadow copies, keep RDP NLA off for maximum compatibility, suppress `desktop.ini` / `Thumbs.db` artifacts on known desktop roots, hide shell-managed desktop icons in favor of custom `u1/u2/u3` shortcuts, and reinforce Explorer details/no-group defaults across seeded user hives.
+- Reworked `10005-copy-settings-user` so the assistant/default profile propagation now uses deterministic hive-based registry seeding and stricter file-copy exclusions instead of the slower interactive HKCU path, and raised the late-stage Windows task timeouts to match observed exec runtimes.
+
+### Documentation
+- Updated `.env.example`, `README.md`, release history, and prompt history to reflect the required `company_name` contract and the new Windows UX/public desktop update behavior.
+
+### Tests
+- Expanded smoke and compatibility coverage for the iCloud task contract, the no-fallback `company_name` requirement, the final shortcut manifest and timeout values, and explicit hidden shell desktop icon propagation checks.
+- Validated the Windows update changes live with isolated `exec` reruns of `130`, `10003`, `10002`, `10005`, and `10099`, plus idempotency reruns of `10002` and `10003`.
+
 ## [2026.3.11.269] - 2026-03-11
 
 ### Added

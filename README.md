@@ -135,7 +135,7 @@
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
    - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
    - platform-specific image and size keys as needed
-3. Optionally set `company_name` to control the default Google Chrome `--profile-directory` used by repo-managed Windows public desktop web shortcuts.
+3. Set `company_name` for Windows flows. Repo-managed public desktop web shortcuts require it and use it as the shared Chrome `--profile-directory`.
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### First End-To-End Run
@@ -265,7 +265,7 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 ### High-Value `.env` Keys
 - `VM_OS_TYPE`: default platform for auto flows.
 - `VM_NAME`: actual Azure VM name and the naming seed for derived resources.
-- `company_name`: default Chrome `--profile-directory` for repo-managed Windows web shortcuts.
+- `company_name`: required for the Windows public desktop shortcut flow and used as the default Chrome `--profile-directory` for repo-managed Windows web shortcuts.
 - `AZ_LOCATION`: default Azure region.
 - `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`, `VM_DISK_NAME`: optional explicit resource-name overrides.
 - `NSG_RULE_NAME`, `NSG_RULE_NAME_TEMPLATE`: explicit override or template for inbound-rule naming. The default template prefix is `nsg-rule-`.

@@ -4397,3 +4397,15 @@ Please record this dialog in prompt history as well, and fully resolve the defau
 **Assistant Summary**
 
 Recorded this turn in `docs/prompt-history.md`, standardized tracked task fallback defaults end to end so missing tracked catalog entries and tracked entries without explicit priority now resolve to `priority=1000`, kept the shared default timeout at `180` across tracked and local task paths, updated all four task catalogs plus `AGENTS.md`, `README.md`, changelog/release notes, and tightened smoke/documentation coverage to verify the new fallback contract and local timeout behavior. Re-ran smoke, documentation-contract, code-quality, and PowerShell compatibility checks successfully.
+
+### 2026-03-11 06:21 TRT
+
+**User Prompt**
+
+````text
+Continue the interrupted implementation of the latest Windows UX, public desktop, and iCloud plan end to end, and if a live test hangs, stop it and retry.
+````
+
+**Assistant Summary**
+
+Completed the interrupted Windows late-stage update overhaul: added the tracked `130-install-icloud-system` task, removed every `company_name -> VM_NAME` fallback so Windows public shortcuts now fail fast unless `company_name` is set, rebuilt `10002-create-shortcuts-public-desktop` around the requested final manifest and full Public Desktop mirroring contract, expanded `10003-configure-ux-windows` for System Restore/shadow-copy shutdown, RDP NLA-off, artifact suppression, and Explorer no-group defaults, and rewrote `10005-copy-settings-user` so assistant/default propagation is deterministic while keeping manager, assistant, and default desktops empty. Updated the Windows health snapshot, timeout contracts, README / `.env.example` / release docs, fixed multiple live-exec blockers uncovered during isolated reruns, and verified the result with the full local validation suite plus isolated live `exec` runs of `130`, `10003`, `10002`, `10005`, and `10099`, including final idempotency reruns of `10002` and `10003`.

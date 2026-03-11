@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.270 - 2026-03-11
+
+### Summary
+This release hardens the Windows late-stage update flow around the requested public desktop, iCloud, and UX contract: `company_name` is now mandatory for repo-managed Windows web shortcuts, the public desktop is rebuilt as a fully mirrored managed set, iCloud is installed through a tracked Store task, user desktops are emptied in favor of Public Desktop, and the UX/readback tasks now cover System Restore shutdown, RDP compatibility, Explorer no-group defaults, and best-effort desktop artifact suppression.
+
+### Highlights
+- Added `130-install-icloud-system` and wired it into the tracked Windows update catalog so iCloud for Windows is installed unattended from the Microsoft Store path and exposed to the new `d4ICloud` desktop shortcut.
+- Rebuilt `10002-create-shortcuts-public-desktop` around one manifest-driven shortcut contract with the requested 1-based naming, full Public Desktop mirroring, required `company_name`, dynamic `s15/s16`, new `s17/s18`, updated CLI targets, `Ctrl+Alt+N` for NVDA, run-maximized defaults, run-as-admin link flags, and `%UserProfile%` start-in handling for console entries.
+- Extended `10003-configure-ux-windows` to disable System Restore and shadow copies, keep RDP NLA off, suppress thumbnail artifacts on known desktop roots, hide shell desktop icons, and reinforce Explorer details/no-group defaults for `This PC` and seeded user settings.
+- Reworked `10005-copy-settings-user` so assistant/default settings propagation is now deterministic and fast enough for isolated exec loops, while keeping manager, assistant, and default desktops empty and preserving the helper-asset contract.
+- Expanded `10099-capture-snapshot-health` so it now inventories the final shortcut set, target/args/hotkey/start-in/show/admin state, unexpected Public Desktop entries, per-user desktop emptiness, artifact scans, RDP/System Restore state, and Explorer bag values.
+- Verified the release live on the Windows VM with isolated `exec` runs of `130`, `10003`, `10002`, `10005`, and `10099`, then repeated `10002` and `10003` for idempotency before the final health pass.
+
 ## Release 2026.3.11.269 - 2026-03-11
 
 ### Summary
