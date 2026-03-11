@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.272] - 2026-03-11
+
+### Changed
+- Moved the per-user desktop cleanup into `10002-create-shortcuts-public-desktop` itself, so the Public Desktop mirroring task now also removes lingering entries from the manager, assistant, and default desktop roots instead of relying on later tasks to restore that contract.
+
+### Tests
+- Tightened the Windows public-desktop smoke contract so `10002-create-shortcuts-public-desktop` must own the manager/assistant/default desktop cleanup path in addition to the Public Desktop mirror.
+
 ## [2026.3.11.271] - 2026-03-11
 
 ### Changed

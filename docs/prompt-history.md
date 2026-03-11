@@ -4422,3 +4422,15 @@ c:\windows\system32\cmd.exe /c start "" "C:\Program Files\Google\Chrome\Applicat
 **Assistant Summary**
 
 Updated the Windows public desktop shortcut manifest so `z1Google Account Setup` now launches through `cmd.exe /c start "" "chrome.exe" ... chrome://settings/syncSetup` with the shared Public Desktop Chrome user-data directory, aligned the smoke contract to assert the new target and argument shape, refreshed release history, reran the local validation suite, and reran isolated live `10002` and `10099` update tasks to confirm the shortcut readback matches the requested behavior.
+
+### 2026-03-11 06:58 TRT
+
+**User Prompt**
+
+````text
+Action: continue from the `dev` branch after syncing `dev` and `main` again. Fix `public-desktop-icons`.
+````
+
+**Assistant Summary**
+
+Resynced `dev` with `main`, continued the work on `dev`, and closed the remaining `public-desktop-icons` gap by moving the per-user desktop cleanup directly into `10002-create-shortcuts-public-desktop`. The task now clears the manager, assistant, and default desktop roots as part of the same Public Desktop mirror pass, the smoke contract now asserts that ownership explicitly, and the change was revalidated with local tests plus isolated live reruns of `10002` and `10099`.

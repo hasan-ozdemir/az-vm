@@ -2,6 +2,15 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.272 - 2026-03-11
+
+### Summary
+This release closes the remaining `public-desktop-icons` gap by making `10002-create-shortcuts-public-desktop` clear the manager, assistant, and default desktop roots itself, so the Public Desktop mirror task now enforces the shared-desktop contract end to end on its own.
+
+### Highlights
+- Extended `10002-create-shortcuts-public-desktop` so it now deletes lingering entries from `C:\Users\<manager>\Desktop`, `C:\Users\<assistant>\Desktop`, and `C:\Users\Default\Desktop` as part of the same mirror pass that rebuilds the managed Public Desktop shortcut set.
+- Updated smoke coverage so the shortcut task must continue to own both the Public Desktop mirror and the per-user desktop cleanup contract.
+
 ## Release 2026.3.11.271 - 2026-03-11
 
 ### Summary

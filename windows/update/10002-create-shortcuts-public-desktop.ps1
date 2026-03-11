@@ -390,6 +390,30 @@ function Ensure-Directory {
     }
 }
 
+function Clear-DesktopEntries {
+    param([string]$DesktopPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$DesktopPath) -or -not (Test-Path -LiteralPath $DesktopPath)) {
+        return
+    }
+
+    Get-ChildItem -LiteralPath $DesktopPath -Force -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            if ($_.PSIsContainer) {
+                Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction Stop
+            }
+            else {
+                Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
+            }
+
+            Write-Host ("user-desktop-entry-removed: {0}" -f $_.FullName)
+        }
+        catch {
+            throw ("Failed to remove user desktop entry '{0}': {1}" -f $_.FullName, $_.Exception.Message)
+        }
+    }
+}
+
 function Get-ShortcutDetails {
     param([string]$ShortcutPath)
 
@@ -870,6 +894,11 @@ if (@($managedShortcutNames | Select-Object -Unique).Count -ne @($managedShortcu
     throw "The public desktop shortcut manifest contains duplicate shortcut names."
 }
 
+$managedUserDesktopRoots = @(
+    ("C:\Users\{0}\Desktop" -f $managerUser),
+    ("C:\Users\{0}\Desktop" -f $assistantUser),
+    "C:\Users\Default\Desktop"
+)
 $stagingRoot = Join-Path $env:TEMP ("az-vm-public-desktop-" + [guid]::NewGuid().ToString("N"))
 Ensure-Directory -Path $stagingRoot
 
@@ -916,6 +945,10 @@ try {
         catch {
             throw ("Failed to remove unexpected public shortcut '{0}': {1}" -f $unexpectedShortcut.FullName, $_.Exception.Message)
         }
+    }
+
+    foreach ($managedUserDesktopRoot in @($managedUserDesktopRoots)) {
+        Clear-DesktopEntries -DesktopPath ([string]$managedUserDesktopRoot)
     }
 }
 finally {
