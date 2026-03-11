@@ -4737,3 +4737,15 @@ Please add a command like `az-vm do --vm-action=reapply`; in essence it should d
 **Assistant Summary**
 
 Added `az-vm do --vm-action=reapply` to the managed VM lifecycle surface so the command now calls `az vm reapply` for the resolved target and then prints a refreshed lifecycle status snapshot. I also updated the interactive `do` action picker, parser hints, CLI help, README examples, changelog, and release notes to expose the new action explicitly, added smoke coverage for the `reapply` invocation path and its provisioning-guard bypass behavior, and revalidated the full non-live gate with code-quality, documentation-contract, PowerShell compatibility, and smoke checks.
+
+### 2026-03-12 02:43 TRT
+
+**User Prompt**
+
+````text
+Please go back over the planning and implementation instructions I gave you earlier, determine one by one which parts were completed and which are still pending, complete anything that is still missing, and then give me a broad final status and results report about the four requested tasks: the expanded Public Desktop shortcut set, the employee-based Chrome profile routing and shortcut renames, the Copilot/Visual Studio shortcut prerequisites, and the local-only private local-only accessibility auto-start ownership and verification flow.
+````
+
+**Assistant Summary**
+
+Audited the previously requested four-task plan against the current tracked repo, the local ignored Windows update tasks, the release/history docs, and the current branch state. The tracked shortcut and prerequisite work is complete: `r11-r22`, `i1Internet Kurumsal`, `i2Internet Bireysel`, employee-based Chrome `Bireysel` profile routing, `.env.example` employee defaults, `k3Github Copilot CLI`, `v1VS2022Com`, `115-install-npm-packages-global`, and `132-install-vs2022community` are all present and enforced by smoke coverage. The local-only private local-only accessibility/accessibility ownership is also complete from the repo-contract perspective: tracked builtin tasks and catalogs no longer own that flow, while the ignored `windows/update/local/1001-1005` task chain now owns install, settings, shortcut, autostart, and verification behavior. The only thing I did not rerun during this audit turn was a fresh live guest acceptance cycle; instead I verified the already-recorded live acceptance evidence and confirmed that `dev` and `main` remain aligned while `dev2` and `main2` still exist as backups.
