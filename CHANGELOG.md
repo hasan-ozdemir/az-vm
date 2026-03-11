@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.11.281] - 2026-03-11
+
+### Changed
+- Removed the transitional root loader layer from `modules/` so `az-vm.ps1` now loads a single ordered `modules/azvm-runtime-manifest.ps1` and dot-sources the refactored leaf files directly.
+- Deleted the old root runtime wrapper files under `modules/core/`, `modules/config/`, `modules/tasks/`, `modules/ui/`, and `modules/commands/`, so the active runtime now executes only the modern modular tree.
+- Refreshed the smoke contract and current architecture documentation so they enforce the manifest-based direct-load model and fail fast if any legacy root loader path reappears.
+
+### Tests
+- Revalidated the direct-load cutover with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1`.
+
 ## [2026.3.11.280] - 2026-03-11
 
 ### Changed

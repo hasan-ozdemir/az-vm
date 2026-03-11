@@ -90,5 +90,5 @@ function Get-AzVmRegionCode {
         -Detail ("No static REGION_CODE mapping exists for region '{0}'." -f $normalized) `
         -Code 22 `
         -Summary "Region code resolution failed." `
-        -Hint "Add the region to the built-in REGION_CODE map in modules/config/azvm-config-runtime.ps1."
+        -Hint "Add the region to the built-in REGION_CODE map in modules/config/region/azvm-region-codes.ps1."
 }

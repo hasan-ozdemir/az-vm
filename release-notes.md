@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.11.281 - 2026-03-11
+
+### Summary
+This release finishes the modular-runtime cutover by removing the transitional root loaders entirely. `az-vm.ps1` now loads one ordered manifest and then dot-sources the refactored leaf files directly, so the active runtime path is fully modernized with no legacy root-wrapper layer left in `modules/`.
+
+### Highlights
+- Added `modules/azvm-runtime-manifest.ps1` as the single ordered source of truth for runtime leaf-file loading.
+- Removed the old root wrapper files from `modules/core/`, `modules/config/`, `modules/tasks/`, `modules/ui/`, and `modules/commands/`, so current execution no longer flows through compatibility-loader scripts.
+- Updated the smoke suite to assert that the deleted root loader paths do not exist and that `az-vm.ps1` and the manifest do not reference them.
+- Revalidated the cutover with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1`.
+
 ## Release 2026.3.11.280 - 2026-03-11
 
 ### Summary

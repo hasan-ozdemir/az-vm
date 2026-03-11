@@ -41,19 +41,16 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
 
-# Load modular function files in deterministic order.
-$moduleFiles = @(
-    'modules/core/azvm-core-foundation.ps1'
-    'modules/core/azvm-core-runtime.ps1'
-    'modules/config/azvm-config-runtime.ps1'
-    'modules/azure/azvm-azure-runtime.ps1'
-    'modules/platform/azvm-guest-runtime.ps1'
-    'modules/tasks/azvm-run-command-runtime.ps1'
-    'modules/tasks/azvm-ssh-runtime.ps1'
-    'modules/ui/azvm-ui-runtime.ps1'
-    'modules/commands/azvm-orchestration-runtime.ps1'
-    'modules/commands/azvm-command-main.ps1'
-)
+# Load modular function files in deterministic order from the leaf-file manifest.
+$moduleManifestPath = Join-Path $PSScriptRoot 'modules/azvm-runtime-manifest.ps1'
+if (-not (Test-Path -LiteralPath $moduleManifestPath)) {
+    throw ("Required module manifest was not found: {0}" -f $moduleManifestPath)
+}
+
+$moduleFiles = @(& $moduleManifestPath)
+if (@($moduleFiles).Count -eq 0) {
+    throw "Module manifest returned no module files."
+}
 
 foreach ($moduleFile in @($moduleFiles)) {
     $modulePath = Join-Path $PSScriptRoot $moduleFile

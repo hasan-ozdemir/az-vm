@@ -120,6 +120,7 @@
 ### Repository Layout
 - `az-vm.cmd`: elevated launcher for Windows operators.
 - `az-vm.ps1`: unified orchestrator entrypoint.
+- `modules/azvm-runtime-manifest.ps1`: deterministic ordered manifest of the runtime leaf files loaded by `az-vm.ps1`.
 - `modules/core/`: shared runtime foundations, CLI/system helpers, task discovery, and host/runtime utilities.
 - `modules/config/`: dotenv parsing, naming templates, region-code helpers, and config-resolution primitives.
 - `modules/commands/`: command-owned implementations split by command, plus shared pipeline/context/step/feature helpers.
@@ -198,8 +199,8 @@
 
 ### Entrypoints And Runtime Modules
 - `az-vm.cmd` exists to give Windows operators a simple launcher path.
-- `az-vm.ps1` loads the runtime modules and dispatches the command surface.
-- The historical root runtime paths under `modules/core/`, `modules/commands/`, `modules/ui/`, and `modules/tasks/` remain in place as compatibility loaders so the entrypoint and smoke contracts keep stable import paths.
+- `az-vm.ps1` loads `modules/azvm-runtime-manifest.ps1`, then dot-sources the ordered runtime leaf files directly before dispatching the command surface.
+- There is no transitional root-loader layer for `core`, `config`, `commands`, `ui`, or `tasks`; the launcher now resolves the refactored module tree directly.
 - `modules/core/` now holds smaller domain files for shared contracts, CLI helpers, system/runtime utilities, task discovery, and host mirroring logic.
 - `modules/config/` isolates dotenv, naming-template, region-code, and related config helpers from command/UI code.
 - `modules/commands/` now owns the public command surface: each supported command lives under its own subtree with `entry.ps1`, `contract.ps1`, `runtime.ps1`, and `parameters/`, while shared create/update orchestration lives under `context/`, `steps/`, `features/`, `pipeline/`, and `shared/`.

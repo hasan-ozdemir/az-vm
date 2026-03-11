@@ -4665,3 +4665,15 @@ Current baseline on **March 11, 2026**: `dev` and `main` already point to the sa
 **Assistant Summary**
 
 Implemented the behavior-preserving modular refactor for `modules/` by keeping the existing root runtime files as compatibility loaders while redistributing the implementation into smaller domain files under `modules/core/`, `modules/config/`, `modules/commands/`, `modules/ui/`, and `modules/tasks/`. Each supported public command now has its own subtree with command-scoped `entry`, `contract`, `runtime`, and per-parameter files, `modules/ui/` is restricted to interaction/rendering concerns, the create/update pipeline and shared command runtime were split into dedicated helper areas, the smoke suite was updated only where it still inspected old monolithic root files, and the final tree was revalidated with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1` so the refactor lands without intended behavior regression.
+
+### 2026-03-11 22:52 TRT
+
+**User Prompt**
+
+````text
+Fix and update: I do not want any old behavior or legacy remnants left behind. I do not want any leftovers at all. I want everything to run through the new modern refactored modular and reusable files under `modules/`. Is the current state like that? I also want all documentation and the `az-vm.ps1` main launcher to work in that same modern refactored way. Can you guarantee that for me without causing any regression?
+````
+
+**Assistant Summary**
+
+Finalized the modular-runtime cutover by removing the transitional root loader files from `modules/`, adding `modules/azvm-runtime-manifest.ps1` as the single ordered source of truth for leaf-file loading, and updating `az-vm.ps1` to load that manifest directly instead of chaining through legacy wrappers. I also refreshed the smoke suite so it now fails if any deleted root loader path comes back, updated the current README and release docs to describe the manifest-based runtime architecture, and revalidated the final tree with `tests/code-quality-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/powershell-compatibility-check.ps1` to keep the cutover behavior-preserving.

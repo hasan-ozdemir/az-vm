@@ -62,6 +62,29 @@ Invoke-Test -Name "Dot-source unified az-vm.ps1" -Action {
     Assert-True -Condition ($null -ne (Get-Command Get-AzVmTaskBlocksFromDirectory -ErrorAction SilentlyContinue)) -Message "Get-AzVmTaskBlocksFromDirectory was not loaded."
 }
 
+Invoke-Test -Name "Launcher loads the modern runtime manifest without legacy root loaders" -Action {
+    $launcherText = Get-Content -LiteralPath $script:UnifiedScriptPath -Raw
+    $manifestPath = Join-Path $RepoRoot 'modules\azvm-runtime-manifest.ps1'
+    $manifestText = Get-Content -LiteralPath $manifestPath -Raw
+
+    Assert-True -Condition ($launcherText -match [regex]::Escape('modules/azvm-runtime-manifest.ps1')) -Message "az-vm.ps1 must load the modern runtime manifest."
+
+    foreach ($legacyRelativePath in @(
+        'modules\core\azvm-core-foundation.ps1',
+        'modules\core\azvm-core-runtime.ps1',
+        'modules\config\azvm-config-runtime.ps1',
+        'modules\tasks\azvm-run-command-runtime.ps1',
+        'modules\tasks\azvm-ssh-runtime.ps1',
+        'modules\ui\azvm-ui-runtime.ps1',
+        'modules\commands\azvm-orchestration-runtime.ps1',
+        'modules\commands\azvm-command-main.ps1'
+    )) {
+        Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $legacyRelativePath))) -Message ("Legacy root loader must not exist: {0}" -f $legacyRelativePath)
+        Assert-True -Condition (-not ($launcherText -match [regex]::Escape($legacyRelativePath.Replace('\', '/')))) -Message ("az-vm.ps1 must not reference legacy root loader '{0}'." -f $legacyRelativePath)
+        Assert-True -Condition (-not ($manifestText -match [regex]::Escape($legacyRelativePath.Replace('\', '/')))) -Message ("Runtime manifest must not reference legacy root loader '{0}'." -f $legacyRelativePath)
+    }
+}
+
 Invoke-Test -Name "Platform defaults contract" -Action {
     $win = Get-AzVmPlatformDefaults -Platform windows
     $lin = Get-AzVmPlatformDefaults -Platform linux
@@ -264,28 +287,28 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
 }
 
 Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {
-    foreach ($relativePath in @(
-        'modules\core\azvm-core-foundation.ps1',
-        'modules\commands\azvm-orchestration-runtime.ps1',
-        'modules\ui\azvm-ui-runtime.ps1',
-        'tools\install-pyssh-tool.ps1'
-    )) {
-        $text = Get-Content -LiteralPath (Join-Path $RepoRoot $relativePath) -Raw
+    $filesToScan = @(
+        (Get-ChildItem -Path (Join-Path $RepoRoot 'modules') -Recurse -Filter *.ps1 | ForEach-Object { $_.FullName })
+        (Join-Path $RepoRoot 'tools\install-pyssh-tool.ps1')
+    )
+
+    foreach ($filePath in @($filesToScan)) {
+        $text = Get-Content -LiteralPath $filePath -Raw
         foreach ($forbiddenFragment in @('examplevm','otherexamplevm','<runtime-secret>','<runtime-secret>')) {
-            Assert-True -Condition (($text.IndexOf($forbiddenFragment, [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message ("Runtime file '{0}' must not contain '{1}'." -f $relativePath, $forbiddenFragment)
+            Assert-True -Condition (($text.IndexOf($forbiddenFragment, [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message ("Runtime file '{0}' must not contain '{1}'." -f $filePath, $forbiddenFragment)
         }
     }
 }
 
 Invoke-Test -Name "Task outcome mode is not platform-forced" -Action {
-    $mainPath = Join-Path $RepoRoot 'modules\commands\azvm-command-main.ps1'
-    $uiPath = Join-Path $RepoRoot 'modules\ui\azvm-ui-runtime.ps1'
+    $mainPath = Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1'
+    $runtimeContextPath = Join-Path $RepoRoot 'modules\commands\shared\runtime\azvm-command-runtime-context.ps1'
 
     $mainText = Get-Content -LiteralPath $mainPath -Raw
-    $uiText = Get-Content -LiteralPath $uiPath -Raw
+    $runtimeContextText = Get-Content -LiteralPath $runtimeContextPath -Raw
 
     Assert-True -Condition ($mainText -notmatch "platform\s*-eq\s*'windows'[\s\S]{0,120}taskOutcomeMode\s*=\s*'strict'") -Message "Main command runtime must not force windows task outcome mode to strict."
-    Assert-True -Condition ($uiText -notmatch "platform\s*-eq\s*'windows'[\s\S]{0,120}taskOutcomeMode\s*=\s*'strict'") -Message "UI runtime must not force windows task outcome mode to strict."
+    Assert-True -Condition ($runtimeContextText -notmatch "platform\s*-eq\s*'windows'[\s\S]{0,120}taskOutcomeMode\s*=\s*'strict'") -Message "Shared command runtime must not force windows task outcome mode to strict."
 
     $runCommandDefinition = Get-Command Invoke-VmRunCommandBlocks -CommandType Function
     Assert-True -Condition ($null -ne $runCommandDefinition) -Message "Run-command task runner function was not loaded."
@@ -293,7 +316,7 @@ Invoke-Test -Name "Task outcome mode is not platform-forced" -Action {
 }
 
 Invoke-Test -Name "Create and update always execute vm-init stage" -Action {
-    $mainPath = Join-Path $RepoRoot 'modules\commands\azvm-command-main.ps1'
+    $mainPath = Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1'
     $mainText = Get-Content -LiteralPath $mainPath -Raw
 
     Assert-True -Condition ($mainText -notmatch [regex]::Escape('Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.')) -Message "Main command runtime must not skip vm-init for existing VMs in full create/update flow."
