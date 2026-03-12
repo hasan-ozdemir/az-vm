@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.290 - 2026-03-12
+
+### Summary
+This release completes a second Windows `vm-update` performance-tuning pass against live perf logs by removing the remaining retry-heavy noninteractive waits, shortening bounded settle windows, and making repeated deferred Store installs short-circuit instead of trying the same failing path again.
+
+### Highlights
+- Reworked `114-install-docker-desktop.ps1` so the task no longer waits on repeated Docker daemon probes in SSH sessions; it now verifies the Docker client, starts Docker Desktop once, and immediately registers an interactive `RunOnce` start for the next sign-in.
+- Reworked `121-install-whatsapp-system.ps1` so it prefers fast local registration checks over `winget list`, and skips the whole install attempt when a deferred `RunOnce` Store install is already registered.
+- Shortened registry-hive unload waits in `10001-configure-apps-startup.ps1` and `10099-capture-snapshot-health.ps1`, and reduced Task Manager / Explorer settle waits in `10003-configure-ux-windows.ps1`.
+- Updated smoke coverage so the Docker Desktop task is enforced against the new bounded deferred-start model rather than the old daemon-probe loop.
+- Revalidated the live Windows path on `rg-examplevm-sec1-g1/examplevm`: `114-install-docker-desktop` fell from about `16.2s` to about `3.2s`, `121-install-whatsapp-system` now short-circuits deferred reruns at about `3.5s`, `10099-capture-snapshot-health` fell to about `6.1s`, and the full `vm-update` step fell from about `234.7s` to about `198.0s`.
+
 ## Release 2026.3.12.288 - 2026-03-12
 
 ### Summary

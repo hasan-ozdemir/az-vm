@@ -31,11 +31,19 @@ function Resolve-WingetExe {
     return ""
 }
 
-function Test-WhatsAppInstalled {
-    Write-Host "Running: winget list whatsapp"
-    $listOutput = & $wingetExe list whatsapp
-    $listText = [string]($listOutput | Out-String)
-    if (-not [string]::IsNullOrWhiteSpace($listText) -and $listText.ToLowerInvariant().Contains("whatsapp")) {
+function Test-WhatsAppInstalledFast {
+    $packages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
+        $pkgName = [string]$_.Name
+        $pkgFamily = [string]$_.PackageFamilyName
+        if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) {
+            return $false
+        }
+
+        $pkgNameLower = $pkgName.ToLowerInvariant()
+        $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
+        return ($pkgNameLower.Contains('whatsapp') -or $pkgFamilyLower.Contains('whatsapp'))
+    })
+    if (@($packages).Count -gt 0) {
         return $true
     }
 
@@ -43,8 +51,26 @@ function Test-WhatsAppInstalled {
     if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
         $startApps = @(Get-StartApps | Where-Object { ([string]$_.Name).ToLowerInvariant().Contains("whatsapp") })
     }
+    if (@($startApps).Count -gt 0) {
+        return $true
+    }
 
-    return (@($startApps).Count -gt 0)
+    return $false
+}
+
+function Test-WhatsAppInstalled {
+    if (Test-WhatsAppInstalledFast) {
+        return $true
+    }
+
+    Write-Host "Running: winget list whatsapp"
+    $listOutput = & $wingetExe list whatsapp
+    $listText = [string]($listOutput | Out-String)
+    if (-not [string]::IsNullOrWhiteSpace($listText) -and $listText.ToLowerInvariant().Contains("whatsapp")) {
+        return $true
+    }
+
+    return $false
 }
 
 function Register-WhatsAppDeferredInstall {
@@ -59,6 +85,16 @@ function Register-WhatsAppDeferredInstall {
     Set-ItemProperty -Path $runOncePath -Name "AzVmInstallWhatsApp" -Value $commandValue -Type String
 }
 
+function Test-WhatsAppDeferredInstallRegistered {
+    $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
+    if (-not (Test-Path -LiteralPath $runOncePath)) {
+        return $false
+    }
+
+    $property = Get-ItemProperty -Path $runOncePath -Name "AzVmInstallWhatsApp" -ErrorAction SilentlyContinue
+    return ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.AzVmInstallWhatsApp))
+}
+
 Refresh-SessionPath
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
@@ -66,8 +102,14 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-if (Test-WhatsAppInstalled) {
+if (Test-WhatsAppInstalledFast) {
     Write-Host "install-whatsapp-system-completed"
+    Write-Host "Update task completed: install-whatsapp-system"
+    return
+}
+
+if (Test-WhatsAppDeferredInstallRegistered) {
+    Write-Host "install-whatsapp-system-deferred-already-registered"
     Write-Host "Update task completed: install-whatsapp-system"
     return
 }

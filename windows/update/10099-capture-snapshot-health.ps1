@@ -209,20 +209,25 @@ function Dismount-RegistryHive {
     catch {
     }
 
-    foreach ($attempt in 1..15) {
+    foreach ($attempt in 1..6) {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-        Start-Sleep -Milliseconds 750
+        Start-Sleep -Milliseconds 250
 
         & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
         if ($LASTEXITCODE -eq 0) {
             return
         }
 
-        Start-Sleep -Seconds 2
+        Start-Sleep -Milliseconds 500
     }
 
-    Write-Warning ("reg unload failed for HKU\{0}" -f $MountName)
+    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+    if ($exitCode -eq 0) {
+        return
+    }
+
+    Write-Warning ("reg unload failed for HKU\{0} with exit code {1}" -f $MountName, $exitCode)
 }
 
 function Get-StartupApprovedStateCode {

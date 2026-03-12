@@ -12,9 +12,6 @@ $taskConfig = [ordered]@{
     DockerStartupShortcutPath = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk'
     DockerInstallTimeoutSeconds = 900
     DockerVersionTimeoutSeconds = 8
-    DockerDaemonReadyTimeoutSeconds = 8
-    DockerDaemonProbeAttempts = 2
-    DockerDaemonProbeDelaySeconds = 3
     DockerLocalUsers = @('__VM_ADMIN_USER__', '__ASSISTANT_USER__')
 }
 
@@ -105,24 +102,25 @@ function Ensure-MachinePathEntry {
     param([string]$Entry)
 
     if ([string]::IsNullOrWhiteSpace([string]$Entry)) {
-        return
+        return $false
     }
 
     $normalizedEntry = [string]$Entry.Trim()
     if (-not (Test-Path -LiteralPath $normalizedEntry)) {
-        return
+        return $false
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $parts = @($machinePath -split ";" | ForEach-Object { $_.Trim() } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
     foreach ($part in @($parts)) {
         if ([string]::Equals($part, $normalizedEntry, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return
+            return $false
         }
     }
 
     $newPath = if ([string]::IsNullOrWhiteSpace($machinePath)) { $normalizedEntry } else { "$machinePath;$normalizedEntry" }
     [Environment]::SetEnvironmentVariable("Path", $newPath, "Machine")
+    return $true
 }
 
 function Ensure-LocalGroupMembership {
@@ -218,46 +216,18 @@ function Start-DockerDesktopProcess {
     $running = @(Get-Process -Name "Docker Desktop" -ErrorAction SilentlyContinue)
     if (@($running).Count -gt 0) {
         Write-Host "docker-step-ok: docker-desktop-process-already-running"
-        return
+        return [pscustomobject]@{
+            AlreadyRunning = $true
+            StartedNow = $false
+        }
     }
 
     Start-Process -FilePath $DockerDesktopExe -ArgumentList "--minimized" -WindowStyle Hidden
     Write-Host "docker-step-ok: docker-desktop-process-started"
-}
-
-function Wait-DockerDaemonReady {
-    param(
-        [string]$DockerExe = "docker",
-        [int]$ProbeAttempts = 2,
-        [int]$ProbeDelaySeconds = 3,
-        [int]$CommandTimeoutSeconds = 8
-    )
-
-    if ($ProbeAttempts -lt 1) { $ProbeAttempts = 1 }
-    if ($ProbeDelaySeconds -lt 0) { $ProbeDelaySeconds = 0 }
-    if ($CommandTimeoutSeconds -lt 5) { $CommandTimeoutSeconds = 5 }
-
-    foreach ($attempt in 1..$ProbeAttempts) {
-        $daemonResult = Invoke-ProcessWithTimeout `
-            -Label ("docker version (daemon probe {0}/{1})" -f $attempt, $ProbeAttempts) `
-            -FilePath $DockerExe `
-            -Arguments @("version") `
-            -TimeoutSeconds $CommandTimeoutSeconds
-        if ($daemonResult.Success) {
-            $global:LASTEXITCODE = 0
-            Write-Host "docker-step-ok: docker-daemon-version"
-            return $true
-        }
-
-        $global:LASTEXITCODE = 0
-        if ($attempt -lt $ProbeAttempts -and $ProbeDelaySeconds -gt 0) {
-            Write-Host ("Docker daemon is not ready in the current noninteractive session. Retrying one quick probe ({0}/{1})." -f ($attempt + 1), $ProbeAttempts) -ForegroundColor Yellow
-            Start-Sleep -Seconds $ProbeDelaySeconds
-        }
+    return [pscustomobject]@{
+        AlreadyRunning = $false
+        StartedNow = $true
     }
-
-    $global:LASTEXITCODE = 0
-    return $false
 }
 
 function Register-DockerDesktopDeferredStart {
@@ -310,11 +280,14 @@ else {
 
         throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.DockerDesktopPackageId, $dockerInstallResult.ExitCode)
     }
+
+    Refresh-SessionPath
 }
 
-Refresh-SessionPath
-Ensure-MachinePathEntry -Entry ([string]$taskConfig.DockerMachinePathEntry)
-Refresh-SessionPath
+$machinePathChanged = Ensure-MachinePathEntry -Entry ([string]$taskConfig.DockerMachinePathEntry)
+if ($machinePathChanged) {
+    Refresh-SessionPath
+}
 
 if (Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue) {
     Set-Service -Name ([string]$taskConfig.DockerServiceName) -StartupType Automatic
@@ -356,15 +329,10 @@ else {
     throw ("docker --version did not complete successfully (exit={0})." -f $dockerVersionResult.ExitCode)
 }
 
-Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
-if (-not (Wait-DockerDaemonReady `
-    -DockerExe "docker" `
-    -ProbeAttempts ([int]$taskConfig.DockerDaemonProbeAttempts) `
-    -ProbeDelaySeconds ([int]$taskConfig.DockerDaemonProbeDelaySeconds) `
-    -CommandTimeoutSeconds ([int]$taskConfig.DockerDaemonReadyTimeoutSeconds))) {
+$dockerDesktopLaunchState = Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
+if ($null -ne $dockerDesktopLaunchState -and [bool]$dockerDesktopLaunchState.StartedNow) {
     Register-DockerDesktopDeferredStart -DockerDesktopExe $dockerDesktopExe
-    Write-Warning "Docker Desktop engine is not expected to become fully ready in every noninteractive SSH session. A RunOnce start was registered for the next interactive sign-in."
-    Write-Host "docker-step-deferred: interactive-sign-in-required"
+    Write-Host "docker-step-deferred: interactive-sign-in-registered"
 }
 
 $global:LASTEXITCODE = 0

@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.290] - 2026-03-12
+
+### Changed
+- Completed a second Windows `vm-update` performance-tuning pass focused on the remaining slow paths from live perf logs, using bounded noninteractive behavior instead of repeated waits and retries.
+- Reworked `114-install-docker-desktop.ps1` again so already-installed Docker Desktop no longer burns time on daemon retry probes inside SSH sessions. The task now verifies the client, starts Docker Desktop once, and immediately registers an interactive `RunOnce` start instead of retrying engine readiness in a noninteractive guest session.
+- Reworked `121-install-whatsapp-system.ps1` so it checks fast local Store-registration evidence before expensive `winget list` calls and short-circuits immediately when a deferred `RunOnce` install is already registered, preventing the same failed Store install attempt from being repeated on every update run.
+- Shortened the registry-hive unload waits in `10001-configure-apps-startup.ps1` and `10099-capture-snapshot-health.ps1`, and shortened the Task Manager / Explorer settle waits in `10003-configure-ux-windows.ps1`, keeping those tasks bounded without retry-heavy idle time.
+- Updated the Windows smoke contract so Docker Desktop is now validated against the new bounded noninteractive deferred-start model rather than the retired daemon-probe loop.
+
+### Performance
+- Revalidated live Windows behavior on `rg-examplevm-sec1-g1/examplevm` and confirmed concrete improvements: `114-install-docker-desktop` dropped from about `16.2s` to about `3.2s`, `121-install-whatsapp-system` dropped from about `9.8s` to about `3.5s` on deferred reruns, `10099-capture-snapshot-health` dropped from about `9.8s` to about `6.1s`, and the full `vm-update` step dropped from about `234.7s` to about `198.0s`.
+
+### Tests
+- Revalidated live Windows task behavior with targeted `exec --update-task=114`, `121`, `10003`, `10001`, and `10099` runs plus a full `update --single-step=vm-update --auto --windows --perf` pass on `rg-examplevm-sec1-g1/examplevm`.
+- Revalidated the non-live gate with `tests/powershell-compatibility-check.ps1` and `tests/az-vm-smoke-tests.ps1`.
+
 ## [2026.3.12.288] - 2026-03-12
 
 ### Added

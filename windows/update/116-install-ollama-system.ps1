@@ -13,11 +13,15 @@ $taskConfig = [ordered]@{
     InstallerCommandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState|Docker\.DockerDesktop|Ollama\.Ollama|Microsoft Teams|microsoft\.azd|windscribe|whatsapp|anydesk|vscode'
     InstallerNameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
     WingetInstallTimeoutSeconds = 600
-    OllamaApiWaitTimeoutSeconds = 90
+    OllamaApiWaitTimeoutSeconds = 35
     OllamaApiRetryCount = 2
-    OllamaApiRetryBackoffSeconds = 10
-    OllamaServeEarlyExitCheckSeconds = 5
-    InstallerSettleTimeoutSeconds = 30
+    OllamaApiRetryBackoffSeconds = 2
+    OllamaServeEarlyExitCheckSeconds = 1
+    InstallerSettleTimeoutSeconds = 8
+    InstallerFastProceedSeconds = 2
+    OllamaApiProbeTimeoutSeconds = 2
+    OllamaApiProbeDelayMilliseconds = 1000
+    OllamaServeGraceTimeoutSeconds = 8
     LogTailLineCount = 12
 }
 
@@ -92,17 +96,48 @@ function Wait-OllamaApiReady {
         [int]$TimeoutSeconds = 90
     )
 
+    $probeTimeoutSeconds = [Math]::Max(1, [int]$taskConfig.OllamaApiProbeTimeoutSeconds)
+    $probeDelayMilliseconds = [Math]::Max(250, [int]$taskConfig.OllamaApiProbeDelayMilliseconds)
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline) {
-        $version = Get-OllamaApiVersion -TimeoutSeconds 5
+        $version = Get-OllamaApiVersion -TimeoutSeconds $probeTimeoutSeconds
         if (-not [string]::IsNullOrWhiteSpace([string]$version)) {
             return [string]$version
         }
 
-        Start-Sleep -Seconds 2
+        Start-Sleep -Milliseconds $probeDelayMilliseconds
     }
 
     return ''
+}
+
+function Test-TcpPortReachable {
+    param(
+        [string]$Host = '127.0.0.1',
+        [int]$Port = 11434,
+        [int]$TimeoutMilliseconds = 1000
+    )
+
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $asyncResult = $client.BeginConnect($Host, $Port, $null, $null)
+        if (-not $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds)) {
+            return $false
+        }
+
+        $client.EndConnect($asyncResult)
+        return $client.Connected
+    }
+    catch {
+        return $false
+    }
+    finally {
+        try {
+            $client.Close()
+        }
+        catch {
+        }
+    }
 }
 
 function Get-StaleInstallerProcesses {
@@ -182,17 +217,31 @@ function Stop-StaleInstallerProcesses {
 
 function Wait-InstallerProcessesSettled {
     param(
-        [int]$TimeoutSeconds = 30
+        [int]$TimeoutSeconds = 30,
+        [string]$OllamaExe = ''
     )
 
     if ($TimeoutSeconds -lt 5) {
         $TimeoutSeconds = 5
     }
 
+    $fastProceedSeconds = [Math]::Max(1, [int]$taskConfig.InstallerFastProceedSeconds)
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline) {
         $activeInstallers = @(Get-StaleInstallerProcesses)
         if (@($activeInstallers).Count -eq 0) {
+            return $true
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace([string]$OllamaExe) -and (Test-Path -LiteralPath $OllamaExe)) {
+            Write-Host ("Waiting for installer descendants to settle before Ollama readiness check: {0}" -f (Format-InstallerProcessSummary -Processes $activeInstallers))
+            Start-Sleep -Seconds $fastProceedSeconds
+            $stillActiveInstallers = @(Get-StaleInstallerProcesses)
+            if (@($stillActiveInstallers).Count -gt 0) {
+                Write-Host ("Proceeding with Ollama readiness while installer descendants finish cleanup: {0}" -f (Format-InstallerProcessSummary -Processes $stillActiveInstallers))
+                return $false
+            }
+
             return $true
         }
 
@@ -372,6 +421,30 @@ function Get-OllamaServeFailureDetail {
     return ($parts -join '; ')
 }
 
+function Test-OllamaServeListeningHint {
+    param(
+        [AllowNull()]
+        [object]$ServeLaunch
+    )
+
+    if ($null -eq $ServeLaunch) {
+        return $false
+    }
+
+    foreach ($path in @([string]$ServeLaunch.StdoutLog, [string]$ServeLaunch.StderrLog)) {
+        $tailText = Get-LogTailText -Path $path -LineCount ([int]$taskConfig.LogTailLineCount)
+        if ([string]::IsNullOrWhiteSpace([string]$tailText)) {
+            continue
+        }
+
+        if ($tailText.IndexOf(("Listening on 127.0.0.1:{0}" -f [int]$taskConfig.OllamaApiPort), [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function Ensure-OllamaApiReady {
     param(
         [Parameter(Mandatory = $true)]
@@ -397,6 +470,16 @@ function Ensure-OllamaApiReady {
             $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds ([int]$taskConfig.OllamaApiWaitTimeoutSeconds)
             if (-not [string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
                 break
+            }
+
+            $listeningHintPresent = Test-OllamaServeListeningHint -ServeLaunch $serveLaunch
+            $portReachable = Test-TcpPortReachable -Host '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
+            if (($listeningHintPresent -or $portReachable) -and $null -ne $serveLaunch.Process -and -not $serveLaunch.Process.HasExited) {
+                Write-Host "Ollama service signalled local readiness without an immediate /api/version response. Allowing one short grace wait before a restart."
+                $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds ([int]$taskConfig.OllamaServeGraceTimeoutSeconds)
+                if (-not [string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
+                    break
+                }
             }
 
             $failureDetail = Get-OllamaServeFailureDetail -ServeLaunch $serveLaunch
@@ -465,10 +548,10 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 Stop-StaleInstallerProcesses -CurrentPackageId ([string]$taskConfig.OllamaPackageId) | Out-Null
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.OllamaPackageId)
+Write-Host ("Running: winget install -e --id {0} --no-upgrade --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.OllamaPackageId)
 $wingetResult = Invoke-ProcessWithTimeout `
     -FilePath $wingetExe `
-    -ArgumentList @('install', '--id', ([string]$taskConfig.OllamaPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+    -ArgumentList @('install', '-e', '--id', ([string]$taskConfig.OllamaPackageId), '--no-upgrade', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
     -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
     -Label 'winget-install-ollama-system'
 $wingetExit = [int]$wingetResult.ExitCode
@@ -484,12 +567,12 @@ if ($wingetExit -eq -1978335189) {
 }
 
 Refresh-SessionPath
-Wait-InstallerProcessesSettled -TimeoutSeconds ([int]$taskConfig.InstallerSettleTimeoutSeconds) | Out-Null
-
 $ollamaExe = Resolve-OllamaExe
 if ([string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
     throw "ollama executable was not found after install."
 }
+
+Wait-InstallerProcessesSettled -TimeoutSeconds ([int]$taskConfig.InstallerSettleTimeoutSeconds) -OllamaExe $ollamaExe | Out-Null
 
 Write-Host "Resolved Ollama executable: $ollamaExe"
 & $ollamaExe --version

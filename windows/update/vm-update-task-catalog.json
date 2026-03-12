@@ -23,14 +23,14 @@
       "taskType": "normal",
       "priority": 101,
       "enabled": true,
-      "timeout": 37
+      "timeout": 180
     },
     {
       "name": "102-install-git-system",
       "taskType": "normal",
       "priority": 102,
       "enabled": true,
-      "timeout": 131
+      "timeout": 240
     },
     {
       "name": "103-install-python-system",

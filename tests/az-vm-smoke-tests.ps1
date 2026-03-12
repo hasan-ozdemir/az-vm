@@ -1022,6 +1022,85 @@ Invoke-Test -Name "VM create security args are omitted for existing VMs" -Action
     }
 }
 
+Invoke-Test -Name "VM create step tolerates a transient non-zero create when the new VM appears after probing" -Action {
+    $script:VmCreateProbeCount = 0
+    $script:VmCreateDetailedShowCalled = $false
+    $script:VmCreateActionCalled = $false
+
+    try {
+        function Show-AzVmStepFirstUseValues { param([string]$StepLabel, [hashtable]$Context, [string[]]$Keys, [hashtable]$ExtraValues) }
+        function Invoke-TrackedAction {
+            param([string]$Label, [scriptblock]$Action)
+            & $Action
+        }
+        function Invoke-AzVmPostDeployFeatureEnablement {
+            param([hashtable]$Context, [switch]$VmCreatedThisRun)
+            return [pscustomobject]@{
+                HibernationAttempted = $false
+                HibernationEnabled = $false
+                HibernationMessage = ''
+                NestedAttempted = $false
+                NestedEnabled = $false
+                NestedMessage = ''
+            }
+        }
+        function Test-AzVmAzResourceExists {
+            param([string[]]$AzArgs)
+            $script:VmCreateProbeCount++
+            return $true
+        }
+        function az {
+            $line = @($args) -join ' '
+            if ($line -match [regex]::Escape('vm list')) {
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+            if ($line -match [regex]::Escape('--query id')) {
+                $global:LASTEXITCODE = 0
+                return '/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/virtualMachines/samplevm'
+            }
+            if ($line -match [regex]::Escape('vm show -g rg-samplevm-ate1-g1 -n samplevm -d')) {
+                $script:VmCreateDetailedShowCalled = $true
+                $global:LASTEXITCODE = 0
+                return '{"id":"/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/virtualMachines/samplevm"}'
+            }
+
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        $result = Invoke-AzVmVmCreateStep -Context @{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        } -ExecutionMode 'default' -CreateVmAction {
+            $script:VmCreateActionCalled = $true
+            $global:LASTEXITCODE = 1
+            return ''
+        }
+
+        Assert-True -Condition $script:VmCreateActionCalled -Message 'VM create step must run the create action.'
+        Assert-True -Condition ($script:VmCreateProbeCount -ge 1) -Message 'VM create step must probe for a VM that may have landed after a non-zero create result.'
+        Assert-True -Condition $script:VmCreateDetailedShowCalled -Message 'VM create step must recover through az vm show -d after the VM appears.'
+        Assert-True -Condition ([string]$result.VmId -eq '/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/virtualMachines/samplevm') -Message 'VM create step must keep the recovered VM id.'
+        Assert-True -Condition ([bool]$result.VmCreateInvoked) -Message 'VM create step must still report the create action as invoked.'
+        Assert-True -Condition ([bool]$result.VmCreatedThisRun) -Message 'VM create step must classify the recovered VM as newly created.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Show-AzVmStepFirstUseValues',
+            'Invoke-TrackedAction',
+            'Invoke-AzVmPostDeployFeatureEnablement',
+            'Test-AzVmAzResourceExists',
+            'az'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name VmCreateProbeCount -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name VmCreateDetailedShowCalled -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name VmCreateActionCalled -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-samplevm-ate1-g1' }
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-samplevm-ate1-g1'; windows = $true }
@@ -2389,8 +2468,8 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $expectedTrackedTimeouts = [ordered]@{
         '01-bootstrap-winget-system' = 70
         '02-check-install-chrome' = 128
-        '101-install-powershell-core' = 37
-        '102-install-git-system' = 131
+        '101-install-powershell-core' = 180
+        '102-install-git-system' = 240
         '103-install-python-system' = 105
         '104-install-node-system' = 27
         '105-install-azure-cli' = 139
@@ -2741,8 +2820,8 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
-    Assert-True -Condition ($taskScript -like '*DockerDaemonProbeAttempts = 2*') -Message 'Docker Desktop task must keep the daemon probe count explicitly bounded.'
-    Assert-True -Condition ($taskScript -like '*DockerDaemonProbeDelaySeconds = 3*') -Message 'Docker Desktop task must keep the daemon probe delay explicitly bounded.'
+    Assert-True -Condition ($taskScript -like '*docker-step-deferred: interactive-sign-in-registered*') -Message 'Docker Desktop task must explicitly defer engine readiness to interactive sign-in instead of retrying long noninteractive daemon probes.'
+    Assert-True -Condition (-not ($taskScript -like '*Wait-DockerDaemonReady*')) -Message 'Docker Desktop task must not keep the old daemon probe retry loop.'
     Assert-True -Condition (($taskScript.IndexOf('docker info', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Docker Desktop task must not block on docker info during noninteractive update runs.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
 }
@@ -2831,16 +2910,15 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
     Assert-True -Condition ($copyUserSettingsBody -like '*Desktop*') -Message "Copy user settings task must explicitly copy required profile roots such as Desktop."
     Assert-True -Condition ($copyUserSettingsBody -like '*Documents*') -Message "Copy user settings task must explicitly copy required profile roots such as Documents."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AllowSkipOnAccessOrInUseError*') -Message "Copy user settings task must mark best-effort profile branches as skippable on ACL or in-use failures."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Skipping best-effort copy*') -Message "Copy user settings task must log best-effort copy skips clearly."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Downloads*') -Message "Copy user settings task must explicitly copy required profile roots such as Downloads."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Links*') -Message "Copy user settings task must explicitly copy required profile roots such as Links."
     Assert-True -Condition ($copyUserSettingsBody -like '*desktop.ini*') -Message "Copy user settings task must exclude desktop.ini from file copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Thumbs.db*') -Message "Copy user settings task must exclude Thumbs.db from file copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Microsoft\Windows\WebCacheLock.dat*') -Message "Copy user settings task must exclude the locked WebCacheLock.dat path from local profile copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Ignoring locked WebCacheLock.dat*') -Message "Copy user settings task must treat the locked WebCacheLock.dat file as a non-fatal skip."
     Assert-True -Condition ($copyUserSettingsBody -like '*Assert-RequiredRelativePathCopied*') -Message "Copy user settings task must validate that required profile roots were copied."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Application Data*') -Message "Copy user settings task must deterministically skip blocker compatibility-alias roots such as Application Data."
-    Assert-True -Condition ($copyUserSettingsBody -like '*source reparse-point*') -Message "Copy user settings task must skip required profile aliases that resolve through source reparse points."
-    Assert-True -Condition ($copyUserSettingsBody -like '*root reparse-point*') -Message "Copy user settings task must skip root reparse-point aliases instead of treating them as copy failures."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf('AppData\LocalLow', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not spend time copying LocalLow."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf('Application Data', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old root blocker scan."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf('root reparse-point', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old broad root reparse scan."
     Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Network*') -Message "Copy user settings task must exclude Ollama WebView network state from roaming copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Safe Browsing Network*') -Message "Copy user settings task must exclude Ollama WebView safe-browsing cookie state from roaming copies."

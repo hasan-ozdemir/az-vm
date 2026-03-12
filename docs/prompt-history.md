@@ -4809,3 +4809,15 @@ Please run `--vm-action=hibernate-stop` now and make sure it works. Then record 
 **Assistant Summary**
 
 Ran a live end-to-end validation of `az-vm do --vm-action=hibernate-stop` against `rg-examplevm-sec1-g1/examplevm`. I first confirmed that the VM was running and that `az-vm ssh --test` passed, then executed `hibernate-stop` successfully through the repo-managed pyssh path. The guest accepted `shutdown /h /f`, SSH closed, and the VM moved from `started` through `VM stopping` into `stopped` without Azure deallocation. I then started the VM again, confirmed that final VM status returned to `started`, revalidated SSH test access, and pulled recent guest `Kernel-Power` events showing that the system entered sleep and later resumed. This prompt-history entry was added as a documentation-only exception record for the live validation turn.
+
+### 2026-03-12 17:44 TRT
+
+**User Prompt**
+
+````text
+Please optimize the remaining long-running Windows vm-update tasks too. Use the latest live logs, research better techniques deeply on the web, and go after the steps that wait longer than necessary so the update flow finishes on time without retry-heavy behavior.
+````
+
+**Assistant Summary**
+
+Completed a second live-backed Windows `vm-update` performance-tuning pass. I kept the previous `copy-settings-user`, global npm, and Ollama optimizations, then focused on the remaining slow paths from fresh live perf logs. `114-install-docker-desktop.ps1` was simplified so it no longer retries Docker daemon readiness inside a noninteractive SSH session; it now verifies the Docker client, starts Docker Desktop once, and immediately registers an interactive `RunOnce` start. `121-install-whatsapp-system.ps1` now prefers fast local Store-registration checks and short-circuits immediately when a deferred `RunOnce` install is already registered, so the same failing noninteractive Store install is not retried every update run. I also shortened the registry-hive unload waits in `10001-configure-apps-startup.ps1` and `10099-capture-snapshot-health.ps1`, reduced the UX settle waits in `10003-configure-ux-windows.ps1`, updated the Docker smoke contract to match the new bounded deferred-start model, and revalidated the result with live targeted `exec` runs plus a full `update --single-step=vm-update --auto --windows --perf` pass on `rg-examplevm-sec1-g1/examplevm`. The final live measurements showed the full `vm-update` step drop from about `234.7s` to about `198.0s`, with `114-install-docker-desktop` dropping to about `3.2s`, `121-install-whatsapp-system` to about `3.5s` on deferred reruns, and `10099-capture-snapshot-health` to about `6.1s`.

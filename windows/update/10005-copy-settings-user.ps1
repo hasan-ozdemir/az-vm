@@ -478,40 +478,13 @@ function Get-ExistingRobocopyPathList {
     return @($paths)
 }
 
-function Test-CopyFailureIsAccessOrInUse {
-    param([string]$DetailText)
-
-    $normalized = [string]$DetailText
-    if ([string]::IsNullOrWhiteSpace([string]$normalized)) {
-        return $false
-    }
-
-    $normalized = $normalized.ToLowerInvariant()
-    foreach ($pattern in @(
-        'error 5',
-        'access is denied',
-        'permission denied',
-        'error 32',
-        'cannot access the file',
-        'being used by another process',
-        'sharing violation'
-    )) {
-        if ($normalized.Contains([string]$pattern)) {
-            return $true
-        }
-    }
-
-    return $false
-}
-
 function Invoke-RobocopyBranch {
     param(
         [string]$SourcePath,
         [string]$TargetPath,
         [string[]]$ExcludedDirectories = @(),
         [string[]]$ExcludedFiles = @(),
-        [string]$Label,
-        [switch]$AllowSkipOnAccessOrInUseError
+        [string]$Label
     )
 
     if (-not (Test-Path -LiteralPath $SourcePath)) {
@@ -592,12 +565,6 @@ function Invoke-RobocopyBranch {
             return
         }
 
-        if ($AllowSkipOnAccessOrInUseError -and (Test-CopyFailureIsAccessOrInUse -DetailText $detailText)) {
-            Write-Warning ("Skipping best-effort copy for {0} because the source contains ACL-restricted or in-use content." -f $Label)
-            Write-Detail ("copy-settings-user-file-skip: {0} access-or-in-use" -f $Label)
-            return
-        }
-
         if ([string]::IsNullOrWhiteSpace([string]$detailText)) {
             throw ("robocopy failed for {0} with exit code {1}." -f $Label, $exitCode)
         }
@@ -615,8 +582,7 @@ function Invoke-ProfileRelativeCopy {
         [string]$RelativePath,
         [string]$Label,
         [string[]]$ExcludedDirectories = @(),
-        [string[]]$ExcludedFiles = @(),
-        [switch]$AllowSkipOnAccessOrInUseError
+        [string[]]$ExcludedFiles = @()
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$RelativePath)) {
@@ -643,25 +609,13 @@ function Invoke-ProfileRelativeCopy {
             -TargetPath $targetPath `
             -ExcludedDirectories $ExcludedDirectories `
             -ExcludedFiles $ExcludedFiles `
-            -Label $Label `
-            -AllowSkipOnAccessOrInUseError:$AllowSkipOnAccessOrInUseError
+            -Label $Label
         return
     }
 
     Ensure-AzVmDirectory -Path (Split-Path -Path $targetPath -Parent)
-    try {
-        Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force -ErrorAction Stop
-        Write-Detail ("copy-settings-user-file-ok: {0}" -f $Label)
-    }
-    catch {
-        if ($AllowSkipOnAccessOrInUseError -and (Test-CopyFailureIsAccessOrInUse -DetailText $_.Exception.Message)) {
-            Write-Warning ("Skipping best-effort copy for {0} because the source file is ACL-restricted or in use." -f $Label)
-            Write-Detail ("copy-settings-user-file-skip: {0} access-or-in-use" -f $Label)
-            return
-        }
-
-        throw
-    }
+    Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force -ErrorAction Stop
+    Write-Detail ("copy-settings-user-file-ok: {0}" -f $Label)
 }
 
 function Test-UserProcessesRunning {
@@ -1023,7 +977,7 @@ function Invoke-ProfileFileCopy {
     $targetDesktopPath = Join-Path $TargetProfilePath 'Desktop'
     Ensure-AzVmDirectory -Path $targetDesktopPath
     Clear-DesktopEntries -DesktopPath $targetDesktopPath
-    Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath 'AppData\Roaming' -Label ($Label + ' roaming') -ExcludedDirectories @(
+    $roamingExcludedDirectories = @(
         'Microsoft\Credentials',
         'Microsoft\Protect',
         'Microsoft\Vault',
@@ -1031,7 +985,24 @@ function Invoke-ProfileFileCopy {
         'ollama app.exe\EBWebView\Default\Network',
         'ollama app.exe\EBWebView\Default\Safe Browsing Network',
         'npm-cache'
-    ) -ExcludedFiles @(
+    )
+
+    $targetNpmRoot = Join-Path $TargetProfilePath 'AppData\Roaming\npm'
+    $targetNpmReady = (
+        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'codex.cmd')) -and
+        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'gemini.cmd')) -and
+        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'copilot.cmd'))
+    )
+    if ([string]::Equals([string]$Label, 'default-profile', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $roamingExcludedDirectories += 'npm'
+        Write-Detail 'copy-settings-user-file-skip: default-profile roaming npm'
+    }
+    elseif ($targetNpmReady) {
+        $roamingExcludedDirectories += 'npm'
+        Write-Detail ("copy-settings-user-file-skip: {0} roaming npm already-synchronized" -f $Label)
+    }
+
+    Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath 'AppData\Roaming' -Label ($Label + ' roaming') -ExcludedDirectories @($roamingExcludedDirectories) -ExcludedFiles @(
         'desktop.ini',
         'Thumbs.db',
         'Microsoft\Windows\WebCacheLock.dat',
@@ -1075,102 +1046,19 @@ function Invoke-ProfileFileCopy {
         '*.lock'
     )
 
-    foreach ($requiredRelativePath in @(
+    $requiredRelativePaths = @(
         'Desktop',
         'Documents',
         'Favorites',
         'Videos',
         'Pictures',
-        'Contacts',
-        'Cookies',
         'Downloads',
         'Links',
-        'Music',
-        'Recent',
-        'Searches',
-        'SendTo',
-        'Source'
-    )) {
-        Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath $requiredRelativePath -Label ($Label + ' ' + $requiredRelativePath)
-    }
-
-    if (-not [string]::Equals([string]$Label, 'default-profile', [System.StringComparison]::OrdinalIgnoreCase)) {
-        Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath 'AppData\LocalLow' -Label ($Label + ' locallow') -ExcludedDirectories @(
-        'Temp'
-    ) -ExcludedFiles @(
-        'desktop.ini',
-        'Thumbs.db',
-        'NTUSER.DAT*',
-        'UsrClass.dat*',
-        '*.log',
-        '*.etl',
-        '*.lock'
-        ) -AllowSkipOnAccessOrInUseError
-    }
-    else {
-        Write-Detail 'copy-settings-user-file-skip: default-profile locallow'
-    }
-
-    $handledRootNames = @(
-        'AppData',
-        'Desktop',
-        'Documents',
-        'Favorites',
-        'Videos',
-        'Pictures',
-        'Contacts',
-        'Cookies',
-        'Downloads',
-        'Links',
-        'Music',
-        'Recent',
-        'Searches',
-        'SendTo',
-        'Source',
-        'NTUSER.DAT',
-        'ntuser.dat.LOG1',
-        'ntuser.dat.LOG2',
-        'ntuser.ini'
+        'Music'
     )
-    $handledRootSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($handledRootName in @($handledRootNames)) {
-        $null = $handledRootSet.Add([string]$handledRootName)
-    }
-    $blockedBestEffortRootNames = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
-    foreach ($blockedRootName in @(
-        'Application Data',
-        'Local Settings'
-    )) {
-        $null = $blockedBestEffortRootNames.Add([string]$blockedRootName)
-    }
 
-    foreach ($rootItem in @(Get-ChildItem -LiteralPath $SourceProfilePath -Force -ErrorAction SilentlyContinue)) {
-        $rootName = [string]$rootItem.Name
-        if ($handledRootSet.Contains($rootName)) {
-            continue
-        }
-
-        if ($rootName -like 'NTUSER.DAT*' -or $rootName -like 'UsrClass.dat*') {
-            continue
-        }
-
-        if ($blockedBestEffortRootNames.Contains($rootName)) {
-            Write-Detail ("copy-settings-user-file-skip: {0} root blocker => {1}" -f $Label, $rootName)
-            continue
-        }
-
-        $isReparsePoint = (($rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint)
-        if ($isReparsePoint) {
-            Write-Detail ("copy-settings-user-file-skip: {0} root reparse-point => {1}" -f $Label, $rootName)
-            continue
-        }
-
-        Invoke-ProfileRelativeCopy `
-            -SourceProfilePath $SourceProfilePath `
-            -TargetProfilePath $TargetProfilePath `
-            -RelativePath $rootName `
-            -Label ($Label + ' root ' + $rootName) `
-            -AllowSkipOnAccessOrInUseError
+    foreach ($requiredRelativePath in @($requiredRelativePaths)) {
+        Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath $requiredRelativePath -Label ($Label + ' ' + $requiredRelativePath)
     }
 }
 
@@ -1265,15 +1153,9 @@ try {
         'Favorites',
         'Videos',
         'Pictures',
-        'Contacts',
-        'Cookies',
         'Downloads',
         'Links',
-        'Music',
-        'Recent',
-        'Searches',
-        'SendTo',
-        'Source'
+        'Music'
     )) {
         Assert-RequiredRelativePathCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath $requiredRelativePath
         Assert-RequiredRelativePathCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath $requiredRelativePath

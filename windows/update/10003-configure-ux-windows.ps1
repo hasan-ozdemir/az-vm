@@ -271,7 +271,7 @@ function Start-TaskManagerProcess {
 function Test-TaskManagerLaunch {
     param(
         [string]$Phase,
-        [int]$HealthySeconds = 4
+        [int]$HealthySeconds = 2
     )
 
     Stop-TaskManagerProcesses
@@ -441,7 +441,7 @@ function Restart-ExplorerShell {
         }
     }
 
-    Start-Sleep -Seconds 2
+    Start-Sleep -Seconds 1
     if (Test-Path -LiteralPath $explorerExe) {
         try {
             Start-Process -FilePath $explorerExe | Out-Null
@@ -490,6 +490,51 @@ function Invoke-BestEffortStep {
     }
     catch {
         Add-Detail ("best-effort-warning:{0}:{1}" -f $Label, $_.Exception.Message)
+    }
+}
+
+function Test-HibernationEnabledState {
+    $hibernatePowerRoot = 'Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power'
+    try {
+        $item = Get-ItemProperty -Path $hibernatePowerRoot -Name 'HibernateEnabled' -ErrorAction Stop
+        if ([int]$item.HibernateEnabled -eq 1) {
+            return $true
+        }
+    }
+    catch {
+    }
+
+    return (Test-Path -LiteralPath 'C:\hiberfil.sys')
+}
+
+function Ensure-HibernationBestEffort {
+    $powercfgOutput = @()
+    $exitCode = 1
+    try {
+        & powercfg.exe /hibernate on 2>&1 | ForEach-Object { $powercfgOutput += [string]$_ }
+        $exitCode = [int]$LASTEXITCODE
+    }
+    catch {
+        if (-not [string]::IsNullOrWhiteSpace([string]$_.Exception.Message)) {
+            $powercfgOutput += [string]$_.Exception.Message
+        }
+
+        if ($null -ne $global:LASTEXITCODE) {
+            $exitCode = [int]$global:LASTEXITCODE
+        }
+    }
+
+    if ($exitCode -eq 0 -or (Test-HibernationEnabledState)) {
+        Add-Detail 'hibernate-enable-ok'
+        return
+    }
+
+    $detailText = [string]((@($powercfgOutput | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ' | ') -replace '\s+', ' ')
+    if ([string]::IsNullOrWhiteSpace([string]$detailText)) {
+        Add-Detail ("hibernate-enable-warning:powercfg-exit={0}" -f $exitCode)
+    }
+    else {
+        Add-Detail ("hibernate-enable-warning:powercfg-exit={0}:{1}" -f $exitCode, $detailText)
     }
 }
 
@@ -630,10 +675,7 @@ function Invoke-WindowsUxPerformanceTuning {
         Remove-KnownArtifactFiles -RootPaths $knownDesktopRoots
         Remove-SystemVolumeInformationBestEffort -DriveRoots $fixedDriveRoots
 
-        powercfg.exe /hibernate on
-        if ($LASTEXITCODE -ne 0) {
-            throw ("powercfg /hibernate on failed with exit code {0}." -f $LASTEXITCODE)
-        }
+        Ensure-HibernationBestEffort
 
         $flyoutPath = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\FlyoutMenuSettings'
         Set-AzVmRegistryValue -Path $flyoutPath -Name 'ShowHibernateOption' -Value 1 -Kind DWord
