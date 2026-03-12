@@ -4797,3 +4797,15 @@ Please add one more command parameter: rename `az-vm do --vm-action=hibernate` t
 **Assistant Summary**
 
 Split the old `do` hibernation contract into two explicit actions. The Azure-backed path is now `--vm-action=hibernate-deallocate`, while the new `--vm-action=hibernate-stop` uses the repo-managed pyssh flow to connect to the running guest, issue `shutdown /h /f`, and wait until the VM leaves the running state without treating Azure deallocation as success. I updated the runtime parser, interactive action picker, validation rules, CLI help, README examples, changelog, release notes, and smoke coverage so the retired `hibernate` action is rejected with a direct migration hint, then revalidated the full non-live gate with code-quality, documentation-contract, PowerShell compatibility, and smoke checks.
+
+### 2026-03-12 15:11 TRT
+
+**User Prompt**
+
+````text
+Please run `--vm-action=hibernate-stop` now and make sure it works. Then record this result in the prompt history.
+````
+
+**Assistant Summary**
+
+Ran a live end-to-end validation of `az-vm do --vm-action=hibernate-stop` against `rg-examplevm-sec1-g1/examplevm`. I first confirmed that the VM was running and that `az-vm ssh --test` passed, then executed `hibernate-stop` successfully through the repo-managed pyssh path. The guest accepted `shutdown /h /f`, SSH closed, and the VM moved from `started` through `VM stopping` into `stopped` without Azure deallocation. I then started the VM again, confirmed that final VM status returned to `started`, revalidated SSH test access, and pulled recent guest `Kernel-Power` events showing that the system entered sleep and later resumed. This prompt-history entry was added as a documentation-only exception record for the live validation turn.
