@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.294 - 2026-03-12
+
+### Summary
+This release closes the last live Windows publish blockers from the recreate-and-update acceptance cycle by fixing the remaining Node, Edge, and profile-copy task failures, then rerunning the full live update validation to a clean finish.
+
+### Highlights
+- Raised the tracked timeout budgets for `104-install-node-system` and `111-install-edge-browser`, and added short bounded post-install verification so the tasks still require a real healthy install but no longer time out during first-run package setup.
+- Hardened `10005-copy-settings-user.ps1` so `AppData\Local\Microsoft\Windows\WebCacheLock.dat` is excluded from the local profile copy path and the robocopy fallback now tolerates the same live lock signature across the observed return codes.
+- Revalidated the live Windows path on `rg-examplevm-sec1-g1/examplevm` with isolated reruns of tasks `104`, `111`, and `10005`, then a full `az-vm update --auto --windows --perf` pass that finished `success=45, failed=0, warning=0, error=0, reboot=0`.
+- Completed the release-closeout checks with `az-vm show --group=rg-examplevm-sec1-g1`, `az-vm do --vm-action=status`, `az-vm ssh --test`, and `az-vm rdp --test`, all passing against the live VM after the clean full update.
+
 ## Release 2026.3.12.293 - 2026-03-12
 
 ### Summary

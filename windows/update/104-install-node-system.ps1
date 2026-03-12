@@ -17,6 +17,52 @@ function Refresh-SessionPath {
     }
 }
 
+function Resolve-NodeCommand {
+    $command = Get-Command node -ErrorAction SilentlyContinue
+    if ($command -and -not [string]::IsNullOrWhiteSpace([string]$command.Source)) {
+        return [string]$command.Source
+    }
+
+    foreach ($candidate in @(
+        "C:\Program Files\nodejs\node.exe",
+        "C:\Program Files (x86)\nodejs\node.exe"
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [string]$candidate
+        }
+    }
+
+    return ""
+}
+
+function Wait-NodeCommand {
+    param(
+        [int]$TimeoutSeconds = 30,
+        [int]$PollSeconds = 2
+    )
+
+    if ($TimeoutSeconds -lt 1) {
+        $TimeoutSeconds = 1
+    }
+    if ($PollSeconds -lt 1) {
+        $PollSeconds = 1
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        Refresh-SessionPath
+        $resolvedNode = Resolve-NodeCommand
+        if (-not [string]::IsNullOrWhiteSpace([string]$resolvedNode)) {
+            return [string]$resolvedNode
+        }
+
+        Start-Sleep -Seconds $PollSeconds
+    }
+
+    Refresh-SessionPath
+    return [string](Resolve-NodeCommand)
+}
+
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path -LiteralPath $chocoExe)) {
     throw "choco was not found."
@@ -24,7 +70,8 @@ if (-not (Test-Path -LiteralPath $chocoExe)) {
 
 Refresh-SessionPath
 
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+$existingNode = Resolve-NodeCommand
+if ([string]::IsNullOrWhiteSpace([string]$existingNode)) {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $entries = @()
     if (-not [string]::IsNullOrWhiteSpace($machinePath)) {
@@ -39,9 +86,10 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Refresh-SessionPath
 }
 
-if (Get-Command node -ErrorAction SilentlyContinue) {
+$existingNode = Resolve-NodeCommand
+if (-not [string]::IsNullOrWhiteSpace([string]$existingNode)) {
     Write-Host "Existing Node.js installation is already healthy. Skipping choco install."
-    node --version
+    & $existingNode --version
     Write-Host "Update task completed: install-node-system"
     return
 }
@@ -51,11 +99,11 @@ if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
     throw "choco install nodejs-lts failed with exit code $LASTEXITCODE."
 }
 
-Refresh-SessionPath
-
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+Write-Host "Waiting for node command to become available after Chocolatey install..."
+$installedNode = Wait-NodeCommand -TimeoutSeconds 30 -PollSeconds 2
+if ([string]::IsNullOrWhiteSpace([string]$installedNode)) {
     throw "node command was not found after installation."
 }
 
-node --version
+& $installedNode --version
 Write-Host "Update task completed: install-node-system"

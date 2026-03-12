@@ -44,7 +44,7 @@
       "taskType": "normal",
       "priority": 104,
       "enabled": true,
-      "timeout": 27
+      "timeout": 240
     },
     {
       "name": "105-install-azure-cli",
@@ -93,7 +93,7 @@
       "taskType": "normal",
       "priority": 111,
       "enabled": true,
-      "timeout": 5
+      "timeout": 120
     },
     {
       "name": "112-install-azd-cli",

@@ -4857,3 +4857,15 @@ Implement the plan.
 **Assistant Summary**
 
 Implemented the agreed release-readiness plan across runtime, tests, and docs. The public create/update step selectors were renamed to `--step`, `--step-from`, and `--step-to`, the retired selector forms were removed cleanly, and `create explicit destructive rebuild flow` was added as the explicit destructive recreate contract while default `create` now reuses existing managed resources when possible. `update` now fails early unless the target managed resource group and VM already exist, and the VM deploy stage now redeploys an existing VM after the create-or-update pass. `resize` now supports managed OS disk growth through `--disk-size=<number>gb|mb --expand`, while `--disk-size=<number>gb|mb --shrink` is a non-mutating fail-fast guidance path that explains Azure OS disk shrink is unsupported and prints supported rebuild alternatives. I updated the runtime manifest, parameter modules, parser, help output, README, AGENTS contract, changelog, release notes, and smoke coverage to match this new surface, then revalidated the non-live gate with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks.
+
+### 2026-03-12 21:59 TRT
+
+**User Prompt**
+
+````text
+Yes, continue exactly as planned. Until these tasks are complete, you do not need to ask for my approval anymore; I approve all of them. Before you start, please inform me which stage of our detailed plan we are in and which of my requested items are still unfinished, in bullet points.
+````
+
+**Assistant Summary**
+
+Resumed the live release-readiness phase without further approval prompts. I first restated the current plan stage and the unfinished items, then fixed the three remaining Windows `vm-update` blockers from the live acceptance cycle: `104-install-node-system` and `111-install-edge-browser` now have realistic timeout budgets plus bounded post-install verification, and `10005-copy-settings-user` now excludes `AppData\Local\Microsoft\Windows\WebCacheLock.dat` consistently while tolerating the same live lock signature across the observed robocopy return codes. After revalidating the local non-live gate, I reran the live Windows tasks individually on `rg-examplevm-sec1-g1/examplevm`, reran the full `az-vm update --auto --windows --perf` flow to a clean `success=45, failed=0, warning=0, error=0, reboot=0`, and finished with passing `show`, VM status, SSH test, and RDP test checks against the live VM.

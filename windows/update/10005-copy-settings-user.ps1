@@ -559,7 +559,7 @@ function Invoke-RobocopyBranch {
 
         $normalizedDetail = [string]$detailText
         $normalizedDetail = $normalizedDetail.ToLowerInvariant()
-        if ($exitCode -eq 11 -and $normalizedDetail.Contains('webcachelock.dat') -and $normalizedDetail.Contains('error 32')) {
+        if ($exitCode -gt 7 -and $normalizedDetail.Contains('webcachelock.dat') -and $normalizedDetail.Contains('error 32')) {
             Write-Warning ("Ignoring locked WebCacheLock.dat while copying {0}; the live WebCache lock file is not required for the replicated profile." -f $Label)
             Write-Detail ("copy-settings-user-file-skip: {0} locked WebCacheLock.dat" -f $Label)
             return
@@ -1039,6 +1039,7 @@ function Invoke-ProfileFileCopy {
     ) -ExcludedFiles @(
         'desktop.ini',
         'Thumbs.db',
+        'Microsoft\Windows\WebCacheLock.dat',
         'NTUSER.DAT*',
         'UsrClass.dat*',
         '*.log',

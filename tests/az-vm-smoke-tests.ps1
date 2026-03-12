@@ -2989,14 +2989,14 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '101-install-powershell-core' = 180
         '102-install-git-system' = 240
         '103-install-python-system' = 105
-        '104-install-node-system' = 27
+        '104-install-node-system' = 240
         '105-install-azure-cli' = 139
         '106-install-gh-cli' = 11
         '107-install-7zip-system' = 13
         '108-install-sysinternals-suite' = 82
         '109-install-ffmpeg-system' = 34
         '110-install-vscode-system' = 104
-        '111-install-edge-browser' = 5
+        '111-install-edge-browser' = 120
         '112-install-azd-cli' = 88
         '113-install-wsl2-system' = 137
         '114-install-docker-desktop' = 1649

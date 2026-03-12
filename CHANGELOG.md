@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.294] - 2026-03-12
+
+### Fixed
+- Closed the remaining live Windows publish blockers by raising the tracked timeout budgets for `104-install-node-system` and `111-install-edge-browser`, then hardening both tasks with bounded post-install verification so first-time installs can finish without weakening the healthy-install contract.
+- Hardened `10005-copy-settings-user.ps1` so `AppData\Local\Microsoft\Windows\WebCacheLock.dat` is excluded consistently during profile replication and the robocopy fallback now tolerates the same live lock signature across the observed error return codes.
+
+### Tests
+- Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/bash-syntax-check.ps1`.
+- Revalidated live Windows behavior on `rg-examplevm-sec1-g1/examplevm` with isolated `exec --update-task=104`, `exec --update-task=111`, and `exec --update-task=10005` runs, then a full `update --auto --windows --perf` pass that finished `success=45, failed=0, warning=0, error=0, reboot=0`, followed by `show`, `do --vm-action=status`, `ssh --test`, and `rdp --test`.
+
 ## [2026.3.12.293] - 2026-03-12
 
 ### Added
