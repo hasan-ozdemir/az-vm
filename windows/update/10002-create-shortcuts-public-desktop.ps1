@@ -94,14 +94,29 @@ function Get-EmployeeEmailBaseName {
     return [string]($EmailAddress.Trim().Split('@')[0])
 }
 
-function Test-PersonalChromeShortcutName {
-    param([string]$ShortcutName)
+function ConvertTo-LowerInvariantText {
+    param([string]$Value)
 
-    return (-not [string]::IsNullOrWhiteSpace([string]$ShortcutName) -and $ShortcutName.IndexOf('Bireysel', [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ""
+    }
+
+    return [string]$Value.Trim().ToLowerInvariant()
+}
+
+function ConvertTo-TitleCaseShortcutText {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ""
+    }
+
+    $textInfo = [System.Globalization.CultureInfo]::InvariantCulture.TextInfo
+    return [string]$textInfo.ToTitleCase($Value.Trim().ToLowerInvariant())
 }
 
 if (Test-InvalidCompanyName -Value $companyName) {
-    throw "company_name is required for the Windows public desktop shortcut flow. Set company_name in .env before running 10002-create-shortcuts-public-desktop."
+    throw "company_name is required for the Windows business public desktop shortcut flow. Set company_name in .env before running 10002-create-shortcuts-public-desktop."
 }
 if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) {
     throw "employee_email_address is required for the Windows public desktop shortcut flow. Set employee_email_address in .env before running 10002-create-shortcuts-public-desktop."
@@ -114,25 +129,32 @@ $companyName = $companyName.Trim()
 $employeeEmailAddress = $employeeEmailAddress.Trim()
 $employeeFullName = $employeeFullName.Trim()
 $employeeEmailBaseName = Get-EmployeeEmailBaseName -EmailAddress $employeeEmailAddress
+$companyDisplayName = ConvertTo-TitleCaseShortcutText -Value $companyName
+$companyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $companyName
+$employeeEmailBaseName = ConvertTo-LowerInvariantText -Value $employeeEmailBaseName
 
 function Get-ChromeProfileDirectoryForShortcut {
-    param([string]$ShortcutName)
+    param(
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business'
+    )
 
-    if (Test-PersonalChromeShortcutName -ShortcutName $ShortcutName) {
+    if ([string]::Equals([string]$ProfileKind, 'personal', [System.StringComparison]::OrdinalIgnoreCase)) {
         return [string]$employeeEmailBaseName
     }
 
-    return [string]$companyName
+    return [string]$companyChromeProfileDirectory
 }
 
 function Get-ChromeArgsPrefix {
     param(
-        [string]$ShortcutName,
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business',
         [ValidateSet('remote','setup','bank')]
         [string]$Variant = 'remote'
     )
 
-    $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ShortcutName $ShortcutName
+    $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
     switch ([string]$Variant) {
         'setup' {
             return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
@@ -635,7 +657,11 @@ function New-ShortcutSpec {
         [int]$ShowCmd = 3,
         [bool]$RunAsAdmin = $true,
         [bool]$AllowMissingTargetPath = $false,
-        [string]$ValidationKind = "generic"
+        [string]$ValidationKind = "generic",
+        [string]$ProfileKind = "",
+        [string]$DestinationUrl = "",
+        [string[]]$CleanupAliases = @(),
+        [bool]$CleanupMatchTargetOnly = $false
     )
 
     return [pscustomobject]@{
@@ -649,6 +675,10 @@ function New-ShortcutSpec {
         RunAsAdmin = [bool]$RunAsAdmin
         AllowMissingTargetPath = [bool]$AllowMissingTargetPath
         ValidationKind = [string]$ValidationKind
+        ProfileKind = [string]$ProfileKind
+        DestinationUrl = [string]$DestinationUrl
+        CleanupAliases = @($CleanupAliases | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        CleanupMatchTargetOnly = [bool]$CleanupMatchTargetOnly
     }
 }
 
@@ -743,6 +773,137 @@ function Add-Spec {
     [void]$List.Add($Spec)
 }
 
+function New-ChromeShortcutSpec {
+    param(
+        [string]$Name,
+        [string]$Url,
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business',
+        [ValidateSet('remote','setup','bank')]
+        [string]$Variant = 'remote',
+        [string[]]$CleanupAliases = @()
+    )
+
+    return (New-ShortcutSpec `
+        -Name $Name `
+        -TargetPath $chromeTarget `
+        -Arguments ((Get-ChromeArgsPrefix -ProfileKind $ProfileKind -Variant $Variant) + ' "' + [string]$Url + '"') `
+        -IconLocation ($chromeTarget + ",0") `
+        -AllowMissingTargetPath $true `
+        -ValidationKind ("chrome-" + [string]$Variant) `
+        -ProfileKind $ProfileKind `
+        -DestinationUrl ([string]$Url) `
+        -CleanupAliases $CleanupAliases)
+}
+
+function Get-NormalizedShortcutNameKey {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ""
+    }
+
+    return ([regex]::Replace($Value.Trim().ToLowerInvariant(), '[^a-z0-9]+', ''))
+}
+
+function Get-NormalizedShortcutPath {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ""
+    }
+
+    return ([string]$Value).Trim().Trim('"').ToLowerInvariant()
+}
+
+function Get-NormalizedShortcutUrl {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ""
+    }
+
+    return [string]$Value.Trim().Trim('"').ToLowerInvariant()
+}
+
+function Get-ShortcutUrlFromArguments {
+    param([string]$Arguments)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Arguments)) {
+        return ""
+    }
+
+    $match = [regex]::Match([string]$Arguments, '(?i)"((?:https?://|chrome://)[^"]+)"')
+    if (-not $match.Success) {
+        return ""
+    }
+
+    return [string]$match.Groups[1].Value
+}
+
+function Test-ShortcutDetailsMatchManagedSpec {
+    param(
+        [pscustomobject]$Details,
+        [string]$ShortcutBaseName,
+        [pscustomobject]$Spec
+    )
+
+    if ($null -eq $Details -or $null -eq $Spec) {
+        return $false
+    }
+
+    $existingNameKey = Get-NormalizedShortcutNameKey -Value $ShortcutBaseName
+    $managedNameKey = Get-NormalizedShortcutNameKey -Value ([string]$Spec.Name)
+    if (-not [string]::IsNullOrWhiteSpace([string]$managedNameKey) -and [string]::Equals($existingNameKey, $managedNameKey, [System.StringComparison]::Ordinal)) {
+        return $true
+    }
+
+    $existingTargetPath = Get-NormalizedShortcutPath -Value ([string]$Details.TargetPath)
+    $managedTargetPath = Get-NormalizedShortcutPath -Value ([string]$Spec.TargetPath)
+    $existingArguments = [string]$Details.Arguments
+    $managedArguments = [string]$Spec.Arguments
+    $normalizedExistingUrl = Get-NormalizedShortcutUrl -Value (Get-ShortcutUrlFromArguments -Arguments $existingArguments)
+    $normalizedManagedUrl = Get-NormalizedShortcutUrl -Value ([string]$Spec.DestinationUrl)
+
+    foreach ($cleanupAlias in @($Spec.CleanupAliases)) {
+        if (-not [string]::Equals($existingNameKey, (Get-NormalizedShortcutNameKey -Value ([string]$cleanupAlias)), [System.StringComparison]::Ordinal)) {
+            continue
+        }
+
+        if ([string]::Equals($existingTargetPath, $managedTargetPath, [System.StringComparison]::Ordinal)) {
+            return $true
+        }
+
+        if (($Spec.ValidationKind -like 'chrome-*') -and [string]::Equals($existingTargetPath, (Get-NormalizedShortcutPath -Value $chromeTarget), [System.StringComparison]::Ordinal)) {
+            return $true
+        }
+    }
+
+    if ($Spec.ValidationKind -like 'chrome-*') {
+        if ([string]::Equals($existingTargetPath, (Get-NormalizedShortcutPath -Value $chromeTarget), [System.StringComparison]::Ordinal) -and
+            -not [string]::IsNullOrWhiteSpace([string]$normalizedExistingUrl) -and
+            [string]::Equals($normalizedExistingUrl, $normalizedManagedUrl, [System.StringComparison]::Ordinal)) {
+            return $true
+        }
+
+        return $false
+    }
+
+    if ([bool]$Spec.CleanupMatchTargetOnly -and
+        -not [string]::IsNullOrWhiteSpace([string]$managedTargetPath) -and
+        [string]::Equals($existingTargetPath, $managedTargetPath, [System.StringComparison]::Ordinal)) {
+        return $true
+    }
+
+    if (($Spec.ValidationKind -in @('store-appid', 'store-deeplink', 'explorer-shell')) -and
+        [string]::Equals($existingTargetPath, $managedTargetPath, [System.StringComparison]::Ordinal) -and
+        [string]::Equals(([string]$existingArguments).Trim(), ([string]$managedArguments).Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    return $false
+}
+
 function Resolve-IconLocation {
     param(
         [string]$PreferredPath,
@@ -767,7 +928,7 @@ $chromeExe = Resolve-CommandPath -CommandName "chrome.exe" -FallbackCandidates @
     "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 )
 $chromeTarget = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Chrome\Application\chrome.exe" -ResolvedPath $chromeExe -FallbackPath "C:\Program Files\Google\Chrome\Application\chrome.exe"
-$chromeSyncSetupCommand = ('/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"' -f $chromeTarget, $publicChromeUserDataDir, $companyName)
+$chromeSyncSetupCommand = ('/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"' -f $chromeTarget, $publicChromeUserDataDir, $companyChromeProfileDirectory)
 $controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
 $powershellExe = Resolve-CommandPath -CommandName "powershell.exe" -FallbackCandidates @("C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -880,34 +1041,34 @@ $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData
 $shortcutSpecs = New-Object 'System.Collections.Generic.List[object]'
 
 $socialWebShortcuts = @(
-    @{ Name = "s1LinkedIn Kurumsal"; Url = "https://tr.linkedin.com/company/exampleorg" },
-    @{ Name = "s2LinkedIn Bireysel"; Url = "https://linkedin.com/in/<social-handle>" },
-    @{ Name = "s3YouTube Kurumsal"; Url = "https://www.youtube.com/@exampleorg" },
-    @{ Name = "s4YouTube Bireysel"; Url = "https://www.youtube.com/@hasanozdemir8" },
-    @{ Name = "s5GitHub Kurumsal"; Url = "https://github.com/exampleorg" },
-    @{ Name = "s6GitHub Bireysel"; Url = "https://github.com/" },
-    @{ Name = "s7TikTok Kurumsal"; Url = "https://www.tiktok.com/@exampleorg" },
-    @{ Name = "s8TikTok Bireysel"; Url = "https://www.tiktok.com/@exampleorg" },
-    @{ Name = "s9Instagram Kurumsal"; Url = "https://instagram.com/exampleorg" },
-    @{ Name = "s10Instagram Bireysel"; Url = "https://instagram.com/hasanozdemirnet" },
-    @{ Name = "s11Facebook Kurumsal"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447" },
-    @{ Name = "s12Facebook Bireysel"; Url = "https://facebook.com/ozdemirhasan" },
-    @{ Name = "s13X-Twitter Kurumsal"; Url = "https://x.com/exampleorg" },
-    @{ Name = "s14X-Twitter Bireysel"; Url = "https://x.com/hasanozdemirnet" },
-    @{ Name = ("s15{0} Web" -f $companyName); Url = "https://www.exampleorg.com" },
-    @{ Name = ("s16{0} Blog" -f $companyName); Url = "https://www.exampleorg.com/blog" },
-    @{ Name = "s17SnapChat Kurumsal"; Url = "https://www.snapchat.com/@exampleorg" },
-    @{ Name = "s18Next Sosyal"; Url = "https://sosyal.teknofest.app/@exampleorg" }
+    @{ Name = "s1LinkedIn Business"; Url = "https://tr.linkedin.com/company/exampleorg"; ProfileKind = "business" },
+    @{ Name = "s2LinkedIn Personal"; Url = "https://linkedin.com/in/<social-handle>"; ProfileKind = "personal" },
+    @{ Name = "s3YouTube Business"; Url = "https://www.youtube.com/@exampleorg"; ProfileKind = "business" },
+    @{ Name = "s4YouTube Personal"; Url = "https://www.youtube.com/@hasanozdemir8"; ProfileKind = "personal" },
+    @{ Name = "s5GitHub Business"; Url = "https://github.com/exampleorg"; ProfileKind = "business" },
+    @{ Name = "s6GitHub Personal"; Url = "https://github.com/"; ProfileKind = "personal" },
+    @{ Name = "s7TikTok Business"; Url = "https://www.tiktok.com/@exampleorg"; ProfileKind = "business" },
+    @{ Name = "s8TikTok Personal"; Url = "https://www.tiktok.com/@exampleorg"; ProfileKind = "personal" },
+    @{ Name = "s9Instagram Business"; Url = "https://instagram.com/exampleorg"; ProfileKind = "business" },
+    @{ Name = "s10Instagram Personal"; Url = "https://instagram.com/hasanozdemirnet"; ProfileKind = "personal" },
+    @{ Name = "s11Facebook Business"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447"; ProfileKind = "business" },
+    @{ Name = "s12Facebook Personal"; Url = "https://facebook.com/ozdemirhasan"; ProfileKind = "personal" },
+    @{ Name = "s13X-Twitter Business"; Url = "https://x.com/exampleorg"; ProfileKind = "business" },
+    @{ Name = "s14X-Twitter Personal"; Url = "https://x.com/hasanozdemirnet"; ProfileKind = "personal" },
+    @{ Name = ("s15{0} Web" -f $companyDisplayName); Url = "https://www.exampleorg.com"; ProfileKind = "business" },
+    @{ Name = ("s16{0} Blog" -f $companyDisplayName); Url = "https://www.exampleorg.com/blog"; ProfileKind = "business" },
+    @{ Name = "s17SnapChat Business"; Url = "https://www.snapchat.com/@exampleorg"; ProfileKind = "business" },
+    @{ Name = "s18NextSosyal Business"; Url = "https://sosyal.teknofest.app/@exampleorg"; ProfileKind = "business" }
 )
 $bankShortcuts = @(
-    @{ Name = "b1GarantiBank Kurumsal"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr" },
-    @{ Name = "b2GarantiBank Bireysel"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr" },
-    @{ Name = "b3QnbBank Kurumsal"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true" },
-    @{ Name = "b4QnbBank Bireysel"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx" },
-    @{ Name = "b5AktifBank Kurumsal"; Url = "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR" },
-    @{ Name = "b6AktifBank Bireysel"; Url = "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR" },
-    @{ Name = "b7ZiraatBank Kurumsal"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp" },
-    @{ Name = "b8ZiraatBank Bireysel"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx" }
+    @{ Name = "b1GarantiBank Business"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr"; ProfileKind = "business" },
+    @{ Name = "b2GarantiBank Personal"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr"; ProfileKind = "personal" },
+    @{ Name = "b3QnbBank Business"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true"; ProfileKind = "business" },
+    @{ Name = "b4QnbBank Personal"; Url = "https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx"; ProfileKind = "personal" },
+    @{ Name = "b5AktifBank Business"; Url = "https://kurumsal.aktifbank.com.tr/default.aspx?lang=tr-TR"; ProfileKind = "business" },
+    @{ Name = "b6AktifBank Personal"; Url = "https://online.aktifbank.com.tr/default.aspx?lang=tr-TR"; ProfileKind = "personal" },
+    @{ Name = "b7ZiraatBank Business"; Url = "https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp"; ProfileKind = "business" },
+    @{ Name = "b8ZiraatBank Personal"; Url = "https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx"; ProfileKind = "personal" }
 )
 $developerWebShortcuts = @(
     @{ Name = "g1Apple Developer"; Url = "https://developer.apple.com/account" },
@@ -916,41 +1077,42 @@ $developerWebShortcuts = @(
     @{ Name = "g4Azure Portal"; Url = "https://portal.azure.com" }
 )
 $marketplaceWebShortcuts = @(
-    @{ Name = "m1Dijital Vergi Dairesi"; Url = "https://dijital.gib.gov.tr/portal/login" },
-    @{ Name = "r1Sahibinden Kurumsal"; Url = "https://secure.sahibinden.com/giris" },
-    @{ Name = "r2Sahibinden Bireysel"; Url = "https://www.sahibinden.com" },
-    @{ Name = "r3Letgo Kurumsal"; Url = "https://www.letgo.com" },
-    @{ Name = "r4Letgo Bireysel"; Url = "https://www.letgo.com" },
-    @{ Name = "r5Trendyol Kurumsal"; Url = "https://partner.trendyol.com" },
-    @{ Name = "r6Trendyol Bireysel"; Url = "https://www.trendyol.com/uyelik" },
-    @{ Name = "r7Amazon TR Kurumsal"; Url = "https://sellercentral.amazon.com.tr" },
-    @{ Name = "r8Amazon TR Bireysel"; Url = "https://www.amazon.com.tr/ap/signin" },
-    @{ Name = "r9HepsiBurada Kurumsal"; Url = "https://merchant.hepsiburada.com" },
-    @{ Name = "r10HepsiBurada Bireysel"; Url = "https://giris.hepsiburada.com" },
-    @{ Name = "r11N11 Kurumsal"; Url = "https://so.n11.com" },
-    @{ Name = "r12N11 Bireysel"; Url = "https://www.n11.com/giris-yap" },
-    @{ Name = "r13Çiçek Sepeti Kurumsal"; Url = "https://seller.ciceksepeti.com/giris" },
-    @{ Name = "r14Çiçek Sepeti Bireysel"; Url = "https://www.ciceksepeti.com/uye-girisi" },
-    @{ Name = "r15Pazarama Kurumsal"; Url = "https://isortagim.pazarama.com" },
-    @{ Name = "r16Pazarama Bireysel"; Url = "https://account.pazarama.com/giris" },
-    @{ Name = "r17PTT AVM Kurumsal"; Url = "https://merchant.pttavm.com/magaza-giris" },
-    @{ Name = "r18PTT AVM Bireysel"; Url = "https://www.pttavm.com" },
-    @{ Name = "r19Ozon Kurumsal"; Url = "https://seller.ozon.ru/app/registration/signin?locale=en" },
-    @{ Name = "r20Ozon Bireysel"; Url = "https://www-ozon-ru.translate.goog/?_x_tr_sl=ru&_x_tr_tl=en&_x_tr_hl=en&_x_tr_hist=true" },
-    @{ Name = "r21Getir Kurumsal"; Url = "https://panel.getircarsi.com/login" },
-    @{ Name = "r22Getir Bireysel"; Url = "https://getir.com" }
+    @{ Name = "m1Digital Tax Office"; Url = "https://dijital.gib.gov.tr/portal/login"; ProfileKind = "business" },
+    @{ Name = "r1Sahibinden Business"; Url = "https://secure.sahibinden.com/giris"; ProfileKind = "business" },
+    @{ Name = "r2Sahibinden Personal"; Url = "https://www.sahibinden.com"; ProfileKind = "personal" },
+    @{ Name = "r3Letgo Business"; Url = "https://www.letgo.com"; ProfileKind = "business" },
+    @{ Name = "r4Letgo Personal"; Url = "https://www.letgo.com"; ProfileKind = "personal" },
+    @{ Name = "r5Trendyol Business"; Url = "https://partner.trendyol.com"; ProfileKind = "business" },
+    @{ Name = "r6Trendyol Personal"; Url = "https://www.trendyol.com/uyelik"; ProfileKind = "personal" },
+    @{ Name = "r7Amazon TR Business"; Url = "https://sellercentral.amazon.com.tr"; ProfileKind = "business" },
+    @{ Name = "r8Amazon TR Personal"; Url = "https://www.amazon.com.tr/ap/signin"; ProfileKind = "personal" },
+    @{ Name = "r9HepsiBurada Business"; Url = "https://merchant.hepsiburada.com"; ProfileKind = "business" },
+    @{ Name = "r10HepsiBurada Personal"; Url = "https://giris.hepsiburada.com"; ProfileKind = "personal" },
+    @{ Name = "r11N11 Business"; Url = "https://so.n11.com"; ProfileKind = "business" },
+    @{ Name = "r12N11 Personal"; Url = "https://www.n11.com/giris-yap"; ProfileKind = "personal" },
+    @{ Name = "r13ÇiçekSepeti Business"; Url = "https://seller.ciceksepeti.com/giris"; ProfileKind = "business" },
+    @{ Name = "r14ÇiçekSepeti Personal"; Url = "https://www.ciceksepeti.com/uye-girisi"; ProfileKind = "personal" },
+    @{ Name = "r15Pazarama Business"; Url = "https://isortagim.pazarama.com"; ProfileKind = "business" },
+    @{ Name = "r16Pazarama Personal"; Url = "https://account.pazarama.com/giris"; ProfileKind = "personal" },
+    @{ Name = "r17PTTAVM Business"; Url = "https://merchant.pttavm.com/magaza-giris"; ProfileKind = "business" },
+    @{ Name = "r18PTTAVM Personal"; Url = "https://www.pttavm.com"; ProfileKind = "personal" },
+    @{ Name = "r19Ozon Business"; Url = "https://seller.ozon.ru/app/registration/signin?locale=en"; ProfileKind = "business" },
+    @{ Name = "r20Ozon Personal"; Url = "https://www-ozon-ru.translate.goog/?_x_tr_sl=ru&_x_tr_tl=en&_x_tr_hl=en&_x_tr_hist=true"; ProfileKind = "personal" },
+    @{ Name = "r21Getir Business"; Url = "https://panel.getircarsi.com/login"; ProfileKind = "business" },
+    @{ Name = "r22Getir Personal"; Url = "https://getir.com"; ProfileKind = "personal" }
 )
 $quickAccessWebShortcuts = @(
+    @{ Name = "q1SourTimes"; Url = "https://www.eksisozluk.com"; ProfileKind = "business" },
     @{ Name = "q2Spotify"; Url = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com" },
     @{ Name = "q3Netflix"; Url = "https://www.netflix.com/tr-en/login" },
-    @{ Name = "q4EDevlet"; Url = "https://www.turkiye.gov.tr" },
+    @{ Name = "q4eGovernment"; Url = "https://www.turkiye.gov.tr" },
     @{ Name = "q5Apple Account"; Url = "https://account.apple.com/sign-in" },
-    @{ Name = "q6AJet Uçak"; Url = "https://ajet.com" },
-    @{ Name = "q7TCDD Tren"; Url = "https://ebilet.tcddtasimacilik.gov.tr" },
-    @{ Name = "q8OBilet Otobüs"; Url = "https://www.obilet.com/?giris" }
+    @{ Name = "q6AJet Flights"; Url = "https://ajet.com" },
+    @{ Name = "q7TCDD Train"; Url = "https://ebilet.tcddtasimacilik.gov.tr" },
+    @{ Name = "q8OBilet Bus"; Url = "https://www.obilet.com/?giris" }
 )
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a1ChatGPT Web" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "a1ChatGPT Web" -Variant 'remote') + ' "https://chatgpt.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a1ChatGPT Web" -Url "https://chatgpt.com" -ProfileKind 'business' -Variant 'remote')
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $beMyEyesAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
@@ -958,9 +1120,9 @@ if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
 else {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments $beMyEyesStoreUri -IconLocation ($explorerExe + ",0") -ValidationKind "store-deeplink")
 }
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Kurumsal" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a5WhatsApp Bireysel" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "a5WhatsApp Bireysel" -Variant 'remote') + ' "https://web.whatsapp.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Business" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a5WhatsApp Personal" -Url "https://web.whatsapp.com" -ProfileKind 'personal' -Variant 'remote')
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("AnyDesk") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$windscribeExe)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $windscribeExe -AllowMissingTargetPath $true -ValidationKind "app")
@@ -973,11 +1135,11 @@ else {
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a9VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a10NVDA" -TargetPath $nvdaExe -Hotkey "Ctrl+Alt+N" -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Microsoft Edge") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a12Itunes" -TargetPath $itunesExe -AllowMissingTargetPath $true -ValidationKind "app")
 
 foreach ($spec in @($bankShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'bank') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-bank")
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind ([string]$spec.ProfileKind) -Variant 'bank')
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "c1Cmd" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile%" -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -ValidationKind "console")
@@ -989,18 +1151,18 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPa
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ("e1Mail {0}" -f $employeeEmailAddress) -TargetPath $cmdExe -Arguments ('/c start outlook.exe /select "outlook:\\{0}\\Inbox"' -f $employeeEmailAddress) -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
 
 foreach ($spec in @($developerWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind 'business' -Variant 'remote')
 }
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i1Internet Kurumsal" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "i1Internet Kurumsal" -Variant 'remote') + ' "https://www.exampleorg.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "i2Internet Bireysel" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "i2Internet Bireysel" -Variant 'remote') + ' "https://www.google.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i1Internet Business" -Url "https://www.exampleorg.com" -ProfileKind 'business' -Variant 'remote' -CleanupAliases @("Google Chrome", "Chrome"))
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i2Internet Personal" -Url "https://www.google.com" -ProfileKind 'personal' -Variant 'remote')
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k3Github Copilot CLI" -TargetPath $cmdExe -Arguments '/c cd /d %UserProfile% & %UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5' -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 
 foreach ($spec in @($marketplaceWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind ([string]$spec.ProfileKind) -Variant 'remote')
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "n1Notepad" -TargetPath "C:\Windows\System32\notepad.exe" -ValidationKind "app")
@@ -1019,11 +1181,12 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o5Power Point" -Tar
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o6OneNote" -TargetPath $oneNoteExe -AllowMissingTargetPath $true -ValidationKind "office")
 
 foreach ($spec in @($quickAccessWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    $profileKind = if ($spec.ContainsKey('ProfileKind')) { [string]$spec.ProfileKind } else { 'business' }
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind $profileKind -Variant 'remote')
 }
 
 foreach ($spec in @($socialWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ([string]$spec.Name) -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName ([string]$spec.Name) -Variant 'remote') + ' "' + [string]$spec.Url + '"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-web")
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind ([string]$spec.ProfileKind) -Variant 'remote')
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t1Git Bash" -TargetPath $gitBashExe -WorkingDirectory "%UserProfile%" -AllowMissingTargetPath $true -ValidationKind "console")
@@ -1047,11 +1210,11 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u2This PC" -TargetP
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u3Control Panel" -TargetPath $explorerExe -Arguments "shell:ControlPanelFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u7Network and Sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" -IconLocation ($controlExe + ",0") -ValidationKind "app")
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v1VS2022Com" -TargetPath $vs2022CommunityExe -WorkingDirectory (Split-Path -Path $vs2022CommunityExe -Parent) -IconLocation (Resolve-IconLocation -PreferredPath $vs2022CommunityExe -FallbackPath $powershellExe) -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v1VS2022Com" -TargetPath $vs2022CommunityExe -WorkingDirectory (Split-Path -Path $vs2022CommunityExe -Parent) -IconLocation (Resolve-IconLocation -PreferredPath $vs2022CommunityExe -FallbackPath $powershellExe) -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Visual Studio 2022") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments "-command ""&'%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd'""" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $cmdExe -Arguments $chromeSyncSetupCommand -IconLocation ($chromeTarget + ",0") -ValidationKind "chrome-setup")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z2Office365 Account Setup" -TargetPath $chromeTarget -Arguments ((Get-ChromeArgsPrefix -ShortcutName "z2Office365 Account Setup" -Variant 'setup') + ' "https://portal.office.com"') -IconLocation ($chromeTarget + ",0") -AllowMissingTargetPath $true -ValidationKind "chrome-setup")
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "z2Office365 Account Setup" -Url "https://portal.office.com" -ProfileKind 'business' -Variant 'setup')
 
 $managedShortcutNames = @($shortcutSpecs | ForEach-Object { [string]$_.Name })
 if (@($managedShortcutNames | Select-Object -Unique).Count -ne @($managedShortcutNames).Count) {
@@ -1076,15 +1239,42 @@ try {
         }
     }
 
-    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
-        Where-Object { $managedShortcutNames -contains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) } |
-        ForEach-Object {
+    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
+        $existingShortcutFile = $_
+        $shortcutBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$existingShortcutFile.Name)
+        $matchedSpec = @(
+            @($shortcutSpecs) |
+                Where-Object { [string]::Equals((Get-NormalizedShortcutNameKey -Value $shortcutBaseName), (Get-NormalizedShortcutNameKey -Value ([string]$_.Name)), [System.StringComparison]::Ordinal) } |
+                Select-Object -First 1
+        )[0]
+
+        if ($null -eq $matchedSpec) {
+            $existingDetails = $null
+            try {
+                $existingDetails = Get-ShortcutDetails -ShortcutPath ([string]$existingShortcutFile.FullName)
+            }
+            catch {
+                Write-Warning ("public-desktop-inspect-skip: {0} => {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
+                return
+            }
+
+            $matchedSpec = @(
+                @($shortcutSpecs) |
+                    Where-Object { Test-ShortcutDetailsMatchManagedSpec -Details $existingDetails -ShortcutBaseName $shortcutBaseName -Spec $_ } |
+                    Select-Object -First 1
+            )[0]
+        }
+
+        if ($null -eq $matchedSpec) {
+            return
+        }
+
         try {
-            Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop
-            Write-Host ("public-desktop-removed: {0}" -f $_.Name)
+            Remove-Item -LiteralPath $existingShortcutFile.FullName -Force -ErrorAction Stop
+            Write-Host ("public-desktop-removed: {0} => managed-by {1}" -f $existingShortcutFile.Name, [string]$matchedSpec.Name)
         }
         catch {
-            throw ("Failed to remove existing public shortcut '{0}': {1}" -f $_.FullName, $_.Exception.Message)
+            throw ("Failed to remove existing public shortcut '{0}': {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
         }
     }
 

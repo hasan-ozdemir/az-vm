@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.286] - 2026-03-12
+
+### Added
+- Restored tracked Public Desktop shortcuts `q1SourTimes`, `s15{TitleCase(company_name)} Web`, and `s16{TitleCase(company_name)} Blog` so the managed shortcut set again owns those browser entry points explicitly.
+
+### Changed
+- Renamed the tracked Windows Public Desktop web/app labels from the old Turkish `Kurumsal`/`Bireysel` wording to the approved English `Business`/`Personal` contract, including the approved brand-specific overrides such as `s18NextSosyal Business`, `r13ÇiçekSepeti Business`, `r14ÇiçekSepeti Personal`, `r17PTTAVM Business`, and `r18PTTAVM Personal`.
+- Renamed the remaining approved quick-access labels to `m1Digital Tax Office`, `q4eGovernment`, `q6AJet Flights`, `q7TCDD Train`, and `q8OBilet Bus`, while keeping `q2Spotify` and `q3Netflix` unchanged.
+- Reworked `10002-create-shortcuts-public-desktop` so Chrome profile routing is metadata-based instead of name-text-based, and both `company_name` and `employee_email_address` local-part values are normalized to lowercase before being written into `--profile-directory`.
+- Hardened Public Desktop normalization so the tracked shortcut task now removes semantic duplicates by name alias, target executable, and browser destination matching for installer-created overlaps such as Google Chrome, Microsoft Edge, AnyDesk, and Visual Studio 2022, while preserving unrelated unmanaged Public Desktop shortcuts.
+- Moved `az-vm-interactive-session-helper.ps1` from `tools/windows/` to `tools/scripts/` and updated runtime asset resolution to use the new helper location without changing the guest-side remote helper path.
+- Updated the tracked health snapshot, `.env.example`, README, AGENTS contract, and smoke coverage to enforce the new English shortcut labels, lowercase Chrome profile normalization, restored shortcuts, and semantic duplicate-cleanup model.
+
+### Tests
+- Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
+
 ## [2026.3.12.284] - 2026-03-12
 
 ### Added

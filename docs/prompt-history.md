@@ -4743,9 +4743,33 @@ Added `az-vm do --vm-action=reapply` to the managed VM lifecycle surface so the 
 **User Prompt**
 
 ````text
-Please go back over the planning and implementation instructions I gave you earlier, determine one by one which parts were completed and which are still pending, complete anything that is still missing, and then give me a broad final status and results report about the four requested tasks: the expanded Public Desktop shortcut set, the employee-based Chrome profile routing and shortcut renames, the Copilot/Visual Studio shortcut prerequisites, and the local-only private local-only accessibility auto-start ownership and verification flow.
+Please go back over the planning and implementation instructions I gave you earlier, determine one by one which parts were completed and which are still pending, complete anything that is still missing, and then give me a broad final status and results report about the four requested tasks: the expanded Public Desktop shortcut set, the employee-based Chrome profile routing and shortcut renames, the Copilot/Visual Studio shortcut prerequisites, and the private local-only accessibility auto-start ownership and verification flow.
 ````
 
 **Assistant Summary**
 
-Audited the previously requested four-task plan against the current tracked repo, the local ignored Windows update tasks, the release/history docs, and the current branch state. The tracked shortcut and prerequisite work is complete: `r11-r22`, `i1Internet Kurumsal`, `i2Internet Bireysel`, employee-based Chrome `Bireysel` profile routing, `.env.example` employee defaults, `k3Github Copilot CLI`, `v1VS2022Com`, `115-install-npm-packages-global`, and `132-install-vs2022community` are all present and enforced by smoke coverage. The local-only private local-only accessibility/accessibility ownership is also complete from the repo-contract perspective: tracked builtin tasks and catalogs no longer own that flow, while the ignored `windows/update/local/1001-1005` task chain now owns install, settings, shortcut, autostart, and verification behavior. The only thing I did not rerun during this audit turn was a fresh live guest acceptance cycle; instead I verified the already-recorded live acceptance evidence and confirmed that `dev` and `main` remain aligned while `dev2` and `main2` still exist as backups.
+Audited the previously requested four-task plan against the current tracked repo, the local ignored Windows update tasks, the release/history docs, and the current branch state. The tracked shortcut and prerequisite work is complete: `r11-r22`, `i1Internet Business`, `i2Internet Personal`, employee-based personal Chrome profile routing, `.env.example` employee defaults, `k3Github Copilot CLI`, `v1VS2022Com`, `115-install-npm-packages-global`, and `132-install-vs2022community` are all present and enforced by smoke coverage. The private local-only accessibility ownership is also complete from the repo-contract perspective: tracked builtin tasks and catalogs no longer own that flow, while the ignored `windows/update/local/1001-1005` task chain now owns install, settings, shortcut, autostart, and verification behavior. The only thing I did not rerun during this audit turn was a fresh live guest acceptance cycle; instead I verified the already-recorded live acceptance evidence and confirmed that `dev` and `main` remain aligned while `dev2` and `main2` still exist as backups.
+
+### 2026-03-12 03:42 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented the approved Public Desktop shortcut refactor by renaming the tracked Turkish labels into the approved English `Business` and `Personal` forms, restoring `q1SourTimes` plus the company-branded `Web` and `Blog` shortcuts, and preserving `q2Spotify` and `q3Netflix` in the managed set. I also refactored the Chrome shortcut contract so business/personal intent is carried by shortcut metadata instead of label text, normalized both `company_name` and the employee email local-part to lowercase before writing `--profile-directory`, hardened Public Desktop cleanup to remove semantic installer duplicates for Chrome, Edge, AnyDesk, and Visual Studio while preserving unrelated unmanaged shortcuts, and updated the tracked health snapshot, `.env.example`, README, AGENTS contract, changelog, release notes, and smoke coverage to enforce the new contract. The non-live gate passed with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
+
+### 2026-03-12 03:42 TRT
+
+**User Prompt**
+
+````text
+As a small follow-up task, move `az-vm-interactive-session-helper.ps1` into the `..\scripts` folder and update the necessary references.
+````
+
+**Assistant Summary**
+
+Moved `az-vm-interactive-session-helper.ps1` from `tools/windows/` to `tools/scripts/` and updated the runtime Run Command asset-resolution path so the helper is loaded from the new repo location while the guest-side remote helper path remains unchanged. I then reran the non-live gate and confirmed that code-quality, documentation-contract, PowerShell compatibility, and smoke validation all still pass with the helper in its new path.

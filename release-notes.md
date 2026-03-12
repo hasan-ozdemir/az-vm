@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.286 - 2026-03-12
+
+### Summary
+This release renames the tracked Windows Public Desktop shortcut set into the approved English `Business`/`Personal` vocabulary, restores the managed `SourTimes` and company-branded Web/Blog shortcuts, lowercases every repo-managed Chrome profile-directory value, and upgrades Public Desktop cleanup from exact-name replacement to semantic duplicate normalization.
+
+### Highlights
+- Renamed the tracked Public Desktop labels to the approved English contract, including the explicit overrides `s18NextSosyal Business`, `r13ÇiçekSepeti Business`, `r14ÇiçekSepeti Personal`, `r17PTTAVM Business`, and `r18PTTAVM Personal`.
+- Restored `q1SourTimes`, `s15{TitleCase(company_name)} Web`, and `s16{TitleCase(company_name)} Blog` as tracked managed shortcuts while keeping `q2Spotify` and `q3Netflix` intact.
+- Refactored Chrome shortcut profile routing so business/personal intent is carried by shortcut metadata instead of old label text, and both `company_name` and the email local-part are normalized to lowercase before being emitted into `--profile-directory`.
+- Hardened `10002-create-shortcuts-public-desktop` so installer-created overlaps such as Google Chrome, Microsoft Edge, AnyDesk, and Visual Studio 2022 are removed by semantic duplicate matching, while unrelated unmanaged Public Desktop shortcuts remain untouched.
+- Moved `az-vm-interactive-session-helper.ps1` into `tools/scripts/` and updated runtime helper-asset resolution to load it from the new repo path while keeping the guest-side helper copy target unchanged.
+- Updated the tracked health snapshot, `.env.example`, README, AGENTS contract, and smoke assertions so the new label set, lowercase Chrome profile rule, restored shortcuts, and duplicate-normalization behavior are enforced together.
+
 ## Release 2026.3.12.284 - 2026-03-12
 
 ### Summary

@@ -141,7 +141,7 @@
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
    - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
    - platform-specific image and size keys as needed
-3. Set `company_name`, `employee_email_address`, and `employee_full_name` for Windows flows. Repo-managed public desktop web shortcuts require all three; corporate shortcuts use `company_name` and personal (`Bireysel`) shortcuts use the email local-part from `employee_email_address` as the Chrome `--profile-directory`.
+3. Set `company_name`, `employee_email_address`, and `employee_full_name` for Windows flows. Repo-managed public desktop web shortcuts require all three; business shortcuts use `company_name` and personal shortcuts use the email local-part from `employee_email_address` as the Chrome `--profile-directory`. The task normalizes both sources to lowercase before writing the Chrome profile name.
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### First End-To-End Run
@@ -276,8 +276,8 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 ### High-Value `.env` Keys
 - `VM_OS_TYPE`: default platform for auto flows.
 - `VM_NAME`: actual Azure VM name and the naming seed for derived resources.
-- `company_name`: required for the Windows corporate public desktop shortcut flow and used as the Chrome `--profile-directory` for repo-managed Windows corporate web shortcuts.
-- `employee_email_address`: required for the Windows public desktop shortcut flow and used to derive the Chrome `--profile-directory` for repo-managed Windows personal (`Bireysel`) web shortcuts by taking the email local-part before `@`.
+- `company_name`: required for the Windows business public desktop shortcut flow and used as the lowercase Chrome `--profile-directory` for repo-managed Windows business web shortcuts.
+- `employee_email_address`: required for the Windows public desktop shortcut flow and used to derive the lowercase Chrome `--profile-directory` for repo-managed Windows personal web shortcuts by taking the email local-part before `@`.
 - `employee_full_name`: required Windows operator identity metadata for the public desktop shortcut contract.
 - `AZ_LOCATION`: default Azure region.
 - `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`, `VM_DISK_NAME`: optional explicit resource-name overrides.
