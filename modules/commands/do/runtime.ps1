@@ -2,7 +2,7 @@
 
 # Handles Get-AzVmDoActionNames.
 function Get-AzVmDoActionNames {
-    return @('status','start','restart','stop','deallocate','hibernate','reapply')
+    return @('status','start','restart','stop','deallocate','hibernate-deallocate','hibernate-stop','reapply')
 }
 
 # Handles Get-AzVmDoActionHintText.
@@ -37,6 +37,14 @@ function Resolve-AzVmDoActionName {
             -Code 2 `
             -Summary "VM action is invalid." `
             -Hint "Use --vm-action=deallocate."
+    }
+
+    if ($normalized -eq 'hibernate') {
+        Throw-FriendlyError `
+            -Detail "Option '--vm-action=hibernate' is no longer supported." `
+            -Code 2 `
+            -Summary "VM action is invalid." `
+            -Hint "Use --vm-action=hibernate-deallocate or --vm-action=hibernate-stop."
     }
 
     if ($normalized -notin @(Get-AzVmDoActionNames)) {
@@ -231,7 +239,8 @@ function Get-AzVmDoAllowedSourceStates {
         'restart' { return @('started') }
         'stop' { return @('started') }
         'deallocate' { return @('started','stopped','hibernated') }
-        'hibernate' { return @('started') }
+        'hibernate-deallocate' { return @('started') }
+        'hibernate-stop' { return @('started') }
         'reapply' { return @() }
         default { return @() }
     }
@@ -264,7 +273,7 @@ function Assert-AzVmDoActionAllowed {
             -Hint "Wait until provisioning succeeds, run '--vm-action=status', then retry."
     }
 
-    if ($ActionName -eq 'hibernate' -and -not [bool]$Snapshot.HibernationEnabled) {
+    if (($ActionName -in @('hibernate-deallocate','hibernate-stop')) -and -not [bool]$Snapshot.HibernationEnabled) {
         Throw-FriendlyError `
             -Detail ("Requested action '{0}' cannot continue for VM '{1}' in resource group '{2}' because hibernation is not enabled. {3}" -f $ActionName, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
             -Code 66 `
@@ -284,6 +293,131 @@ function Assert-AzVmDoActionAllowed {
             -Summary ("VM action '{0}' is not valid for the current VM state." -f $ActionName) `
             -Hint ("Run '--vm-action=status' for current state details and retry only from: {0}." -f ($allowedStates -join ', '))
     }
+}
+
+# Handles Resolve-AzVmDoBoundedTimeoutSeconds.
+function Resolve-AzVmDoBoundedTimeoutSeconds {
+    param(
+        [hashtable]$ConfigMap,
+        [string]$Key,
+        [int]$DefaultValue,
+        [int]$MinimumValue,
+        [int]$MaximumValue
+    )
+
+    $rawText = [string](Get-ConfigValue -Config $ConfigMap -Key $Key -DefaultValue ([string]$DefaultValue))
+    $resolvedValue = 0
+    if (-not [int]::TryParse([string]$rawText, [ref]$resolvedValue)) {
+        $resolvedValue = $DefaultValue
+    }
+
+    if ($resolvedValue -lt $MinimumValue) {
+        $resolvedValue = $MinimumValue
+    }
+    if ($resolvedValue -gt $MaximumValue) {
+        $resolvedValue = $MaximumValue
+    }
+
+    return [int]$resolvedValue
+}
+
+# Handles Initialize-AzVmDoHibernateStopRuntime.
+function Initialize-AzVmDoHibernateStopRuntime {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName
+    )
+
+    return (Initialize-AzVmConnectionCommandContext -Options @{
+            group = [string]$ResourceGroup
+            'vm-name' = [string]$VmName
+            user = 'manager'
+        } -OperationName 'hibernate-stop')
+}
+
+# Handles Invoke-AzVmDoGuestHibernateStopCommand.
+function Invoke-AzVmDoGuestHibernateStopCommand {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName
+    )
+
+    $runtime = Initialize-AzVmDoHibernateStopRuntime -ResourceGroup $ResourceGroup -VmName $VmName
+    $sshPort = Resolve-AzVmConnectionPortNumber -PortText ([string]$runtime.VmSshPort) -PortLabel 'SSH'
+    $sshReachable = Wait-AzVmTcpPortReachable -HostName ([string]$runtime.ConnectionHost) -Port $sshPort -MaxAttempts 3 -DelaySeconds 5 -TimeoutSeconds 5 -Label 'ssh'
+    if (-not $sshReachable) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' in resource group '{1}' is running, but SSH port {2} is not reachable on host '{3}'." -f [string]$runtime.VmName, [string]$runtime.ResourceGroup, $sshPort, [string]$runtime.ConnectionHost) `
+            -Code 66 `
+            -Summary "Hibernate-stop requires a working SSH connection." `
+            -Hint "Confirm the guest SSH service is ready and retry, or use --vm-action=hibernate-deallocate."
+    }
+
+    $repoRoot = Get-AzVmRepoRoot
+    $configuredPySshClientPath = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'PYSSH_CLIENT_PATH' -DefaultValue '')
+    $pySshTools = Ensure-AzVmPySshTools -RepoRoot $repoRoot -ConfiguredPySshClientPath $configuredPySshClientPath
+    $connectTimeoutSeconds = Resolve-AzVmDoBoundedTimeoutSeconds -ConfigMap $runtime.ConfigMap -Key 'SSH_CONNECT_TIMEOUT_SECONDS' -DefaultValue 30 -MinimumValue 5 -MaximumValue 300
+
+    $launchResult = Invoke-AzVmProcessWithRetry `
+        -FilePath ([string]$pySshTools.PythonPath) `
+        -Arguments @(
+            [string]$pySshTools.ClientPath,
+            'exec',
+            '--host', [string]$runtime.ConnectionHost,
+            '--port', [string]$runtime.VmSshPort,
+            '--user', [string]$runtime.SelectedUserName,
+            '--password', [string]$runtime.SelectedPassword,
+            '--timeout', [string]$connectTimeoutSeconds,
+            '--command', 'shutdown /h /f'
+        ) `
+        -Label ("pyssh hibernate-stop -> {0}@{1}:{2}" -f [string]$runtime.SelectedUserName, [string]$runtime.ConnectionHost, [string]$runtime.VmSshPort) `
+        -MaxAttempts 1 `
+        -AllowFailure
+
+    return [pscustomobject]@{
+        Runtime = $runtime
+        LaunchResult = $launchResult
+    }
+}
+
+# Handles Wait-AzVmDoHibernateStopCompletion.
+function Wait-AzVmDoHibernateStopCompletion {
+    param(
+        [psobject]$Runtime,
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [int]$MaxAttempts = 24,
+        [int]$DelaySeconds = 10
+    )
+
+    if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($MaxAttempts -gt 120) { $MaxAttempts = 120 }
+    if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
+
+    $sshPort = Resolve-AzVmConnectionPortNumber -PortText ([string]$Runtime.VmSshPort) -PortLabel 'SSH'
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $snapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $ResourceGroup -VmName $VmName
+        $powerText = Resolve-AzVmVmLifecycleFieldText -DisplayText ([string]$snapshot.PowerStateDisplay) -CodeText ([string]$snapshot.PowerStateCode)
+        $hibernationText = Resolve-AzVmVmLifecycleFieldText -DisplayText ([string]$snapshot.HibernationStateDisplay) -CodeText ([string]$snapshot.HibernationStateCode)
+        $sshReachable = Test-AzVmTcpPortReachable -HostName ([string]$Runtime.ConnectionHost) -Port $sshPort -TimeoutSeconds 3
+        Write-Host ("Hibernate-stop wait: lifecycle={0}; power={1}; hibernation={2}; ssh-open={3} (attempt {4}/{5})" -f [string]$snapshot.NormalizedState, $powerText, $hibernationText, [bool]$sshReachable, $attempt, $MaxAttempts)
+
+        if ([string]::Equals([string]$snapshot.NormalizedState, 'deallocated', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Throw-FriendlyError `
+                -Detail ("VM '{0}' in resource group '{1}' became deallocated while waiting for hibernate-stop. {2}" -f [string]$snapshot.VmName, [string]$snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $snapshot)) `
+                -Code 66 `
+                -Summary "Hibernate-stop ended in a deallocated VM." `
+                -Hint "Use --vm-action=hibernate-deallocate when the Azure deallocation-based hibernate path is intended."
+        }
+
+        if (([string]$snapshot.NormalizedState -in @('stopped','hibernated')) -and -not $sshReachable) {
+            return $snapshot
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    return $null
 }
 
 # Handles Write-AzVmDoStatusReport.
@@ -336,8 +470,9 @@ function Read-AzVmDoActionInteractive {
         [pscustomobject]@{ Number = 3; Action = 'restart'; Label = 'restart' },
         [pscustomobject]@{ Number = 4; Action = 'stop'; Label = 'stop' },
         [pscustomobject]@{ Number = 5; Action = 'deallocate'; Label = 'deallocate' },
-        [pscustomobject]@{ Number = 6; Action = 'hibernate'; Label = 'hibernate' },
-        [pscustomobject]@{ Number = 7; Action = 'reapply'; Label = 'reapply (Azure repair)' }
+        [pscustomobject]@{ Number = 6; Action = 'hibernate-deallocate'; Label = 'hibernate-deallocate (Azure)' },
+        [pscustomobject]@{ Number = 7; Action = 'hibernate-stop'; Label = 'hibernate-stop (guest via SSH)' },
+        [pscustomobject]@{ Number = 8; Action = 'reapply'; Label = 'reapply (Azure repair)' }
     )
 
     foreach ($choice in @($choices)) {

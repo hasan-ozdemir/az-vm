@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.288] - 2026-03-12
+
+### Added
+- Added `do --vm-action=hibernate-stop`, which resolves the managed VM target, verifies SSH reachability, runs `shutdown /h /f` through the repo-managed pyssh path, and waits until the guest is no longer running without Azure deallocation.
+
+### Changed
+- Renamed the Azure-backed hibernation action from `do --vm-action=hibernate` to `do --vm-action=hibernate-deallocate` so the public command surface now states explicitly that Azure hibernation still uses the deallocation-based path.
+- Updated the `do` parser, interactive action picker, validation rules, CLI help, README examples, and smoke coverage so the old `hibernate` action is rejected with a direct migration hint to `hibernate-deallocate` or `hibernate-stop`.
+
+### Tests
+- Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
+
 ## [2026.3.12.287] - 2026-03-12
 
 ### Changed

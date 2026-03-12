@@ -71,15 +71,29 @@ function Invoke-AzVmDoCommand {
                 -AzArguments @('vm','deallocate','-g',$resourceGroup,'-n',$vmName,'-o','none','--only-show-errors') `
                 -AzContext 'az vm deallocate'
         }
-        'hibernate' {
+        'hibernate-deallocate' {
             $desiredState = 'hibernated'
-            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now hibernated." -f $vmName, $resourceGroup)
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' is now hibernated and deallocated." -f $vmName, $resourceGroup)
             Invoke-AzVmDoAzureAction `
                 -ActionName $action `
                 -ResourceGroup $resourceGroup `
                 -VmName $vmName `
                 -AzArguments @('vm','deallocate','-g',$resourceGroup,'-n',$vmName,'--hibernate','true','-o','none','--only-show-errors') `
                 -AzContext 'az vm deallocate --hibernate'
+        }
+        'hibernate-stop' {
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' accepted guest hibernate-stop and is no longer running." -f $vmName, $resourceGroup)
+            $hibernateStopInvocation = Invoke-AzVmDoGuestHibernateStopCommand -ResourceGroup $resourceGroup -VmName $vmName
+            $finalSnapshot = Wait-AzVmDoHibernateStopCompletion -Runtime $hibernateStopInvocation.Runtime -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 24 -DelaySeconds 10
+            if ($null -eq $finalSnapshot) {
+                $launchOutput = if ($null -eq $hibernateStopInvocation -or $null -eq $hibernateStopInvocation.LaunchResult) { '' } else { [string]$hibernateStopInvocation.LaunchResult.Output }
+                $launchExitCode = if ($null -eq $hibernateStopInvocation -or $null -eq $hibernateStopInvocation.LaunchResult) { -1 } else { [int]$hibernateStopInvocation.LaunchResult.ExitCode }
+                Throw-FriendlyError `
+                    -Detail ("VM '{0}' in resource group '{1}' did not leave the running state after guest hibernate-stop. Remote shutdown exit={2}. Output: {3}" -f $vmName, $resourceGroup, $launchExitCode, $launchOutput) `
+                    -Code 66 `
+                    -Summary "Hibernate-stop did not finish cleanly." `
+                    -Hint "Confirm guest hibernation support, rerun '--vm-action=status', and use --vm-action=hibernate-deallocate if the Azure path is required."
+            }
         }
         'reapply' {
             $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' was reapplied. Current status:" -f $vmName, $resourceGroup)

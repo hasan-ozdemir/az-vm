@@ -1036,7 +1036,8 @@ Invoke-Test -Name "Exec command accepts vm-name for direct task targeting" -Acti
 Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-name' = 'samplevm'; 'vm-action' = 'status' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'deallocate' }
-    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate-deallocate' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate-stop' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'reapply' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
@@ -1055,7 +1056,7 @@ Invoke-Test -Name "Move, Set, Resize, Do, SSH, and RDP reject legacy vm option" 
 }
 
 Invoke-Test -Name "Do command rejects retired or unknown power actions" -Action {
-    foreach ($actionName in @('release','sleep')) {
+    foreach ($actionName in @('release','sleep','hibernate')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = $actionName }
@@ -1071,10 +1072,14 @@ Invoke-Test -Name "Do help and README document reapply" -Action {
     $helpText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\cli\azvm-help.ps1') -Raw)
     $readmeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'README.md') -Raw)
 
-    Assert-True -Condition ($helpText -match [regex]::Escape('--vm-action=<status|start|restart|stop|deallocate|hibernate|reapply>')) -Message 'CLI help must list reapply in the do action contract.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('--vm-action=<status|start|restart|stop|deallocate|hibernate-deallocate|hibernate-stop|reapply>')) -Message 'CLI help must list the explicit hibernate actions in the do action contract.'
     Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>')) -Message 'CLI help must show a reapply example.'
-    Assert-True -Condition ($readmeText -match [regex]::Escape('Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate')) -Message 'README must mention reapply in the lifecycle command summary.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>')) -Message 'CLI help must show a hibernate-stop example.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>')) -Message 'CLI help must show a hibernate-deallocate example.'
+    Assert-True -Condition ($readmeText -match [regex]::Escape('Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate')) -Message 'README must mention the explicit hibernate actions in the lifecycle command summary.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a reapply usage example.'
+    Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-stop usage example.'
+    Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-deallocate usage example.'
 }
 
 Invoke-Test -Name "Auto option scope contract" -Action {
@@ -1310,12 +1315,14 @@ Invoke-Test -Name "Do action eligibility contract" -Action {
     Assert-AzVmDoActionAllowed -ActionName 'status' -Snapshot (New-TestDoSnapshot -NormalizedState 'other' -PowerStateDisplay 'VM starting')
     Assert-AzVmDoActionAllowed -ActionName 'restart' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
     Assert-AzVmDoActionAllowed -ActionName 'deallocate' -Snapshot (New-TestDoSnapshot -NormalizedState 'hibernated' -PowerStateDisplay 'VM deallocated' -HibernationStateDisplay 'Hibernated' -HibernationStateCode 'HibernationState/hibernated')
-    Assert-AzVmDoActionAllowed -ActionName 'hibernate' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
+    Assert-AzVmDoActionAllowed -ActionName 'hibernate-deallocate' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
+    Assert-AzVmDoActionAllowed -ActionName 'hibernate-stop' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
     Assert-AzVmDoActionAllowed -ActionName 'reapply' -Snapshot (New-TestDoSnapshot -NormalizedState 'other' -PowerStateDisplay 'VM starting' -ProvisioningStateCode 'ProvisioningState/updating' -ProvisioningStateDisplay 'Updating')
 
     $invalidCases = @(
         @{ Action = 'start'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running') },
-        @{ Action = 'hibernate'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -HibernationEnabled:$false) },
+        @{ Action = 'hibernate-deallocate'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -HibernationEnabled:$false) },
+        @{ Action = 'hibernate-stop'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -HibernationEnabled:$false) },
         @{ Action = 'stop'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running' -ProvisioningStateCode 'ProvisioningState/updating' -ProvisioningStateDisplay 'Updating') }
     )
 
@@ -1355,10 +1362,14 @@ Invoke-Test -Name "Do interactive action selection" -Action {
         Assert-True -Condition ([string]$pickedAction -eq 'deallocate') -Message "Interactive do action selection by number failed."
 
         function global:Read-Host { param([string]$Prompt) return '6' }
-        $hibernateAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
-        Assert-True -Condition ([string]$hibernateAction -eq 'hibernate') -Message "Interactive do action selection must expose hibernate."
+        $hibernateDeallocateAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
+        Assert-True -Condition ([string]$hibernateDeallocateAction -eq 'hibernate-deallocate') -Message "Interactive do action selection must expose hibernate-deallocate."
 
         function global:Read-Host { param([string]$Prompt) return '7' }
+        $hibernateStopAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
+        Assert-True -Condition ([string]$hibernateStopAction -eq 'hibernate-stop') -Message "Interactive do action selection must expose hibernate-stop."
+
+        function global:Read-Host { param([string]$Prompt) return '8' }
         $reapplyAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$reapplyAction -eq 'reapply') -Message "Interactive do action selection must expose reapply."
     }
@@ -1460,6 +1471,221 @@ Invoke-Test -Name "Do reapply action calls Azure reapply and prints refreshed st
             'Get-AzVmVmLifecycleSnapshot',
             'Invoke-AzVmDoAzureAction',
             'Wait-AzVmDoLifecycleState',
+            'Write-AzVmDoStatusReport'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
+Invoke-Test -Name "Do hibernate-stop guest action uses pyssh shutdown" -Action {
+    $script:DoHibernateStopProcessInvocation = $null
+    $originalFunctionDefinitions = @{}
+
+    foreach ($functionName in @(
+        'Initialize-AzVmConnectionCommandContext',
+        'Resolve-AzVmConnectionPortNumber',
+        'Wait-AzVmTcpPortReachable',
+        'Get-AzVmRepoRoot',
+        'Get-ConfigValue',
+        'Ensure-AzVmPySshTools',
+        'Invoke-AzVmProcessWithRetry'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function global:Initialize-AzVmConnectionCommandContext {
+        param([hashtable]$Options, [string]$OperationName)
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+            ConnectionHost = 'samplevm.example'
+            VmSshPort = '444'
+            SelectedUserName = 'manager'
+            SelectedPassword = 'secret'
+            ConfigMap = @{ PYSSH_CLIENT_PATH = 'tools/pyssh/ssh_client.py'; SSH_CONNECT_TIMEOUT_SECONDS = '30' }
+        }
+    }
+    function global:Resolve-AzVmConnectionPortNumber { param([string]$PortText, [string]$PortLabel) return 444 }
+    function global:Wait-AzVmTcpPortReachable { param([string]$HostName, [int]$Port, [int]$MaxAttempts, [int]$DelaySeconds, [int]$TimeoutSeconds, [string]$Label) return $true }
+    function global:Get-AzVmRepoRoot { return $RepoRoot }
+    function global:Get-ConfigValue {
+        param([hashtable]$Config, [string]$Key, [string]$DefaultValue)
+        if ($Config.ContainsKey($Key)) {
+            return [string]$Config[$Key]
+        }
+        return [string]$DefaultValue
+    }
+    function global:Ensure-AzVmPySshTools {
+        param([string]$RepoRoot, [string]$ConfiguredPySshClientPath)
+        return [pscustomobject]@{
+            PythonPath = 'python'
+            ClientPath = 'client.py'
+        }
+    }
+    function global:Invoke-AzVmProcessWithRetry {
+        param(
+            [string]$FilePath,
+            [string[]]$Arguments,
+            [string]$Label,
+            [int]$MaxAttempts,
+            [switch]$AllowFailure
+        )
+
+        $script:DoHibernateStopProcessInvocation = [pscustomobject]@{
+            FilePath = $FilePath
+            Arguments = @($Arguments)
+            Label = $Label
+            MaxAttempts = $MaxAttempts
+            AllowFailure = [bool]$AllowFailure
+        }
+
+        return [pscustomobject]@{
+            ExitCode = 0
+            Output = 'ok'
+        }
+    }
+
+    try {
+        $result = Invoke-AzVmDoGuestHibernateStopCommand -ResourceGroup 'rg-samplevm-ate1-g1' -VmName 'samplevm'
+        Assert-True -Condition ($null -ne $result) -Message 'Hibernate-stop helper must return runtime invocation details.'
+        Assert-True -Condition ($null -ne $script:DoHibernateStopProcessInvocation) -Message 'Hibernate-stop helper must invoke the pyssh process wrapper.'
+        Assert-True -Condition ((@($script:DoHibernateStopProcessInvocation.Arguments) -join ' ') -match [regex]::Escape('--command shutdown /h /f')) -Message 'Hibernate-stop helper must issue shutdown /h /f through pyssh.'
+        Assert-True -Condition ($script:DoHibernateStopProcessInvocation.MaxAttempts -eq 1) -Message 'Hibernate-stop helper must not retry the guest shutdown command.'
+        Assert-True -Condition ($script:DoHibernateStopProcessInvocation.AllowFailure) -Message 'Hibernate-stop helper must allow a dropped SSH session while the guest powers off.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmConnectionCommandContext',
+            'Resolve-AzVmConnectionPortNumber',
+            'Wait-AzVmTcpPortReachable',
+            'Get-AzVmRepoRoot',
+            'Get-ConfigValue',
+            'Ensure-AzVmPySshTools',
+            'Invoke-AzVmProcessWithRetry'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
+Invoke-Test -Name "Do hibernate-stop action waits for the guest to stop after SSH-triggered hibernation" -Action {
+    $script:DoHibernateStopInvocation = $null
+    $script:DoHibernateStopWaitInvocation = $null
+    $script:DoHibernateStopReportedSnapshot = $null
+    $originalFunctionDefinitions = @{}
+
+    foreach ($functionName in @(
+        'Resolve-AzVmManagedVmTarget',
+        'Get-AzVmVmLifecycleSnapshot',
+        'Invoke-AzVmDoGuestHibernateStopCommand',
+        'Wait-AzVmDoHibernateStopCompletion',
+        'Write-AzVmDoStatusReport'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function global:Resolve-AzVmManagedVmTarget {
+        param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        }
+    }
+    function global:Get-AzVmVmLifecycleSnapshot {
+        param([string]$ResourceGroup, [string]$VmName)
+        return [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            OsType = 'Windows'
+            Location = 'austriaeast'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/succeeded'
+            ProvisioningStateDisplay = 'Provisioning succeeded'
+            PowerStateCode = 'PowerState/running'
+            PowerStateDisplay = 'VM running'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+            NormalizedState = 'started'
+        }
+    }
+    function global:Invoke-AzVmDoGuestHibernateStopCommand {
+        param([string]$ResourceGroup, [string]$VmName)
+        $script:DoHibernateStopInvocation = [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+        }
+        return [pscustomobject]@{
+            Runtime = [pscustomobject]@{
+                ConnectionHost = 'samplevm.example'
+                VmSshPort = '444'
+            }
+            LaunchResult = [pscustomobject]@{
+                ExitCode = 0
+                Output = 'issued'
+            }
+        }
+    }
+    function global:Wait-AzVmDoHibernateStopCompletion {
+        param([psobject]$Runtime, [string]$ResourceGroup, [string]$VmName, [int]$MaxAttempts, [int]$DelaySeconds)
+        $script:DoHibernateStopWaitInvocation = [pscustomobject]@{
+            Runtime = $Runtime
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            MaxAttempts = $MaxAttempts
+            DelaySeconds = $DelaySeconds
+        }
+        return [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            OsType = 'Windows'
+            Location = 'austriaeast'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/succeeded'
+            ProvisioningStateDisplay = 'Provisioning succeeded'
+            PowerStateCode = 'PowerState/stopped'
+            PowerStateDisplay = 'VM stopped'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+            NormalizedState = 'stopped'
+        }
+    }
+    function global:Write-AzVmDoStatusReport {
+        param([psobject]$Snapshot)
+        $script:DoHibernateStopReportedSnapshot = $Snapshot
+    }
+
+    try {
+        Invoke-AzVmDoCommand -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate-stop' }
+
+        Assert-True -Condition ($null -ne $script:DoHibernateStopInvocation) -Message 'Hibernate-stop must invoke the guest shutdown helper.'
+        Assert-True -Condition ($null -ne $script:DoHibernateStopWaitInvocation) -Message 'Hibernate-stop must wait for the guest to stop after issuing shutdown.'
+        Assert-True -Condition ($script:DoHibernateStopWaitInvocation.MaxAttempts -eq 24) -Message 'Hibernate-stop must use the bounded wait contract.'
+        Assert-True -Condition ($null -ne $script:DoHibernateStopReportedSnapshot) -Message 'Hibernate-stop must print the final VM status.'
+        Assert-True -Condition ([string]$script:DoHibernateStopReportedSnapshot.NormalizedState -eq 'stopped') -Message 'Hibernate-stop must report the post-hibernate stopped state.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmLifecycleSnapshot',
+            'Invoke-AzVmDoGuestHibernateStopCommand',
+            'Wait-AzVmDoHibernateStopCompletion',
             'Write-AzVmDoStatusReport'
         )) {
             Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue

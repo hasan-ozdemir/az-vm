@@ -82,7 +82,7 @@
 ### What It Does
 - Provisions Azure infrastructure for one managed Windows or Linux VM from one orchestrator.
 - Applies deterministic guest initialization and guest update task catalogs.
-- Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate, move, resize, connect, inspect, and delete flows.
+- Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate, move, resize, connect, inspect, and delete flows.
 - Keeps command wording, configuration behavior, and execution semantics as parallel as possible across Windows and Linux.
 
 ### Problems It Solves
@@ -423,7 +423,8 @@ Supported actions:
 - `reapply`
 - `stop`
 - `deallocate`
-- `hibernate`
+- `hibernate-stop`
+- `hibernate-deallocate`
 
 Usage patterns:
 ```powershell
@@ -432,18 +433,20 @@ Usage patterns:
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=deallocate --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd do --vm-action=hibernate --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>
 ```
 
 Behavior notes:
 - if parameters are omitted, the command falls back to interactive group/VM/action selection
 - mutating actions validate the current power/provisioning state before calling Azure
 - `reapply` calls `az vm reapply` and then prints a refreshed lifecycle snapshot; it stays available even when provisioning is not currently in the succeeded state
-- `hibernate` follows Azure hibernation semantics and deallocates the VM
+- `hibernate-stop` requires a running VM plus working SSH access, runs `shutdown /h /f` through the repo-managed pyssh path, and waits until the guest is no longer running without Azure deallocation
+- `hibernate-deallocate` follows Azure hibernation semantics and deallocates the VM
 
 Friendly refusal examples:
 - trying `restart` on a stopped VM
-- trying `hibernate` when the VM is not running
+- trying `hibernate-stop` or `hibernate-deallocate` when the VM is not running
 - trying a mutating action while the VM is in a transitional Azure state
 
 ### `task`

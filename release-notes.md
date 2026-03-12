@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.288 - 2026-03-12
+
+### Summary
+This release splits the old `do --vm-action=hibernate` contract into two explicit operator choices: `hibernate-stop` for guest-triggered SSH hibernation without Azure deallocation, and `hibernate-deallocate` for Azure's existing deallocation-based hibernation path.
+
+### Highlights
+- Added `do --vm-action=hibernate-stop`, which connects through the repo-managed pyssh path, runs `shutdown /h /f` inside the running guest, and waits until the VM is no longer accepting SSH without treating Azure deallocation as success.
+- Renamed the Azure-backed hibernation action from `hibernate` to `hibernate-deallocate`, making the deallocation behavior explicit instead of hiding it behind the old shorter action name.
+- Updated the `do` action parser, interactive picker, help output, README examples, and smoke suite so the retired `hibernate` action now fails with a precise migration hint to `hibernate-stop` or `hibernate-deallocate`.
+
 ## Release 2026.3.12.287 - 2026-03-12
 
 ### Summary

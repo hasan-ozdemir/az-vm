@@ -4785,3 +4785,15 @@ Please fine-tune the Windows vm-update tasks because the Docker Desktop install 
 **Assistant Summary**
 
 Fine-tuned the slowest Windows `vm-update` paths end to end. `114-install-docker-desktop.ps1` now uses only short bounded `docker version` probes, skips the old blocking `docker info` readiness wait, and falls back immediately to a deferred interactive `RunOnce` start when the daemon is not yet ready in a noninteractive SSH session. `10005-copy-settings-user.ps1` now replaces the fixed five-second sleep with a short settle loop that watches user sessions and processes and unloads the registry hive with fewer retries and shorter waits. `10002-create-shortcuts-public-desktop.ps1` now has an already-normalized fast path, no longer exits early while scanning unrelated Public Desktop shortcuts, and removes additional installer-created duplicates including `IObit Unlocker` and `NVDA`. I also removed every tracked Windows `vm-update` `--force` flag and aligned the install tasks with install-if-missing / skip-if-healthy behavior. After updating changelog and release notes, I revalidated the full non-live gate and reran live Windows validation on `rg-examplevm-sec1-g1/examplevm`, including the tuned tasks individually, a full `update --single-step=vm-update --auto --windows` pass, and a fresh Public Desktop health snapshot that now leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
+
+### 2026-03-12 15:00 TRT
+
+**User Prompt**
+
+````text
+Please add one more command parameter: rename `az-vm do --vm-action=hibernate` to `--vm-action=hibernate-deallocate`, then add `--vm-action=hibernate-stop` so that, when the target VM is running and accepting SSH, it connects through pyssh, runs `shutdown /h /f`, and waits until the VM is down without deallocating.
+````
+
+**Assistant Summary**
+
+Split the old `do` hibernation contract into two explicit actions. The Azure-backed path is now `--vm-action=hibernate-deallocate`, while the new `--vm-action=hibernate-stop` uses the repo-managed pyssh flow to connect to the running guest, issue `shutdown /h /f`, and wait until the VM leaves the running state without treating Azure deallocation as success. I updated the runtime parser, interactive action picker, validation rules, CLI help, README examples, changelog, release notes, and smoke coverage so the retired `hibernate` action is rejected with a direct migration hint, then revalidated the full non-live gate with code-quality, documentation-contract, PowerShell compatibility, and smoke checks.
