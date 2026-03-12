@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.296] - 2026-03-12
+
+### Fixed
+- Fixed `tests/az-vm-smoke-tests.ps1` so the CI-facing smoke doubles now shadow runtime functions in the active test scope instead of leaking to the real Azure/.env-backed implementations through `global:` declarations.
+- Restored the non-live smoke gate to the expected fast path by removing the accidental real Azure CLI calls from the create, update, resize, reapply, and hibernate-stop smoke scenarios that GitHub Actions was waiting on.
+
+### Tests
+- Revalidated the full non-live gate with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, `tests/bash-syntax-check.ps1`, and `tests/pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.12.295] - 2026-03-12
 
 ### Fixed

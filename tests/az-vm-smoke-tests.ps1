@@ -1164,15 +1164,15 @@ Invoke-Test -Name "Create runtime reuses the existing managed resource group and
         }
     }
 
-    function global:Get-AzVmRepoRoot { return $RepoRoot }
-    function global:Read-DotEnvFile {
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile {
         param([string]$Path)
         return @{
             RESOURCE_GROUP = ''
             VM_NAME = 'samplevm'
         }
     }
-    function global:Get-AzVmManagedVmMatchRows {
+    function Get-AzVmManagedVmMatchRows {
         param([string]$VmName)
         return @([pscustomobject]@{ ResourceGroup = 'rg-samplevm-ate1-g1' })
     }
@@ -1215,23 +1215,23 @@ Invoke-Test -Name "Update runtime requires an existing managed VM before orchest
         }
     }
 
-    function global:Get-AzVmRepoRoot { return $RepoRoot }
-    function global:Read-DotEnvFile {
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile {
         param([string]$Path)
         return @{
             RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
             VM_NAME = 'samplevm'
         }
     }
-    function global:Resolve-AzVmTargetResourceGroup {
+    function Resolve-AzVmTargetResourceGroup {
         param([hashtable]$Options, [switch]$AutoMode, [string]$DefaultResourceGroup, [string]$VmName, [string]$OperationName)
         return 'rg-samplevm-ate1-g1'
     }
-    function global:Resolve-AzVmTargetVmName {
+    function Resolve-AzVmTargetVmName {
         param([string]$ResourceGroup, [string]$DefaultVmName, [switch]$AutoMode, [string]$OperationName)
         return 'samplevm'
     }
-    function global:Test-AzVmAzResourceExists {
+    function Test-AzVmAzResourceExists {
         param([string[]]$AzArgs)
         return $false
     }
@@ -1493,16 +1493,16 @@ Invoke-Test -Name "Resize shrink path is non-mutating and prints supported alter
         }
     }
 
-    function global:Get-AzVmRepoRoot { return $RepoRoot }
-    function global:Read-DotEnvFile { param([string]$Path) return @{} }
-    function global:Resolve-AzVmManagedVmTarget {
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile { param([string]$Path) return @{} }
+    function Resolve-AzVmManagedVmTarget {
         param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
         return [pscustomobject]@{
             ResourceGroup = 'rg-samplevm-ate1-g1'
             VmName = 'samplevm'
         }
     }
-    function global:Get-AzVmResizeOsDiskContext {
+    function Get-AzVmResizeOsDiskContext {
         param([psobject]$VmObject, [string]$ResourceGroup, [string]$VmName)
         return [pscustomobject]@{
             DiskId = '/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/disks/disk-samplevm'
@@ -1511,13 +1511,13 @@ Invoke-Test -Name "Resize shrink path is non-mutating and prints supported alter
             SkuName = 'Premium_LRS'
         }
     }
-    function global:Show-AzVmResizeShrinkAlternatives {
+    function Show-AzVmResizeShrinkAlternatives {
         $script:ResizeShrinkAlternativesShown = $true
     }
-    function global:Set-DotEnvValue {
+    function Set-DotEnvValue {
         throw 'Shrink guidance must not persist .env changes.'
     }
-    function global:az {
+    function az {
         $line = @($args) -join ' '
         $script:ResizeShrinkAzCalls += $line
 
@@ -1595,16 +1595,16 @@ Invoke-Test -Name "Resize expand path deallocates, grows disk, restarts, and per
         }
     }
 
-    function global:Get-AzVmRepoRoot { return $RepoRoot }
-    function global:Read-DotEnvFile { param([string]$Path) return @{} }
-    function global:Resolve-AzVmManagedVmTarget {
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile { param([string]$Path) return @{} }
+    function Resolve-AzVmManagedVmTarget {
         param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
         return [pscustomobject]@{
             ResourceGroup = 'rg-samplevm-ate1-g1'
             VmName = 'samplevm'
         }
     }
-    function global:Get-AzVmResizeOsDiskContext {
+    function Get-AzVmResizeOsDiskContext {
         param([psobject]$VmObject, [string]$ResourceGroup, [string]$VmName)
         return [pscustomobject]@{
             DiskId = '/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/disks/disk-samplevm'
@@ -1613,16 +1613,16 @@ Invoke-Test -Name "Resize expand path deallocates, grows disk, restarts, and per
             SkuName = 'Premium_LRS'
         }
     }
-    function global:Invoke-TrackedAction {
+    function Invoke-TrackedAction {
         param([string]$Label, [scriptblock]$Action)
         & $Action
     }
-    function global:Wait-AzVmVmPowerState {
+    function Wait-AzVmVmPowerState {
         param([string]$ResourceGroup, [string]$VmName, [string]$DesiredPowerState, [int]$MaxAttempts, [int]$DelaySeconds)
         $script:ResizeExpandWaits += [string]$DesiredPowerState
         return $true
     }
-    function global:Set-DotEnvValue {
+    function Set-DotEnvValue {
         param([string]$Path, [string]$Key, [string]$Value)
         $script:ResizeExpandPersist = [pscustomobject]@{
             Path = $Path
@@ -1630,7 +1630,7 @@ Invoke-Test -Name "Resize expand path deallocates, grows disk, restarts, and per
             Value = $Value
         }
     }
-    function global:az {
+    function az {
         $line = @($args) -join ' '
         $script:ResizeExpandAzCalls += $line
 
@@ -1950,23 +1950,23 @@ Invoke-Test -Name "Do interactive action selection" -Action {
     }
 
     try {
-        function global:Read-Host { param([string]$Prompt) return '' }
+        function Read-Host { param([string]$Prompt) return '' }
         $defaultAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$defaultAction -eq 'status') -Message "Interactive do action default should be status."
 
-        function global:Read-Host { param([string]$Prompt) return '5' }
+        function Read-Host { param([string]$Prompt) return '5' }
         $pickedAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$pickedAction -eq 'deallocate') -Message "Interactive do action selection by number failed."
 
-        function global:Read-Host { param([string]$Prompt) return '6' }
+        function Read-Host { param([string]$Prompt) return '6' }
         $hibernateDeallocateAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$hibernateDeallocateAction -eq 'hibernate-deallocate') -Message "Interactive do action selection must expose hibernate-deallocate."
 
-        function global:Read-Host { param([string]$Prompt) return '7' }
+        function Read-Host { param([string]$Prompt) return '7' }
         $hibernateStopAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$hibernateStopAction -eq 'hibernate-stop') -Message "Interactive do action selection must expose hibernate-stop."
 
-        function global:Read-Host { param([string]$Prompt) return '8' }
+        function Read-Host { param([string]$Prompt) return '8' }
         $reapplyAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$reapplyAction -eq 'reapply') -Message "Interactive do action selection must expose reapply."
     }
@@ -1996,14 +1996,14 @@ Invoke-Test -Name "Do reapply action calls Azure reapply and prints refreshed st
         }
     }
 
-    function global:Resolve-AzVmManagedVmTarget {
+    function Resolve-AzVmManagedVmTarget {
         param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
         return [pscustomobject]@{
             ResourceGroup = 'rg-samplevm-ate1-g1'
             VmName = 'samplevm'
         }
     }
-    function global:Get-AzVmVmLifecycleSnapshot {
+    function Get-AzVmVmLifecycleSnapshot {
         param([string]$ResourceGroup, [string]$VmName)
         $script:DoReapplySnapshotCalls++
         $provisioningDisplay = if ($script:DoReapplySnapshotCalls -eq 1) { 'Updating' } else { 'Provisioning succeeded' }
@@ -2023,7 +2023,7 @@ Invoke-Test -Name "Do reapply action calls Azure reapply and prints refreshed st
             NormalizedState = 'started'
         }
     }
-    function global:Invoke-AzVmDoAzureAction {
+    function Invoke-AzVmDoAzureAction {
         param(
             [string]$ActionName,
             [string]$ResourceGroup,
@@ -2040,12 +2040,12 @@ Invoke-Test -Name "Do reapply action calls Azure reapply and prints refreshed st
             AzContext = $AzContext
         }
     }
-    function global:Wait-AzVmDoLifecycleState {
+    function Wait-AzVmDoLifecycleState {
         param([string]$ResourceGroup, [string]$VmName, [string]$DesiredState, [int]$MaxAttempts, [int]$DelaySeconds)
         $script:DoReapplyWaitCalled = $true
         return $null
     }
-    function global:Write-AzVmDoStatusReport {
+    function Write-AzVmDoStatusReport {
         param([psobject]$Snapshot)
         $script:DoReapplyReportedSnapshot = $Snapshot
     }
@@ -2099,7 +2099,7 @@ Invoke-Test -Name "Do hibernate-stop guest action uses pyssh shutdown" -Action {
         }
     }
 
-    function global:Initialize-AzVmConnectionCommandContext {
+    function Initialize-AzVmConnectionCommandContext {
         param([hashtable]$Options, [string]$OperationName)
         return [pscustomobject]@{
             ResourceGroup = 'rg-samplevm-ate1-g1'
@@ -2111,24 +2111,24 @@ Invoke-Test -Name "Do hibernate-stop guest action uses pyssh shutdown" -Action {
             ConfigMap = @{ PYSSH_CLIENT_PATH = 'tools/pyssh/ssh_client.py'; SSH_CONNECT_TIMEOUT_SECONDS = '30' }
         }
     }
-    function global:Resolve-AzVmConnectionPortNumber { param([string]$PortText, [string]$PortLabel) return 444 }
-    function global:Wait-AzVmTcpPortReachable { param([string]$HostName, [int]$Port, [int]$MaxAttempts, [int]$DelaySeconds, [int]$TimeoutSeconds, [string]$Label) return $true }
-    function global:Get-AzVmRepoRoot { return $RepoRoot }
-    function global:Get-ConfigValue {
+    function Resolve-AzVmConnectionPortNumber { param([string]$PortText, [string]$PortLabel) return 444 }
+    function Wait-AzVmTcpPortReachable { param([string]$HostName, [int]$Port, [int]$MaxAttempts, [int]$DelaySeconds, [int]$TimeoutSeconds, [string]$Label) return $true }
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Get-ConfigValue {
         param([hashtable]$Config, [string]$Key, [string]$DefaultValue)
         if ($Config.ContainsKey($Key)) {
             return [string]$Config[$Key]
         }
         return [string]$DefaultValue
     }
-    function global:Ensure-AzVmPySshTools {
+    function Ensure-AzVmPySshTools {
         param([string]$RepoRoot, [string]$ConfiguredPySshClientPath)
         return [pscustomobject]@{
             PythonPath = 'python'
             ClientPath = 'client.py'
         }
     }
-    function global:Invoke-AzVmProcessWithRetry {
+    function Invoke-AzVmProcessWithRetry {
         param(
             [string]$FilePath,
             [string[]]$Arguments,
@@ -2198,14 +2198,14 @@ Invoke-Test -Name "Do hibernate-stop action waits for the guest to stop after SS
         }
     }
 
-    function global:Resolve-AzVmManagedVmTarget {
+    function Resolve-AzVmManagedVmTarget {
         param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
         return [pscustomobject]@{
             ResourceGroup = 'rg-samplevm-ate1-g1'
             VmName = 'samplevm'
         }
     }
-    function global:Get-AzVmVmLifecycleSnapshot {
+    function Get-AzVmVmLifecycleSnapshot {
         param([string]$ResourceGroup, [string]$VmName)
         return [pscustomobject]@{
             ResourceGroup = $ResourceGroup
@@ -2222,7 +2222,7 @@ Invoke-Test -Name "Do hibernate-stop action waits for the guest to stop after SS
             NormalizedState = 'started'
         }
     }
-    function global:Invoke-AzVmDoGuestHibernateStopCommand {
+    function Invoke-AzVmDoGuestHibernateStopCommand {
         param([string]$ResourceGroup, [string]$VmName)
         $script:DoHibernateStopInvocation = [pscustomobject]@{
             ResourceGroup = $ResourceGroup
@@ -2239,7 +2239,7 @@ Invoke-Test -Name "Do hibernate-stop action waits for the guest to stop after SS
             }
         }
     }
-    function global:Wait-AzVmDoHibernateStopCompletion {
+    function Wait-AzVmDoHibernateStopCompletion {
         param([psobject]$Runtime, [string]$ResourceGroup, [string]$VmName, [int]$MaxAttempts, [int]$DelaySeconds)
         $script:DoHibernateStopWaitInvocation = [pscustomobject]@{
             Runtime = $Runtime
@@ -2263,7 +2263,7 @@ Invoke-Test -Name "Do hibernate-stop action waits for the guest to stop after SS
             NormalizedState = 'stopped'
         }
     }
-    function global:Write-AzVmDoStatusReport {
+    function Write-AzVmDoStatusReport {
         param([psobject]$Snapshot)
         $script:DoHibernateStopReportedSnapshot = $Snapshot
     }

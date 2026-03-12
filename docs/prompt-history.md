@@ -4881,3 +4881,15 @@ Continue exactly from the last operation flow. I interrupted it. You were tracki
 **Assistant Summary**
 
 Resumed the interrupted GitHub publish phase, verified that the new public repository `the public az-vm repository` already existed with aligned `main` and `dev`, and confirmed that all extra local branches had been cleaned up. I then retrieved the failing `main` GitHub Actions run details and traced both failed Windows jobs to the same root cause: `.github/workflows/quality-gate.yml` was checking out the repo with shallow history, so the commit-count-based documentation contract saw `HEAD` as `1` instead of the real repository count. I fixed the workflow by switching every `actions/checkout@v6` step to `fetch-depth: 0`, updated the release metadata to the new `2026.3.12.295` version, and prepared the repo for a clean follow-up push so the authoritative `main` workflow run can complete against full history.
+
+### 2026-03-12 22:58 TRT
+
+**User Prompt**
+
+````text
+Fix: these gates were passing much faster on my local machine, and the smoke test was not taking this long. There is probably a blocking condition there. Please investigate it, fix it, retrigger it, guarantee that everything from our latest planned work is completed, and then inform me broadly.
+````
+
+**Assistant Summary**
+
+Investigated the slow GitHub Actions `smoke-contracts` gate and confirmed that the runner was not deadlocked. The real problem was that several smoke tests in `tests/az-vm-smoke-tests.ps1` were declaring their doubles with `global:` scope, so the runtime kept calling the original `.env` and Azure CLI backed implementations on CI instead of the intended test stubs. I fixed those smoke doubles to shadow the runtime functions in the active test scope, reran the full smoke suite successfully, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.12.296`, and prepared the repo for a fresh aligned push so the remote `main` workflow can finish against the corrected non-live gate.

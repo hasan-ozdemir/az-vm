@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.296 - 2026-03-12
+
+### Summary
+This release fixes the remaining GitHub Actions quality-gate blocker after publication by making the smoke suite fully non-live again. The slow `smoke-contracts` job was not a runner deadlock; it was accidentally executing real Azure-dependent code paths because several test doubles were declared in the wrong scope.
+
+### Highlights
+- Updated `tests/az-vm-smoke-tests.ps1` so the create, update, resize, reapply, and hibernate-stop smoke doubles now override the runtime functions in the active test scope instead of falling through to `.env` and Azure CLI backed implementations on GitHub-hosted runners.
+- Restored the smoke suite to the expected short non-live execution profile, eliminating CI waits caused by unintended `az login` prompts and unexpected Azure calls inside the smoke contract job.
+- Revalidated the full local non-live gate before the follow-up push: smoke, documentation contract, PowerShell compatibility, code quality, bash syntax, and pre-commit release-doc checks all pass.
+
 ## Release 2026.3.12.295 - 2026-03-12
 
 ### Summary
