@@ -15,9 +15,18 @@ function New-AzVmUpdateCommandRuntime {
     $vmNameOverride = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     $vmName = if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) { $vmNameOverride.Trim() } else { [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '') }
     $targetResourceGroup = Resolve-AzVmTargetResourceGroup -Options $Options -AutoMode:$AutoMode -DefaultResourceGroup $defaultResourceGroup -VmName $vmName -OperationName 'update'
-    $updateOverrides = @{ RESOURCE_GROUP = $targetResourceGroup }
-    if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) {
-        $updateOverrides['VM_NAME'] = $vmNameOverride.Trim()
+    $resolvedVmName = [string](Resolve-AzVmTargetVmName -ResourceGroup $targetResourceGroup -DefaultVmName $vmName -AutoMode:$AutoMode -OperationName 'update')
+    if (-not (Test-AzVmAzResourceExists -AzArgs @('vm', 'show', '-g', $targetResourceGroup, '-n', $resolvedVmName))) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' was not found in managed resource group '{1}'." -f $resolvedVmName, $targetResourceGroup) `
+            -Code 66 `
+            -Summary "Update command cannot continue because the target VM does not exist." `
+            -Hint "Run create first, or choose an existing managed VM."
+    }
+
+    $updateOverrides = @{
+        RESOURCE_GROUP = $targetResourceGroup
+        VM_NAME = $resolvedVmName
     }
 
     return [pscustomobject]@{

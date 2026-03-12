@@ -102,5 +102,5 @@ function Invoke-AzVmConfigureCommand {
     Write-Host "Configure completed successfully. No Azure resources were created, updated, or deleted." -ForegroundColor Green
     Write-Host "Next actions:" -ForegroundColor Cyan
     Write-Host "- az-vm create --auto"
-    Write-Host "- az-vm create --to-step=vm-deploy"
+    Write-Host "- az-vm create --step-to=vm-deploy"
 }

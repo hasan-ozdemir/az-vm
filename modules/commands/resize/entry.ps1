@@ -19,6 +19,7 @@ function Invoke-AzVmResizeCommand {
     $repoRoot = Get-AzVmRepoRoot
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
+    $operationRequest = Resolve-AzVmResizeOperationRequest -Options $Options
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $configMap -OperationName 'resize'
     $resourceGroup = [string]$target.ResourceGroup
     $vmName = [string]$target.VmName
@@ -38,6 +39,7 @@ function Invoke-AzVmResizeCommand {
     $currentSize = [string]$vmObject.hardwareProfile.vmSize
     $actualPlatform = Get-AzVmPlatformNameFromOsType -OsType ([string]$vmObject.storageProfile.osDisk.osType)
     $vmSizeConfigKey = if ([string]::IsNullOrWhiteSpace([string]$actualPlatform)) { 'VM_SIZE' } else { Get-AzVmPlatformVmConfigKey -Platform $actualPlatform -BaseKey 'VM_SIZE' }
+    $vmDiskSizeConfigKey = if ([string]::IsNullOrWhiteSpace([string]$actualPlatform)) { 'VM_DISK_SIZE_GB' } else { Get-AzVmPlatformVmConfigKey -Platform $actualPlatform -BaseKey 'VM_DISK_SIZE_GB' }
 
     Assert-AzVmResizePlatformExpectation `
         -ActualPlatform $actualPlatform `
@@ -59,6 +61,94 @@ function Invoke-AzVmResizeCommand {
             -Code 62 `
             -Summary "Resize command cannot continue because current VM size is unknown." `
             -Hint "Check the VM metadata in Azure, then retry."
+    }
+
+    if ([string]::Equals([string]$operationRequest.Kind, 'disk', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $diskContext = Get-AzVmResizeOsDiskContext -VmObject $vmObject -ResourceGroup $resourceGroup -VmName $vmName
+        $targetDiskSizeGb = [int]$operationRequest.TargetDiskSizeGb
+
+        if ([string]::Equals([string]$operationRequest.Intent, 'shrink', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host ("Shrink request summary for VM '{0}' in '{1}': disk '{2}' current={3} GB, requested={4} ({5} => {6} GB)." -f $vmName, $resourceGroup, $diskContext.DiskName, $diskContext.DiskSizeGb, $operationRequest.RawText, $operationRequest.Unit, $targetDiskSizeGb) -ForegroundColor Yellow
+            Show-AzVmResizeShrinkAlternatives
+
+            if ($targetDiskSizeGb -ge $diskContext.DiskSizeGb) {
+                Throw-FriendlyError `
+                    -Detail ("Shrink request '{0}' normalizes to {1} GB, which is not smaller than the current OS disk size {2} GB." -f $operationRequest.RawText, $targetDiskSizeGb, $diskContext.DiskSizeGb) `
+                    -Code 62 `
+                    -Summary "Resize shrink request is not a smaller target." `
+                    -Hint "Use --expand for larger targets, or provide a smaller --disk-size value."
+            }
+
+            Throw-FriendlyError `
+                -Detail ("Azure does not support shrinking the existing managed OS disk '{0}' for VM '{1}'. Current size: {2} GB. Requested size: {3} GB." -f $diskContext.DiskName, $vmName, $diskContext.DiskSizeGb, $targetDiskSizeGb) `
+                -Code 62 `
+                -Summary "Azure managed OS disk shrink is not supported." `
+                -Hint "Use one of the supported rebuild or migration alternatives printed above."
+        }
+
+        if ($targetDiskSizeGb -lt $diskContext.DiskSizeGb) {
+            Throw-FriendlyError `
+                -Detail ("Expand request '{0}' normalizes to {1} GB, which is smaller than the current OS disk size {2} GB." -f $operationRequest.RawText, $targetDiskSizeGb, $diskContext.DiskSizeGb) `
+                -Code 62 `
+                -Summary "Resize expand request is smaller than the current OS disk size." `
+                -Hint "Use --shrink for unsupported shrink guidance, or provide a larger --disk-size value."
+        }
+
+        if ($targetDiskSizeGb -eq $diskContext.DiskSizeGb) {
+            Write-Host ("No effective OS disk expansion is required. Managed OS disk '{0}' is already {1} GB." -f $diskContext.DiskName, $diskContext.DiskSizeGb) -ForegroundColor Yellow
+            return
+        }
+
+        if (-not $isDirectRequest) {
+            $approveDiskExpand = Confirm-YesNo -PromptText "Continue with managed OS disk expansion?" -DefaultYes $false
+            if (-not $approveDiskExpand) {
+                Write-Host "Resize command canceled by user." -ForegroundColor Yellow
+                return
+            }
+        }
+
+        Write-Host ("Managed OS disk expansion plan for '{0}' in '{1}': disk '{2}' {3} GB -> {4} GB (requested '{5}')." -f $vmName, $resourceGroup, $diskContext.DiskName, $diskContext.DiskSizeGb, $targetDiskSizeGb, $operationRequest.RawText)
+        Write-Host "Managed OS disk expansion requires the VM to be deallocated before Azure updates the disk size."
+
+        Invoke-TrackedAction -Label ("az vm deallocate -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+            az vm deallocate -g $resourceGroup -n $vmName -o none --only-show-errors
+            Assert-LastExitCode "az vm deallocate"
+        } | Out-Null
+        $deallocated = Wait-AzVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM deallocated" -MaxAttempts 18 -DelaySeconds 10
+        if (-not $deallocated) {
+            Throw-FriendlyError `
+                -Detail ("VM '{0}' did not reach deallocated state in expected time." -f $vmName) `
+                -Code 62 `
+                -Summary "Resize command stopped because VM deallocation was not confirmed." `
+                -Hint "Check VM power state in Azure and retry the disk expansion."
+        }
+
+        Write-Host ("Applying managed OS disk size update: '{0}' -> {1} GB." -f $diskContext.DiskName, $targetDiskSizeGb)
+        Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --size-gb {2}" -f $resourceGroup, $diskContext.DiskName, $targetDiskSizeGb) -Action {
+            az disk update -g $resourceGroup -n $diskContext.DiskName --size-gb $targetDiskSizeGb -o none --only-show-errors
+            Assert-LastExitCode "az disk update"
+        } | Out-Null
+
+        Write-Host ("Managed OS disk '{0}' is now {1} GB in Azure. Starting VM '{2}'..." -f $diskContext.DiskName, $targetDiskSizeGb, $vmName)
+        Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
+            az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
+            Assert-LastExitCode "az vm start"
+        } | Out-Null
+
+        $running = Wait-AzVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM running" -MaxAttempts 18 -DelaySeconds 10
+        if (-not $running) {
+            Throw-FriendlyError `
+                -Detail "VM did not return to running state after the managed OS disk expansion." `
+                -Code 62 `
+                -Summary "Resize command completed with unhealthy VM power state." `
+                -Hint "Check VM power state in Azure Portal and start VM manually if needed."
+        }
+
+        Set-DotEnvValue -Path $envFilePath -Key $vmDiskSizeConfigKey -Value ([string]$targetDiskSizeGb)
+        $script:ConfigOverrides[$vmDiskSizeConfigKey] = [string]$targetDiskSizeGb
+
+        Write-Host ("Managed OS disk expansion completed successfully. Disk '{0}' is now {1} GB." -f $diskContext.DiskName, $targetDiskSizeGb) -ForegroundColor Green
+        return
     }
 
     $targetSize = Resolve-AzVmResizeTargetSize -Options $Options -CurrentRegion $currentRegion -CurrentSize $currentSize -ConfigMap $configMap

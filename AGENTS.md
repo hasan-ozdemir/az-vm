@@ -52,6 +52,7 @@ Use these sources in this order when maintaining the repo:
 - Current public commands are: `configure`, `create`, `update`, `group`, `show`, `do`, `task`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
 - Do not preserve removed commands or aliases once the repo has cut over to a new surface.
 - If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
+- When a public option is renamed, rename the owning parameter files, manifest entries, parser lookups, help text, README examples, and smoke coverage in the same change; do not leave retired parameter-module filenames behind.
 - Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.
 - Keep help output, README examples, and runtime messages aligned with the actual parser contract.
 
@@ -103,6 +104,7 @@ Use these sources in this order when maintaining the repo:
 ## Reliability and Error-Handling Rules
 - Validate before mutating Azure resources.
 - Prefer fast, filtered Azure checks over broad slow listings.
+- If Azure does not support a requested operation safely, fail before mutation with the explicit platform reason and list the supported alternatives.
 - Fail gracefully with:
   - a short reason
   - a precise corrective hint

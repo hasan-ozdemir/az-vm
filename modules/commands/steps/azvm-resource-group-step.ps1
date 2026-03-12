@@ -340,10 +340,10 @@ function Assert-AzVmSingleActionDependencies {
         $groupExistsBool = [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
         if (-not $groupExistsBool) {
             Throw-FriendlyError `
-                -Detail ("single-step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
+                -Detail ("step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
                 -Code 63 `
                 -Summary "Step dependency is missing." `
-                -Hint "Run create/update with --single-step=group first, or run with --to-step=network."
+                -Hint "Run create/update with --step=group first, or run with --step-to=network."
         }
         return
     }
@@ -354,19 +354,19 @@ function Assert-AzVmSingleActionDependencies {
         $groupExistsBool = [string]::Equals([string]$groupExists, "true", [System.StringComparison]::OrdinalIgnoreCase)
         if (-not $groupExistsBool) {
             Throw-FriendlyError `
-                -Detail ("single-step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
+                -Detail ("step '{0}' requires existing resource group '{1}', but it was not found." -f $ActionName, $resourceGroup) `
                 -Code 63 `
                 -Summary "Step dependency is missing." `
-                -Hint "Run create/update with --single-step=group first."
+                -Hint "Run create/update with --step=group first."
         }
 
         $nicExists = Test-AzVmAzResourceExists -AzArgs @("network", "nic", "show", "-g", $resourceGroup, "-n", [string]$Context.NIC)
         if (-not $nicExists) {
             Throw-FriendlyError `
-                -Detail ("single-step '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
+                -Detail ("step '{0}' requires existing NIC '{1}', but it was not found." -f $ActionName, [string]$Context.NIC) `
                 -Code 63 `
                 -Summary "Step dependency is missing." `
-                -Hint "Run create/update with --single-step=network first."
+                -Hint "Run create/update with --step=network first."
         }
         return
     }
@@ -375,10 +375,10 @@ function Assert-AzVmSingleActionDependencies {
         $vmExists = Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)
         if (-not $vmExists) {
             Throw-FriendlyError `
-                -Detail ("single-step '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
+                -Detail ("step '{0}' requires existing VM '{1}', but it was not found." -f $ActionName, $vmName) `
                 -Code 63 `
                 -Summary "Step dependency is missing." `
-                -Hint "Run create/update with --single-step=vm-deploy first."
+                -Hint "Run create/update with --step=vm-deploy first."
         }
         return
     }

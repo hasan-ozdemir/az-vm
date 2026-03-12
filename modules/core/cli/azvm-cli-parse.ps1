@@ -358,24 +358,24 @@ function Resolve-AzVmActionPlan {
 
     $order = Get-AzVmActionOrder
     $supportsActionOptions = ($CommandName -in @('create', 'update'))
-    $hasFrom = Test-AzVmCliOptionPresent -Options $Options -Name 'from-step'
-    $hasTo = Test-AzVmCliOptionPresent -Options $Options -Name 'to-step'
-    $hasSingle = Test-AzVmCliOptionPresent -Options $Options -Name 'single-step'
+    $hasFrom = Test-AzVmCliOptionPresent -Options $Options -Name 'step-from'
+    $hasTo = Test-AzVmCliOptionPresent -Options $Options -Name 'step-to'
+    $hasSingle = Test-AzVmCliOptionPresent -Options $Options -Name 'step'
 
     if (-not $supportsActionOptions -and ($hasFrom -or $hasTo -or $hasSingle)) {
         Throw-FriendlyError `
             -Detail ("Step options are not supported for command '{0}'." -f $CommandName) `
             -Code 2 `
             -Summary "Unsupported command option." `
-            -Hint "Use --from-step/--to-step/--single-step only with create or update."
+            -Hint "Use --step-from/--step-to/--step only with create or update."
     }
 
     if ($hasSingle -and ($hasFrom -or $hasTo)) {
         Throw-FriendlyError `
-            -Detail "Option '--single-step' cannot be combined with '--from-step' or '--to-step'." `
+            -Detail "Option '--step' cannot be combined with '--step-from' or '--step-to'." `
             -Code 2 `
             -Summary "Conflicting step options were provided." `
-            -Hint "Use --single-step alone, or use --from-step/--to-step as a range."
+            -Hint "Use --step alone, or use --step-from/--step-to as a range."
     }
 
     if (-not $hasFrom -and -not $hasTo -and -not $hasSingle) {
@@ -387,7 +387,7 @@ function Resolve-AzVmActionPlan {
     }
 
     if ($hasSingle) {
-        $singleTarget = Resolve-AzVmActionValue -OptionName 'single-step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'single-step'))
+        $singleTarget = Resolve-AzVmActionValue -OptionName 'step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'step'))
         return [pscustomobject]@{
             Mode = 'single'
             Target = $singleTarget
@@ -396,13 +396,13 @@ function Resolve-AzVmActionPlan {
     }
 
     $fromStep = if ($hasFrom) {
-        Resolve-AzVmActionValue -OptionName 'from-step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'from-step'))
+        Resolve-AzVmActionValue -OptionName 'step-from' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'step-from'))
     }
     else {
         [string]$order[0]
     }
     $toStep = if ($hasTo) {
-        Resolve-AzVmActionValue -OptionName 'to-step' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'to-step'))
+        Resolve-AzVmActionValue -OptionName 'step-to' -RawValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'step-to'))
     }
     else {
         [string]$order[$order.Count - 1]
@@ -415,10 +415,10 @@ function Resolve-AzVmActionPlan {
     }
     if ($fromIndex -gt $toIndex) {
         Throw-FriendlyError `
-            -Detail ("Option '--from-step={0}' is after '--to-step={1}'." -f $fromStep, $toStep) `
+            -Detail ("Option '--step-from={0}' is after '--step-to={1}'." -f $fromStep, $toStep) `
             -Code 2 `
             -Summary "Invalid step range." `
-            -Hint "Provide a forward step range where from-step is before or equal to to-step."
+            -Hint "Provide a forward step range where step-from is before or equal to step-to."
     }
 
     $actions = @()

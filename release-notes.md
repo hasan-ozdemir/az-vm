@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.292 - 2026-03-12
+
+### Summary
+This release finishes the command-surface refresh for publish-readiness: step selectors are renamed to the new `--step` family, `create` now reuses managed targets by default with explicit `explicit destructive rebuild flow` for destructive rebuilds, `update` now requires an existing managed VM and redeploys it during the VM deploy stage, and `resize` gains a safe managed OS disk expand path plus an explicit non-mutating shrink guidance path.
+
+### Highlights
+- Renamed the create/update step selectors from `--single-step`, `--from-step`, and `--to-step` to `--step`, `--step-from`, and `--step-to`, then removed the retired option forms throughout the parser, manifest, parameter modules, help output, README, and smoke contract.
+- Added `create explicit destructive rebuild flow` as the explicit destructive recreate mode while the default `create` path now reuses existing managed resources and keeps the operator informed instead of deleting by surprise.
+- Changed `update` so it fails early when the managed resource group or VM is missing, then uses Azure create-or-update plus `az vm redeploy` once an existing VM is confirmed.
+- Added `resize --disk-size=<number>gb|mb --expand` for the supported managed OS disk growth path, and `resize --disk-size=<number>gb|mb --shrink` as a fail-fast guidance path that explains Azure's OS disk shrink limit and lists supported rebuild alternatives.
+- Refreshed README and AGENTS with a stronger quick-start, business-value, developer-benefit, and practical-usage narrative while keeping the documentation contract aligned with the runtime surface.
+
 ## Release 2026.3.12.291 - 2026-03-12
 
 ### Summary
@@ -45,7 +57,7 @@ This release fine-tunes the slowest Windows `vm-update` paths by making Docker D
 - Reworked `10005-copy-settings-user.ps1` so assistant logoff/process cleanup settles through a short bounded session/process watcher rather than a fixed five-second sleep, and registry-hive unload retries now use fewer attempts with much shorter waits.
 - Fixed and accelerated `10002-create-shortcuts-public-desktop.ps1` by adding an already-normalized fast path, removing the accidental early-return behavior during Public Desktop inspection, and broadening duplicate cleanup coverage to installer-created `AnyDesk`, `Windscribe`, `VLC media player`, `iTunes`, `IObit Unlocker`, and `NVDA` shortcuts.
 - Removed every tracked Windows `vm-update` `--force` flag and aligned the install tasks with an install-if-missing, skip-if-healthy model; the winget bootstrap task now avoids forceful source resets and uses only one bounded `source update` recovery attempt.
-- Completed a live Windows validation cycle on `rg-examplevm-sec1-g1/examplevm`, including isolated reruns of the tuned tasks plus a full `update --single-step=vm-update --auto --windows` pass; the latest Public Desktop readback leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
+- Completed a live Windows validation cycle on `rg-examplevm-sec1-g1/examplevm`, including isolated reruns of the tuned tasks plus a full `update --step=vm-update --auto --windows` pass; the latest Public Desktop readback leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
 
 ## Release 2026.3.12.286 - 2026-03-12
 
@@ -53,7 +65,7 @@ This release fine-tunes the slowest Windows `vm-update` paths by making Docker D
 This release renames the tracked Windows Public Desktop shortcut set into the approved English `Business`/`Personal` vocabulary, restores the managed `SourTimes` and company-branded Web/Blog shortcuts, lowercases every repo-managed Chrome profile-directory value, and upgrades Public Desktop cleanup from exact-name replacement to semantic duplicate normalization.
 
 ### Highlights
-- Renamed the tracked Public Desktop labels to the approved English contract, including the explicit overrides `s18NextSosyal Business`, `r13ÇiçekSepeti Business`, `r14ÇiçekSepeti Personal`, `r17PTTAVM Business`, and `r18PTTAVM Personal`.
+- Renamed the tracked Public Desktop labels to the approved English contract, including the explicit overrides `s18NextSosyal Business`, `r13CicekSepeti Business`, `r14CicekSepeti Personal`, `r17PTTAVM Business`, and `r18PTTAVM Personal`.
 - Restored `q1SourTimes`, `s15{TitleCase(company_name)} Web`, and `s16{TitleCase(company_name)} Blog` as tracked managed shortcuts while keeping `q2Spotify` and `q3Netflix` intact.
 - Refactored Chrome shortcut profile routing so business/personal intent is carried by shortcut metadata instead of old label text, and both `company_name` and the email local-part are normalized to lowercase before being emitted into `--profile-directory`.
 - Hardened `10002-create-shortcuts-public-desktop` so installer-created overlaps such as Google Chrome, Microsoft Edge, AnyDesk, and Visual Studio 2022 are removed by semantic duplicate matching, while unrelated unmanaged Public Desktop shortcuts remain untouched.
@@ -80,7 +92,7 @@ This release expands the tracked Windows shortcut/update contract with employee-
 - Expanded the tracked Public Desktop shortcut task with `i1Internet Kurumsal`, `i2Internet Bireysel`, `r11-r22`, `k3Github Copilot CLI`, `v1VS2022Com`, and the renamed `t10Azd CLI`; `e1Mail` and every `Bireysel` Chrome shortcut now use the employee email local-part for `--profile-directory`, while `Kurumsal` shortcuts continue using `company_name`.
 - Added tracked Windows task `132-install-vs2022community.ps1`, raised tracked task `115-install-npm-packages-global` to the new timeout contract, and extended it to install the GitHub Copilot CLI prerequisite.
 - Reworked the tracked startup/profile-copy surface so one private local-only accessibility flow is handled generically: tracked code now provides neutral host autostart discovery, keeps unmanaged public shortcuts intact, and no longer contains vendor-specific startup or profile-copy ownership.
-- Revalidated the whole non-live gate and completed a live Windows acceptance cycle on `rg-examplevm-sec1-g1/examplevm`, including isolated local-only accessibility reruns, a full `update --single-step=vm-update --auto --windows` pass with `success=45`, repo-managed restart validation, and post-reboot SSH/process readback confirming the active manager session, startup shortcut, automatic utility service, and running local accessibility processes.
+- Revalidated the whole non-live gate and completed a live Windows acceptance cycle on `rg-examplevm-sec1-g1/examplevm`, including isolated local-only accessibility reruns, a full `update --step=vm-update --auto --windows` pass with `success=45`, repo-managed restart validation, and post-reboot SSH/process readback confirming the active manager session, startup shortcut, automatic utility service, and running local accessibility processes.
 
 ## Release 2026.3.11.282 - 2026-03-11
 
@@ -167,7 +179,7 @@ This release changes the Windows Public Desktop shortcut task from a destructive
 This release expands the managed Public Desktop contract again by adding the requested `g1-g4` developer shortcuts and `q2-q8` quick-access web shortcuts, all reusing the same Chrome launcher shape as `i1Internet`.
 
 ### Highlights
-- Extended `10002-create-shortcuts-public-desktop` with `g1Apple Developer`, `g2Google Developer`, `g3Microsoft Developer`, `g4Azure Portal`, `q2Spotify`, `q3Netflix`, `q4EDevlet`, `q5Apple Account`, `q6AJet Uçak`, `q7TCDD Tren`, and `q8OBilet Otobüs`, each using the existing Public Desktop Chrome target and argument contract.
+- Extended `10002-create-shortcuts-public-desktop` with `g1Apple Developer`, `g2Google Developer`, `g3Microsoft Developer`, `g4Azure Portal`, `q2Spotify`, `q3Netflix`, `q4EDevlet`, `q5Apple Account`, `q6AJet Flights`, `q7TCDD Train`, and `q8OBilet Bus`, each using the existing Public Desktop Chrome target and argument contract.
 - Expanded `10099-capture-snapshot-health` and the smoke contract so the new shortcut names and URLs are now read back and enforced together with the rest of the managed Public Desktop set.
 
 ## Release 2026.3.11.274 - 2026-03-11
@@ -406,7 +418,7 @@ This release turns `az-vm` into a documented, process-hardened, operator-facing 
 - Isolated live validation now also covers full Windows `vm-init` and `vm-update` sweeps plus a focused Ollama rerun that confirms HTTP readiness on port `11434`.
 - Isolated live validation now also covers tasks `30` through `37` plus rerun-confirmed `27` and `29`, proving the new package installs, app-backed Public Desktop shortcuts, one private local-only accessibility hotkey assignment, and Unicode-safe `q1Eksisozluk` readback on `rg-examplevm-ate1-g1/examplevm`.
 - Persistent SSH task parsing now strips spinner prefixes from `AZ_VM_*` protocol markers so long-running Windows installers cannot hide task-completion signals.
-- A fresh `create --auto --windows --perf --from-step=vm-update` rerun now completes successfully on `rg-examplevm-ate1-g1/examplevm` with `Standard_D4as_v5`, and the rebuilt VM answers on RDP port `3389`.
+- A fresh `create --auto --windows --perf --step-from=vm-update` rerun now completes successfully on `rg-examplevm-ate1-g1/examplevm` with `Standard_D4as_v5`, and the rebuilt VM answers on RDP port `3389`.
 
 ### Documentation and Process Improvements
 - Expanded `AGENTS.md` into a repository engineering contract.

@@ -7,9 +7,9 @@ function Get-AzVmUpdateOptionSpecifications {
         (Get-AzVmUpdateWindowsOptionSpecification),
         (Get-AzVmUpdateLinuxOptionSpecification),
         (Get-AzVmUpdateHelpOptionSpecification),
-        (Get-AzVmUpdateToStepOptionSpecification),
-        (Get-AzVmUpdateFromStepOptionSpecification),
-        (Get-AzVmUpdateSingleStepOptionSpecification),
+        (Get-AzVmUpdateStepToOptionSpecification),
+        (Get-AzVmUpdateStepFromOptionSpecification),
+        (Get-AzVmUpdateStepOptionSpecification),
         (Get-AzVmUpdateGroupOptionSpecification),
         (Get-AzVmUpdateVmNameOptionSpecification)
     )

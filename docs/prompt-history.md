@@ -4470,9 +4470,9 @@ Task: add the following shortcuts to the `public-desktop-icons` operations under
 *q3Netflix: https://www.netflix.com/tr-en/login
 *q4EDevlet: https://www.turkiye.gov.tr
 *q5Apple Account: https://account.apple.com/sign-in
-*q6AJet Uçak: https://ajet.com
-*q7TCDD Tren: https://ebilet.tcddtasimacilik.gov.tr
-*q8OBilet Otobüs: https://www.obilet.com/?giris
+*q6AJet Flights: https://ajet.com
+*q7TCDD Train: https://ebilet.tcddtasimacilik.gov.tr
+*q8OBilet Bus: https://www.obilet.com/?giris
 *g1Apple Developer: https://developer.apple.com/account
 *g2Google Developer: https://play.google.com/console/signin
 *g3Microsoft Developer: https://aka.ms/submitwindowsapp
@@ -4618,7 +4618,7 @@ Current baseline on **March 11, 2026**: `dev` and `main` already point to the sa
   6. Extract create/update pipeline internals into `commands/context`, `commands/steps`, `commands/features`, and `commands/pipeline`.
   7. Refactor large handlers like `move`, `resize`, `delete`, `exec`, `show`, and dispatcher last, after shared pieces are stable.
 
-- Keep ambient `$script:*` runtime state and current public façades in this refactor; do not also perform a full global-state rewrite or remove `Invoke-Step` variable promotion in the same change set.
+- Keep ambient `$script:*` runtime state and current public facades in this refactor; do not also perform a full global-state rewrite or remove `Invoke-Step` variable promotion in the same change set.
 
 ## Public Interfaces To Preserve
 - Preserve all current public function names and parameter contracts used across the repo and tests, especially:
@@ -4845,3 +4845,15 @@ Please inspect, test, and analyze the current worktree changes, create a git com
 **Assistant Summary**
 
 Audited the pending worktree changes, kept the coherent publish-facing documentation and CI updates together with the bounded Azure create-probe hardening, refreshed `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md`, and revalidated the non-live gate before committing the safe subset. This commit captures the publish-surface sync work without bundling the still-pending destructive live recreate and branch-cleanup tasks.
+
+### 2026-03-12 20:01 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented the agreed release-readiness plan across runtime, tests, and docs. The public create/update step selectors were renamed to `--step`, `--step-from`, and `--step-to`, the retired selector forms were removed cleanly, and `create explicit destructive rebuild flow` was added as the explicit destructive recreate contract while default `create` now reuses existing managed resources when possible. `update` now fails early unless the target managed resource group and VM already exist, and the VM deploy stage now redeploys an existing VM after the create-or-update pass. `resize` now supports managed OS disk growth through `--disk-size=<number>gb|mb --expand`, while `--disk-size=<number>gb|mb --shrink` is a non-mutating fail-fast guidance path that explains Azure OS disk shrink is unsupported and prints supported rebuild alternatives. I updated the runtime manifest, parameter modules, parser, help output, README, AGENTS contract, changelog, release notes, and smoke coverage to match this new surface, then revalidated the non-live gate with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks.

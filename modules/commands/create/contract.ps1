@@ -7,9 +7,10 @@ function Get-AzVmCreateOptionSpecifications {
         (Get-AzVmCreateWindowsOptionSpecification),
         (Get-AzVmCreateLinuxOptionSpecification),
         (Get-AzVmCreateHelpOptionSpecification),
-        (Get-AzVmCreateToStepOptionSpecification),
-        (Get-AzVmCreateFromStepOptionSpecification),
-        (Get-AzVmCreateSingleStepOptionSpecification),
+        (Get-AzVmCreateStepToOptionSpecification),
+        (Get-AzVmCreateStepFromOptionSpecification),
+        (Get-AzVmCreateStepOptionSpecification),
+        (Get-AzVmCreateRenewOptionSpecification),
         (Get-AzVmCreateVmNameOptionSpecification)
     )
 }

@@ -9,7 +9,7 @@ function Invoke-AzVmCreateCommand {
 
     $runtime = New-AzVmCreateCommandRuntime -Options $Options -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
     $script:UpdateMode = $false
-    $script:RenewMode = $false
-    $script:ExecutionMode = 'default'
+    $script:RenewMode = [bool]$runtime.RenewMode
+    $script:ExecutionMode = if ($script:RenewMode) { 'destructive rebuild' } else { 'default' }
     Invoke-AzVmMain -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -CommandName 'create' -InitialConfigOverrides $runtime.InitialConfigOverrides -ActionPlan $runtime.ActionPlan
 }

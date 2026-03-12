@@ -497,6 +497,56 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'samplevm'; auto = $true }
 }
 
+Invoke-Test -Name "Create and update accept renamed step selectors and create destructive rebuild" -Action {
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ step = 'network'; linux = $true }
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'step-from' = 'vm-deploy'; 'step-to' = 'vm-summary'; auto = $true; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ destructive rebuild = $true; auto = $true; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ step = 'vm-update'; auto = $true; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'step-from' = 'group'; 'step-to' = 'vm-init'; auto = $true }
+}
+
+Invoke-Test -Name "Create and update reject retired step selectors" -Action {
+    $retiredOptionCases = @(
+        @{ Command = 'create'; Options = @{ 'single-step' = 'network' } },
+        @{ Command = 'create'; Options = @{ 'from-step' = 'group'; 'step-to' = 'vm-init' } },
+        @{ Command = 'create'; Options = @{ 'step-from' = 'group'; 'to-step' = 'vm-init' } },
+        @{ Command = 'update'; Options = @{ 'single-step' = 'vm-update'; auto = $true } },
+        @{ Command = 'update'; Options = @{ 'from-step' = 'vm-deploy'; 'to-step' = 'vm-summary'; auto = $true } }
+    )
+
+    foreach ($case in @($retiredOptionCases)) {
+        $threw = $false
+        try {
+            Assert-AzVmCommandOptions -CommandName ([string]$case.Command) -Options $case.Options
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message ("Retired step selector must be rejected for command '{0}'." -f [string]$case.Command)
+    }
+}
+
+Invoke-Test -Name "Action plan resolves renamed step selectors" -Action {
+    $singlePlan = Resolve-AzVmActionPlan -CommandName 'create' -Options @{ step = 'network' }
+    Assert-True -Condition ([string]$singlePlan.Mode -eq 'single') -Message "Single-step action plan mode mismatch."
+    Assert-True -Condition (@($singlePlan.Actions).Count -eq 1 -and [string]$singlePlan.Actions[0] -eq 'network') -Message "Single-step action plan must contain only the requested step."
+
+    $rangePlan = Resolve-AzVmActionPlan -CommandName 'update' -Options @{ 'step-from' = 'vm-deploy'; 'step-to' = 'vm-summary' }
+    Assert-True -Condition ([string]$rangePlan.Mode -eq 'range') -Message "Range action plan mode mismatch."
+    Assert-True -Condition ((@($rangePlan.Actions) -join ',') -eq 'vm-deploy,vm-init,vm-update,vm-summary') -Message "Range action plan must include the forward step window."
+
+    $threw = $false
+    try {
+        Resolve-AzVmActionPlan -CommandName 'create' -Options @{ step = 'network'; 'step-to' = 'vm-summary' } | Out-Null
+    }
+    catch {
+        $threw = $true
+    }
+
+    Assert-True -Condition $threw -Message "Conflicting renamed step selectors must be rejected."
+}
+
 Invoke-Test -Name "Move and set commands accept vm-name" -Action {
     Assert-AzVmCommandOptions -CommandName 'move' -Options @{ 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; group = 'rg-samplevm-ate1-g1' }
     Assert-AzVmCommandOptions -CommandName 'set' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; hibernation = 'on' }
@@ -1101,10 +1151,197 @@ Invoke-Test -Name "VM create step tolerates a transient non-zero create when the
     }
 }
 
+Invoke-Test -Name "Create runtime reuses the existing managed resource group and exposes destructive rebuild mode" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @(
+        'Get-AzVmRepoRoot',
+        'Read-DotEnvFile',
+        'Get-AzVmManagedVmMatchRows'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function global:Get-AzVmRepoRoot { return $RepoRoot }
+    function global:Read-DotEnvFile {
+        param([string]$Path)
+        return @{
+            RESOURCE_GROUP = ''
+            VM_NAME = 'samplevm'
+        }
+    }
+    function global:Get-AzVmManagedVmMatchRows {
+        param([string]$VmName)
+        return @([pscustomobject]@{ ResourceGroup = 'rg-samplevm-ate1-g1' })
+    }
+
+    try {
+        $runtime = New-AzVmCreateCommandRuntime -Options @{ auto = $true; destructive rebuild = $true } -WindowsFlag -LinuxFlag:$false
+
+        Assert-True -Condition ([bool]$runtime.RenewMode) -Message "Create runtime must expose destructive rebuild mode when explicit destructive rebuild flow is present."
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.RESOURCE_GROUP -eq 'rg-samplevm-ate1-g1') -Message "Create runtime must reuse the existing managed resource group when one managed VM match is found."
+        Assert-True -Condition ([string]$runtime.ActionPlan.Target -eq 'vm-summary') -Message "Create runtime without step selectors must default to the full action plan."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Read-DotEnvFile',
+            'Get-AzVmManagedVmMatchRows'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
+Invoke-Test -Name "Update runtime requires an existing managed VM before orchestration starts" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @(
+        'Get-AzVmRepoRoot',
+        'Read-DotEnvFile',
+        'Resolve-AzVmTargetResourceGroup',
+        'Resolve-AzVmTargetVmName',
+        'Test-AzVmAzResourceExists'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function global:Get-AzVmRepoRoot { return $RepoRoot }
+    function global:Read-DotEnvFile {
+        param([string]$Path)
+        return @{
+            RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+            VM_NAME = 'samplevm'
+        }
+    }
+    function global:Resolve-AzVmTargetResourceGroup {
+        param([hashtable]$Options, [switch]$AutoMode, [string]$DefaultResourceGroup, [string]$VmName, [string]$OperationName)
+        return 'rg-samplevm-ate1-g1'
+    }
+    function global:Resolve-AzVmTargetVmName {
+        param([string]$ResourceGroup, [string]$DefaultVmName, [switch]$AutoMode, [string]$OperationName)
+        return 'samplevm'
+    }
+    function global:Test-AzVmAzResourceExists {
+        param([string[]]$AzArgs)
+        return $false
+    }
+
+    try {
+        $threw = $false
+        try {
+            New-AzVmUpdateCommandRuntime -Options @{ auto = $true } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*was not found in managed resource group*') -Message "Update runtime failure must explain that the target VM does not exist."
+        }
+
+        Assert-True -Condition $threw -Message "Update runtime must fail early when the target VM does not exist."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Read-DotEnvFile',
+            'Resolve-AzVmTargetResourceGroup',
+            'Resolve-AzVmTargetVmName',
+            'Test-AzVmAzResourceExists'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
+Invoke-Test -Name "VM create step redeploys existing VMs in update mode" -Action {
+    $script:VmUpdateRedeployInvocation = $null
+
+    try {
+        function Show-AzVmStepFirstUseValues { param([string]$StepLabel, [hashtable]$Context, [string[]]$Keys, [hashtable]$ExtraValues) }
+        function Invoke-TrackedAction {
+            param([string]$Label, [scriptblock]$Action)
+            & $Action
+        }
+        function Invoke-AzVmPostDeployFeatureEnablement {
+            param([hashtable]$Context, [switch]$VmCreatedThisRun)
+            return [pscustomobject]@{
+                HibernationAttempted = $false
+                HibernationEnabled = $false
+                HibernationMessage = ''
+                NestedAttempted = $false
+                NestedEnabled = $false
+                NestedMessage = ''
+            }
+        }
+        function Invoke-AzVmUpdateVmRedeploy {
+            param([string]$ResourceGroup, [string]$VmName, [switch]$AutoMode)
+            $script:VmUpdateRedeployInvocation = [pscustomobject]@{
+                ResourceGroup = $ResourceGroup
+                VmName = $VmName
+                AutoMode = [bool]$AutoMode
+            }
+        }
+        function az {
+            $line = @($args) -join ' '
+            if ($line -match [regex]::Escape('vm list')) {
+                $global:LASTEXITCODE = 0
+                return 'samplevm'
+            }
+
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        $result = Invoke-AzVmVmCreateStep -Context @{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        } -AutoMode -ExecutionMode 'update' -CreateVmAction {
+            $global:LASTEXITCODE = 0
+            return '{"id":"/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/virtualMachines/samplevm"}'
+        }
+
+        Assert-True -Condition ($null -ne $script:VmUpdateRedeployInvocation) -Message "Update-mode create step must trigger VM redeploy for an existing VM."
+        Assert-True -Condition ([string]$script:VmUpdateRedeployInvocation.ResourceGroup -eq 'rg-samplevm-ate1-g1') -Message "Update-mode redeploy must target the existing resource group."
+        Assert-True -Condition ([string]$script:VmUpdateRedeployInvocation.VmName -eq 'samplevm') -Message "Update-mode redeploy must target the existing VM."
+        Assert-True -Condition (-not [bool]$result.VmCreatedThisRun) -Message "Existing update-mode VM create must not be reported as a fresh VM creation."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Show-AzVmStepFirstUseValues',
+            'Invoke-TrackedAction',
+            'Invoke-AzVmPostDeployFeatureEnablement',
+            'Invoke-AzVmUpdateVmRedeploy',
+            'az'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name VmUpdateRedeployInvocation -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Resize command accepts vm-name and platform flags" -Action {
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D4as_v5'; group = 'rg-samplevm-ate1-g1' }
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-samplevm-ate1-g1'; windows = $true }
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D2as_v5'; group = 'rg-samplevm-ate1-g1'; linux = $true }
+}
+
+Invoke-Test -Name "Resize command accepts disk-size and disk intent flags" -Action {
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; 'disk-size' = '196gb'; expand = $true }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; 'disk-size' = '98304mb'; expand = $true; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; 'disk-size' = '64gb'; shrink = $true; linux = $true }
 }
 
 Invoke-Test -Name "Exec command accepts vm-name for direct task targeting" -Action {
@@ -1181,8 +1418,289 @@ Invoke-Test -Name "Auto option scope contract" -Action {
 
 Invoke-Test -Name "Resize direct request detection" -Action {
     Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-size' = 'Standard_D4as_v5' }) -Message "Fully specified resize request must be treated as direct."
+    Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'disk-size' = '98304mb'; expand = $true }) -Message "Disk expand request with target group, VM, and disk size must be treated as direct."
+    Assert-True -Condition (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'disk-size' = '64gb'; shrink = $true }) -Message "Disk shrink request with target group, VM, and disk size must be treated as direct."
     Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' })) -Message "Resize request without vm-size must not be treated as direct."
+    Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'disk-size' = '64gb' })) -Message "Disk resize request without an intent flag must not be treated as direct."
     Assert-True -Condition (-not (Test-AzVmResizeDirectRequest -Options @{ group = 'rg-samplevm-ate1-g1'; vm = 'samplevm'; 'vm-size' = 'Standard_D4as_v5' })) -Message "Legacy vm option must not satisfy direct resize request detection."
+}
+
+Invoke-Test -Name "Resize operation request validates disk intent combinations" -Action {
+    $expandRequest = Resolve-AzVmResizeOperationRequest -Options @{ 'disk-size' = '98304mb'; expand = $true }
+    Assert-True -Condition ([string]$expandRequest.Kind -eq 'disk') -Message "Disk resize request must resolve to the disk kind."
+    Assert-True -Condition ([string]$expandRequest.Intent -eq 'expand') -Message "Disk resize request must keep expand intent."
+    Assert-True -Condition ([int]$expandRequest.TargetDiskSizeGb -eq 96) -Message "MB disk resize request must round upward to whole GiB."
+
+    $vmSizeRequest = Resolve-AzVmResizeOperationRequest -Options @{ 'vm-size' = 'Standard_D4as_v5' }
+    Assert-True -Condition ([string]$vmSizeRequest.Kind -eq 'vm-size') -Message "VM-size resize request must resolve to the vm-size kind."
+
+    foreach ($invalidOptions in @(
+        @{ 'disk-size' = '196gb'; expand = $true; shrink = $true },
+        @{ 'disk-size' = '196gb' },
+        @{ expand = $true },
+        @{ 'vm-size' = 'Standard_D4as_v5'; 'disk-size' = '196gb'; expand = $true }
+    )) {
+        $threw = $false
+        try {
+            Resolve-AzVmResizeOperationRequest -Options $invalidOptions | Out-Null
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message "Invalid disk resize option combination must be rejected."
+    }
+}
+
+Invoke-Test -Name "Resize target disk size parser validates units and values" -Action {
+    $gbRequest = Resolve-AzVmResizeTargetDiskSize -Options @{ 'disk-size' = '196gb' }
+    Assert-True -Condition ([int]$gbRequest.TargetDiskSizeGb -eq 196) -Message "GB disk-size request must keep the same numeric size."
+
+    $mbRequest = Resolve-AzVmResizeTargetDiskSize -Options @{ 'disk-size' = '1537mb' }
+    Assert-True -Condition ([int]$mbRequest.TargetDiskSizeGb -eq 2) -Message "MB disk-size request must round upward to the next whole GiB."
+
+    foreach ($invalidDiskSize in @('', '0gb', 'bad', '12tb')) {
+        $threw = $false
+        try {
+            Resolve-AzVmResizeTargetDiskSize -Options @{ 'disk-size' = $invalidDiskSize } | Out-Null
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message ("Invalid disk-size value '{0}' must be rejected." -f $invalidDiskSize)
+    }
+}
+
+Invoke-Test -Name "Resize shrink path is non-mutating and prints supported alternatives" -Action {
+    $script:ResizeShrinkAzCalls = @()
+    $script:ResizeShrinkAlternativesShown = $false
+    $script:ConfigOverrides = @{}
+    $originalFunctionDefinitions = @{}
+
+    foreach ($functionName in @(
+        'Get-AzVmRepoRoot',
+        'Read-DotEnvFile',
+        'Resolve-AzVmManagedVmTarget',
+        'Get-AzVmResizeOsDiskContext',
+        'Show-AzVmResizeShrinkAlternatives',
+        'Set-DotEnvValue',
+        'az'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function global:Get-AzVmRepoRoot { return $RepoRoot }
+    function global:Read-DotEnvFile { param([string]$Path) return @{} }
+    function global:Resolve-AzVmManagedVmTarget {
+        param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        }
+    }
+    function global:Get-AzVmResizeOsDiskContext {
+        param([psobject]$VmObject, [string]$ResourceGroup, [string]$VmName)
+        return [pscustomobject]@{
+            DiskId = '/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/disks/disk-samplevm'
+            DiskName = 'disk-samplevm'
+            DiskSizeGb = 128
+            SkuName = 'Premium_LRS'
+        }
+    }
+    function global:Show-AzVmResizeShrinkAlternatives {
+        $script:ResizeShrinkAlternativesShown = $true
+    }
+    function global:Set-DotEnvValue {
+        throw 'Shrink guidance must not persist .env changes.'
+    }
+    function global:az {
+        $line = @($args) -join ' '
+        $script:ResizeShrinkAzCalls += $line
+
+        if ($line -eq 'vm show -g rg-samplevm-ate1-g1 -n samplevm -o json --only-show-errors') {
+            $global:LASTEXITCODE = 0
+            return '{"location":"austriaeast","hardwareProfile":{"vmSize":"Standard_D4as_v5"},"storageProfile":{"osDisk":{"osType":"Windows"}}}'
+        }
+
+        throw ("Unexpected Azure call during shrink guidance test: {0}" -f $line)
+    }
+
+    try {
+        $threw = $false
+        try {
+            Invoke-AzVmResizeCommand -Options @{
+                group = 'rg-samplevm-ate1-g1'
+                'vm-name' = 'samplevm'
+                'disk-size' = '64gb'
+                shrink = $true
+            } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*Azure does not support shrinking the existing managed OS disk*') -Message "Shrink guidance failure must explain the Azure OS disk shrink limitation."
+        }
+
+        Assert-True -Condition $threw -Message "Shrink guidance path must exit with a friendly error."
+        Assert-True -Condition $script:ResizeShrinkAlternativesShown -Message "Shrink guidance path must print supported alternatives."
+        Assert-True -Condition (-not ((@($script:ResizeShrinkAzCalls) -join "`n") -match 'vm deallocate|disk update|vm start|vm resize')) -Message "Shrink guidance path must not call mutating Azure resize operations."
+        Assert-True -Condition ($script:ConfigOverrides.Count -eq 0) -Message "Shrink guidance path must not update runtime config overrides."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Read-DotEnvFile',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmResizeOsDiskContext',
+            'Show-AzVmResizeShrinkAlternatives',
+            'Set-DotEnvValue',
+            'az'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+        Remove-Variable -Name ResizeShrinkAzCalls -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ResizeShrinkAlternativesShown -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ConfigOverrides -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Resize expand path deallocates, grows disk, restarts, and persists config" -Action {
+    $script:ResizeExpandAzCalls = @()
+    $script:ResizeExpandWaits = @()
+    $script:ResizeExpandPersist = $null
+    $script:ConfigOverrides = @{}
+    $originalFunctionDefinitions = @{}
+
+    foreach ($functionName in @(
+        'Get-AzVmRepoRoot',
+        'Read-DotEnvFile',
+        'Resolve-AzVmManagedVmTarget',
+        'Get-AzVmResizeOsDiskContext',
+        'Invoke-TrackedAction',
+        'Wait-AzVmVmPowerState',
+        'Set-DotEnvValue',
+        'az'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function global:Get-AzVmRepoRoot { return $RepoRoot }
+    function global:Read-DotEnvFile { param([string]$Path) return @{} }
+    function global:Resolve-AzVmManagedVmTarget {
+        param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        }
+    }
+    function global:Get-AzVmResizeOsDiskContext {
+        param([psobject]$VmObject, [string]$ResourceGroup, [string]$VmName)
+        return [pscustomobject]@{
+            DiskId = '/subscriptions/test/resourceGroups/rg-samplevm-ate1-g1/providers/Microsoft.Compute/disks/disk-samplevm'
+            DiskName = 'disk-samplevm'
+            DiskSizeGb = 128
+            SkuName = 'Premium_LRS'
+        }
+    }
+    function global:Invoke-TrackedAction {
+        param([string]$Label, [scriptblock]$Action)
+        & $Action
+    }
+    function global:Wait-AzVmVmPowerState {
+        param([string]$ResourceGroup, [string]$VmName, [string]$DesiredPowerState, [int]$MaxAttempts, [int]$DelaySeconds)
+        $script:ResizeExpandWaits += [string]$DesiredPowerState
+        return $true
+    }
+    function global:Set-DotEnvValue {
+        param([string]$Path, [string]$Key, [string]$Value)
+        $script:ResizeExpandPersist = [pscustomobject]@{
+            Path = $Path
+            Key = $Key
+            Value = $Value
+        }
+    }
+    function global:az {
+        $line = @($args) -join ' '
+        $script:ResizeExpandAzCalls += $line
+
+        switch ($line) {
+            'vm show -g rg-samplevm-ate1-g1 -n samplevm -o json --only-show-errors' {
+                $global:LASTEXITCODE = 0
+                return '{"location":"austriaeast","hardwareProfile":{"vmSize":"Standard_D4as_v5"},"storageProfile":{"osDisk":{"osType":"Windows"}}}'
+            }
+            'vm deallocate -g rg-samplevm-ate1-g1 -n samplevm -o none --only-show-errors' {
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+            'disk update -g rg-samplevm-ate1-g1 -n disk-samplevm --size-gb 196 -o none --only-show-errors' {
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+            'vm start -g rg-samplevm-ate1-g1 -n samplevm -o none --only-show-errors' {
+                $global:LASTEXITCODE = 0
+                return ''
+            }
+            default {
+                throw ("Unexpected Azure call during disk expand test: {0}" -f $line)
+            }
+        }
+    }
+
+    try {
+        Invoke-AzVmResizeCommand -Options @{
+            group = 'rg-samplevm-ate1-g1'
+            'vm-name' = 'samplevm'
+            'disk-size' = '196gb'
+            expand = $true
+        } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
+
+        $expectedAzSequence = @(
+            'vm show -g rg-samplevm-ate1-g1 -n samplevm -o json --only-show-errors',
+            'vm deallocate -g rg-samplevm-ate1-g1 -n samplevm -o none --only-show-errors',
+            'disk update -g rg-samplevm-ate1-g1 -n disk-samplevm --size-gb 196 -o none --only-show-errors',
+            'vm start -g rg-samplevm-ate1-g1 -n samplevm -o none --only-show-errors'
+        )
+        Assert-True -Condition ((@($script:ResizeExpandAzCalls) -join "`n") -eq ($expectedAzSequence -join "`n")) -Message "Disk expand path must call Azure in the expected order."
+        Assert-True -Condition ((@($script:ResizeExpandWaits) -join ',') -eq 'VM deallocated,VM running') -Message "Disk expand path must wait for deallocated and running VM states."
+        Assert-True -Condition ($null -ne $script:ResizeExpandPersist) -Message "Disk expand path must persist the updated platform disk-size config."
+        Assert-True -Condition ([string]$script:ResizeExpandPersist.Key -eq 'WIN_VM_DISK_SIZE_GB') -Message "Disk expand path must persist the Windows disk-size config key for a Windows VM."
+        Assert-True -Condition ([string]$script:ResizeExpandPersist.Value -eq '196') -Message "Disk expand path must persist the expanded disk size."
+        Assert-True -Condition ([string]$script:ConfigOverrides.WIN_VM_DISK_SIZE_GB -eq '196') -Message "Disk expand path must update in-memory config overrides with the expanded disk size."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Read-DotEnvFile',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmResizeOsDiskContext',
+            'Invoke-TrackedAction',
+            'Wait-AzVmVmPowerState',
+            'Set-DotEnvValue',
+            'az'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+        Remove-Variable -Name ResizeExpandAzCalls -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ResizeExpandWaits -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ResizeExpandPersist -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ConfigOverrides -Scope Script -ErrorAction SilentlyContinue
+    }
 }
 
 Invoke-Test -Name "Move source group purge-safety helper accepts expected resource set" -Action {

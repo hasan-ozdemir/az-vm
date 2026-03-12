@@ -7,6 +7,9 @@ function Get-AzVmResizeOptionSpecifications {
         (Get-AzVmResizeGroupOptionSpecification),
         (Get-AzVmResizeVmNameOptionSpecification),
         (Get-AzVmResizeVmSizeOptionSpecification),
+        (Get-AzVmResizeDiskSizeOptionSpecification),
+        (Get-AzVmResizeExpandOptionSpecification),
+        (Get-AzVmResizeShrinkOptionSpecification),
         (Get-AzVmResizeWindowsOptionSpecification),
         (Get-AzVmResizeLinuxOptionSpecification)
     )

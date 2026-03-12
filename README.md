@@ -15,6 +15,13 @@
   - [First Configuration Pass](#first-configuration-pass)
   - [First End-To-End Run](#first-end-to-end-run)
   - [Daily Operator Shortcuts](#daily-operator-shortcuts)
+  - [Quick Accelerator](#quick-accelerator)
+- [Customer Business Value](#customer-business-value)
+  - [Executive Summary](#executive-summary)
+  - [Delivered VM Outcome Matrix](#delivered-vm-outcome-matrix)
+- [Developer Benefits](#developer-benefits)
+  - [Why Developers Move Faster](#why-developers-move-faster)
+  - [Daily Maintainer Flow](#daily-maintainer-flow)
 - [Core Mental Model](#core-mental-model)
   - [One Entrypoint, Two Platforms](#one-entrypoint-two-platforms)
   - [Top-Level Orchestration Steps](#top-level-orchestration-steps)
@@ -56,13 +63,14 @@
   - [Task Naming Rules](#task-naming-rules)
   - [Timeouts, Priority, And Enable Flags](#timeouts-priority-and-enable-flags)
   - [Direct Task Execution With `exec`](#direct-task-execution-with-exec)
-- [Practical Operating Scenarios](#practical-operating-scenarios)
-  - [Provision A New Windows VM](#provision-a-new-windows-vm)
-  - [Rerun Update Tasks On An Existing VM](#rerun-update-tasks-on-an-existing-vm)
-  - [Resize In Place](#resize-in-place)
-  - [Move To Another Region](#move-to-another-region)
-  - [Inspect And Control Power State](#inspect-and-control-power-state)
-  - [Connect With SSH Or RDP](#connect-with-ssh-or-rdp)
+- [Practical And Extensive Usage Scenarios](#practical-and-extensive-usage-scenarios)
+  - [Create Or Reuse A Managed VM](#create-or-reuse-a-managed-vm)
+  - [Update An Existing Managed VM](#update-an-existing-managed-vm)
+  - [Inspect Managed Resource Groups And VM State](#inspect-managed-resource-groups-and-vm-state)
+  - [Run One Task Or Open A Remote Shell](#run-one-task-or-open-a-remote-shell)
+  - [Resize Compute Or OS Disk In Place](#resize-compute-or-os-disk-in-place)
+  - [Move Regions And Clean Up Safely](#move-regions-and-clean-up-safely)
+  - [Delete Only The Scope You Intend](#delete-only-the-scope-you-intend)
 - [Troubleshooting Guide](#troubleshooting-guide)
   - [Validation Failures](#validation-failures)
   - [Task Failures](#task-failures)
@@ -161,6 +169,53 @@
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
+### Quick Accelerator
+If you want the fastest safe path to value, use this order:
+1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
+2. Run `.\az-vm.cmd create --auto --windows` or `.\az-vm.cmd create --auto --linux`.
+3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
+4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
+5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
+
+## Customer Business Value
+
+### Executive Summary
+`az-vm` compresses the time from "we need a working Azure VM" to "we have a repeatable, supportable, documented VM" into one repo-owned workflow. Instead of a portal-heavy build with hidden post-install steps, the operator gets one command surface for provisioning, guest bootstrap, guest software rollout, health capture, follow-up updates, repair actions, resizing, move operations, and eventual deletion.
+
+For executive and customer-facing teams, the practical value is speed with lower variance:
+- faster time to a usable VM
+- less manual setup drift between environments
+- repeatable update and repair flows after the first deployment
+- clearer support handoff because runtime behavior, docs, release notes, and prompt history live together
+
+### Delivered VM Outcome Matrix
+| Outcome Area | Windows managed VM outcome | Linux managed VM outcome | Business value |
+| --- | --- | --- | --- |
+| Base access | Local users, OpenSSH, RDP, firewall ports, repo-managed connection flow | Local users, SSHD port config, firewall ports, repo-managed connection flow | Teams can connect and hand over access quickly without rediscovering the host setup. |
+| Core tooling | PowerShell 7, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, 7-Zip, Sysinternals, FFmpeg | System package upgrade, Node capability tuning, SSHD tuning | A new VM becomes productive for cloud, scripting, and developer workflows in minutes instead of after many manual installs. |
+| Developer runtime | Docker Desktop, WSL2, npm global package set, Ollama, Codex app, VS 2022 Community | Node-ready SSH environment and updated base packages | Engineering teams get a ready-to-use workstation or automation host with less first-day setup work. |
+| Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | Customer-facing and operator-facing daily-use software is staged consistently instead of being installed ad hoc. |
+| Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Support, accessibility, and assisted-operation scenarios are easier to reproduce and maintain. |
+| Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting time falls because the repo already knows how to inspect, rerun, and summarize the environment. |
+| Lifecycle changes | Create, reuse, destructive rebuild, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create, reuse, destructive rebuild, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit keeps working after day one, so operations do not regress to manual portal work. |
+
+## Developer Benefits
+
+### Why Developers Move Faster
+- One orchestrator means less context switching between separate scripts for provisioning, update, connection, and repair.
+- The same command surface covers Windows and Linux, so platform differences stay narrow and explicit.
+- `create` now reuses existing managed resources by default, which is faster and safer for iterative work; `create explicit destructive rebuild flow` remains the explicit destructive path.
+- `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
+- `resize --disk-size=... --expand` gives a safe in-place managed OS disk growth path, while `resize --disk-size=... --shrink` stops early and explains the supported alternatives instead of risking data loss.
+- Direct `task` and `exec` flows let maintainers inspect and rerun exactly the step or task that matters.
+
+### Daily Maintainer Flow
+1. Confirm the target with `show`, `group`, and `do --vm-action=status`.
+2. Use `create` for first deploys or non-destructive reuse; use `create explicit destructive rebuild flow` only when a full rebuild is intentional.
+3. Use `update` for ongoing maintenance, guest-task refresh, and Azure redeploy-backed repair on an existing VM.
+4. Use `task` and `exec` to isolate one failing init or update task instead of replaying the whole chain.
+5. Use `move`, `resize`, `set`, and `delete` only after the inventory and current state are explicit.
+
 ## Core Mental Model
 
 ### One Entrypoint, Two Platforms
@@ -176,7 +231,7 @@
 6. `vm-update`
 7. `vm-summary`
 
-`create` and `update` can run the full chain or a selected window of steps by using `--from-step`, `--to-step`, or `--single-step`.
+`create` and `update` can run the full chain or a selected window of steps by using `--step-from`, `--step-to`, or `--step`.
 
 ### Init Tasks Versus Update Tasks
 - `vm-init` is Azure Run Command driven and is used for early guest bootstrap.
@@ -343,19 +398,22 @@ What to expect:
 - no destructive Azure mutation
 
 ### `create`
-Purpose: build a managed VM flow from the selected step range.
+Purpose: build or reuse one managed VM flow from the selected step range.
 
 Usage patterns:
 ```powershell
 .\az-vm.cmd create -h
 .\az-vm.cmd create --auto --windows
-.\az-vm.cmd create --single-step=network --linux
-.\az-vm.cmd create --from-step=vm-deploy --to-step=vm-summary --perf
+.\az-vm.cmd create --step=network --linux
+.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
+.\az-vm.cmd create explicit destructive rebuild flow --auto --windows
 ```
 
 Operator expectations:
 - validates config before mutation
 - creates missing resources
+- keeps existing managed resources by default and informs the operator when reuse happens
+- uses `explicit destructive rebuild flow` as the explicit destructive recreate path
 - runs init and update task windows unless the step range slices them out
 - success ends with a summary of the managed VM state
 
@@ -365,19 +423,21 @@ Failure patterns:
 - guest task failures depending on `VM_TASK_OUTCOME_MODE`
 
 ### `update`
-Purpose: rerun create-or-update logic against existing managed resources.
+Purpose: rerun create-or-update logic against one existing managed VM.
 
 Usage patterns:
 ```powershell
 .\az-vm.cmd update -h
 .\az-vm.cmd update --auto
-.\az-vm.cmd update --to-step=vm-init --auto
-.\az-vm.cmd update --single-step=vm-update --windows
+.\az-vm.cmd update --step-to=vm-init --auto
+.\az-vm.cmd update --step=vm-update --windows
 ```
 
 Operator expectations:
 - keeps the same orchestration model as `create`
-- targets already-managed resources
+- requires an existing managed resource group and existing VM before it starts
+- targets already-managed resources without destructive delete behavior
+- runs `az vm redeploy` for an existing VM during the VM deploy stage
 - useful for post-fix reruns and guest task refreshes
 
 ### `group`
@@ -552,12 +612,15 @@ What can fail:
 - old source cleanup failure after successful cutover
 
 ### `resize`
-Purpose: change the VM size in-place within the current region.
+Purpose: change the VM size or expand the managed OS disk in-place within the current region.
 
 Usage patterns:
 ```powershell
 .\az-vm.cmd resize -h
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=196gb --expand --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=98304mb --expand
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=64gb --shrink
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D2as_v5 --windows
 .\az-vm.cmd resize
 ```
@@ -567,6 +630,8 @@ Behavior notes:
 - fully specified calls run directly
 - parameterless use falls back to interactive target and size selection
 - `--windows` and `--linux` act as expected-platform assertions
+- `--disk-size=... --expand` deallocates the VM, grows the managed OS disk, starts the VM again, and persists the new platform disk-size key in `.env`
+- `--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity
 
 ### `set`
 Purpose: apply hibernation and sync nested-virtualization desired state.
@@ -654,30 +719,82 @@ Catalog JSON files are the source of truth for task ordering, enable state, and 
 ### Direct Task Execution With `exec`
 Direct `exec --init-task` and `exec --update-task` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
 
-## Practical Operating Scenarios
+## Practical And Extensive Usage Scenarios
 
-### Provision A New Windows VM
+### Create Or Reuse A Managed VM
 ```powershell
 .\az-vm.cmd create --auto --windows
-.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
-.\az-vm.cmd rdp --vm-name=<vm-name>
+.\az-vm.cmd create --step=network --linux
+.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
+.\az-vm.cmd create explicit destructive rebuild flow --auto --windows
 ```
 
-### Rerun Update Tasks On An Existing VM
+Practical outcomes:
+- the default path creates missing Azure resources and reuses existing managed ones without deleting them
+- `explicit destructive rebuild flow` is the explicit rebuild path when the operator wants a destructive recreate
+- the same step model works in interactive and auto mode
+
+### Update An Existing Managed VM
 ```powershell
-.\az-vm.cmd update --single-step=vm-update --auto --windows
-.\az-vm.cmd exec --update-task=10099 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd update --auto --windows
+.\az-vm.cmd update --step=vm-update --auto --windows
+.\az-vm.cmd update --step-to=vm-init --auto
 ```
 
-### Resize In Place
+Practical outcomes:
+- the command fails fast if the managed resource group or VM does not exist, and it points the operator to `create`
+- the VM deploy step uses Azure create-or-update plus `az vm redeploy` when the target VM already exists
+- update is the main maintenance path after the first deployment
+
+### Inspect Managed Resource Groups And VM State
+```powershell
+.\az-vm.cmd group --list=<vm-name>
+.\az-vm.cmd group --select=<resource-group>
+.\az-vm.cmd show --group=<resource-group>
+.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
+```
+
+Practical outcomes:
+- the operator can select the active managed group explicitly
+- `show` gives an inventory snapshot while password-bearing `.env` values are redacted
+- `do --vm-action=status` is the quickest preflight check before a mutating change
+
+### Run One Task Or Open A Remote Shell
+```powershell
+.\az-vm.cmd task --list --vm-update --windows
+.\az-vm.cmd exec --update-task=10099 --group=<resource-group> --vm-name=<vm-name> --windows
+.\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=manager
+.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
+```
+
+Practical outcomes:
+- support and development teams can rerun only the failing task instead of replaying the whole deployment
+- `task` exposes the real discovered inventory, including tracked and local-only tasks
+- `ssh` and `rdp` remain direct operator commands, with `--user=manager --test` available for non-interactive validation
+
+### Resize Compute Or OS Disk In Place
 ```powershell
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D2as_v5 --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=196gb --expand --windows
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=98304mb --expand
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=64gb --shrink
 ```
 
-### Move To Another Region
+Practical outcomes:
+- `--vm-size` changes compute SKU in the same region
+- `--expand` performs the supported managed OS disk growth path with explicit before/after logging
+- `--shrink` explains why Azure OS disk shrink is unsupported and lists safer rebuild alternatives
+
+### Move Regions And Clean Up Safely
 ```powershell
 .\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral
+```
+
+### Delete Only The Scope You Intend
+```powershell
+.\az-vm.cmd delete --target=vm --group=<resource-group> --yes
+.\az-vm.cmd delete --target=group --group=<resource-group> --yes
 ```
 
 ### Inspect And Control Power State
@@ -717,6 +834,7 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 ### Move And Resize Expectations
 - `move` is a deliberate cutover operation with downtime and cross-region copy time.
 - `resize` is same-region only and is much smaller in scope than `move`.
+- managed OS disk shrink is intentionally blocked as an unsupported Azure scenario; use the printed rebuild or migration alternatives instead.
 - Both commands validate before mutation and return friendly hints on invalid state or configuration.
 
 ## Developer Workflow

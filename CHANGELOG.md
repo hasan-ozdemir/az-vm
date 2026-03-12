@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.292] - 2026-03-12
+
+### Added
+- Added explicit managed OS disk resize intent flags for `resize`: `--disk-size=<number>gb|mb --expand` now performs the supported in-place OS disk growth path, while `--disk-size=<number>gb|mb --shrink` stops before mutation and prints supported rebuild and migration alternatives because Azure does not support shrinking an existing managed OS disk in place.
+- Added the public `create explicit destructive rebuild flow` contract so destructive recreate stays explicit instead of being mixed into the default create path.
+
+### Changed
+- Renamed the public step selectors for `create` and `update` from `--single-step`, `--from-step`, and `--to-step` to `--step`, `--step-from`, and `--step-to`, then removed the retired forms from the parser, manifest, parameter modules, help output, README examples, and smoke coverage.
+- Changed default `create` behavior so existing managed resources are reused non-destructively when possible, with clearer operator messaging when the command continues on top of an existing managed target.
+- Changed `update` so it now requires an existing managed resource group and existing VM before orchestration begins, and the VM deploy stage now redeploys an existing VM after the create-or-update pass.
+- Refreshed README, AGENTS, changelog wording, release notes, and prompt-history normalization so the maintained documentation now reflects the current release surface with stronger business-value, developer-benefit, and publish-readiness guidance.
+
+### Tests
+- Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/bash-syntax-check.ps1`.
+
 ## [2026.3.12.291] - 2026-03-12
 
 ### Changed
@@ -26,7 +41,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Revalidated live Windows behavior on `rg-examplevm-sec1-g1/examplevm` and confirmed concrete improvements: `114-install-docker-desktop` dropped from about `16.2s` to about `3.2s`, `121-install-whatsapp-system` dropped from about `9.8s` to about `3.5s` on deferred reruns, `10099-capture-snapshot-health` dropped from about `9.8s` to about `6.1s`, and the full `vm-update` step dropped from about `234.7s` to about `198.0s`.
 
 ### Tests
-- Revalidated live Windows task behavior with targeted `exec --update-task=114`, `121`, `10003`, `10001`, and `10099` runs plus a full `update --single-step=vm-update --auto --windows --perf` pass on `rg-examplevm-sec1-g1/examplevm`.
+- Revalidated live Windows task behavior with targeted `exec --update-task=114`, `121`, `10003`, `10001`, and `10099` runs plus a full `update --step=vm-update --auto --windows --perf` pass on `rg-examplevm-sec1-g1/examplevm`.
 - Revalidated the non-live gate with `tests/powershell-compatibility-check.ps1` and `tests/az-vm-smoke-tests.ps1`.
 
 ## [2026.3.12.288] - 2026-03-12
@@ -51,7 +66,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Tests
 - Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
-- Revalidated live Windows behavior on `rg-examplevm-sec1-g1/examplevm` with targeted `exec --update-task=114`, `exec --update-task=10005`, `exec --update-task=10002`, `exec --update-task=10099`, and a full `update --single-step=vm-update --auto --windows` pass. The tuned tasks now complete quickly, and the latest Public Desktop readback leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
+- Revalidated live Windows behavior on `rg-examplevm-sec1-g1/examplevm` with targeted `exec --update-task=114`, `exec --update-task=10005`, `exec --update-task=10002`, `exec --update-task=10099`, and a full `update --step=vm-update --auto --windows` pass. The tuned tasks now complete quickly, and the latest Public Desktop readback leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
 
 ## [2026.3.12.286] - 2026-03-12
 
@@ -59,7 +74,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Restored tracked Public Desktop shortcuts `q1SourTimes`, `s15{TitleCase(company_name)} Web`, and `s16{TitleCase(company_name)} Blog` so the managed shortcut set again owns those browser entry points explicitly.
 
 ### Changed
-- Renamed the tracked Windows Public Desktop web/app labels from the old Turkish `Kurumsal`/`Bireysel` wording to the approved English `Business`/`Personal` contract, including the approved brand-specific overrides such as `s18NextSosyal Business`, `r13ÇiçekSepeti Business`, `r14ÇiçekSepeti Personal`, `r17PTTAVM Business`, and `r18PTTAVM Personal`.
+- Renamed the tracked Windows Public Desktop web/app labels from the old Turkish `Kurumsal`/`Bireysel` wording to the approved English `Business`/`Personal` contract, including the approved brand-specific overrides such as `s18NextSosyal Business`, `r13CicekSepeti Business`, `r14CicekSepeti Personal`, `r17PTTAVM Business`, and `r18PTTAVM Personal`.
 - Renamed the remaining approved quick-access labels to `m1Digital Tax Office`, `q4eGovernment`, `q6AJet Flights`, `q7TCDD Train`, and `q8OBilet Bus`, while keeping `q2Spotify` and `q3Netflix` unchanged.
 - Reworked `10002-create-shortcuts-public-desktop` so Chrome profile routing is metadata-based instead of name-text-based, and both `company_name` and `employee_email_address` local-part values are normalized to lowercase before being written into `--profile-directory`.
 - Hardened Public Desktop normalization so the tracked shortcut task now removes semantic duplicates by name alias, target executable, and browser destination matching for installer-created overlaps such as Google Chrome, Microsoft Edge, AnyDesk, and Visual Studio 2022, while preserving unrelated unmanaged Public Desktop shortcuts.
@@ -94,7 +109,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Tests
 - Revalidated the full non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
-- Completed live Windows acceptance on `rg-examplevm-sec1-g1/examplevm`: isolated `exec --update-task=1001..1005` reruns for one private local-only accessibility flow, a full `update --single-step=vm-update --auto --windows` pass with `success=45, failed=0, warning=0, error=0, reboot=0`, `do --vm-action=restart`, SSH/RDP connectivity checks, and post-reboot guest readback confirming the manager startup shortcut, automatic utility service, active console session, and running local accessibility processes.
+- Completed live Windows acceptance on `rg-examplevm-sec1-g1/examplevm`: isolated `exec --update-task=1001..1005` reruns for one private local-only accessibility flow, a full `update --step=vm-update --auto --windows` pass with `success=45, failed=0, warning=0, error=0, reboot=0`, `do --vm-action=restart`, SSH/RDP connectivity checks, and post-reboot guest readback confirming the manager startup shortcut, automatic utility service, active console session, and running local accessibility processes.
 
 ## [2026.3.11.282] - 2026-03-11
 
@@ -450,7 +465,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Completed additional isolated live repair validation for Windows update tasks `04`, `28`, and `29` after the Windows UX/user-settings hardening changes, including repeated interrupted-task recovery, assistant/default-profile propagation checks, and a final successful `27 -> 28 -> 29` late-stage chain on `rg-examplevm-ate1-g1/examplevm`.
 - Completed isolated live `exec` sweeps for every Windows `vm-init` and `vm-update` task against `rg-examplevm-ate1-g1/examplevm` in effective catalog priority/timeout order, then reran task `09` after the Ollama hardening change to prove `11434` API readiness.
 - Completed isolated live `exec` validation for Windows update tasks `30` through `37`, then reran `33-create-shortcuts-public-desktop` and `37-capture-snapshot-health` to confirm the expanded shortcut contract, app-target resolution, one private local-only accessibility hotkey, and Unicode-safe `q1Eksisozluk` readback on `rg-examplevm-ate1-g1/examplevm`.
-- Completed isolated live reruns of Windows update tasks `09` and `18`, then reran `create --auto --windows --perf --from-step=vm-update` successfully to the end on `rg-examplevm-ate1-g1/examplevm` with `WIN_VM_SIZE=Standard_D4as_v5`, confirming a running VM and reachable RDP port `3389`.
+- Completed isolated live reruns of Windows update tasks `09` and `18`, then reran `create --auto --windows --perf --step-from=vm-update` successfully to the end on `rg-examplevm-ate1-g1/examplevm` with `WIN_VM_SIZE=Standard_D4as_v5`, confirming a running VM and reachable RDP port `3389`.
 
 ### Refactors
 - Removed runtime task-catalog auto-sync/auto-write behavior; catalogs are now read-only inputs at execution time.
@@ -527,7 +542,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Restore winget source reset --force in bootstrap task
 - Remove winget --force usage from vm-update tasks
 - Make sysinternals update task robust against checksum drift
-- Refactor orchestrator to 7-step flow and restore vm-init single-step task execution
+- Refactor orchestrator to 7-step flow and restore targeted vm-init step execution
 - Make step4 network checks non-erroring and ensure resource group exists
 - Preserve config step1 context for step2 region precheck
 - Harden interactive region selection against empty az_location
@@ -742,9 +757,9 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Record request to run parallel auto-only tests for both platforms
 - Capture windows auto-only execution request after parity updates
 - Record request to run windows in auto mode only for syntax confidence
-- Capture explicit verification request for windows auto-step completion
-- Record windows auto-step iterative rebuild and fix loop
-- Record linux auto-step iterative rebuild and fix loop
+- Capture explicit verification request for windows auto-run completion
+- Record windows auto-run iterative rebuild and fix loop
+- Record linux auto-run iterative rebuild and fix loop
 - Capture parallel full rebuild request for both platforms
 - Record directive to postpone e2e until bulk fixes complete
 

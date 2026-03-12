@@ -1,5 +1,52 @@
 # VM deploy step orchestration.
 
+function Invoke-AzVmUpdateVmRedeploy {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [switch]$AutoMode
+    )
+
+    $shouldRedeploy = $true
+    if ($AutoMode) {
+        Write-Host ("Update mode: VM redeploy for '{0}' was approved automatically." -f $VmName)
+    }
+    else {
+        $shouldRedeploy = Confirm-YesNo -PromptText ("Continue with Azure VM redeploy for '{0}'?" -f $VmName) -DefaultYes $false
+    }
+
+    if (-not $shouldRedeploy) {
+        Write-Host ("Update mode: VM redeploy for '{0}' was skipped by user choice." -f $VmName) -ForegroundColor Yellow
+        return
+    }
+
+    Write-Host ("Update mode: redeploying existing VM '{0}' in resource group '{1}'..." -f $VmName, $ResourceGroup)
+    Invoke-TrackedAction -Label ("az vm redeploy -g {0} -n {1}" -f $ResourceGroup, $VmName) -Action {
+        az vm redeploy -g $ResourceGroup -n $VmName -o none --only-show-errors
+        Assert-LastExitCode "az vm redeploy"
+    } | Out-Null
+
+    $provisioningWaitResult = Wait-AzVmProvisioningSucceeded -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts 30 -DelaySeconds 10
+    if (-not [bool]$provisioningWaitResult.Ready) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' did not return to provisioning succeeded after Azure redeploy." -f $VmName) `
+            -Code 62 `
+            -Summary "Update mode completed Azure redeploy but VM provisioning did not recover." `
+            -Hint "Check the VM provisioning state in Azure Portal before rerunning update."
+    }
+
+    $running = Wait-AzVmVmPowerState -ResourceGroup $ResourceGroup -VmName $VmName -DesiredPowerState "VM running" -MaxAttempts 18 -DelaySeconds 10
+    if (-not $running) {
+        Throw-FriendlyError `
+            -Detail ("VM '{0}' did not return to running state after Azure redeploy." -f $VmName) `
+            -Code 62 `
+            -Summary "Update mode completed Azure redeploy but the VM is not running." `
+            -Hint "Check the VM power state in Azure and start the VM manually if needed."
+    }
+
+    Write-Host ("Update mode: VM redeploy completed successfully for '{0}'." -f $VmName) -ForegroundColor Green
+}
+
 # Handles Invoke-AzVmVmCreateStep.
 function Invoke-AzVmVmCreateStep {
     param(
@@ -138,6 +185,10 @@ function Invoke-AzVmVmCreateStep {
 
     Write-Host "Printing az vm create output..."
     Write-Host $vmCreateJson
+
+    if ($effectiveMode -eq 'update' -and $hasExistingVm -and -not $vmDeletedInThisRun) {
+        Invoke-AzVmUpdateVmRedeploy -ResourceGroup $resourceGroup -VmName $vmName -AutoMode:$AutoMode
+    }
 
     $featureEnablementResult = Invoke-AzVmPostDeployFeatureEnablement -Context $Context -VmCreatedThisRun:$vmCreatedThisRun
 
