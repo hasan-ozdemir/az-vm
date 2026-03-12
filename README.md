@@ -686,6 +686,8 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=stop --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>
 ```
 
 ### Connect With SSH Or RDP
@@ -740,16 +742,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\az-vm-smoke-tests.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\bash-syntax-check.ps1
 ```
 
-GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` workflow on pull requests, pushes to `main`, and manual dispatch. It covers static audit, PowerShell compatibility, Linux shell syntax, workflow linting, and the non-live smoke-contract suite.
+GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` workflow on pull requests, pushes to `main`, and manual dispatch. It covers static audit, an explicit documentation-contract check, PowerShell compatibility, Linux shell syntax, workflow linting, and the non-live smoke-contract suite.
 
 ### Live Release Acceptance
 Before calling the repo or the active profile release-ready for a live publish, run one end-to-end live acceptance cycle against the current `.env` target:
-- if the target group is safe to purge, clear it first and then run a clean `az-vm create --auto --windows` or `az-vm create --auto --linux`
-- rerun `az-vm update --auto --windows` or `az-vm update --auto --linux` without changing the natural task order
+- if the target group is safe to purge, prefer a full recreate by running `az-vm delete --target=group --group=<resource-group> --yes` before the live create
+- run a clean `az-vm create --auto --windows --perf` or `az-vm create --auto --linux --perf`
+- rerun `az-vm update --auto --windows --perf` or `az-vm update --auto --linux --perf` without changing the natural task order
 - confirm `az-vm show` prints the expected inventory while password-bearing `.env` values stay redacted
 - confirm `az-vm do --vm-action=status --vm-name=<vm-name>` reports the VM as started
 - confirm `az-vm ssh --vm-name=<vm-name> --user=manager --test`; for Windows also confirm `az-vm rdp --vm-name=<vm-name> --user=manager --test`
-- when `VM_ENABLE_HIBERNATION=true` or `VM_ENABLE_NESTED_VIRTUALIZATION=true`, verify those outcomes after the live run before declaring release readiness
+- when `VM_ENABLE_HIBERNATION=true`, validate the intended hibernation path explicitly and restore the VM to `started` before finishing the release gate
+- when `VM_ENABLE_NESTED_VIRTUALIZATION=true`, verify that outcome after the live run before declaring release readiness
 
 ### Support And Contribution Paths
 - Read [SUPPORT.md](SUPPORT.md) before opening a public issue.

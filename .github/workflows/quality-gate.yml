@@ -27,6 +27,17 @@ jobs:
         run: |
           .\tests\code-quality-check.ps1 -RepoRoot $PWD.Path
 
+  documentation-contract:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run documentation contract check
+        shell: powershell
+        run: |
+          .\tests\documentation-contract-check.ps1 -RepoRoot $PWD.Path
+
   powershell-compatibility:
     runs-on: windows-latest
     steps:

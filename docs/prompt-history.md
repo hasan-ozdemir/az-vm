@@ -4821,3 +4821,27 @@ Please optimize the remaining long-running Windows vm-update tasks too. Use the 
 **Assistant Summary**
 
 Completed a second live-backed Windows `vm-update` performance-tuning pass. I kept the previous `copy-settings-user`, global npm, and Ollama optimizations, then focused on the remaining slow paths from fresh live perf logs. `114-install-docker-desktop.ps1` was simplified so it no longer retries Docker daemon readiness inside a noninteractive SSH session; it now verifies the Docker client, starts Docker Desktop once, and immediately registers an interactive `RunOnce` start. `121-install-whatsapp-system.ps1` now prefers fast local Store-registration checks and short-circuits immediately when a deferred `RunOnce` install is already registered, so the same failing noninteractive Store install is not retried every update run. I also shortened the registry-hive unload waits in `10001-configure-apps-startup.ps1` and `10099-capture-snapshot-health.ps1`, reduced the UX settle waits in `10003-configure-ux-windows.ps1`, updated the Docker smoke contract to match the new bounded deferred-start model, and revalidated the result with live targeted `exec` runs plus a full `update --single-step=vm-update --auto --windows --perf` pass on `rg-examplevm-sec1-g1/examplevm`. The final live measurements showed the full `vm-update` step drop from about `234.7s` to about `198.0s`, with `114-install-docker-desktop` dropping to about `3.2s`, `121-install-whatsapp-system` to about `3.5s` on deferred reruns, and `10099-capture-snapshot-health` to about `6.1s`.
+
+### 2026-03-12 18:49 TRT
+
+**User Prompt**
+
+````text
+Please refresh the repo before publication by scanning the recent development work in reverse chronological order, syncing all maintained Markdown docs, help sections, and UI messages to the current product behavior, and then prepare for a clean live recreate-and-full-deploy acceptance cycle with branch alignment and backup-branch cleanup once the repo is release-ready.
+````
+
+**Assistant Summary**
+
+Applied the safe static subset of the publish-readiness sync in the tracked repo. I updated the README, contributing guide, support guide, GitHub issue templates, pull-request template, and GitHub Actions quality gate so the current release-readiness and live Azure acceptance contract is documented consistently. I also hardened the VM create path in `Invoke-AzVmVmCreateStep` so transient non-zero `az vm create` results now trigger a bounded VM-presence probe before failing, reducing false negatives when Azure completes the deployment moments later. The destructive live recreate cycle and final branch cleanup were intentionally left out of this commit slice.
+
+### 2026-03-12 18:49 TRT
+
+**User Prompt**
+
+````text
+Please inspect, test, and analyze the current worktree changes, create a git commit from the ones that are safe and useful, and keep recording any previously unrecorded prompts in `docs/prompt-history.md`, including this one.
+````
+
+**Assistant Summary**
+
+Audited the pending worktree changes, kept the coherent publish-facing documentation and CI updates together with the bounded Azure create-probe hardening, refreshed `CHANGELOG.md`, `release-notes.md`, and `docs/prompt-history.md`, and revalidated the non-live gate before committing the safe subset. This commit captures the publish-surface sync work without bundling the still-pending destructive live recreate and branch-cleanup tasks.

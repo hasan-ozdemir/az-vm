@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.291 - 2026-03-12
+
+### Summary
+This release synchronizes the publish-facing repository contract with the current live-acceptance workflow and hardens Windows VM creation against transient Azure CLI create failures that can still result in a successfully deployed VM.
+
+### Highlights
+- Updated the GitHub issue templates, pull-request template, README, contributing guide, and support guide so live Azure acceptance and release-readiness claims now follow the same documented reporting contract everywhere.
+- Added an explicit `documentation-contract` job to `.github/workflows/quality-gate.yml`, bringing the existing documentation contract check into the GitHub Actions gate alongside the rest of the non-live validation suite.
+- Hardened `Invoke-AzVmVmCreateStep` so transient non-zero `az vm create` results now trigger a short bounded VM-presence probe instead of immediately failing when Azure may still complete the deployment moments later.
+- Revalidated the non-live publish gate with code-quality, documentation-contract, PowerShell compatibility, smoke, and bash-syntax checks before recording this release point.
+
 ## Release 2026.3.12.290 - 2026-03-12
 
 ### Summary

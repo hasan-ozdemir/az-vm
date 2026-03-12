@@ -95,13 +95,12 @@ function Invoke-AzVmVmCreateStep {
         if ($LASTEXITCODE -ne 0) {
             $createExitCode = [int]$LASTEXITCODE
             $vmExistsAfterCreate = ""
-            $shouldUseLongPresenceProbe = (($effectiveMode -in @("update","destructive rebuild")) -and $hasExistingVm)
-            if (-not $shouldUseLongPresenceProbe) {
-                throw "az vm create failed with exit code $createExitCode."
-            }
-
             Write-Warning "az vm create returned a non-zero code; checking VM existence."
-            $presenceProbeAttempts = if ($shouldUseLongPresenceProbe) { 12 } else { 3 }
+            # Azure can return a transient non-zero create result even when the VM deployment
+            # eventually lands successfully. Keep the probe bounded so real failures still fail
+            # quickly, but do not misclassify a completed VM deployment as a hard create error.
+            $shouldUseLongPresenceProbe = (($effectiveMode -in @("update","destructive rebuild")) -and $hasExistingVm)
+            $presenceProbeAttempts = if ($shouldUseLongPresenceProbe) { 12 } elseif ($vmCreatedThisRun) { 6 } else { 3 }
             for ($presenceAttempt = 1; $presenceAttempt -le $presenceProbeAttempts; $presenceAttempt++) {
                 $vmExistsAfterCreate = if (Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {
                     az vm show -g $resourceGroup -n $vmName --query "id" -o tsv --only-show-errors 2>$null

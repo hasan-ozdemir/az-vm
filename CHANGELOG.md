@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.291] - 2026-03-12
+
+### Changed
+- Synchronized the publish-facing repository surface with the current release-readiness contract by updating the GitHub issue templates, pull-request template, README guidance, contributing guidance, and support guidance around live Azure acceptance and public release reporting.
+- Extended `.github/workflows/quality-gate.yml` with an explicit `documentation-contract` job so the existing documentation contract check now runs in GitHub Actions alongside the rest of the non-live gate.
+- Hardened `Invoke-AzVmVmCreateStep` so transient non-zero `az vm create` results now trigger a bounded VM-presence probe before failing, reducing false negatives when Azure finishes the deployment shortly after the CLI returns a temporary error code.
+
+### Tests
+- Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/az-vm-smoke-tests.ps1`, and `tests/bash-syntax-check.ps1`.
+
 ## [2026.3.12.290] - 2026-03-12
 
 ### Changed

@@ -39,6 +39,7 @@ body:
         - Configuration contract
         - Task catalogs
         - Documentation
+        - Live acceptance or release process
         - Release or CI process
     validations:
       required: true

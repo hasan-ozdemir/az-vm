@@ -6,6 +6,7 @@
 
 - Read [README.md](README.md), [AGENTS.md](AGENTS.md), and [SUPPORT.md](SUPPORT.md) first.
 - Review the current command surface, task-catalog model, and configuration contract before proposing a change.
+- Use the GitHub issue templates for reproducible bugs and focused feature requests whenever the discussion can happen publicly.
 - For large features, contract changes, new commands, or workflow shifts, open an issue or contact the maintainer before investing in a large pull request.
 
 ## Contribution Model
@@ -44,6 +45,7 @@ Run the non-live checks locally before opening a pull request:
 
 - Keep pull requests focused and easy to review.
 - Explain the operator impact, contract changes, and validation you ran.
+- If the pull request claims release-readiness or live Azure confidence, include the exact live acceptance steps and outcomes.
 - Note any assumptions, skipped checks, or areas that still need maintainer review.
 
 If you are unsure whether a change fits the repo direction, ask first. That is the expected path here.

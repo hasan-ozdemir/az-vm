@@ -52,6 +52,7 @@ body:
         - Windows task flow
         - Linux task flow
         - Azure orchestration
+        - Live Azure acceptance
         - CI or repository workflow
     validations:
       required: true
