@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.295] - 2026-03-12
+
+### Fixed
+- Fixed `.github/workflows/quality-gate.yml` so every checkout now uses `fetch-depth: 0`, allowing the commit-count-based changelog and release-notes contract to validate correctly on GitHub Actions instead of seeing a shallow-history count of `1`.
+
+### Release
+- Published the repository to the new public GitHub remote `the public GitHub remote`, pushed aligned `main` and `dev`, and removed all remaining local backup/preserve branches so only the two canonical branches remain.
+
 ## [2026.3.12.294] - 2026-03-12
 
 ### Fixed

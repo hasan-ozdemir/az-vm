@@ -4869,3 +4869,15 @@ Yes, continue exactly as planned. Until these tasks are complete, you do not nee
 **Assistant Summary**
 
 Resumed the live release-readiness phase without further approval prompts. I first restated the current plan stage and the unfinished items, then fixed the three remaining Windows `vm-update` blockers from the live acceptance cycle: `104-install-node-system` and `111-install-edge-browser` now have realistic timeout budgets plus bounded post-install verification, and `10005-copy-settings-user` now excludes `AppData\Local\Microsoft\Windows\WebCacheLock.dat` consistently while tolerating the same live lock signature across the observed robocopy return codes. After revalidating the local non-live gate, I reran the live Windows tasks individually on `rg-examplevm-sec1-g1/examplevm`, reran the full `az-vm update --auto --windows --perf` flow to a clean `success=45, failed=0, warning=0, error=0, reboot=0`, and finished with passing `show`, VM status, SSH test, and RDP test checks against the live VM.
+
+### 2026-03-12 22:28 TRT
+
+**User Prompt**
+
+````text
+Continue exactly from the last operation flow. I interrupted it. You were tracking the GitHub Actions workflow, but it should not have taken that long. Please get the result of the workflow triggered by the remote main branch and take the appropriate action based on it. Also complete the other planned tasks from my previous prompt, and then give me a broad report about all of it.
+````
+
+**Assistant Summary**
+
+Resumed the interrupted GitHub publish phase, verified that the new public repository `the public az-vm repository` already existed with aligned `main` and `dev`, and confirmed that all extra local branches had been cleaned up. I then retrieved the failing `main` GitHub Actions run details and traced both failed Windows jobs to the same root cause: `.github/workflows/quality-gate.yml` was checking out the repo with shallow history, so the commit-count-based documentation contract saw `HEAD` as `1` instead of the real repository count. I fixed the workflow by switching every `actions/checkout@v6` step to `fetch-depth: 0`, updated the release metadata to the new `2026.3.12.295` version, and prepared the repo for a clean follow-up push so the authoritative `main` workflow run can complete against full history.

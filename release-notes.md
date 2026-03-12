@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.295 - 2026-03-12
+
+### Summary
+This release fixes the GitHub Actions publish gate for the new public repository by switching every workflow checkout to full-history mode, which restores the commit-count-based release-document validation on CI after the initial public push.
+
+### Highlights
+- Updated `.github/workflows/quality-gate.yml` so every `actions/checkout@v6` step uses `fetch-depth: 0`, preventing the release-document checks from seeing a shallow clone count of `1` on GitHub-hosted runners.
+- Published the repo to `the public GitHub remote` under the `<social-handle>` account, pushed aligned `main` and `dev`, and removed all remaining non-canonical local branches so the repo now keeps only the two intended long-lived branches.
+- The previous failing `main` workflow run was traced to shallow checkout depth rather than the actual code or docs contract; the follow-up push from this release is intended to produce the clean authoritative `main` Actions result.
+
 ## Release 2026.3.12.294 - 2026-03-12
 
 ### Summary
