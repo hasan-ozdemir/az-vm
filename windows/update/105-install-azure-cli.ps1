@@ -65,6 +65,19 @@ function Resolve-AzCommandPath {
 
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path -LiteralPath $chocoExe)) { throw "choco was not found." }
+Refresh-SessionPath
+
+$azPath = Resolve-AzCommandPath
+if (-not [string]::IsNullOrWhiteSpace($azPath)) {
+    Write-Host ("Existing Azure CLI installation is already healthy: {0}" -f $azPath)
+    & $azPath version
+    if ($LASTEXITCODE -ne 0) {
+        throw "az version command failed with exit code $LASTEXITCODE."
+    }
+    Write-Host "Update task completed: install-azure-cli"
+    return
+}
+
 & $chocoExe install azure-cli -y --no-progress --ignore-detected-reboot
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) { throw "choco install azure-cli failed with exit code $LASTEXITCODE." }
 Refresh-SessionPath

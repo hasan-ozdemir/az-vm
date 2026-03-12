@@ -11,6 +11,15 @@ function Refresh-SessionPath {
 
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path -LiteralPath $chocoExe)) { throw "choco was not found." }
+Refresh-SessionPath
+
+if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+    Write-Host "Existing FFmpeg installation is already healthy. Skipping choco install."
+    ffmpeg -version
+    Write-Host "Update task completed: install-ffmpeg-system"
+    return
+}
+
 & $chocoExe install ffmpeg -y --no-progress --ignore-detected-reboot
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) { throw "choco install ffmpeg failed with exit code $LASTEXITCODE." }
 Refresh-SessionPath

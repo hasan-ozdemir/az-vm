@@ -465,10 +465,10 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 Stop-StaleInstallerProcesses -CurrentPackageId ([string]$taskConfig.OllamaPackageId) | Out-Null
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force" -f [string]$taskConfig.OllamaPackageId)
+Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.OllamaPackageId)
 $wingetResult = Invoke-ProcessWithTimeout `
     -FilePath $wingetExe `
-    -ArgumentList @('install', '--id', ([string]$taskConfig.OllamaPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity', '--force') `
+    -ArgumentList @('install', '--id', ([string]$taskConfig.OllamaPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
     -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
     -Label 'winget-install-ollama-system'
 $wingetExit = [int]$wingetResult.ExitCode

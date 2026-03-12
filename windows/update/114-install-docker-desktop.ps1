@@ -11,9 +11,10 @@ $taskConfig = [ordered]@{
     DockerMachinePathEntry = 'C:\Program Files\Docker\Docker\resources\bin'
     DockerStartupShortcutPath = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk'
     DockerInstallTimeoutSeconds = 900
-    DockerVersionTimeoutSeconds = 20
-    DockerInfoTimeoutSeconds = 25
-    DockerDaemonReadyTimeoutSeconds = 60
+    DockerVersionTimeoutSeconds = 8
+    DockerDaemonReadyTimeoutSeconds = 8
+    DockerDaemonProbeAttempts = 2
+    DockerDaemonProbeDelaySeconds = 3
     DockerLocalUsers = @('__VM_ADMIN_USER__', '__ASSISTANT_USER__')
 }
 
@@ -91,7 +92,7 @@ function Stop-StaleInstallerProcesses {
         }
     }
 
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 1
     $remaining = Get-StaleInstallerProcesses
     if (@($remaining).Count -gt 0) {
         throw ("Stale installer processes still active before Docker Desktop install: {0}" -f (Format-InstallerProcessSummary -Processes $remaining))
@@ -227,15 +228,21 @@ function Start-DockerDesktopProcess {
 function Wait-DockerDaemonReady {
     param(
         [string]$DockerExe = "docker",
-        [int]$TimeoutSeconds = 240
+        [int]$ProbeAttempts = 2,
+        [int]$ProbeDelaySeconds = 3,
+        [int]$CommandTimeoutSeconds = 8
     )
 
-    if ($TimeoutSeconds -lt 30) { $TimeoutSeconds = 30 }
-    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
-    $attempt = 0
-    while ([DateTime]::UtcNow -lt $deadline) {
-        $attempt++
-        $daemonResult = Invoke-ProcessWithTimeout -Label ("docker version (readiness attempt {0})" -f $attempt) -FilePath $DockerExe -Arguments @("version") -TimeoutSeconds 25
+    if ($ProbeAttempts -lt 1) { $ProbeAttempts = 1 }
+    if ($ProbeDelaySeconds -lt 0) { $ProbeDelaySeconds = 0 }
+    if ($CommandTimeoutSeconds -lt 5) { $CommandTimeoutSeconds = 5 }
+
+    foreach ($attempt in 1..$ProbeAttempts) {
+        $daemonResult = Invoke-ProcessWithTimeout `
+            -Label ("docker version (daemon probe {0}/{1})" -f $attempt, $ProbeAttempts) `
+            -FilePath $DockerExe `
+            -Arguments @("version") `
+            -TimeoutSeconds $CommandTimeoutSeconds
         if ($daemonResult.Success) {
             $global:LASTEXITCODE = 0
             Write-Host "docker-step-ok: docker-daemon-version"
@@ -243,8 +250,10 @@ function Wait-DockerDaemonReady {
         }
 
         $global:LASTEXITCODE = 0
-        Write-Host ("Docker daemon is not ready yet. Waiting before retry {0}." -f ($attempt + 1)) -ForegroundColor Yellow
-        Start-Sleep -Seconds 10
+        if ($attempt -lt $ProbeAttempts -and $ProbeDelaySeconds -gt 0) {
+            Write-Host ("Docker daemon is not ready in the current noninteractive session. Retrying one quick probe ({0}/{1})." -f ($attempt + 1), $ProbeAttempts) -ForegroundColor Yellow
+            Start-Sleep -Seconds $ProbeDelaySeconds
+        }
     }
 
     $global:LASTEXITCODE = 0
@@ -348,16 +357,13 @@ else {
 }
 
 Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
-if (Wait-DockerDaemonReady -DockerExe "docker" -TimeoutSeconds ([int]$taskConfig.DockerDaemonReadyTimeoutSeconds)) {
-    $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds ([int]$taskConfig.DockerInfoTimeoutSeconds)
-    if (-not $dockerInfoResult.Success) {
-        throw ("docker info did not complete successfully (exit={0})." -f $dockerInfoResult.ExitCode)
-    }
-    Write-Host "docker-step-ok: docker-info"
-}
-else {
+if (-not (Wait-DockerDaemonReady `
+    -DockerExe "docker" `
+    -ProbeAttempts ([int]$taskConfig.DockerDaemonProbeAttempts) `
+    -ProbeDelaySeconds ([int]$taskConfig.DockerDaemonProbeDelaySeconds) `
+    -CommandTimeoutSeconds ([int]$taskConfig.DockerDaemonReadyTimeoutSeconds))) {
     Register-DockerDesktopDeferredStart -DockerDesktopExe $dockerDesktopExe
-    Write-Warning "Docker Desktop engine could not become ready in the current SSH session. A RunOnce start was registered for the next interactive sign-in."
+    Write-Warning "Docker Desktop engine is not expected to become fully ready in every noninteractive SSH session. A RunOnce start was registered for the next interactive sign-in."
     Write-Host "docker-step-deferred: interactive-sign-in-required"
 }
 

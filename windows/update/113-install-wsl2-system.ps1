@@ -95,8 +95,8 @@ if (-not $wslReadyBeforeBootstrap -or -not $wslPackageInstalled) {
     }
 
     Write-Host "Resolved winget executable: $wingetExe"
-    Write-Host "Running: winget install --id Microsoft.WSL --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-    & $wingetExe install --id Microsoft.WSL --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+    Write-Host "Running: winget install --id Microsoft.WSL --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+    & $wingetExe install --id Microsoft.WSL --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
     $wingetExit = [int]$LASTEXITCODE
     if ($wingetExit -ne 0 -and $wingetExit -ne -1978335189) {
         throw "winget install Microsoft.WSL failed with exit code $wingetExit."

@@ -22,11 +22,6 @@ if (-not (Test-Path -LiteralPath $chocoExe)) {
     throw "choco was not found."
 }
 
-& $chocoExe upgrade python312 -y --no-progress --ignore-detected-reboot
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-    throw "choco upgrade python312 failed with exit code $LASTEXITCODE."
-}
-
 Refresh-SessionPath
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
@@ -43,6 +38,20 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     [Environment]::SetEnvironmentVariable("Path", ($entries -join ';'), "Machine")
     Refresh-SessionPath
 }
+
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    Write-Host "Existing Python installation is already healthy. Skipping choco install."
+    python --version
+    Write-Host "Update task completed: install-python-system"
+    return
+}
+
+& $chocoExe install python312 -y --no-progress --ignore-detected-reboot
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    throw "choco install python312 failed with exit code $LASTEXITCODE."
+}
+
+Refresh-SessionPath
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     throw "python command was not found after installation."

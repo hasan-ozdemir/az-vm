@@ -4773,3 +4773,15 @@ As a small follow-up task, move `az-vm-interactive-session-helper.ps1` into the 
 **Assistant Summary**
 
 Moved `az-vm-interactive-session-helper.ps1` from `tools/windows/` to `tools/scripts/` and updated the runtime Run Command asset-resolution path so the helper is loaded from the new repo location while the guest-side remote helper path remains unchanged. I then reran the non-live gate and confirmed that code-quality, documentation-contract, PowerShell compatibility, and smoke validation all still pass with the helper in its new path.
+
+### 2026-03-12 18:35 TRT
+
+**User Prompt**
+
+````text
+Please fine-tune the Windows vm-update tasks because the Docker Desktop install task, the user-settings copy task, and the public-desktop-icons task did not behave as expected and I stopped them. Make those tasks finish faster, wait less, and avoid retry-heavy behavior. Also do not pass `--force` in any vm-update install script anymore: if something is missing, install it; if it is already present, do nothing. Research better techniques on the web, apply them here, and validate the result.
+````
+
+**Assistant Summary**
+
+Fine-tuned the slowest Windows `vm-update` paths end to end. `114-install-docker-desktop.ps1` now uses only short bounded `docker version` probes, skips the old blocking `docker info` readiness wait, and falls back immediately to a deferred interactive `RunOnce` start when the daemon is not yet ready in a noninteractive SSH session. `10005-copy-settings-user.ps1` now replaces the fixed five-second sleep with a short settle loop that watches user sessions and processes and unloads the registry hive with fewer retries and shorter waits. `10002-create-shortcuts-public-desktop.ps1` now has an already-normalized fast path, no longer exits early while scanning unrelated Public Desktop shortcuts, and removes additional installer-created duplicates including `IObit Unlocker` and `NVDA`. I also removed every tracked Windows `vm-update` `--force` flag and aligned the install tasks with install-if-missing / skip-if-healthy behavior. After updating changelog and release notes, I revalidated the full non-live gate and reran live Windows validation on `rg-examplevm-sec1-g1/examplevm`, including the tuned tasks individually, a full `update --single-step=vm-update --auto --windows` pass, and a fresh Public Desktop health snapshot that now leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.

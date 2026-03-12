@@ -166,7 +166,7 @@ function Register-ICloudDeferredInstall {
         New-Item -Path $runOncePath -Force | Out-Null
     }
 
-    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id {1} --source {2} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"' -f $WingetPath, ([string]$taskConfig.PackageId), ([string]$taskConfig.PackageSource))
+    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id {1} --source {2} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"' -f $WingetPath, ([string]$taskConfig.PackageId), ([string]$taskConfig.PackageSource))
     Set-ItemProperty -Path $runOncePath -Name ([string]$taskConfig.DeferredRunOnceName) -Value $commandValue -Type String
 }
 
@@ -280,7 +280,7 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 if (-not (Test-ICloudInstalled)) {
-    $installOutput = @(& $wingetExe install --id $packageId --source $packageSource --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force 2>&1)
+    $installOutput = @(& $wingetExe install --id $packageId --source $packageSource --accept-source-agreements --accept-package-agreements --silent --disable-interactivity 2>&1)
     $installExit = [int]$LASTEXITCODE
     $installText = [string]($installOutput | Out-String)
     if ($installExit -ne 0 -and $installExit -ne -1978335189) {

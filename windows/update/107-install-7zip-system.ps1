@@ -11,6 +11,15 @@ function Refresh-SessionPath {
 
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path -LiteralPath $chocoExe)) { throw "choco was not found." }
+Refresh-SessionPath
+
+if (Get-Command 7z -ErrorAction SilentlyContinue) {
+    Write-Host "Existing 7-Zip installation is already healthy. Skipping choco install."
+    7z
+    Write-Host "Update task completed: install-7zip-system"
+    return
+}
+
 & $chocoExe install 7zip -y --no-progress --ignore-detected-reboot
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) { throw "choco install 7zip failed with exit code $LASTEXITCODE." }
 Refresh-SessionPath

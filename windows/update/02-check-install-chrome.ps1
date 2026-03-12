@@ -62,11 +62,19 @@ if ([string]::IsNullOrWhiteSpace($chocoExe)) {
 }
 
 Write-Host "Resolved choco executable: $chocoExe"
-Write-Host "Running: choco upgrade googlechrome -y --no-progress --ignore-detected-reboot --ignore-checksums"
-& $chocoExe upgrade googlechrome -y --no-progress --ignore-detected-reboot --ignore-checksums
+$existingChromeExe = Resolve-ChromeExecutable
+if (-not [string]::IsNullOrWhiteSpace([string]$existingChromeExe)) {
+    Write-Host ("Google Chrome executable already exists: {0}" -f $existingChromeExe)
+    Write-Host "check-install-chrome-completed"
+    Write-Host "Update task completed: check-install-chrome"
+    return
+}
+
+Write-Host "Running: choco install googlechrome -y --no-progress --ignore-detected-reboot --ignore-checksums"
+& $chocoExe install googlechrome -y --no-progress --ignore-detected-reboot --ignore-checksums
 $chocoExit = [int]$LASTEXITCODE
 if ($chocoExit -ne 0 -and $chocoExit -ne 2) {
-    throw "choco upgrade googlechrome failed with exit code $chocoExit."
+    throw "choco install googlechrome failed with exit code $chocoExit."
 }
 
 Refresh-SessionPath

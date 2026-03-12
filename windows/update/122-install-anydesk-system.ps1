@@ -31,6 +31,37 @@ function Resolve-WingetExe {
     return ""
 }
 
+function Test-AnyDeskInstalled {
+    $anyDeskPathCandidates = @(
+        "C:\Program Files (x86)\AnyDesk\AnyDesk.exe",
+        "C:\Program Files\AnyDesk\AnyDesk.exe"
+    )
+    foreach ($candidate in @($anyDeskPathCandidates)) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [pscustomobject]@{
+                Installed = $true
+                Path = [string]$candidate
+            }
+        }
+    }
+
+    Write-Host "Running: winget list anydesk.anydesk"
+    $listOutput = & $wingetExe list anydesk.anydesk
+    $listExit = [int]$LASTEXITCODE
+    $listText = [string]($listOutput | Out-String)
+    if ($listExit -eq 0 -and -not [string]::IsNullOrWhiteSpace($listText) -and $listText.ToLowerInvariant().Contains("anydesk")) {
+        return [pscustomobject]@{
+            Installed = $true
+            Path = ""
+        }
+    }
+
+    return [pscustomobject]@{
+        Installed = $false
+        Path = ""
+    }
+}
+
 Refresh-SessionPath
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
@@ -38,8 +69,21 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+$existingAnyDesk = Test-AnyDeskInstalled
+if ([bool]$existingAnyDesk.Installed) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$existingAnyDesk.Path)) {
+        Write-Host ("Existing AnyDesk installation is already healthy: {0}" -f [string]$existingAnyDesk.Path)
+    }
+    else {
+        Write-Host "Existing AnyDesk installation is already healthy. Skipping winget install."
+    }
+    Write-Host "install-anydesk-system-completed"
+    Write-Host "Update task completed: install-anydesk-system"
+    return
+}
+
+Write-Host "Running: winget install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+& $wingetExe install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 $needsPostInstallVerification = $false
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
@@ -47,30 +91,16 @@ if ($installExit -ne 0 -and $installExit -ne -1978335189) {
     $needsPostInstallVerification = $true
 }
 
-$anyDeskPathCandidates = @(
-    "C:\Program Files (x86)\AnyDesk\AnyDesk.exe",
-    "C:\Program Files\AnyDesk\AnyDesk.exe"
-)
-$anyDeskPath = ""
-foreach ($candidate in @($anyDeskPathCandidates)) {
-    if (Test-Path -LiteralPath $candidate) {
-        $anyDeskPath = [string]$candidate
-        break
-    }
+    $verifiedAnyDesk = Test-AnyDeskInstalled
+if (-not [bool]$verifiedAnyDesk.Installed) {
+    throw "AnyDesk install could not be verified."
 }
-if ([string]::IsNullOrWhiteSpace([string]$anyDeskPath)) {
-    Write-Host "Running: winget list anydesk.anydesk"
-    $listOutput = & $wingetExe list anydesk.anydesk
-    $listExit = [int]$LASTEXITCODE
-    $listText = [string]($listOutput | Out-String)
-    if ($listExit -ne 0 -or [string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains("anydesk")) {
-        throw "AnyDesk install could not be verified."
-    }
 
+if ([string]::IsNullOrWhiteSpace([string]$verifiedAnyDesk.Path)) {
     Write-Host ("install-anydesk-system-verified: winget-list (install-exit={0})" -f $installExit)
 }
 else {
-    Write-Host ("install-anydesk-system-verified: executable => {0} (install-exit={1})" -f $anyDeskPath, $installExit)
+    Write-Host ("install-anydesk-system-verified: executable => {0} (install-exit={1})" -f [string]$verifiedAnyDesk.Path, $installExit)
 }
 
 $global:LASTEXITCODE = 0

@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.12.287] - 2026-03-12
+
+### Changed
+- Tuned `114-install-docker-desktop.ps1` for noninteractive Windows guest sessions by replacing the old longer daemon wait path with two short bounded `docker version` probes, removing the blocking `docker info` readiness gate, shortening stale-installer cleanup waits, and falling back immediately to a deferred interactive `RunOnce` start when the engine is not yet ready.
+- Tuned `10005-copy-settings-user.ps1` by replacing the old fixed five-second wait with a short settle loop that watches user sessions and processes, cutting registry-hive unload retries and wait intervals, and keeping the copy path bounded instead of retry-heavy.
+- Fixed `10002-create-shortcuts-public-desktop.ps1` so Public Desktop inspection no longer exits the whole task early on unrelated shortcut entries, added a no-op fast path for already-normalized desktops, and expanded duplicate cleanup coverage to installer-created `AnyDesk`, `Windscribe`, `VLC media player`, `iTunes`, `IObit Unlocker`, and `NVDA` shortcuts.
+- Removed every `--force` command-line flag from tracked Windows `vm-update` task scripts and shifted the install tasks to explicit install-if-missing / skip-if-healthy behavior, including the winget bootstrap path which now avoids forceful source reset and uses only one bounded source-update recovery attempt.
+
+### Tests
+- Revalidated the non-live gate with `tests/code-quality-check.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, and `tests/az-vm-smoke-tests.ps1`.
+- Revalidated live Windows behavior on `rg-examplevm-sec1-g1/examplevm` with targeted `exec --update-task=114`, `exec --update-task=10005`, `exec --update-task=10002`, `exec --update-task=10099`, and a full `update --single-step=vm-update --auto --windows` pass. The tuned tasks now complete quickly, and the latest Public Desktop readback leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
+
 ## [2026.3.12.286] - 2026-03-12
 
 ### Added

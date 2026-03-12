@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.12.287 - 2026-03-12
+
+### Summary
+This release fine-tunes the slowest Windows `vm-update` paths by making Docker Desktop readiness checks non-blocking in SSH sessions, shortening user-settings copy waits, removing retry-heavy shortcut normalization behavior, and enforcing a repo-wide no-`--force` install contract for tracked Windows update tasks.
+
+### Highlights
+- Reworked `114-install-docker-desktop.ps1` so it uses only two short `docker version` probes, skips the old blocking `docker info` gate, and registers a deferred interactive `RunOnce` start instead of waiting for the daemon indefinitely inside a noninteractive guest session.
+- Reworked `10005-copy-settings-user.ps1` so assistant logoff/process cleanup settles through a short bounded session/process watcher rather than a fixed five-second sleep, and registry-hive unload retries now use fewer attempts with much shorter waits.
+- Fixed and accelerated `10002-create-shortcuts-public-desktop.ps1` by adding an already-normalized fast path, removing the accidental early-return behavior during Public Desktop inspection, and broadening duplicate cleanup coverage to installer-created `AnyDesk`, `Windscribe`, `VLC media player`, `iTunes`, `IObit Unlocker`, and `NVDA` shortcuts.
+- Removed every tracked Windows `vm-update` `--force` flag and aligned the install tasks with an install-if-missing, skip-if-healthy model; the winget bootstrap task now avoids forceful source resets and uses only one bounded `source update` recovery attempt.
+- Completed a live Windows validation cycle on `rg-examplevm-sec1-g1/examplevm`, including isolated reruns of the tuned tasks plus a full `update --single-step=vm-update --auto --windows` pass; the latest Public Desktop readback leaves only the intentionally unmanaged local-only accessibility shortcuts outside the tracked managed set.
+
 ## Release 2026.3.12.286 - 2026-03-12
 
 ### Summary

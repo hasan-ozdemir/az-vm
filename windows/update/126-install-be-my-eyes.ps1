@@ -85,7 +85,7 @@ function Register-BeMyEyesDeferredInstall {
         New-Item -Path $runOncePath -Force | Out-Null
     }
 
-    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id {1} --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"' -f $WingetPath, $storeProductId)
+    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id {1} --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"' -f $WingetPath, $storeProductId)
     Set-ItemProperty -Path $runOncePath -Name ([string]$taskConfig.DeferredRunOnceName) -Value $commandValue -Type String
 }
 
@@ -167,7 +167,7 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 if (-not (Test-BeMyEyesInstalled)) {
-    $installOutput = @(& $wingetExe install --id $storeProductId --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force 2>&1)
+    $installOutput = @(& $wingetExe install --id $storeProductId --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity 2>&1)
     $installExit = [int]$LASTEXITCODE
     $installText = [string]($installOutput | Out-String)
     if ($installExit -ne 0 -and $installExit -ne -1978335189) {

@@ -59,8 +59,8 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host "Running: winget install --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+& $wingetExe install --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
     throw "winget install VideoLAN.VLC failed with exit code $installExit."

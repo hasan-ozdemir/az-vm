@@ -22,11 +22,6 @@ if (-not (Test-Path -LiteralPath $chocoExe)) {
     throw "choco was not found."
 }
 
-& $chocoExe upgrade nodejs-lts -y --no-progress --ignore-detected-reboot
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-    throw "choco upgrade nodejs-lts failed with exit code $LASTEXITCODE."
-}
-
 Refresh-SessionPath
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
@@ -43,6 +38,20 @@ if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     [Environment]::SetEnvironmentVariable("Path", ($entries -join ';'), "Machine")
     Refresh-SessionPath
 }
+
+if (Get-Command node -ErrorAction SilentlyContinue) {
+    Write-Host "Existing Node.js installation is already healthy. Skipping choco install."
+    node --version
+    Write-Host "Update task completed: install-node-system"
+    return
+}
+
+& $chocoExe install nodejs-lts -y --no-progress --ignore-detected-reboot
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    throw "choco install nodejs-lts failed with exit code $LASTEXITCODE."
+}
+
+Refresh-SessionPath
 
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     throw "node command was not found after installation."

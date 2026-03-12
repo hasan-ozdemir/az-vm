@@ -64,8 +64,8 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install --id Rclone.Rclone --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install --id Rclone.Rclone --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host "Running: winget install --id Rclone.Rclone --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+& $wingetExe install --id Rclone.Rclone --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
     throw "winget install Rclone.Rclone failed with exit code $installExit."

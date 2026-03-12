@@ -32,14 +32,25 @@ function Resolve-WingetExe {
 }
 
 Refresh-SessionPath
+if (Get-Command azd -ErrorAction SilentlyContinue) {
+    Write-Host "Existing azd installation is already healthy. Skipping winget install."
+    azd version
+    if ($LASTEXITCODE -ne 0) {
+        throw "azd version failed with exit code $LASTEXITCODE."
+    }
+    Write-Host "install-azd-cli-completed"
+    Write-Host "Update task completed: install-azd-cli"
+    return
+}
+
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     throw "winget command is not available."
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install microsoft.azd --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install microsoft.azd --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host "Running: winget install microsoft.azd --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+& $wingetExe install microsoft.azd --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
     throw "winget install microsoft.azd failed with exit code $installExit."

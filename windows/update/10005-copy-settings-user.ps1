@@ -139,7 +139,7 @@ function Wait-AzVmCondition {
     param(
         [scriptblock]$Condition,
         [int]$TimeoutSeconds = 30,
-        [int]$PollMilliseconds = 500
+        [int]$PollMilliseconds = 250
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
@@ -321,17 +321,17 @@ function Dismount-RegistryHive {
     catch {
     }
 
-    foreach ($attempt in 1..15) {
+    foreach ($attempt in 1..6) {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-        Start-Sleep -Milliseconds 750
+        Start-Sleep -Milliseconds 250
 
         $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
         if ($exitCode -eq 0) {
             return
         }
 
-        Start-Sleep -Seconds 2
+        Start-Sleep -Milliseconds 500
     }
 
     $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
@@ -662,6 +662,50 @@ function Invoke-ProfileRelativeCopy {
 
         throw
     }
+}
+
+function Test-UserProcessesRunning {
+    param([string]$UserName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$UserName)) {
+        return $false
+    }
+
+    $normalizedUser = $UserName.ToLowerInvariant()
+    foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) {
+        try {
+            $owner = Invoke-CimMethod -InputObject $process -MethodName GetOwner -ErrorAction Stop
+            if ($null -eq $owner -or [int]$owner.ReturnValue -ne 0) { continue }
+            $ownerUser = [string]$owner.User
+            if ([string]::IsNullOrWhiteSpace([string]$ownerUser)) { continue }
+            if ([string]::Equals($ownerUser.ToLowerInvariant(), $normalizedUser, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+        catch {
+        }
+    }
+
+    return $false
+}
+
+function Wait-UserSessionsAndProcessesToSettle {
+    param(
+        [string]$UserName,
+        [int]$TimeoutSeconds = 8
+    )
+
+    $settled = Wait-AzVmCondition -Condition {
+        (@(Get-LoggedOnUserSessionIds -UserName $UserName).Count -eq 0) -and
+        (-not (Test-UserProcessesRunning -UserName $UserName))
+    } -TimeoutSeconds $TimeoutSeconds -PollMilliseconds 250
+
+    if ($settled) {
+        Write-Detail ("copy-settings-user-user-settled: {0}" -f $UserName)
+        return
+    }
+
+    Write-Warning ("Proceeding after the bounded user-settle wait expired for {0}; later copy steps will still validate the resulting state." -f $UserName)
 }
 
 function Test-PathContentCopied {
@@ -1177,7 +1221,7 @@ if ([string]::IsNullOrWhiteSpace([string]$managerProfilePath) -or -not (Test-Pat
 $assistantProfilePath = Ensure-UserProfileMaterialized -UserName $assistantUser -UserPassword $assistantPassword
 Stop-LoggedOnUserSessions -UserName $assistantUser
 Stop-UserProcesses -UserName $assistantUser
-Start-Sleep -Seconds 5
+Wait-UserSessionsAndProcessesToSettle -UserName $assistantUser -TimeoutSeconds 8
 $defaultProfilePath = 'C:\Users\Default'
 if (-not (Test-Path -LiteralPath $defaultProfilePath)) {
     throw ("Default user profile path was not found: {0}" -f $defaultProfilePath)

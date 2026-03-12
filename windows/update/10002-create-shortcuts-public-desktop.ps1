@@ -661,7 +661,8 @@ function New-ShortcutSpec {
         [string]$ProfileKind = "",
         [string]$DestinationUrl = "",
         [string[]]$CleanupAliases = @(),
-        [bool]$CleanupMatchTargetOnly = $false
+        [bool]$CleanupMatchTargetOnly = $false,
+        [bool]$CleanupAliasMatchByNameOnly = $false
     )
 
     return [pscustomobject]@{
@@ -679,6 +680,7 @@ function New-ShortcutSpec {
         DestinationUrl = [string]$DestinationUrl
         CleanupAliases = @($CleanupAliases | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
         CleanupMatchTargetOnly = [bool]$CleanupMatchTargetOnly
+        CleanupAliasMatchByNameOnly = [bool]$CleanupAliasMatchByNameOnly
     }
 }
 
@@ -870,6 +872,10 @@ function Test-ShortcutDetailsMatchManagedSpec {
             continue
         }
 
+        if ([bool]$Spec.CleanupAliasMatchByNameOnly) {
+            return $true
+        }
+
         if ([string]::Equals($existingTargetPath, $managedTargetPath, [System.StringComparison]::Ordinal)) {
             return $true
         }
@@ -902,6 +908,97 @@ function Test-ShortcutDetailsMatchManagedSpec {
     }
 
     return $false
+}
+
+function Find-ManagedShortcutSpecByName {
+    param(
+        [object[]]$Specs,
+        [string]$ShortcutBaseName
+    )
+
+    $shortcutNameKey = Get-NormalizedShortcutNameKey -Value $ShortcutBaseName
+    foreach ($spec in @($Specs)) {
+        if ($null -eq $spec) {
+            continue
+        }
+
+        $specNameKey = Get-NormalizedShortcutNameKey -Value ([string]$spec.Name)
+        if ([string]::Equals($shortcutNameKey, $specNameKey, [System.StringComparison]::Ordinal)) {
+            return $spec
+        }
+    }
+
+    return $null
+}
+
+function Find-ManagedShortcutSpecByDetails {
+    param(
+        [object[]]$Specs,
+        [pscustomobject]$Details,
+        [string]$ShortcutBaseName
+    )
+
+    foreach ($spec in @($Specs)) {
+        if ($null -eq $spec) {
+            continue
+        }
+
+        if (Test-ShortcutDetailsMatchManagedSpec -Details $Details -ShortcutBaseName $ShortcutBaseName -Spec $spec) {
+            return $spec
+        }
+    }
+
+    return $null
+}
+
+function Test-PublicDesktopAlreadyNormalized {
+    param(
+        [string]$PublicDesktopPath,
+        [object[]]$Specs
+    )
+
+    foreach ($spec in @($Specs)) {
+        if ($null -eq $spec) {
+            continue
+        }
+
+        $managedShortcutPath = Join-Path $PublicDesktopPath (([string]$spec.Name) + '.lnk')
+        if (-not (Test-Path -LiteralPath $managedShortcutPath)) {
+            return $false
+        }
+
+        try {
+            $managedDetails = Get-ShortcutDetails -ShortcutPath $managedShortcutPath
+        }
+        catch {
+            return $false
+        }
+
+        if (-not (Test-ShortcutDetailsMatchManagedSpec -Details $managedDetails -ShortcutBaseName ([string]$spec.Name) -Spec $spec)) {
+            return $false
+        }
+    }
+
+    foreach ($existingShortcutFile in @(Get-ChildItem -LiteralPath $PublicDesktopPath -Filter "*.lnk" -File -ErrorAction SilentlyContinue)) {
+        $shortcutBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$existingShortcutFile.Name)
+        $matchedSpec = Find-ManagedShortcutSpecByName -Specs $Specs -ShortcutBaseName $shortcutBaseName
+        if ($null -ne $matchedSpec) {
+            continue
+        }
+
+        try {
+            $existingDetails = Get-ShortcutDetails -ShortcutPath ([string]$existingShortcutFile.FullName)
+        }
+        catch {
+            return $false
+        }
+
+        if ($null -ne (Find-ManagedShortcutSpecByDetails -Specs $Specs -Details $existingDetails -ShortcutBaseName $shortcutBaseName)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Resolve-IconLocation {
@@ -966,10 +1063,10 @@ $ioUnlockerExe = Resolve-CommandPath -CommandName "IObitUnlocker.exe" -FallbackC
     "C:\Program Files\IObit\IObit Unlocker\IObitUnlocker.exe",
     "C:\ProgramData\chocolatey\bin\IObitUnlocker.exe"
 )
-$anyDeskExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\AnyDesk\AnyDesk.exe" -ResolvedPath (Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates @(
-    "C:\Program Files\AnyDesk\AnyDesk.exe",
-    "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
-)) -FallbackPath "C:\Program Files\AnyDesk\AnyDesk.exe"
+$anyDeskExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files (x86)\AnyDesk\AnyDesk.exe" -ResolvedPath (Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates @(
+    "C:\Program Files (x86)\AnyDesk\AnyDesk.exe",
+    "C:\Program Files\AnyDesk\AnyDesk.exe"
+)) -FallbackPath "C:\Program Files (x86)\AnyDesk\AnyDesk.exe"
 $windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCandidates @(
     "C:\Program Files\Windscribe\Windscribe.exe",
     "C:\Program Files (x86)\Windscribe\Windscribe.exe"
@@ -1125,18 +1222,18 @@ Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a5WhatsApp Pe
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("AnyDesk") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$windscribeExe)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $windscribeExe -AllowMissingTargetPath $true -ValidationKind "app")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $windscribeExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Windscribe") -CleanupMatchTargetOnly $true)
 }
 elseif (-not [string]::IsNullOrWhiteSpace([string]$windscribeAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $windscribeAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $windscribeAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid" -CleanupAliases @("Windscribe"))
 }
 else {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath "C:\Program Files\Windscribe\Windscribe.exe" -AllowMissingTargetPath $true -ValidationKind "app")
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a8WindScribe" -TargetPath "C:\Program Files\Windscribe\Windscribe.exe" -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Windscribe") -CleanupMatchTargetOnly $true)
 }
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a9VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a10NVDA" -TargetPath $nvdaExe -Hotkey "Ctrl+Alt+N" -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a9VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("VLC media player") -CleanupMatchTargetOnly $true)
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a10NVDA" -TargetPath $nvdaExe -Hotkey "Ctrl+Alt+N" -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("NVDA") -CleanupAliasMatchByNameOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Microsoft Edge") -CleanupMatchTargetOnly $true)
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a12Itunes" -TargetPath $itunesExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a12Itunes" -TargetPath $itunesExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("iTunes") -CleanupMatchTargetOnly $true)
 
 foreach ($spec in @($bankShortcuts)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind ([string]$spec.ProfileKind) -Variant 'bank')
@@ -1203,7 +1300,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t11GH CLI" -TargetP
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t12FFmpeg CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & ffmpeg -version" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ffmpegExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t13Seven Zip CLI" -TargetPath $cmdExe -Arguments ('/k cd /d %UserProfile% & "{0}"' -f $sevenZipCliPath) -WorkingDirectory "%UserProfile%" -IconLocation ($sevenZipCliPath + ",0") -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t14Process Explorer" -TargetPath $processExplorerExe -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t15Io Unlocker" -TargetPath $ioUnlockerExe -AllowMissingTargetPath $true -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t15Io Unlocker" -TargetPath $ioUnlockerExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("IObit Unlocker") -CleanupMatchTargetOnly $true)
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u1User Files" -TargetPath $explorerExe -Arguments "shell:UsersFilesFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u2This PC" -TargetPath $explorerExe -Arguments "shell:MyComputerFolder" -IconLocation ($explorerExe + ",0") -ValidationKind "explorer-shell")
@@ -1226,66 +1323,65 @@ $managedUserDesktopRoots = @(
     ("C:\Users\{0}\Desktop" -f $assistantUser),
     "C:\Users\Default\Desktop"
 )
-$stagingRoot = Join-Path $env:TEMP ("az-vm-public-desktop-" + [guid]::NewGuid().ToString("N"))
-Ensure-Directory -Path $stagingRoot
+$stagingRoot = ''
+$publicDesktopAlreadyNormalized = Test-PublicDesktopAlreadyNormalized -PublicDesktopPath $publicDesktop -Specs $shortcutSpecs
 
 try {
-    foreach ($shortcutSpec in $shortcutSpecs) {
-        try {
-            New-ShortcutFromSpec -Spec $shortcutSpec -OutputDirectory $stagingRoot
-        }
-        catch {
-            throw ("Failed while creating public shortcut '{0}': {1}" -f [string]$shortcutSpec.Name, $_.Exception.Message)
-        }
+    if ($publicDesktopAlreadyNormalized) {
+        Write-Host "public-desktop-normalized: no changes required"
     }
+    else {
+        $stagingRoot = Join-Path $env:TEMP ("az-vm-public-desktop-" + [guid]::NewGuid().ToString("N"))
+        Ensure-Directory -Path $stagingRoot
 
-    Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
-        $existingShortcutFile = $_
-        $shortcutBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$existingShortcutFile.Name)
-        $matchedSpec = @(
-            @($shortcutSpecs) |
-                Where-Object { [string]::Equals((Get-NormalizedShortcutNameKey -Value $shortcutBaseName), (Get-NormalizedShortcutNameKey -Value ([string]$_.Name)), [System.StringComparison]::Ordinal) } |
-                Select-Object -First 1
-        )[0]
-
-        if ($null -eq $matchedSpec) {
-            $existingDetails = $null
+        foreach ($shortcutSpec in $shortcutSpecs) {
             try {
-                $existingDetails = Get-ShortcutDetails -ShortcutPath ([string]$existingShortcutFile.FullName)
+                New-ShortcutFromSpec -Spec $shortcutSpec -OutputDirectory $stagingRoot
             }
             catch {
-                Write-Warning ("public-desktop-inspect-skip: {0} => {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
-                return
+                throw ("Failed while creating public shortcut '{0}': {1}" -f [string]$shortcutSpec.Name, $_.Exception.Message)
+            }
+        }
+
+        foreach ($existingShortcutFile in @(Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue)) {
+            $shortcutBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$existingShortcutFile.Name)
+            $matchedSpec = Find-ManagedShortcutSpecByName -Specs $shortcutSpecs -ShortcutBaseName $shortcutBaseName
+
+            if ($null -eq $matchedSpec) {
+                $existingDetails = $null
+                try {
+                    $existingDetails = Get-ShortcutDetails -ShortcutPath ([string]$existingShortcutFile.FullName)
+                }
+                catch {
+                    Write-Warning ("public-desktop-inspect-skip: {0} => {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
+                    continue
+                }
+
+                $matchedSpec = Find-ManagedShortcutSpecByDetails -Specs $shortcutSpecs -Details $existingDetails -ShortcutBaseName $shortcutBaseName
             }
 
-            $matchedSpec = @(
-                @($shortcutSpecs) |
-                    Where-Object { Test-ShortcutDetailsMatchManagedSpec -Details $existingDetails -ShortcutBaseName $shortcutBaseName -Spec $_ } |
-                    Select-Object -First 1
-            )[0]
+            if ($null -eq $matchedSpec) {
+                continue
+            }
+
+            try {
+                Remove-Item -LiteralPath $existingShortcutFile.FullName -Force -ErrorAction Stop
+                Write-Host ("public-desktop-removed: {0} => managed-by {1}" -f $existingShortcutFile.Name, [string]$matchedSpec.Name)
+            }
+            catch {
+                throw ("Failed to remove existing public shortcut '{0}': {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
+            }
         }
 
-        if ($null -eq $matchedSpec) {
-            return
+        Get-ChildItem -LiteralPath $stagingRoot -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Move-Item -LiteralPath $_.FullName -Destination (Join-Path $publicDesktop $_.Name) -Force
         }
 
-        try {
-            Remove-Item -LiteralPath $existingShortcutFile.FullName -Force -ErrorAction Stop
-            Write-Host ("public-desktop-removed: {0} => managed-by {1}" -f $existingShortcutFile.Name, [string]$matchedSpec.Name)
-        }
-        catch {
-            throw ("Failed to remove existing public shortcut '{0}': {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
-        }
-    }
-
-    Get-ChildItem -LiteralPath $stagingRoot -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
-        Move-Item -LiteralPath $_.FullName -Destination (Join-Path $publicDesktop $_.Name) -Force
-    }
-
-    foreach ($expectedShortcutName in @($managedShortcutNames)) {
-        $expectedShortcutPath = Join-Path $publicDesktop ($expectedShortcutName + ".lnk")
-        if (-not (Test-Path -LiteralPath $expectedShortcutPath)) {
-            throw ("Managed public shortcut was not created: {0}" -f $expectedShortcutPath)
+        foreach ($expectedShortcutName in @($managedShortcutNames)) {
+            $expectedShortcutPath = Join-Path $publicDesktop ($expectedShortcutName + ".lnk")
+            if (-not (Test-Path -LiteralPath $expectedShortcutPath)) {
+                throw ("Managed public shortcut was not created: {0}" -f $expectedShortcutPath)
+            }
         }
     }
 
@@ -1294,7 +1390,7 @@ try {
     }
 }
 finally {
-    if (Test-Path -LiteralPath $stagingRoot) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$stagingRoot) -and (Test-Path -LiteralPath $stagingRoot)) {
         Remove-Item -LiteralPath $stagingRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

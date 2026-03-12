@@ -22,11 +22,6 @@ if (-not (Test-Path -LiteralPath $chocoExe)) {
     throw "choco was not found."
 }
 
-& $chocoExe upgrade git -y --no-progress --ignore-detected-reboot
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-    throw "choco upgrade git failed with exit code $LASTEXITCODE."
-}
-
 Refresh-SessionPath
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
@@ -43,6 +38,20 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     [Environment]::SetEnvironmentVariable("Path", ($entries -join ';'), "Machine")
     Refresh-SessionPath
 }
+
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    Write-Host "Existing Git installation is already healthy. Skipping choco install."
+    git --version
+    Write-Host "Update task completed: install-git-system"
+    return
+}
+
+& $chocoExe install git -y --no-progress --ignore-detected-reboot
+if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+    throw "choco install git failed with exit code $LASTEXITCODE."
+}
+
+Refresh-SessionPath
 
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     throw "git command was not found after installation."

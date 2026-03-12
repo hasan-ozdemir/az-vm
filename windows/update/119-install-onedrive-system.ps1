@@ -68,8 +68,8 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force" -f [string]$taskConfig.OneDrivePackageId)
-& $wingetExe install --id ([string]$taskConfig.OneDrivePackageId) --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host ("Running: winget install --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.OneDrivePackageId)
+& $wingetExe install --id ([string]$taskConfig.OneDrivePackageId) --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
     throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.OneDrivePackageId, $installExit)

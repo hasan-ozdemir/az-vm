@@ -11,6 +11,15 @@ function Refresh-SessionPath {
 
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path -LiteralPath $chocoExe)) { throw "choco was not found." }
+Refresh-SessionPath
+
+if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+    Write-Host "Existing PowerShell 7 installation is already healthy. Skipping choco install."
+    pwsh --version
+    Write-Host "Update task completed: install-powershell-core"
+    return
+}
+
 & $chocoExe install powershell-core -y --no-progress --ignore-detected-reboot
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) { throw "choco install powershell-core failed with exit code $LASTEXITCODE." }
 Refresh-SessionPath

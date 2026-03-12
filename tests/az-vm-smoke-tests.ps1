@@ -2515,6 +2515,9 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
+    Assert-True -Condition ($taskScript -like '*DockerDaemonProbeAttempts = 2*') -Message 'Docker Desktop task must keep the daemon probe count explicitly bounded.'
+    Assert-True -Condition ($taskScript -like '*DockerDaemonProbeDelaySeconds = 3*') -Message 'Docker Desktop task must keep the daemon probe delay explicitly bounded.'
+    Assert-True -Condition (($taskScript.IndexOf('docker info', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Docker Desktop task must not block on docker info during noninteractive update runs.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
 }
 
@@ -2617,6 +2620,8 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Safe Browsing Network*') -Message "Copy user settings task must exclude Ollama WebView safe-browsing cookie state from roaming copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf('Start-Sleep -Seconds 5', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old fixed five-second post-logoff sleep."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
 
     $advancedTaskPath = Join-Path $updateDir '10004-configure-settings-advanced-system.ps1'
@@ -2938,7 +2943,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'public-desktop-inspect-skip:',
         'public-desktop-removed: {0} => managed-by {1}',
         'CleanupAliases = @(',
-        'CleanupMatchTargetOnly = [bool]$CleanupMatchTargetOnly'
+        'CleanupMatchTargetOnly = [bool]$CleanupMatchTargetOnly',
+        'CleanupAliasMatchByNameOnly = [bool]$CleanupAliasMatchByNameOnly'
     )
 
     foreach ($shortcutName in @($expectedShortcutNames)) {
@@ -2968,11 +2974,20 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition ($healthTaskScript -like '*unmanaged-public-shortcut-count=*') -Message 'Health snapshot must inventory unmanaged Public Desktop shortcuts.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-ShortcutReadback -Label 'unmanaged-public-shortcut'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must read back unmanaged Public Desktop shortcut details.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Where-Object { $managedShortcutNames -contains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep the old exact-name-only Public Desktop cleanup logic.'
-    Assert-True -Condition (($shortcutTaskScript.IndexOf('Test-ShortcutDetailsMatchManagedSpec -Details $existingDetails -ShortcutBaseName $shortcutBaseName -Spec $_', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must use semantic duplicate matching for Public Desktop cleanup.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('function Find-ManagedShortcutSpecByName', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must provide a direct-name shortcut spec matcher for Public Desktop cleanup.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('function Find-ManagedShortcutSpecByDetails', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must provide a semantic shortcut spec matcher for Public Desktop cleanup.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('function Test-PublicDesktopAlreadyNormalized', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must provide a no-op fast path when the Public Desktop is already normalized.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('public-desktop-normalized: no changes required', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must log the no-op normalized path explicitly.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Find-ManagedShortcutSpecByDetails -Specs $shortcutSpecs -Details $existingDetails -ShortcutBaseName $shortcutBaseName', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must use semantic duplicate matching for Public Desktop cleanup.'
+    Assert-True -Condition (-not ($shortcutTaskScript -match 'public-desktop-inspect-skip:[\s\S]{0,120}\breturn\b')) -Message 'Shortcut task must not exit early after an unmanaged shortcut inspection warning.'
+    Assert-True -Condition (-not ($shortcutTaskScript -match 'if\s*\(\$null\s*-eq\s*\$matchedSpec\)\s*\{\s*return\b')) -Message 'Shortcut task must continue past unrelated Public Desktop shortcuts instead of returning from the script.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("Google Chrome", "Chrome")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry explicit Chrome duplicate aliases.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("Microsoft Edge")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry explicit Edge duplicate aliases.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("Visual Studio 2022")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry explicit Visual Studio duplicate aliases.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("AnyDesk")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry explicit AnyDesk duplicate aliases.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('@("IObit Unlocker")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit IObit Unlocker duplicate alias.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('@("NVDA")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit NVDA duplicate alias.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('CleanupAliasMatchByNameOnly $true', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must support explicit alias-only cleanup for installer shortcuts that wrap the managed app target.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('unexpected-public-shortcut', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep unexpected Public Desktop cleanup logic.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
@@ -3100,6 +3115,42 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
     Assert-True -Condition (($healthTaskText.IndexOf('Get-ManagerContext', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must read manager-scope startup locations through the manager hive."
+}
+
+Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoid forceful package reinstalls" -Action {
+    $expectedHealthySkipFragments = [ordered]@{
+        '01-bootstrap-winget-system.ps1' = @('Existing winget installation is already healthy. Skipping choco install.', 'Skipping forceful source reset and attempting one bounded source update.')
+        '02-check-install-chrome.ps1' = @('Google Chrome executable already exists:', 'choco install googlechrome')
+        '101-install-powershell-core.ps1' = @('Existing PowerShell 7 installation is already healthy. Skipping choco install.')
+        '102-install-git-system.ps1' = @('Existing Git installation is already healthy. Skipping choco install.', 'choco install git')
+        '103-install-python-system.ps1' = @('Existing Python installation is already healthy. Skipping choco install.', 'choco install python312')
+        '104-install-node-system.ps1' = @('Existing Node.js installation is already healthy. Skipping choco install.', 'choco install nodejs-lts')
+        '105-install-azure-cli.ps1' = @('Existing Azure CLI installation is already healthy:', 'choco install azure-cli')
+        '106-install-gh-cli.ps1' = @('Existing GitHub CLI installation is already healthy. Skipping choco install.')
+        '107-install-7zip-system.ps1' = @('Existing 7-Zip installation is already healthy. Skipping choco install.')
+        '108-install-sysinternals-suite.ps1' = @('Existing Sysinternals installation is already healthy:', 'choco install sysinternals')
+        '109-install-ffmpeg-system.ps1' = @('Existing FFmpeg installation is already healthy. Skipping choco install.')
+        '112-install-azd-cli.ps1' = @('Existing azd installation is already healthy. Skipping winget install.')
+        '118-install-teams-system.ps1' = @('Existing Microsoft Teams installation is already healthy. Skipping winget install.')
+        '122-install-anydesk-system.ps1' = @('Existing AnyDesk installation is already healthy', 'function Test-AnyDeskInstalled')
+        '123-install-windscribe-system.ps1' = @('Existing Windscribe installation is already healthy. Skipping winget install.', 'function Test-WindscribeInstalled')
+        '129-configure-unlocker-io.ps1' = @('Existing Io Unlocker installation is already healthy. Skipping choco install.')
+    }
+
+    foreach ($entry in $expectedHealthySkipFragments.GetEnumerator()) {
+        $taskPath = Join-Path $RepoRoot ('windows\update\' + [string]$entry.Key)
+        $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+        foreach ($fragment in @($entry.Value)) {
+            Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Task '{0}' must include fragment '{1}'." -f [string]$entry.Key, [string]$fragment)
+        }
+    }
+
+    foreach ($taskPath in @(Get-ChildItem -LiteralPath (Join-Path $RepoRoot 'windows\update') -Filter '*.ps1' -File -ErrorAction Stop)) {
+        $taskText = [string](Get-Content -LiteralPath $taskPath.FullName -Raw)
+        Assert-True -Condition (-not ($taskText -match 'winget\s+install[^\r\n]{0,240}--force')) -Message ("Task '{0}' must not pass --force to winget install." -f $taskPath.Name)
+        Assert-True -Condition (-not ($taskText -match 'choco\s+upgrade\s+\S+')) -Message ("Task '{0}' must not use choco upgrade for package install semantics." -f $taskPath.Name)
+        Assert-True -Condition (($taskText.IndexOf('--force', [System.StringComparison]::Ordinal)) -lt 0) -Message ("Task '{0}' must not pass any --force flag in vm-update." -f $taskPath.Name)
+    }
 }
 
 Invoke-Test -Name "Tracked tree omits local-only accessibility vendor residue" -Action {

@@ -31,6 +31,27 @@ function Resolve-WingetExe {
     return ""
 }
 
+function Test-TeamsInstalled {
+    $hasTeams = $false
+    if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
+        $startApps = @(Get-StartApps | Where-Object { ([string]$_.Name).ToLowerInvariant().Contains("teams") })
+        if ($startApps.Count -gt 0) {
+            $hasTeams = $true
+        }
+    }
+
+    if (-not $hasTeams -and -not [string]::IsNullOrWhiteSpace([string]$wingetExe)) {
+        Write-Host "Running: winget list Microsoft Teams"
+        $listOutput = & $wingetExe list "Microsoft Teams"
+        $listText = [string]($listOutput | Out-String)
+        if (-not [string]::IsNullOrWhiteSpace($listText) -and $listText.ToLowerInvariant().Contains("teams")) {
+            $hasTeams = $true
+        }
+    }
+
+    return $hasTeams
+}
+
 Refresh-SessionPath
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
@@ -38,31 +59,21 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-Write-Host "Running: winget install Microsoft Teams -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-& $wingetExe install "Microsoft Teams" -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+if (Test-TeamsInstalled) {
+    Write-Host "Existing Microsoft Teams installation is already healthy. Skipping winget install."
+    Write-Host "install-teams-system-completed"
+    Write-Host "Update task completed: install-teams-system"
+    return
+}
+
+Write-Host "Running: winget install Microsoft Teams -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+& $wingetExe install "Microsoft Teams" -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
     throw "winget install Microsoft Teams failed with exit code $installExit."
 }
 
-$hasTeams = $false
-if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
-    $startApps = @(Get-StartApps | Where-Object { ([string]$_.Name).ToLowerInvariant().Contains("teams") })
-    if ($startApps.Count -gt 0) {
-        $hasTeams = $true
-    }
-}
-
-if (-not $hasTeams) {
-    Write-Host "Running: winget list Microsoft Teams"
-    $listOutput = & $wingetExe list "Microsoft Teams"
-    $listText = [string]($listOutput | Out-String)
-    if (-not [string]::IsNullOrWhiteSpace($listText) -and $listText.ToLowerInvariant().Contains("teams")) {
-        $hasTeams = $true
-    }
-}
-
-if (-not $hasTeams) {
+if (-not (Test-TeamsInstalled)) {
     throw "Microsoft Teams install could not be verified."
 }
 

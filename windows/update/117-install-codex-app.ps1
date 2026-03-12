@@ -132,7 +132,7 @@ function Register-CodexDeferredInstall {
         New-Item -Path $runOncePath -Force | Out-Null
     }
 
-    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"' -f $WingetPath)
+    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"' -f $WingetPath)
     Set-ItemProperty -Path $runOncePath -Name "AzVmInstallCodexApp" -Value $commandValue -Type String
 }
 
@@ -150,8 +150,8 @@ if (Test-CodexInstalled -WingetExe $wingetExe) {
     return
 }
 
-Write-Host "Running: winget install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force"
-$installOutput = & $wingetExe install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity --force
+Write-Host "Running: winget install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+$installOutput = & $wingetExe install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
 $installExit = [int]$LASTEXITCODE
 $installText = [string]($installOutput | Out-String)
 if (-not [string]::IsNullOrWhiteSpace([string]$installText)) {

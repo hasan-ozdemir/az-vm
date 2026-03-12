@@ -135,14 +135,23 @@ if (-not (Test-Path -LiteralPath $chocoExe)) {
     throw "Chocolatey is required before winget bootstrap."
 }
 
-& $chocoExe upgrade winget -y --no-progress
-if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-    throw "choco upgrade winget failed with exit code $LASTEXITCODE."
+Refresh-SessionPath
+$wingetExe = Resolve-WingetExe
+$wingetInstalledByBootstrap = $false
+if ([string]::IsNullOrWhiteSpace($wingetExe)) {
+    & $chocoExe install winget -y --no-progress
+    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
+        throw "choco install winget failed with exit code $LASTEXITCODE."
+    }
+
+    Refresh-SessionPath
+    $wingetExe = Resolve-WingetExe
+    $wingetInstalledByBootstrap = $true
+}
+else {
+    Write-Host "Existing winget installation is already healthy. Skipping choco install."
 }
 
-Refresh-SessionPath
-
-$wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace($wingetExe)) {
     throw "winget command is not available after bootstrap."
 }
@@ -157,22 +166,19 @@ if ($LASTEXITCODE -ne 0) {
     throw "winget --version failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "Running: winget source reset --force"
-& $wingetExe source reset --force
+Write-Host "Running: winget source list"
+& $wingetExe source list
 if ($LASTEXITCODE -ne 0) {
-    throw "winget source reset --force failed with exit code $LASTEXITCODE."
+    Write-Warning "winget source list failed. Skipping forceful source reset and attempting one bounded source update."
 }
 
 Write-Host "Running: winget source update"
 & $wingetExe source update
 if ($LASTEXITCODE -ne 0) {
-    throw "winget source update failed with exit code $LASTEXITCODE."
+    throw "winget source update failed with exit code $LASTEXITCODE. Repair winget sources outside vm-update, then rerun the task."
 }
-
-Write-Host "Running: winget source list"
-& $wingetExe source list
-if ($LASTEXITCODE -ne 0) {
-    throw "winget source list failed with exit code $LASTEXITCODE."
+if ($wingetInstalledByBootstrap) {
+    Write-Host "winget-bootstrap-installed"
 }
 
 Write-Host "winget-ready"
