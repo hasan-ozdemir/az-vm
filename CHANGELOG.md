@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.12.292] - 2026-03-12
+## [2026.3.12.293] - 2026-03-12
 
 ### Added
 - Added explicit managed OS disk resize intent flags for `resize`: `--disk-size=<number>gb|mb --expand` now performs the supported in-place OS disk growth path, while `--disk-size=<number>gb|mb --shrink` stops before mutation and prints supported rebuild and migration alternatives because Azure does not support shrinking an existing managed OS disk in place.

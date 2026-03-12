@@ -2,7 +2,7 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.12.292 - 2026-03-12
+## Release 2026.3.12.293 - 2026-03-12
 
 ### Summary
 This release finishes the command-surface refresh for publish-readiness: step selectors are renamed to the new `--step` family, `create` now reuses managed targets by default with explicit `explicit destructive rebuild flow` for destructive rebuilds, `update` now requires an existing managed VM and redeploys it during the VM deploy stage, and `resize` gains a safe managed OS disk expand path plus an explicit non-mutating shrink guidance path.
