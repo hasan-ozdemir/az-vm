@@ -94,6 +94,22 @@ function Test-TcpPortReachable {
     }
 }
 
+function Refresh-SessionPath {
+    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
+    if (Test-Path -LiteralPath $refreshEnvCmd) {
+        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
+    }
+
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
+        $env:Path = [string]$machinePath
+    }
+    else {
+        $env:Path = ("{0};{1}" -f [string]$machinePath, [string]$userPath)
+    }
+}
+
 function Invoke-NativeCommandProbe {
     param(
         [string]$FilePath,
@@ -1024,10 +1040,22 @@ catch {
     Write-Warning "Version info collection failed: $($_.Exception.Message)"
 }
 
+Refresh-SessionPath
 Write-Host "APP PATH CHECKS:"
 foreach ($commandName in @("choco", "git", "node", "python", "py", "pwsh", "gh", "ffmpeg", "7z", "az", "docker", "wsl", "ollama")) {
-    $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
-    if ($cmd) { Write-Host "$commandName => $($cmd.Source)" } else { Write-Host "$commandName => not-found" }
+    $resolvedCommandPath = switch ($commandName) {
+        'az' { Resolve-CommandPath -CommandName 'az' -FallbackCandidates @('C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd') }
+        'docker' { Resolve-CommandPath -CommandName 'docker' -FallbackCandidates @('C:\Program Files\Docker\Docker\resources\bin\docker.exe') }
+        'ollama' { Resolve-CommandPath -CommandName 'ollama' -FallbackCandidates @((Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'), 'C:\Program Files\Ollama\ollama.exe') }
+        default { Resolve-CommandPath -CommandName $commandName }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedCommandPath)) {
+        Write-Host "$commandName => not-found"
+    }
+    else {
+        Write-Host ("{0} => {1}" -f $commandName, [string]$resolvedCommandPath)
+    }
 }
 
 Write-Host "OPEN Ports:"
@@ -1247,9 +1275,16 @@ finally {
 
 Write-Host "DOCKER DESKTOP HEALTH:"
 $dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+$dockerCliPath = Resolve-CommandPath -CommandName 'docker' -FallbackCandidates @('C:\Program Files\Docker\Docker\resources\bin\docker.exe')
 Write-Host ("docker-desktop-exe-present => {0}" -f [bool](Test-Path -LiteralPath $dockerDesktopExe))
-$dockerCliResult = Invoke-NativeCommandProbe -FilePath 'docker' -Arguments @('--version') -TimeoutSeconds 10
-Write-Host ("docker-cli-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerCliResult.Success, [bool]$dockerCliResult.TimedOut, [int]$dockerCliResult.ExitCode)
+if ([string]::IsNullOrWhiteSpace([string]$dockerCliPath)) {
+    Write-Host 'docker-cli-probe => success=False; timed-out=False; exit-code=1'
+    $dockerCliResult = [pscustomobject]@{ Success = $false; TimedOut = $false; ExitCode = 1; Output = '' }
+}
+else {
+    $dockerCliResult = Invoke-NativeCommandProbe -FilePath $dockerCliPath -Arguments @('--version') -TimeoutSeconds 10
+    Write-Host ("docker-cli-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerCliResult.Success, [bool]$dockerCliResult.TimedOut, [int]$dockerCliResult.ExitCode)
+}
 $dockerServices = @(Get-Service -Name 'com.docker*' -ErrorAction SilentlyContinue | Sort-Object Name)
 if (@($dockerServices).Count -eq 0) {
     Write-Host 'docker-services => none'
@@ -1278,18 +1313,22 @@ if (Test-Path -LiteralPath $dockerRunOncePath) {
     }
 }
 Write-Host ("docker-runas-once-present => {0}" -f (-not [string]::IsNullOrWhiteSpace([string]$dockerRunOnceValue)))
-$dockerStatusResult = Invoke-NativeCommandProbe -FilePath 'docker' -Arguments @('desktop', 'status') -TimeoutSeconds 20
-Write-Host ("docker-desktop-status-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerStatusResult.Success, [bool]$dockerStatusResult.TimedOut, [int]$dockerStatusResult.ExitCode)
-$dockerInfoResult = Invoke-NativeCommandProbe -FilePath 'docker' -Arguments @('info') -TimeoutSeconds 20
-Write-Host ("docker-info-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerInfoResult.Success, [bool]$dockerInfoResult.TimedOut, [int]$dockerInfoResult.ExitCode)
+if ([string]::IsNullOrWhiteSpace([string]$dockerCliPath)) {
+    $dockerStatusResult = [pscustomobject]@{ Success = $false; TimedOut = $false; ExitCode = 1; Output = '' }
+    $dockerInfoResult = [pscustomobject]@{ Success = $false; TimedOut = $false; ExitCode = 1; Output = '' }
+    Write-Host 'docker-desktop-status-probe => success=False; timed-out=False; exit-code=1'
+    Write-Host 'docker-info-probe => success=False; timed-out=False; exit-code=1'
+}
+else {
+    $dockerStatusResult = Invoke-NativeCommandProbe -FilePath $dockerCliPath -Arguments @('desktop', 'status') -TimeoutSeconds 20
+    Write-Host ("docker-desktop-status-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerStatusResult.Success, [bool]$dockerStatusResult.TimedOut, [int]$dockerStatusResult.ExitCode)
+    $dockerInfoResult = Invoke-NativeCommandProbe -FilePath $dockerCliPath -Arguments @('info') -TimeoutSeconds 20
+    Write-Host ("docker-info-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerInfoResult.Success, [bool]$dockerInfoResult.TimedOut, [int]$dockerInfoResult.ExitCode)
+}
 Write-Host ("docker-engine-ready => {0}" -f ([bool]$dockerCliResult.Success -and [bool]$dockerStatusResult.Success -and [bool]$dockerInfoResult.Success))
 
 Write-Host "OLLAMA HEALTH:"
-$ollamaExe = ''
-$ollamaCommand = Get-Command ollama -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($null -ne $ollamaCommand) {
-    $ollamaExe = [string]$ollamaCommand.Source
-}
+$ollamaExe = Resolve-CommandPath -CommandName 'ollama' -FallbackCandidates @((Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'), 'C:\Program Files\Ollama\ollama.exe')
 Write-Host ("ollama-cli => {0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$ollamaExe)) { 'not-found' } else { $ollamaExe }))
 $ollamaProcesses = @(Get-Process -Name 'ollama*' -ErrorAction SilentlyContinue)
 Write-Host ("ollama-process-count => {0}" -f @($ollamaProcesses).Count)
@@ -1309,7 +1348,7 @@ $ollamaApiProbeVersion = Get-OllamaApiVersion -TimeoutSeconds 10
 $ollamaApiProbeSuccess = -not [string]::IsNullOrWhiteSpace([string]$ollamaApiProbeVersion)
 $ollamaApiProbeTimedOut = $false
 if ($ollamaApiProbeSuccess) {
-    Write-Host ('ollama-api-version-response => {"version":"{0}"}' -f [string]$ollamaApiProbeVersion)
+    Write-Host ('ollama-api-version-response => {{"version":"{0}"}}' -f [string]$ollamaApiProbeVersion)
 }
 Write-Host ("ollama-api-probe => success={0}; timed-out={1}" -f [bool]$ollamaApiProbeSuccess, [bool]$ollamaApiProbeTimedOut)
 

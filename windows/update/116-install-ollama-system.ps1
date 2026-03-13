@@ -4,24 +4,27 @@ Write-Host "Update task started: install-ollama-system"
 $taskConfig = [ordered]@{
     PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
     OllamaPackageId = 'Ollama.Ollama'
+    OllamaApiVersionUris = @(
+        'http://127.0.0.1:11434/api/version',
+        'http://localhost:11434/api/version'
+    )
     OllamaExecutableFallbackCandidates = @(
         (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'),
         'C:\Program Files\Ollama\ollama.exe'
     )
-    OllamaApiVersionUri = 'http://127.0.0.1:11434/api/version'
     OllamaApiPort = 11434
     InstallerCommandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState|Docker\.DockerDesktop|Ollama\.Ollama|Microsoft Teams|microsoft\.azd|windscribe|whatsapp|anydesk|vscode'
     InstallerNameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
     WingetInstallTimeoutSeconds = 600
-    OllamaApiWaitTimeoutSeconds = 35
+    OllamaApiWaitTimeoutSeconds = 60
     OllamaApiRetryCount = 2
-    OllamaApiRetryBackoffSeconds = 2
+    OllamaApiRetryBackoffSeconds = 5
     OllamaServeEarlyExitCheckSeconds = 1
     InstallerSettleTimeoutSeconds = 8
     InstallerFastProceedSeconds = 2
-    OllamaApiProbeTimeoutSeconds = 2
+    OllamaApiProbeTimeoutSeconds = 5
     OllamaApiProbeDelayMilliseconds = 1000
-    OllamaServeGraceTimeoutSeconds = 8
+    OllamaServeGraceTimeoutSeconds = 45
     LogTailLineCount = 12
 }
 
@@ -79,13 +82,19 @@ function Get-OllamaApiVersion {
         [int]$TimeoutSeconds = 5
     )
 
-    try {
-        $response = Invoke-RestMethod -Method Get -Uri ([string]$taskConfig.OllamaApiVersionUri) -TimeoutSec $TimeoutSeconds -ErrorAction Stop
-        if ($null -ne $response -and -not [string]::IsNullOrWhiteSpace([string]$response.version)) {
-            return [string]$response.version
+    foreach ($uri in @([string[]]$taskConfig.OllamaApiVersionUris)) {
+        if ([string]::IsNullOrWhiteSpace([string]$uri)) {
+            continue
         }
-    }
-    catch {
+
+        try {
+            $response = Invoke-RestMethod -Method Get -Uri ([string]$uri) -TimeoutSec $TimeoutSeconds -ErrorAction Stop
+            if ($null -ne $response -and -not [string]::IsNullOrWhiteSpace([string]$response.version)) {
+                return [string]$response.version
+            }
+        }
+        catch {
+        }
     }
 
     return ''
@@ -113,14 +122,14 @@ function Wait-OllamaApiReady {
 
 function Test-TcpPortReachable {
     param(
-        [string]$Host = '127.0.0.1',
+        [string]$HostName = '127.0.0.1',
         [int]$Port = 11434,
         [int]$TimeoutMilliseconds = 1000
     )
 
     $client = New-Object System.Net.Sockets.TcpClient
     try {
-        $asyncResult = $client.BeginConnect($Host, $Port, $null, $null)
+        $asyncResult = $client.BeginConnect($HostName, $Port, $null, $null)
         if (-not $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds)) {
             return $false
         }
@@ -473,7 +482,7 @@ function Ensure-OllamaApiReady {
             }
 
             $listeningHintPresent = Test-OllamaServeListeningHint -ServeLaunch $serveLaunch
-            $portReachable = Test-TcpPortReachable -Host '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
+            $portReachable = Test-TcpPortReachable -HostName '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
             if (($listeningHintPresent -or $portReachable) -and $null -ne $serveLaunch.Process -and -not $serveLaunch.Process.HasExited) {
                 Write-Host "Ollama service signalled local readiness without an immediate /api/version response. Allowing one short grace wait before a restart."
                 $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds ([int]$taskConfig.OllamaServeGraceTimeoutSeconds)

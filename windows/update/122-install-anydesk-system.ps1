@@ -1,6 +1,11 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-anydesk-system"
 
+$taskConfig = [ordered]@{
+    WingetInstallTimeoutSeconds = 90
+    LogTailLineCount = 20
+}
+
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
@@ -62,6 +67,71 @@ function Test-AnyDeskInstalled {
     }
 }
 
+function Get-LogTailText {
+    param(
+        [string]$Path,
+        [int]$LineCount = 20
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return ''
+    }
+
+    try {
+        $tailLines = @(Get-Content -LiteralPath $Path -Tail $LineCount -ErrorAction Stop)
+        if (@($tailLines).Count -eq 0) {
+            return ''
+        }
+
+        return ([string](($tailLines -join [Environment]::NewLine))).Trim()
+    }
+    catch {
+        return ''
+    }
+}
+
+function Invoke-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [int]$TimeoutSeconds = 90,
+        [string]$Label = 'process'
+    )
+
+    $logRoot = Join-Path $env:TEMP 'az-vm-anydesk'
+    [void](New-Item -ItemType Directory -Path $logRoot -Force)
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    $stdoutLog = Join-Path $logRoot ("{0}-{1}.stdout.log" -f $Label.Replace(' ', '-'), $stamp)
+    $stderrLog = Join-Path $logRoot ("{0}-{1}.stderr.log" -f $Label.Replace(' ', '-'), $stamp)
+    $process = Start-Process `
+        -FilePath $FilePath `
+        -ArgumentList $ArgumentList `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutLog `
+        -RedirectStandardError $stderrLog `
+        -PassThru
+
+    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
+    if ($timedOut) {
+        try {
+            Stop-Process -Id ([int]$process.Id) -Force -ErrorAction Stop
+        }
+        catch {
+        }
+    }
+
+    return [pscustomobject]@{
+        TimedOut = [bool]$timedOut
+        ExitCode = if ($timedOut) { 124 } else { [int]$process.ExitCode }
+        StdoutLog = [string]$stdoutLog
+        StderrLog = [string]$stderrLog
+        StdoutText = [string](Get-LogTailText -Path $stdoutLog -LineCount ([int]$taskConfig.LogTailLineCount))
+        StderrText = [string](Get-LogTailText -Path $stderrLog -LineCount ([int]$taskConfig.LogTailLineCount))
+    }
+}
+
 Refresh-SessionPath
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
@@ -83,17 +153,25 @@ if ([bool]$existingAnyDesk.Installed) {
 }
 
 Write-Host "Running: winget install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
-& $wingetExe install anydesk.anydesk --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
-$installExit = [int]$LASTEXITCODE
+$installResult = Invoke-ProcessWithTimeout `
+    -FilePath $wingetExe `
+    -ArgumentList @('install', 'anydesk.anydesk', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+    -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
+    -Label 'winget-install-anydesk-system'
+$installExit = [int]$installResult.ExitCode
 $needsPostInstallVerification = $false
-if ($installExit -ne 0 -and $installExit -ne -1978335189) {
+if ([bool]$installResult.TimedOut) {
+    Write-Warning ("winget install anydesk.anydesk exceeded the bounded wait ({0}s); post-install verification will determine whether the package is usable." -f [int]$taskConfig.WingetInstallTimeoutSeconds)
+    $needsPostInstallVerification = $true
+}
+elseif ($installExit -ne 0 -and $installExit -ne -1978335189) {
     Write-Warning ("winget install anydesk.anydesk returned exit code {0}; post-install verification will determine whether the package is usable." -f $installExit)
     $needsPostInstallVerification = $true
 }
 
-    $verifiedAnyDesk = Test-AnyDeskInstalled
+$verifiedAnyDesk = Test-AnyDeskInstalled
 if (-not [bool]$verifiedAnyDesk.Installed) {
-    throw "AnyDesk install could not be verified."
+    throw ("AnyDesk install could not be verified. stdoutLog={0}; stderrLog={1}" -f [string]$installResult.StdoutLog, [string]$installResult.StderrLog)
 }
 
 if ([string]::IsNullOrWhiteSpace([string]$verifiedAnyDesk.Path)) {

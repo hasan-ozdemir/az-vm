@@ -617,6 +617,49 @@ Invoke-Test -Name "Subscription resolver uses CLI then env then active precedenc
     }
 }
 
+Invoke-Test -Name "Azure location queries bypass forced subscription injection" -Action {
+    try {
+        $script:AzVmActiveSubscriptionId = '11111111-1111-1111-1111-111111111111'
+        $script:BypassAzCliSubscription = 0
+        $script:ObservedLocationBypassDepths = @()
+        function az {
+            $line = @($args) -join ' '
+            if ($line -like 'account list-locations*') {
+                $script:ObservedLocationBypassDepths += [int]$script:BypassAzCliSubscription
+                $global:LASTEXITCODE = 0
+                if ($line -like "*availabilityZoneMappings*") {
+                    return '["1","2","3"]'
+                }
+                if ($line -like "*metadata.regionType=='Physical'*") {
+                    return '[{"Name":"austriaeast","DisplayName":"Austria East","RegionType":"Physical"}]'
+                }
+                if ($line -like "*[?name==''austriaeast''].name | [0]*") {
+                    return 'austriaeast'
+                }
+                return '[{"Name":"austriaeast","DisplayName":"Austria East","RegionType":"Physical"}]'
+            }
+
+            $global:LASTEXITCODE = 0
+            return ''
+        }
+
+        Assert-LocationExists -Location 'austriaeast'
+        $locationCatalog = @(Get-AzLocationCatalog)
+        $zoneArgs = @(Get-AzVmPublicIpZoneArgs -Location 'austriaeast')
+
+        Assert-True -Condition (@($script:ObservedLocationBypassDepths).Count -ge 3) -Message 'Location-related Azure account queries must all be observed.'
+        Assert-True -Condition ((@($script:ObservedLocationBypassDepths) | Where-Object { $_ -lt 1 }).Count -eq 0) -Message 'Location-related Azure account queries must run with forced-subscription bypass enabled.'
+        Assert-True -Condition (@($locationCatalog).Count -eq 1) -Message 'Location catalog should still resolve a physical region entry.'
+        Assert-True -Condition ((@($zoneArgs) -join ',') -eq '--zone,1,2,3') -Message 'Public IP zone discovery should still return zone arguments.'
+    }
+    finally {
+        Remove-Item Function:\az -ErrorAction SilentlyContinue
+        Remove-Variable -Name ObservedLocationBypassDepths -Scope Script -ErrorAction SilentlyContinue
+        $script:AzVmActiveSubscriptionId = ''
+        $script:BypassAzCliSubscription = 0
+    }
+}
+
 Invoke-Test -Name "Interactive create and update subscription picker stores selected subscription" -Action {
     $subscriptionRows = @(
         [pscustomobject]@{ id = '11111111-1111-1111-1111-111111111111'; name = 'default-sub'; tenantId = 'tenant-a'; isDefault = $true },
@@ -1674,6 +1717,41 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
                 Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
             }
         }
+    }
+}
+
+Invoke-Test -Name "Create allows same VM name in other resource groups but rejects target-group duplicates" -Action {
+    try {
+        function az {
+            $line = @($args) -join ' '
+            if ($line -like 'resource list*') {
+                $global:LASTEXITCODE = 0
+                return @'
+[
+  {"name":"examplevm","resourceGroup":"rg-examplevm-sec1-g1","id":"/subscriptions/test/resourceGroups/rg-examplevm-sec1-g1/providers/Microsoft.Compute/virtualMachines/examplevm"},
+  {"name":"examplevm","resourceGroup":"rg-examplevm-ate1-g2","id":"/subscriptions/test/resourceGroups/rg-examplevm-ate1-g2/providers/Microsoft.Compute/virtualMachines/examplevm"}
+]
+'@
+            }
+
+            $global:LASTEXITCODE = 0
+            return '[]'
+        }
+
+        Assert-AzVmVmNameConflictFree -VmName 'examplevm' -TargetResourceGroup 'rg-examplevm-ate1-g3'
+
+        $threw = $false
+        try {
+            Assert-AzVmVmNameConflictFree -VmName 'examplevm' -TargetResourceGroup 'rg-examplevm-ate1-g2'
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message 'Create must still reject a VM name that already exists in the target resource group.'
+    }
+    finally {
+        Remove-Item Function:\az -ErrorAction SilentlyContinue
     }
 }
 
@@ -3139,6 +3217,23 @@ Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" 
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '4294967295') -eq -1) -Message 'Task exit code parser must normalize unsigned 32-bit -1 markers back to -1.'
 }
 
+Invoke-Test -Name "Persistent SSH task runner restores the session after transient task drops" -Action {
+    $runnerPath = Join-Path $RepoRoot 'modules\core\tasks\azvm-ssh-task-runner.ps1'
+    Assert-True -Condition (Test-Path -LiteralPath $runnerPath) -Message 'Persistent SSH task runner file was not found.'
+
+    $runnerText = [string](Get-Content -LiteralPath $runnerPath -Raw)
+    foreach ($fragment in @(
+        'function Restore-AzVmTaskSession',
+        'Wait-AzVmTcpPortReachable',
+        'Attempting persistent SSH session recovery:',
+        'pre-task bootstrap for',
+        'post-warning recovery after task',
+        'Persistent SSH session recovery is still unavailable after task'
+    )) {
+        Assert-True -Condition ($runnerText -like ('*' + [string]$fragment + '*')) -Message ("Persistent SSH task runner must include fragment '{0}'." -f [string]$fragment)
+    }
+}
+
 Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
     $script:ExecMinimalRuntimeUsed = $false
     $script:ExecRunCommandInvocation = $null
@@ -3482,15 +3577,15 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '113-install-wsl2-system' = 137
         '114-install-docker-desktop' = 1649
         '115-install-npm-packages-global' = 420
-        '116-install-ollama-system' = 376
+        '116-install-ollama-system' = 480
         '117-install-codex-app' = 120
         '118-install-teams-system' = 60
         '119-install-onedrive-system' = 5
         '120-install-google-drive' = 103
-        '121-install-whatsapp-system' = 10
-        '122-install-anydesk-system' = 20
+        '121-install-whatsapp-system' = 90
+        '122-install-anydesk-system' = 120
         '123-install-windscribe-system' = 63
-        '124-install-vlc-system' = 58
+        '124-install-vlc-system' = 120
         '125-install-itunes-system' = 57
         '126-install-be-my-eyes' = 240
         '127-install-nvda-system' = 54
@@ -3801,6 +3896,7 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Ollama.Ollama*') -Message 'Ollama install task must use the Ollama.Ollama winget package id.'
     Assert-True -Condition ($taskScript -like '*127.0.0.1:11434*') -Message 'Ollama install task must check the default Ollama port.'
+    Assert-True -Condition ($taskScript -like '*http://localhost:11434/api/version*') -Message 'Ollama install task must keep a localhost API probe fallback for slow local cold starts.'
     Assert-True -Condition ($taskScript -like '*/api/version*') -Message 'Ollama install task must validate the Ollama HTTP API endpoint.'
     Assert-True -Condition ($taskScript -like '*ollama serve*') -Message 'Ollama install task must start ollama serve when the API is not already ready.'
     Assert-True -Condition ($taskScript -like '*Existing Ollama installation is already healthy. Skipping winget install.*') -Message 'Ollama install task must short-circuit when an existing installation is already healthy.'
@@ -3812,6 +3908,8 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     Assert-True -Condition ($taskScript -like '*timed out after*') -Message 'Ollama install task must fail clearly when winget install exceeds the timeout.'
     Assert-True -Condition ($taskScript -like '*Retrying after*') -Message 'Ollama install task must retry bounded serve readiness when the first cold-start probe misses.'
     Assert-True -Condition ($taskScript -like '*detail=*') -Message 'Ollama install task must include serve failure detail when readiness still fails.'
+    Assert-True -Condition (($taskScript.IndexOf('[string]$Host =', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Ollama install task must not shadow the built-in $Host variable with a parameter named Host.'
+    Assert-True -Condition (($taskScript.IndexOf('[string]$HostName', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Ollama install task must use a non-reserved host-name parameter for TCP probes.'
 }
 
 Invoke-Test -Name "Windows VS Code task short-circuits healthy installs" -Action {
@@ -3844,7 +3942,27 @@ Invoke-Test -Name "Windows AnyDesk task verifies the executable after non-fatal 
     Assert-True -Condition ($taskScript -like '*post-install verification will determine whether the package is usable*') -Message 'AnyDesk task must treat transient winget failures as verification-required, not immediate hard failure.'
     Assert-True -Condition ($taskScript -like '*install-anydesk-system-verified: executable*') -Message 'AnyDesk task must log executable-based verification after install.'
     Assert-True -Condition ($taskScript -like '*winget list anydesk.anydesk*') -Message 'AnyDesk task must keep a package-list fallback verification path.'
+    Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'AnyDesk task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'AnyDesk task must clear non-fatal native exit codes before completing.'
+}
+
+Invoke-Test -Name "Windows VLC task verifies the executable after bounded winget waits" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\124-install-vlc-system.ps1'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'VLC task must bound the winget install wait time.'
+    Assert-True -Condition ($taskScript -like '*post-install verification will determine whether the package is usable*') -Message 'VLC task must treat bounded wait overruns as verification-required, not immediate hard failure.'
+    Assert-True -Condition ($taskScript -like '*install-vlc-system-verified: executable*') -Message 'VLC task must log executable-based verification after install.'
+    Assert-True -Condition ($taskScript -like '*winget list --id VideoLAN.VLC*') -Message 'VLC task must keep a package-list verification fallback.'
+    Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'VLC task must clear non-fatal native exit codes before completing.'
+}
+
+Invoke-Test -Name "Windows WhatsApp task defers cleanly when Store install cannot complete inline" -Action {
+    $taskPath = Join-Path $RepoRoot 'windows\update\121-install-whatsapp-system.ps1'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*AzVmInstallWhatsApp*') -Message 'WhatsApp task must keep the deferred RunOnce registration contract.'
+    Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'WhatsApp task must bound the winget install wait time.'
+    Assert-True -Condition ($taskScript -like '*install-whatsapp-system-deferred-timeout*') -Message 'WhatsApp task must mark the bounded timeout deferral path explicitly.'
+    Assert-True -Condition ($taskScript -like '*winget install --id 9NKSQGP7F2NH --source msstore*') -Message 'WhatsApp task must keep the Store package install contract.'
 }
 
 Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
@@ -3920,6 +4038,12 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*SearchboxTaskbarMode*') -Message "Copy user settings task must propagate taskbar search visibility."
     Assert-True -Condition ($copyUserSettingsBody -like '*TaskManager\settings.json*') -Message "Copy user settings task must propagate Task Manager settings."
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Get-ProfileCopySpecs*') -Message "Copy user settings task must build a targeted copy spec list instead of sweeping whole AppData trees."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Windows\TaskManager*') -Message "Copy user settings task must target Task Manager settings explicitly."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Code\User\settings.json*') -Message "Copy user settings task must target the VS Code settings file explicitly."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Code\User\keybindings.json*') -Message "Copy user settings task must target the VS Code keybindings file explicitly."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Code\User\snippets*') -Message "Copy user settings task must target the VS Code snippets directory explicitly."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\npm*') -Message "Copy user settings task must target repo-managed npm CLI wrappers explicitly."
     Assert-True -Condition ($copyUserSettingsBody -like '*Desktop*') -Message "Copy user settings task must explicitly copy required profile roots such as Desktop."
     Assert-True -Condition ($copyUserSettingsBody -like '*Documents*') -Message "Copy user settings task must explicitly copy required profile roots such as Documents."
     Assert-True -Condition ($copyUserSettingsBody -like '*Downloads*') -Message "Copy user settings task must explicitly copy required profile roots such as Downloads."
@@ -3928,15 +4052,22 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*Thumbs.db*') -Message "Copy user settings task must exclude Thumbs.db from file copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Microsoft\Windows\WebCacheLock.dat*') -Message "Copy user settings task must exclude the locked WebCacheLock.dat path from local profile copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*Assert-RequiredRelativePathCopied*') -Message "Copy user settings task must validate that required profile roots were copied."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("-RelativePath 'AppData\\Roaming'", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not sweep the entire roaming profile tree."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("-RelativePath 'AppData\\Local'", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not sweep the entire local profile tree."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('AppData\LocalLow', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not spend time copying LocalLow."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('Application Data', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old root blocker scan."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('root reparse-point', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old broad root reparse scan."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Extensions", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome extensions tree."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Extension Settings", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome extension settings tree."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Sync Extension Settings", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome sync extension settings tree."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Local Extension Settings", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome local extension settings tree."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf("Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Roaming\ollama app.exe'", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Ollama app data tree."
     Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
-    Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Network*') -Message "Copy user settings task must exclude Ollama WebView network state from roaming copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Safe Browsing Network*') -Message "Copy user settings task must exclude Ollama WebView safe-browsing cookie state from roaming copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Cache*') -Message "Copy user settings task must exclude Ollama WebView cache directories from roaming copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Remove-StaleExcludedTargetPaths*') -Message "Copy user settings task must prune stale excluded target content on reruns."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Google\Chrome\User Data*') -Message "Copy user settings task must explicitly clean legacy copied Chrome user data."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\ollama app.exe*') -Message "Copy user settings task must explicitly clean legacy copied Ollama app data."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-ExplicitExcludedTargetCleanup*') -Message "Copy user settings task must keep a narrow cleanup pass for excluded target leftovers on reruns."
     Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune:*') -Message "Copy user settings task must log stale excluded target pruning on reruns."
+    Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune-skip:*') -Message "Copy user settings task must treat locked excluded target leftovers as bounded skips instead of hard failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
@@ -4379,6 +4510,36 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
     }
 }
 
+Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration" -Action {
+    $installTaskPath = Join-Path $RepoRoot 'windows\init\03-install-openssh-service.ps1'
+    $configTaskPath = Join-Path $RepoRoot 'windows\init\04-configure-sshd-port.ps1'
+
+    Assert-True -Condition (Test-Path -LiteralPath $installTaskPath) -Message 'OpenSSH install task file was not found.'
+    Assert-True -Condition (Test-Path -LiteralPath $configTaskPath) -Message 'OpenSSH configure task file was not found.'
+
+    $installTaskText = [string](Get-Content -LiteralPath $installTaskPath -Raw)
+    $configTaskText = [string](Get-Content -LiteralPath $configTaskPath -Raw)
+
+    foreach ($fragment in @(
+        'Wait-OpenSshServiceRegistration',
+        'Get-OpenSshInstallScriptPath',
+        'openssh-service-ready:',
+        'OpenSSH setup completed but sshd service was not found.'
+    )) {
+        Assert-True -Condition ($installTaskText -like ('*' + [string]$fragment + '*')) -Message ("OpenSSH install task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($fragment in @(
+        'Wait-SshdListener',
+        'OpenSSH service is missing. Running service installer before sshd_config changes.',
+        'Start-Service -Name sshd',
+        'Restart-Service -Name sshd -Force',
+        'listener did not bind to the configured port in time'
+    )) {
+        Assert-True -Condition ($configTaskText -like ('*' + [string]$fragment + '*')) -Message ("OpenSSH configure task must include fragment '{0}'." -f [string]$fragment)
+    }
+}
+
 Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by method" -Action {
     $taskPath = Join-Path $RepoRoot 'windows\update\10001-configure-apps-startup.ps1'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
@@ -4442,11 +4603,12 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
     Assert-True -Condition (($healthTaskText.IndexOf('Get-ManagerContext', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must read manager-scope startup locations through the manager hive."
+    Assert-True -Condition (($healthTaskText.IndexOf('ollama-api-version-response => {{"version":"{0}"}}', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must escape literal JSON braces when formatting the Ollama API version response."
 }
 
 Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoid forceful package reinstalls" -Action {
     $expectedHealthySkipFragments = [ordered]@{
-        '01-bootstrap-winget-system.ps1' = @('Existing winget installation is already healthy. Skipping choco install.', 'Skipping forceful source reset and attempting one bounded source update.')
+        '01-bootstrap-winget-system.ps1' = @('Existing winget installation is already healthy. Skipping bootstrap download.', 'https://aka.ms/getwinget', 'Microsoft.DesktopAppInstaller', 'Skipping forceful source reset and attempting one bounded source update.')
         '02-check-install-chrome.ps1' = @('Google Chrome executable already exists:', 'choco install googlechrome')
         '101-install-powershell-core.ps1' = @('Existing PowerShell 7 installation is already healthy. Skipping choco install.')
         '102-install-git-system.ps1' = @('Existing Git installation is already healthy. Skipping choco install.', 'choco install git')

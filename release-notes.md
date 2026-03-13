@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.301 - 2026-03-13
+
+### Summary
+This release closes the fresh Windows release-bar loop on the current Azure subscription and stabilizes the remaining first-run guest tasks that blocked a clean `create -> update` cycle. The Windows user-settings copy task now mirrors only the known user folders and explicit app settings that matter, the long-running Ollama and VLC installers now follow bounded verification paths that survive clean-build cold starts, and the live create/update path now recovers more cleanly from OpenSSH bootstrap and transient SSH-session loss on a brand-new VM.
+
+### Highlights
+- `10005-copy-settings-user.ps1` now copies only explicit profile roots plus selected Task Manager, VS Code, Chrome, and repo-managed CLI-wrapper state, removing the old shallow broad-AppData mirroring that was slow, fragile, and noisy around ACLs, locked files, and reparse points.
+- Fresh Windows `create` now survives the previously observed first-run failures because `03-install-openssh-service.ps1`, `04-configure-sshd-port.ps1`, and the shared persistent SSH task runner now recover missing `sshd` service registration and restore the transport session after transient installer drops.
+- `116-install-ollama-system.ps1` now uses a stronger bounded cold-start API readiness contract for `/api/version`, including both `127.0.0.1` and `localhost` probes plus longer bounded grace windows, and `124-install-vlc-system.ps1` now uses a bounded winget-install plus executable verification model instead of failing on a short runner timeout.
+- `10099-capture-snapshot-health.ps1` now refreshes PATH and resolves `az`, `docker`, and `ollama` through explicit fallback paths, which removes the earlier false `not-found` signals from late-stage health capture on fresh VMs.
+- Live acceptance completed successfully against subscription `<subscription-guid>`: a fresh `create --auto --windows --vm-name=examplevm --vm-region=austriaeast --vm-size=Standard_D4as_v5` rebuilt `rg-examplevm-ate1-g2`, a controlled reboot satisfied the post-create WSL restart requirement, and the follow-up `update --auto --windows --group=rg-examplevm-ate1-g2 --vm-name=examplevm` finished with `failed=0` and `warning=0`.
+
 ## Release 2026.3.13.300 - 2026-03-13
 
 ### Summary

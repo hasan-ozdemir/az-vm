@@ -20,10 +20,12 @@ function Get-PriceHoursFromConfig {
 
 # Handles Get-AzLocationCatalog.
 function Get-AzLocationCatalog {
-    $locationsJson = az account list-locations `
-        --only-show-errors `
-        --query "[?metadata.regionType=='Physical'].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
-        -o json
+    $locationsJson = Invoke-AzVmWithBypassedAzCliSubscription -Action {
+        az account list-locations `
+            --only-show-errors `
+            --query "[?metadata.regionType=='Physical'].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
+            -o json
+    }
     if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($locationsJson)) {
         Throw-FriendlyError `
             -Detail "az account list-locations failed with exit code $LASTEXITCODE." `
@@ -34,10 +36,12 @@ function Get-AzLocationCatalog {
 
     $locations = ConvertFrom-JsonArrayCompat -InputObject $locationsJson
     if (-not $locations -or $locations.Count -eq 0) {
-        $alternateLocationsJson = az account list-locations `
-            --only-show-errors `
-            --query "[].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
-            -o json
+        $alternateLocationsJson = Invoke-AzVmWithBypassedAzCliSubscription -Action {
+            az account list-locations `
+                --only-show-errors `
+                --query "[].{Name:name,DisplayName:displayName,RegionType:metadata.regionType}" `
+                -o json
+        }
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($alternateLocationsJson)) {
             $alternateLocations = ConvertFrom-JsonArrayCompat -InputObject $alternateLocationsJson
             $locations = @($alternateLocations | Where-Object { $_.RegionType -eq "Physical" })

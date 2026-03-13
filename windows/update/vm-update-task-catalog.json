@@ -121,7 +121,7 @@
       "taskType": "normal",
       "priority": 116,
       "enabled": true,
-      "timeout": 376
+      "timeout": 480
     },
     {
       "name": "117-install-codex-app",
@@ -156,14 +156,14 @@
       "taskType": "normal",
       "priority": 121,
       "enabled": true,
-      "timeout": 10
+      "timeout": 90
     },
     {
       "name": "122-install-anydesk-system",
       "taskType": "normal",
       "priority": 122,
       "enabled": true,
-      "timeout": 20
+      "timeout": 120
     },
     {
       "name": "123-install-windscribe-system",
@@ -177,7 +177,7 @@
       "taskType": "normal",
       "priority": 124,
       "enabled": true,
-      "timeout": 58
+      "timeout": 120
     },
     {
       "name": "125-install-itunes-system",

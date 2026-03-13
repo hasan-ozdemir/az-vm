@@ -1,6 +1,11 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-whatsapp-system"
 
+$taskConfig = [ordered]@{
+    WingetInstallTimeoutSeconds = 60
+    LogTailLineCount = 20
+}
+
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
@@ -95,6 +100,71 @@ function Test-WhatsAppDeferredInstallRegistered {
     return ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.AzVmInstallWhatsApp))
 }
 
+function Get-LogTailText {
+    param(
+        [string]$Path,
+        [int]$LineCount = 20
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return ''
+    }
+
+    try {
+        $tailLines = @(Get-Content -LiteralPath $Path -Tail $LineCount -ErrorAction Stop)
+        if (@($tailLines).Count -eq 0) {
+            return ''
+        }
+
+        return ([string](($tailLines -join [Environment]::NewLine))).Trim()
+    }
+    catch {
+        return ''
+    }
+}
+
+function Invoke-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(Mandatory = $true)]
+        [string[]]$ArgumentList,
+        [int]$TimeoutSeconds = 60,
+        [string]$Label = 'process'
+    )
+
+    $logRoot = Join-Path $env:TEMP 'az-vm-whatsapp'
+    [void](New-Item -ItemType Directory -Path $logRoot -Force)
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    $stdoutLog = Join-Path $logRoot ("{0}-{1}.stdout.log" -f $Label.Replace(' ', '-'), $stamp)
+    $stderrLog = Join-Path $logRoot ("{0}-{1}.stderr.log" -f $Label.Replace(' ', '-'), $stamp)
+    $process = Start-Process `
+        -FilePath $FilePath `
+        -ArgumentList $ArgumentList `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutLog `
+        -RedirectStandardError $stderrLog `
+        -PassThru
+
+    $timedOut = -not $process.WaitForExit($TimeoutSeconds * 1000)
+    if ($timedOut) {
+        try {
+            Stop-Process -Id ([int]$process.Id) -Force -ErrorAction Stop
+        }
+        catch {
+        }
+    }
+
+    return [pscustomobject]@{
+        TimedOut = [bool]$timedOut
+        ExitCode = if ($timedOut) { 124 } else { [int]$process.ExitCode }
+        StdoutLog = [string]$stdoutLog
+        StderrLog = [string]$stderrLog
+        StdoutText = [string](Get-LogTailText -Path $stdoutLog -LineCount ([int]$taskConfig.LogTailLineCount))
+        StderrText = [string](Get-LogTailText -Path $stderrLog -LineCount ([int]$taskConfig.LogTailLineCount))
+    }
+}
+
 Refresh-SessionPath
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
@@ -115,9 +185,20 @@ if (Test-WhatsAppDeferredInstallRegistered) {
 }
 
 Write-Host "Running: winget install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
-$installOutput = & $wingetExe install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
-$installExit = [int]$LASTEXITCODE
-$installText = [string]($installOutput | Out-String)
+$installResult = Invoke-ProcessWithTimeout `
+    -FilePath $wingetExe `
+    -ArgumentList @('install', '--id', '9NKSQGP7F2NH', '--source', 'msstore', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+    -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
+    -Label 'winget-install-whatsapp-system'
+$installExit = [int]$installResult.ExitCode
+$installTextParts = @()
+if (-not [string]::IsNullOrWhiteSpace([string]$installResult.StdoutText)) {
+    $installTextParts += [string]$installResult.StdoutText
+}
+if (-not [string]::IsNullOrWhiteSpace([string]$installResult.StderrText)) {
+    $installTextParts += [string]$installResult.StderrText
+}
+$installText = [string](($installTextParts -join [Environment]::NewLine)).Trim()
 if (-not [string]::IsNullOrWhiteSpace([string]$installText)) {
     Write-Host $installText.TrimEnd()
 }
@@ -128,17 +209,26 @@ if (Test-WhatsAppInstalled) {
     return
 }
 
-$canDefer = $installText -match '(?i)0x80070520|logon session|microsoft store|msstore'
+$canDefer = (
+    [bool]$installResult.TimedOut -or
+    ($installText -match '(?i)0x80070520|logon session|microsoft store|msstore|interactive')
+)
 if ($canDefer) {
     Register-WhatsAppDeferredInstall -WingetPath $wingetExe
-    Write-Warning "WhatsApp install could not complete in the current noninteractive session. A RunOnce install was registered for the next interactive sign-in."
+    if ([bool]$installResult.TimedOut) {
+        Write-Warning "WhatsApp install exceeded the bounded noninteractive wait. A RunOnce install was registered for the next interactive sign-in."
+        Write-Host "install-whatsapp-system-deferred-timeout"
+    }
+    else {
+        Write-Warning "WhatsApp install could not complete in the current noninteractive session. A RunOnce install was registered for the next interactive sign-in."
+    }
     Write-Host "install-whatsapp-system-deferred"
     Write-Host "Update task completed: install-whatsapp-system"
     return
 }
 
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
-    throw "winget install whatsapp failed with exit code $installExit."
+    throw ("winget install whatsapp failed with exit code {0}. stdoutLog={1}; stderrLog={2}" -f $installExit, [string]$installResult.StdoutLog, [string]$installResult.StderrLog)
 }
 
 Write-Host "install-whatsapp-system-completed"

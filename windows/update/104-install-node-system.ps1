@@ -4,7 +4,7 @@ Write-Host "Update task started: install-node-system"
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`""
+        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")

@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.301] - 2026-03-13
+
+### Changed
+- Narrowed `10005-copy-settings-user.ps1` so the Windows user-settings mirror now copies only explicit user roots and selected app-state paths instead of sweeping broad `AppData\Roaming` and `AppData\Local` trees. The managed copy set is now limited to known profile folders plus targeted Task Manager, VS Code, Chrome, and repo-managed CLI-wrapper settings.
+- Hardened the Windows live create/update path around fresh-VM findings: the OpenSSH init tasks now recover missing `sshd` registration on clean builds, the persistent SSH task runner restores dead sessions between update tasks, the portable winget bootstrap keeps a stable path for later package tasks, and the health snapshot now refreshes PATH plus resolves `az`, `docker`, and `ollama` through explicit fallback paths before probing them.
+- Tightened the long-running Windows package contracts so Ollama now probes both `127.0.0.1` and `localhost` with a longer cold-start readiness window, and VLC now follows the same bounded winget-install plus post-install verification model already used for noninteractive AnyDesk and WhatsApp installs.
+
+### Fixed
+- Fixed fresh-create validation so duplicate VM names in other managed resource groups no longer block a fresh create in the new target group; only the target managed group is now treated as a hard conflict.
+- Fixed the Azure location/SKU discovery path under forced subscription targeting by bypassing injected `--subscription` on Azure CLI account-level location lookups, preventing false region validation failures during `create` and managed-name generation.
+- Fixed `104-install-node-system.ps1` so `refreshenv` output can no longer pollute the post-install `node.exe` verification path, which previously caused a false "command not recognized" failure on fresh VMs.
+- Fixed `116-install-ollama-system.ps1` so it no longer shadows PowerShell's built-in `$Host`, and so first-run API readiness has enough bounded time to survive the clean-install cold-start path.
+- Fixed `124-install-vlc-system.ps1` so a clean `winget install VideoLAN.VLC` no longer times out against an unrealistically short task budget; the task now verifies the resulting executable or package registration before deciding success or failure.
+- Fixed `10099-capture-snapshot-health.ps1` formatting and command-resolution issues so the Ollama API JSON echo, Docker CLI probes, and general path readback no longer produce false negatives during late-stage health capture.
+
+### Tests
+- Revalidated the non-live gate with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
+- Completed the exact live Windows release-bar acceptance on subscription `<subscription-guid>`: cleaned drifted `rg-examplevm-ate1-g2`, reran fresh `create --auto --windows --vm-name=examplevm --vm-region=austriaeast --vm-size=Standard_D4as_v5`, validated `show`, VM status, SSH, and RDP, applied the required post-create restart barrier, and then completed `update --auto --windows --group=rg-examplevm-ate1-g2 --vm-name=examplevm` with zero failed tasks.
+
 ## [2026.3.13.300] - 2026-03-13
 
 ### Changed

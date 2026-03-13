@@ -154,7 +154,9 @@ function Get-AzVmPublicIpZoneArgs {
         return @()
     }
 
-    $zonesJson = az account list-locations --query "[?name=='$locationName'] | [0].availabilityZoneMappings[].logicalZone" -o json --only-show-errors
+    $zonesJson = Invoke-AzVmWithBypassedAzCliSubscription -Action {
+        az account list-locations --query "[?name=='$locationName'] | [0].availabilityZoneMappings[].logicalZone" -o json --only-show-errors
+    }
     Assert-LastExitCode "az account list-locations (public IP zones)"
     $zones = ConvertFrom-JsonCompat -InputObject $zonesJson
 

@@ -70,7 +70,7 @@ function Test-WingetExecutable {
     }
 
     try {
-        & $ExePath --version
+        & $ExePath --version *> $null
         return ($LASTEXITCODE -eq 0)
     }
     catch {
@@ -78,12 +78,125 @@ function Test-WingetExecutable {
     }
 }
 
+function Get-WingetPortableRoot {
+    return 'C:\ProgramData\az-vm\tools\winget-x64'
+}
+
+function Expand-WingetPortableBundle {
+    param(
+        [string]$BundlePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$BundlePath) -or -not (Test-Path -LiteralPath $BundlePath)) {
+        throw "winget bundle was not found for portable extraction."
+    }
+
+    $portableRoot = Get-WingetPortableRoot
+    $portableExe = Join-Path $portableRoot 'winget.exe'
+    if (Test-WingetExecutable -ExePath $portableExe) {
+        return [string]$portableExe
+    }
+
+    if (Test-Path -LiteralPath $portableRoot) {
+        Remove-Item -LiteralPath $portableRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -Path $portableRoot -ItemType Directory -Force | Out-Null
+
+    $tempRoot = Join-Path $env:TEMP 'az-vm-winget-bootstrap'
+    if (Test-Path -LiteralPath $tempRoot) {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+
+    $tempBundleZip = Join-Path $tempRoot 'winget-cli.msixbundle.zip'
+    Copy-Item -LiteralPath $BundlePath -Destination $tempBundleZip -Force
+
+    $bundleExtractRoot = Join-Path $tempRoot 'bundle'
+    New-Item -Path $bundleExtractRoot -ItemType Directory -Force | Out-Null
+    Expand-Archive -Path $tempBundleZip -DestinationPath $bundleExtractRoot -Force
+
+    $x64Msix = Get-ChildItem -Path $bundleExtractRoot -Filter '*x64*.msix' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $x64Msix -or [string]::IsNullOrWhiteSpace([string]$x64Msix.FullName)) {
+        throw "winget bundle extraction did not produce an x64 msix package."
+    }
+
+    $tempMsixZip = Join-Path $tempRoot 'winget-cli-x64.msix.zip'
+    Copy-Item -LiteralPath $x64Msix.FullName -Destination $tempMsixZip -Force
+    Expand-Archive -Path $tempMsixZip -DestinationPath $portableRoot -Force
+
+    if (-not (Test-WingetExecutable -ExePath $portableExe)) {
+        throw "Portable winget extraction completed, but winget.exe is still not healthy."
+    }
+
+    return [string]$portableExe
+}
+
+function Get-AppInstallerWingetExecutablePath {
+    $packages = @()
+    try {
+        $packages = @(Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue)
+    }
+    catch {
+        $packages = @()
+    }
+
+    if (@($packages).Count -eq 0) {
+        try {
+            $packages = @(Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue)
+        }
+        catch {
+            $packages = @()
+        }
+    }
+
+    foreach ($package in @($packages | Sort-Object Version -Descending)) {
+        $installLocation = [string]$package.InstallLocation
+        if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+            continue
+        }
+
+        $candidate = Join-Path $installLocation 'winget.exe'
+        if (Test-WingetExecutable -ExePath $candidate) {
+            return [string]$candidate
+        }
+    }
+
+    return ''
+}
+
+function Ensure-WingetBundleDownloaded {
+    $cacheRoot = 'C:\ProgramData\az-vm\cache\winget'
+    $bundlePath = Join-Path $cacheRoot 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
+    if ((Test-Path -LiteralPath $bundlePath) -and ((Get-Item -LiteralPath $bundlePath -ErrorAction SilentlyContinue).Length -gt 0)) {
+        return [string]$bundlePath
+    }
+
+    New-Item -Path $cacheRoot -ItemType Directory -Force | Out-Null
+    Write-Host "Downloading the official App Installer bundle from https://aka.ms/getwinget for portable extraction..."
+    Invoke-WebRequest -UseBasicParsing -Uri 'https://aka.ms/getwinget' -OutFile $bundlePath
+    if (-not (Test-Path -LiteralPath $bundlePath)) {
+        throw "winget bundle download did not produce the expected file."
+    }
+
+    $downloadedItem = Get-Item -LiteralPath $bundlePath -ErrorAction Stop
+    if ([int64]$downloadedItem.Length -le 0) {
+        throw "winget bundle download produced an empty file."
+    }
+
+    return [string]$bundlePath
+}
+
 function Resolve-WingetExe {
+    $portableCandidate = Join-Path (Get-WingetPortableRoot) 'winget.exe'
+    if (Test-WingetExecutable -ExePath $portableCandidate) {
+        return [string]$portableCandidate
+    }
+
     $cmd = Get-Command winget -ErrorAction SilentlyContinue
     if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
         $cmdPath = [string]$cmd.Source
         if (Test-WingetExecutable -ExePath $cmdPath) {
-            return $cmdPath
+            return [string]$cmdPath
         }
     }
 
@@ -92,36 +205,20 @@ function Resolve-WingetExe {
         return [string]$localCandidate
     }
 
-    $bundlePath = "C:\ProgramData\chocolatey\lib\winget-cli\tools\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-    if (Test-Path -LiteralPath $bundlePath) {
-        $portableRoot = "C:\ProgramData\az-vm\tools\winget-x64"
-        $portableExe = Join-Path $portableRoot "winget.exe"
-        if (-not (Test-Path -LiteralPath $portableExe)) {
-            if (Test-Path -LiteralPath $portableRoot) {
-                Remove-Item -LiteralPath $portableRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            New-Item -Path $portableRoot -ItemType Directory -Force | Out-Null
+    $appInstallerCandidate = Get-AppInstallerWingetExecutablePath
+    if (-not [string]::IsNullOrWhiteSpace([string]$appInstallerCandidate)) {
+        return [string]$appInstallerCandidate
+    }
 
-            $tempBundleZip = Join-Path $env:TEMP "winget-cli.msixbundle.zip"
-            Copy-Item -LiteralPath $bundlePath -Destination $tempBundleZip -Force
-
-            $bundleExtractRoot = Join-Path $env:TEMP "winget-cli-msixbundle-extract"
-            if (Test-Path -LiteralPath $bundleExtractRoot) {
-                Remove-Item -LiteralPath $bundleExtractRoot -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            New-Item -Path $bundleExtractRoot -ItemType Directory -Force | Out-Null
-            Expand-Archive -Path $tempBundleZip -DestinationPath $bundleExtractRoot -Force
-
-            $x64Msix = Get-ChildItem -Path $bundleExtractRoot -Filter "*x64*.msix" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $x64Msix) {
-                throw "winget-cli bundle extraction did not produce an x64 msix package."
-            }
-
-            $tempMsixZip = Join-Path $env:TEMP "winget-cli-x64.msix.zip"
-            Copy-Item -LiteralPath $x64Msix.FullName -Destination $tempMsixZip -Force
-            Expand-Archive -Path $tempMsixZip -DestinationPath $portableRoot -Force
+    foreach ($bundlePath in @(
+        'C:\ProgramData\az-vm\cache\winget\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle',
+        'C:\ProgramData\chocolatey\lib\winget-cli\tools\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
+    )) {
+        if (-not (Test-Path -LiteralPath $bundlePath)) {
+            continue
         }
 
+        $portableExe = Expand-WingetPortableBundle -BundlePath $bundlePath
         if (Test-WingetExecutable -ExePath $portableExe) {
             return [string]$portableExe
         }
@@ -130,29 +227,39 @@ function Resolve-WingetExe {
     return ""
 }
 
-$chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
-if (-not (Test-Path -LiteralPath $chocoExe)) {
-    throw "Chocolatey is required before winget bootstrap."
-}
-
 Refresh-SessionPath
 $wingetExe = Resolve-WingetExe
 $wingetInstalledByBootstrap = $false
-if ([string]::IsNullOrWhiteSpace($wingetExe)) {
-    & $chocoExe install winget -y --no-progress
-    if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
-        throw "choco install winget failed with exit code $LASTEXITCODE."
-    }
 
-    Refresh-SessionPath
-    $wingetExe = Resolve-WingetExe
-    $wingetInstalledByBootstrap = $true
+if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
+    $bundlePath = Ensure-WingetBundleDownloaded
+    $portableExe = Expand-WingetPortableBundle -BundlePath $bundlePath
+    if (Test-WingetExecutable -ExePath $portableExe) {
+        $wingetExe = [string]$portableExe
+        $wingetInstalledByBootstrap = $true
+    }
 }
 else {
-    Write-Host "Existing winget installation is already healthy. Skipping choco install."
+    Write-Host "Existing winget installation is already healthy. Skipping bootstrap download."
+
+    $portableExe = Join-Path (Get-WingetPortableRoot) 'winget.exe'
+    if (-not (Test-WingetExecutable -ExePath $portableExe)) {
+        try {
+            $bundlePath = Ensure-WingetBundleDownloaded
+            $portableExe = Expand-WingetPortableBundle -BundlePath $bundlePath
+        }
+        catch {
+            Write-Warning ("Stable portable winget extraction was skipped: {0}" -f $_.Exception.Message)
+            $portableExe = ''
+        }
+    }
+
+    if (Test-WingetExecutable -ExePath $portableExe) {
+        $wingetExe = [string]$portableExe
+    }
 }
 
-if ([string]::IsNullOrWhiteSpace($wingetExe)) {
+if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     throw "winget command is not available after bootstrap."
 }
 

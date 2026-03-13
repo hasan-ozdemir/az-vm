@@ -50,6 +50,40 @@ function Invoke-AzVmSshTaskBlocks {
     $failedTasks = @()
     $rebootRequestedTasks = @()
 
+    function Restore-AzVmTaskSession {
+        param(
+            [psobject]$ExistingSession,
+            [string]$Reason
+        )
+
+        if ($null -ne $ExistingSession) {
+            Stop-AzVmPersistentSshSession -Session $ExistingSession
+        }
+
+        Write-Warning ("Attempting persistent SSH session recovery: {0}" -f [string]$Reason)
+        $sshReachable = Wait-AzVmTcpPortReachable `
+            -HostName $SshHost `
+            -Port ([int]$SshPort) `
+            -MaxAttempts 18 `
+            -DelaySeconds 5 `
+            -TimeoutSeconds 5 `
+            -Label 'ssh'
+        if (-not [bool]$sshReachable) {
+            throw ("SSH port {0} on '{1}' did not recover in time while restoring the persistent session." -f [string]$SshPort, [string]$SshHost)
+        }
+
+        return (Start-AzVmPersistentSshSession `
+            -PySshPythonPath ([string]$pySsh.PythonPath) `
+            -PySshClientPath ([string]$pySsh.ClientPath) `
+            -HostName $SshHost `
+            -UserName $SshUser `
+            -Password $SshPassword `
+            -Port $SshPort `
+            -Shell $shell `
+            -ConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+            -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds)
+    }
+
     try {
         Write-Host 'VM update stage mode: tasks run one-by-one over a persistent SSH session.'
         Write-Host ("Task outcome policy: {0}" -f $TaskOutcomeMode)
@@ -66,6 +100,10 @@ function Invoke-AzVmSshTaskBlocks {
             $taskInvocationError = $null
 
             Write-Host ("Task started: {0} (max {1}s)" -f $taskName, $taskTimeoutSeconds)
+
+            if ($null -eq $session -or $null -eq $session.Process -or $session.Process.HasExited) {
+                $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("pre-task bootstrap for '{0}'" -f $taskName)
+            }
 
             $assetCopies = @()
             if ($task.PSObject.Properties.Match('AssetCopies').Count -gt 0 -and $null -ne $task.AssetCopies) {
@@ -102,8 +140,7 @@ function Invoke-AzVmSshTaskBlocks {
                     $taskInvocationError = $_
                     if ($attempt -lt $SshMaxRetries) {
                         Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
-                        Stop-AzVmPersistentSshSession -Session $session
-                        $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+                        $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("retry {0}/{1} for task '{2}'" -f $attempt, $SshMaxRetries, $taskName)
                     }
                 }
             }
@@ -123,6 +160,13 @@ function Invoke-AzVmSshTaskBlocks {
                     $totalWarnings++
                     Write-Warning ("Task warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
                     Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
+                    try {
+                        $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("post-warning recovery after task '{0}'" -f $taskName)
+                    }
+                    catch {
+                        $session = $null
+                        Write-Warning ("Persistent SSH session recovery is still unavailable after task '{0}': {1}" -f $taskName, $_.Exception.Message)
+                    }
                     continue
                 }
 

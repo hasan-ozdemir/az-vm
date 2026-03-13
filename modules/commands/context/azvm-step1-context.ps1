@@ -807,29 +807,21 @@ function Assert-AzVmVmNameConflictFree {
         return
     }
 
-    $otherGroupMatches = @(
+    $targetGroupMatches = @(
         @($vmMatches) | Where-Object {
             $candidateGroup = [string]$_.resourceGroup
-            -not [string]::Equals($candidateGroup, [string]$TargetResourceGroup, [System.StringComparison]::OrdinalIgnoreCase)
+            [string]::Equals($candidateGroup, [string]$TargetResourceGroup, [System.StringComparison]::OrdinalIgnoreCase)
         }
     )
-    if (@($otherGroupMatches).Count -eq 0) {
+    if (@($targetGroupMatches).Count -eq 0) {
         return
     }
 
-    $conflictGroups = @(
-        @($otherGroupMatches) |
-            ForEach-Object { [string]$_.resourceGroup } |
-            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
-            Sort-Object -Unique
-    )
-    $conflictGroupText = if (@($conflictGroups).Count -gt 0) { $conflictGroups -join ", " } else { "(unknown resource group)" }
-
     Throw-FriendlyError `
-        -Detail ("VM name '{0}' already exists in resource group(s): {1}." -f [string]$VmName, [string]$conflictGroupText) `
+        -Detail ("VM name '{0}' already exists in target resource group '{1}'." -f [string]$VmName, [string]$TargetResourceGroup) `
         -Code 62 `
-        -Summary "VM name must be unique before provisioning continues." `
-        -Hint "Choose another VM_NAME or target the existing resource group that already owns this VM name."
+        -Summary "VM name already exists in the target resource group." `
+        -Hint "Choose another VM_NAME or choose a different fresh target resource group."
 }
 
 # Handles Resolve-AzVmSecurityTypeValue.

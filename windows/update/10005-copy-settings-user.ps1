@@ -559,6 +559,30 @@ function Write-ExistingCopyExclusions {
     }
 }
 
+function Get-TargetPruneSkipReason {
+    param([string]$Message)
+
+    $text = [string]$Message
+    if ([string]::IsNullOrWhiteSpace([string]$text)) {
+        return ''
+    }
+
+    $normalized = $text.ToLowerInvariant()
+    if ($normalized.Contains('being used by another process') -or $normalized.Contains('cannot access the file')) {
+        return 'locked-target'
+    }
+
+    if ($normalized.Contains('access is denied') -or $normalized.Contains('error 5')) {
+        return 'access-denied'
+    }
+
+    if ($normalized.Contains('reparse point')) {
+        return 'reparse-point'
+    }
+
+    return ''
+}
+
 function Remove-StaleExcludedTargetPaths {
     param(
         [string]$TargetPath,
@@ -588,6 +612,13 @@ function Remove-StaleExcludedTargetPaths {
             Write-Detail ("copy-settings-user-target-prune: {0} excluded-directory => {1}" -f $Label, $targetCandidate)
         }
         catch {
+            $skipReason = Get-TargetPruneSkipReason -Message ([string]$_.Exception.Message)
+            if (-not [string]::IsNullOrWhiteSpace([string]$skipReason)) {
+                Add-CopySkipEvidence -Reason $skipReason -Label $Label -Path $targetCandidate
+                Write-Detail ("copy-settings-user-target-prune-skip: {0} {1} => {2}" -f $Label, $skipReason, $targetCandidate)
+                continue
+            }
+
             throw ("Excluded target directory could not be cleared for {0}: {1}. {2}" -f $Label, $targetCandidate, $_.Exception.Message)
         }
     }
@@ -637,6 +668,13 @@ function Remove-StaleExcludedTargetPaths {
                 Write-Detail ("copy-settings-user-target-prune: {0} excluded-file => {1}" -f $Label, ([string]$targetCandidate.FullName))
             }
             catch {
+                $skipReason = Get-TargetPruneSkipReason -Message ([string]$_.Exception.Message)
+                if (-not [string]::IsNullOrWhiteSpace([string]$skipReason)) {
+                    Add-CopySkipEvidence -Reason $skipReason -Label $Label -Path ([string]$targetCandidate.FullName)
+                    Write-Detail ("copy-settings-user-target-prune-skip: {0} {1} => {2}" -f $Label, $skipReason, ([string]$targetCandidate.FullName))
+                    continue
+                }
+
                 throw ("Excluded target file could not be cleared for {0}: {1}. {2}" -f $Label, ([string]$targetCandidate.FullName), $_.Exception.Message)
             }
         }
@@ -960,6 +998,148 @@ function Assert-TaskManagerSettingsCopied {
     }
 }
 
+function New-ProfileCopySpec {
+    param(
+        [string]$RelativePath,
+        [string]$LabelSuffix,
+        [string[]]$ExcludedDirectories = @(),
+        [string[]]$ExcludedFiles = @()
+    )
+
+    return [pscustomobject]@{
+        RelativePath = [string]$RelativePath
+        LabelSuffix = [string]$LabelSuffix
+        ExcludedDirectories = @($ExcludedDirectories)
+        ExcludedFiles = @($ExcludedFiles)
+    }
+}
+
+function Add-ProfileCopySpecIfPresent {
+    param(
+        [System.Collections.Generic.List[object]]$Specs,
+        [string]$SourceProfilePath,
+        [string]$RelativePath,
+        [string]$LabelSuffix,
+        [string[]]$ExcludedDirectories = @(),
+        [string[]]$ExcludedFiles = @()
+    )
+
+    if ($null -eq $Specs -or [string]::IsNullOrWhiteSpace([string]$RelativePath)) {
+        return
+    }
+
+    $sourcePath = Join-Path $SourceProfilePath $RelativePath
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    $Specs.Add((New-ProfileCopySpec -RelativePath $RelativePath -LabelSuffix $LabelSuffix -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles)) | Out-Null
+}
+
+function Get-ProfileCopySpecs {
+    param(
+        [string]$SourceProfilePath,
+        [string]$TargetProfilePath,
+        [string]$Label
+    )
+
+    $commonExcludedFiles = @(
+        'desktop.ini',
+        'Thumbs.db',
+        'NTUSER.DAT*',
+        'UsrClass.dat*',
+        '*.log',
+        '*.etl',
+        '*.lock'
+    )
+
+    $specs = New-Object 'System.Collections.Generic.List[object]'
+
+    foreach ($requiredRelativePath in @(
+        'Desktop',
+        'Documents',
+        'Favorites',
+        'Videos',
+        'Pictures',
+        'Downloads',
+        'Links',
+        'Music'
+    )) {
+        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath $requiredRelativePath -LabelSuffix $requiredRelativePath
+    }
+
+    Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\TaskManager' -LabelSuffix 'task-manager' -ExcludedFiles @($commonExcludedFiles)
+
+    foreach ($relativePath in @(
+        'AppData\Local\Google\Chrome\User Data\Local State',
+        'AppData\Local\Google\Chrome\User Data\Default\Preferences',
+        'AppData\Local\Google\Chrome\User Data\Default\Secure Preferences',
+        'AppData\Local\Google\Chrome\User Data\Default\Bookmarks'
+    )) {
+        $leafName = ([string]$relativePath).Split('\\')[-1].Replace(' ', '-').ToLowerInvariant()
+        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath $relativePath -LabelSuffix ("chrome-{0}" -f $leafName) -ExcludedFiles @($commonExcludedFiles)
+    }
+
+    foreach ($relativePath in @(
+        'AppData\Roaming\Code\User\settings.json',
+        'AppData\Roaming\Code\User\keybindings.json',
+        'AppData\Roaming\Code\User\tasks.json'
+    )) {
+        $labelSuffix = ([string]$relativePath).Substring(([string]'AppData\Roaming\Code\User\').Length).Replace('.json', '').Replace('\', '-').ToLowerInvariant()
+        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath $relativePath -LabelSuffix ("vscode-{0}" -f $labelSuffix) -ExcludedFiles @($commonExcludedFiles)
+    }
+
+    Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Roaming\Code\User\snippets' -LabelSuffix 'vscode-snippets' -ExcludedFiles @($commonExcludedFiles)
+
+    $targetNpmRoot = Join-Path $TargetProfilePath 'AppData\Roaming\npm'
+    $targetNpmReady = (
+        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'codex.cmd')) -and
+        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'gemini.cmd')) -and
+        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'copilot.cmd'))
+    )
+    if ([string]::Equals([string]$Label, 'default-profile', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Detail 'copy-settings-user-file-skip: default-profile roaming npm'
+    }
+    elseif ($targetNpmReady) {
+        Write-Detail ("copy-settings-user-file-skip: {0} roaming npm already-synchronized" -f $Label)
+    }
+    else {
+        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Roaming\npm' -LabelSuffix 'npm' -ExcludedFiles @($commonExcludedFiles)
+    }
+
+    return @($specs.ToArray())
+}
+
+function Invoke-ExplicitExcludedTargetCleanup {
+    param(
+        [string]$TargetProfilePath,
+        [string]$Label
+    )
+
+    Remove-StaleExcludedTargetPaths -TargetPath $TargetProfilePath -ExcludedDirectories @(
+        'AppData\Roaming\Microsoft\Credentials',
+        'AppData\Roaming\Microsoft\Protect',
+        'AppData\Roaming\Microsoft\Vault',
+        'AppData\Roaming\Microsoft\IdentityCRL'
+    ) -ExcludedFiles @(
+        'AppData\Local\Microsoft\Windows\WebCacheLock.dat',
+        'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
+    ) -Label ($Label + ' cleanup')
+
+    $ollamaTargetRoot = Join-Path $TargetProfilePath 'AppData\Roaming\ollama app.exe'
+    Remove-StaleExcludedTargetPaths -TargetPath $ollamaTargetRoot -ExcludedDirectories @(
+        'EBWebView\Default\Network',
+        'EBWebView\Default\Safe Browsing Network',
+        'EBWebView\Default\Cache',
+        'EBWebView\Default\Code Cache',
+        'EBWebView\Default\GPUCache',
+        'EBWebView\Default\Service Worker\CacheStorage',
+        'EBWebView\Default\Service Worker\ScriptCache',
+        'EBWebView\Default\DawnCache',
+        'EBWebView\Default\GrShaderCache'
+    ) -Label ($Label + ' cleanup ollama')
+}
+
 function Invoke-RepresentativeRegistryCopy {
     param(
         [string]$MainTargetRoot,
@@ -1178,98 +1358,26 @@ function Invoke-ProfileFileCopy {
     $targetDesktopPath = Join-Path $TargetProfilePath 'Desktop'
     Ensure-AzVmDirectory -Path $targetDesktopPath
     Clear-DesktopEntries -DesktopPath $targetDesktopPath
-    $roamingExcludedDirectories = @(
-        'Microsoft\Credentials',
-        'Microsoft\Protect',
-        'Microsoft\Vault',
-        'Microsoft\IdentityCRL',
-        'ollama app.exe\EBWebView\Default\Network',
-        'ollama app.exe\EBWebView\Default\Safe Browsing Network',
-        'ollama app.exe\EBWebView\Default\Cache',
-        'ollama app.exe\EBWebView\Default\Code Cache',
-        'ollama app.exe\EBWebView\Default\GPUCache',
-        'ollama app.exe\EBWebView\Default\Service Worker\CacheStorage',
-        'ollama app.exe\EBWebView\Default\Service Worker\ScriptCache',
-        'ollama app.exe\EBWebView\Default\DawnCache',
-        'ollama app.exe\EBWebView\Default\GrShaderCache',
-        'npm-cache'
-    )
 
-    $targetNpmRoot = Join-Path $TargetProfilePath 'AppData\Roaming\npm'
-    $targetNpmReady = (
-        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'codex.cmd')) -and
-        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'gemini.cmd')) -and
-        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'copilot.cmd'))
-    )
-    if ([string]::Equals([string]$Label, 'default-profile', [System.StringComparison]::OrdinalIgnoreCase)) {
-        $roamingExcludedDirectories += 'npm'
-        Write-Detail 'copy-settings-user-file-skip: default-profile roaming npm'
-    }
-    elseif ($targetNpmReady) {
-        $roamingExcludedDirectories += 'npm'
-        Write-Detail ("copy-settings-user-file-skip: {0} roaming npm already-synchronized" -f $Label)
+    $copySpecs = @(Get-ProfileCopySpecs -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -Label $Label)
+    foreach ($copySpec in @($copySpecs)) {
+        $relativePath = [string]$copySpec.RelativePath
+        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
+            continue
+        }
+
+        $labelSuffix = [string]$copySpec.LabelSuffix
+        $copyLabel = if ([string]::IsNullOrWhiteSpace([string]$labelSuffix)) {
+            [string]$Label
+        }
+        else {
+            "{0} {1}" -f $Label, $labelSuffix
+        }
+
+        Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath $relativePath -Label $copyLabel -ExcludedDirectories @($copySpec.ExcludedDirectories) -ExcludedFiles @($copySpec.ExcludedFiles)
     }
 
-    Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath 'AppData\Roaming' -Label ($Label + ' roaming') -ExcludedDirectories @($roamingExcludedDirectories) -ExcludedFiles @(
-        'desktop.ini',
-        'Thumbs.db',
-        'Microsoft\Windows\WebCacheLock.dat',
-        'NTUSER.DAT*',
-        'UsrClass.dat*',
-        '*.log',
-        '*.etl',
-        '*.lock'
-    )
-    Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath 'AppData\Local' -Label ($Label + ' local') -ExcludedDirectories @(
-        'Temp',
-        'Packages',
-        'Programs',
-        'Microsoft\Windows\INetCache',
-        'Microsoft\Windows\WebCache',
-        'Microsoft\Windows\CloudStore',
-        'Microsoft\WindowsApps',
-        'Microsoft\Windows\Notifications',
-        'Microsoft\Credentials',
-        'CrashDumps',
-        'D3DSCache',
-        'Docker\run',
-        'Google\Chrome\User Data\Default\Cache',
-        'Google\Chrome\User Data\Default\Code Cache',
-        'Google\Chrome\User Data\Default\GPUCache',
-        'Google\Chrome\User Data\Default\Service Worker\CacheStorage',
-        'Google\Chrome\User Data\Default\Service Worker\ScriptCache',
-        'Google\Chrome\User Data\ShaderCache',
-        'docker-secrets-engine',
-        'npm-cache',
-        'OneAuth',
-        'IdentityCache',
-        'ConnectedDevicesPlatform',
-        'SquirrelTemp'
-    ) -ExcludedFiles @(
-        'desktop.ini',
-        'Thumbs.db',
-        'Microsoft\Windows\WebCacheLock.dat',
-        'NTUSER.DAT*',
-        'UsrClass.dat*',
-        '*.log',
-        '*.etl',
-        '*.lock'
-    )
-
-    $requiredRelativePaths = @(
-        'Desktop',
-        'Documents',
-        'Favorites',
-        'Videos',
-        'Pictures',
-        'Downloads',
-        'Links',
-        'Music'
-    )
-
-    foreach ($requiredRelativePath in @($requiredRelativePaths)) {
-        Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath $requiredRelativePath -Label ($Label + ' ' + $requiredRelativePath)
-    }
+    Invoke-ExplicitExcludedTargetCleanup -TargetProfilePath $TargetProfilePath -Label $Label
 }
 
 function Invoke-AssistantInteractiveSeed {

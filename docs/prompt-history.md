@@ -4976,3 +4976,29 @@ Add Azure subscription targeting across the Azure-touching command surface. All 
 Implemented Azure subscription targeting across the full Azure-touching command surface: `create`, `update`, `configure`, `list`, `show`, `do`, `move`, `resize`, `set`, `exec`, `ssh`, `rdp`, and `delete` now accept `--subscription-id=<subscription-guid>` plus `-s <subscription-guid>` / `-s=<subscription-guid>`, while `task` and `help` remain intentionally local-only and reject the option. I added a shared subscription option module, short-option parsing for `-s`, a shared subscription resolver with the committed precedence `CLI -> .env azure_subscription_id -> active Azure CLI subscription`, and a central Azure CLI injection path so normal `az` commands automatically inherit the resolved subscription while account-discovery helpers can still bypass that injection when needed.
 
 I also updated interactive `create` and `update` so they prompt for Azure subscription selection before Azure-backed discovery when `--subscription-id` is omitted, and I wired the resolved subscription into runtime summaries, diagnostics, `configure`, and `list`. Successful CLI `-s` usage now persists `azure_subscription_id` into `.env`, `.env.example` documents that key, and the shared help/README/AGENTS text now states explicitly that `az login` is required for Azure-touching commands. After fixing the two edge cases exposed by smoke testing, I revalidated the change with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`, all passing.
+
+### 2026-03-13 13:16 TRT
+
+**User Prompt**
+
+````text
+Test: first run `create`, then `update`, end-to-end in order. Use `--auto`, `--windows`, VM name `examplevm`, VM size `Standard_D4as_v5`, region `austriaeast`, and exact resource group `rg-examplevm-ate1-g2`. Treat this as a release bar. If the tests fail, fix the issues and restart the test. After success, sync `main` and `dev` without data loss, push both, and guarantee that only `main` triggers GitHub Actions while a `dev` push does not trigger any workflow. Continue exactly from the same plan even if the flow is interrupted, and if `g2` or `g3` drift appears, delete those groups and continue the test from `g2`.
+````
+
+**Assistant Summary**
+
+Ran the requested Windows live release-bar loop against subscription `<subscription-guid>`, including the user-requested drift cleanup for `rg-examplevm-ate1-g2` and `rg-examplevm-ate1-g3`. Along the way I fixed the fresh-create blockers that surfaced only on clean VMs: Azure location and SKU discovery now bypass forced subscription injection where Azure CLI requires account-level queries, fresh-create validation no longer rejects a VM name that already exists in another managed resource group, the Windows OpenSSH init tasks now recover missing `sshd` service registration, the persistent SSH task runner now restores the batch session after transient installer drops, the Node install task no longer treats `refreshenv` output as the resolved `node.exe` path, and the late-stage health task now resolves PATH-backed tools explicitly instead of reporting false `not-found` results.
+
+I also tightened the Windows package tasks that were failing on the clean VM path: Ollama now uses a stronger bounded cold-start API readiness model, VLC now uses bounded winget wait plus post-install verification, and the earlier bounded WhatsApp and AnyDesk patterns stayed intact. After revalidating the local non-live gate, I completed a fresh live `create --auto --windows --vm-name=examplevm --vm-region=austriaeast --vm-size=Standard_D4as_v5 -s <subscription-guid>` on `rg-examplevm-ate1-g2`, validated `show`, VM status, SSH, and RDP, applied the required post-create reboot barrier, and then completed `update --auto --windows --group=rg-examplevm-ate1-g2 --vm-name=examplevm -s <subscription-guid>` with zero failed tasks and zero warnings.
+
+### 2026-03-13 15:42 TRT
+
+**User Prompt**
+
+````text
+Fix bug: I am not happy with the execution performance of the `copy-user-settings` vm-update task. It should not do a shallow robocopy like this anymore. Only known user folders and potential user directories that store the settings of the applications we install should be copied. The other copy operations are a waste of time for us, unnecessary, and fragile because they keep hitting ACL, in-use, security, and symlink problems.
+````
+
+**Assistant Summary**
+
+Narrowed `10005-copy-settings-user.ps1` to an explicit, durable allowlist instead of broad profile sweeps. The task now mirrors only known user roots plus selected Task Manager, VS Code, Chrome, and repo-managed CLI-wrapper settings, while continuing to prune excluded stale targets and skip locked or reparse-heavy cache paths safely. This removed the earlier shallow `AppData\Roaming` and `AppData\Local` mirroring behavior that kept wasting time and surfacing ACL, lock, and reparse-point issues during reruns. I revalidated that narrower copy contract through the local smoke and compatibility checks and then carried it through the successful live `create -> reboot -> update` release-bar run on `rg-examplevm-ate1-g2/examplevm`.

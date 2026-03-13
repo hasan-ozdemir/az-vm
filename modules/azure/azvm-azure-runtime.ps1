@@ -6,7 +6,9 @@ function Assert-LocationExists {
         [string]$Location
     )
 
-    $locationExists = az account list-locations --query "[?name=='$Location'].name | [0]" -o tsv --only-show-errors
+    $locationExists = Invoke-AzVmWithBypassedAzCliSubscription -Action {
+        az account list-locations --query "[?name=='$Location'].name | [0]" -o tsv --only-show-errors
+    }
     if ($LASTEXITCODE -ne 0) {
         Throw-FriendlyError `
             -Detail "az account list-locations failed with exit code $LASTEXITCODE." `
