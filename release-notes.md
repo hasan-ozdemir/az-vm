@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.304 - 2026-03-13
+
+### Summary
+This release finalizes the repository cleanup pass for public history and current content. The obsolete `explicit destructive rebuild flow` contract is gone, destructive rebuild guidance now uses explicit `delete` plus `create`, and the tracked repo plus reachable git history were redacted so concrete contact-style values, secret samples, organization-style example names, real live-target identifiers, and the requested legacy accessibility-vendor terms no longer remain in the public history that the repo exposes.
+
+### Highlights
+- Removed the retired `explicit destructive rebuild flow` create surface from runtime code, help, README, smoke coverage, and release docs, and aligned the operator contract around an explicit `delete` then `create` rebuild flow.
+- Replaced concrete-looking contact values, secret samples, live target names, and subscription identifiers in the current tracked repo with generic placeholders or neutral examples so the maintained surface is safer to publish and easier to reuse.
+- Rewrote reachable history in a controlled offline clone with the same replacement map applied to blobs and commit messages, then standardized rewritten author/committer metadata to the requested identity while preserving timestamps.
+- Revalidated the rewritten current tip with the full local non-live gate: smoke, documentation contract, PowerShell compatibility, code quality, and bash syntax.
+
 ## Release 2026.3.13.302 - 2026-03-13
 
 ### Summary

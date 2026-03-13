@@ -5016,3 +5016,17 @@ Update docs: reorganize `README.md` so the content starts with a merged quick-st
 Rebuilt `README.md` into a more audience-first and presentation-ready document without thinning out the technical depth. The new README now opens with a stronger at-a-glance framing, a merged `Quick Start Guide`, `Customer Business Value`, a standalone `Executive Summary`, `Value By Audience`, and a richer delivered-outcome matrix before moving into the deeper technical guidance. I also added a new top-level `Operational Command Matrix` so every public command, shared option, and practical usage variation can be scanned quickly from tables before the reader moves into the narrative command guide and the deeper architecture and workflow sections.
 
 To keep the repo contract tight, I updated `tests/documentation-contract-check.ps1` so the new README heading order, the merged quick-start structure, and the new command-matrix sections are enforced explicitly. I also updated `CHANGELOG.md` and `release-notes.md` to the new documented release `2026.3.13.302`, preserving the repo's release-document discipline while making the main README more useful for customers, executives, developers, operators, visitors, and potential sponsors.
+
+### 2026-03-13 15:48 TRT
+
+**User Prompt**
+
+````text
+Clean up this repository historically and currently so sensitive-looking operator data does not remain in the repo surface or reachable git history. Remove concrete email addresses, literal password samples and hints, human names, company-like names, contact-style values, and similar examples from code, docs, tests, and commit messages. Also add these explicit cleanup rules: remove `private local-only accessibility`, `private local-only accessibility`, and related legacy accessibility residue from the current tree and reachable history, and remove the public `explicit destructive rebuild flow` parameter so destructive rebuild guidance is expressed through `delete` and then `create`. Start from `dev`, keep the repo behavior aligned, and implement the plan.
+````
+
+**Assistant Summary**
+
+Removed the current `explicit destructive rebuild flow` command surface from runtime modules, help, README, tests, and release docs, and rewrote the operator guidance so destructive rebuilds now use explicit `delete` plus `create`. I also redacted the current tracked repo content by replacing concrete contact values, secret samples, social handles, organization-style examples, subscription identifiers, and live acceptance target names with generic placeholders or neutral examples, then tightened the documentation and smoke contracts to enforce that cleaned surface.
+
+After committing that cleanup on `dev`, I created local safety backups, rewrote the full reachable history in an isolated clone with `git-filter-repo`, and applied the same replacement map to blob contents, commit messages, and author/committer metadata. Historical legacy accessibility vendor residue, obsolete destructive-rebuild wording, concrete contact data, organization-like names, and sample secret strings were removed from reachable history, while commit metadata was standardized to `<person-name> <<email>>` as requested. I then revalidated the rewritten repo with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks before preparing the rewritten branches for remote rollout.
