@@ -28,7 +28,7 @@ $taskConfig = [ordered]@{
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
+        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")

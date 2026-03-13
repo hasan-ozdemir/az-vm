@@ -139,6 +139,32 @@ function Resolve-AzVmTargetResourceGroup {
     return $resourceGroup
 }
 
+# Handles Get-AzVmResourceGroupLocation.
+function Get-AzVmResourceGroupLocation {
+    param(
+        [string]$ResourceGroup
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup)) {
+        Throw-FriendlyError `
+            -Detail "Resource group name is empty while resolving Azure location." `
+            -Code 66 `
+            -Summary "Resource group location could not be resolved." `
+            -Hint "Provide an existing managed resource group."
+    }
+
+    $location = az group show -n ([string]$ResourceGroup) --query "location" -o tsv --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$location)) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' location could not be read from Azure." -f [string]$ResourceGroup) `
+            -Code 66 `
+            -Summary "Resource group location could not be resolved." `
+            -Hint "Verify Azure access and the selected managed resource group."
+    }
+
+    return ([string]$location).Trim().ToLowerInvariant()
+}
+
 # Handles Get-AzVmVmNamesForResourceGroup.
 function Get-AzVmVmNamesForResourceGroup {
     param(
@@ -283,6 +309,8 @@ function Get-AzVmVmNetworkDescriptor {
     $publicIpName = ""
     $nsgName = ""
     $vnetName = ""
+    $subnetName = ""
+    $subnetName = ""
     if (-not [string]::IsNullOrWhiteSpace($nicName)) {
         $nicJson = az network nic show -g $ResourceGroup -n $nicName -o json --only-show-errors
         Assert-LastExitCode "az network nic show (network descriptor)"
@@ -303,6 +331,7 @@ function Get-AzVmVmNetworkDescriptor {
             $subnetId = [string]$nicObject.ipConfigurations[0].subnet.id
             if (-not [string]::IsNullOrWhiteSpace([string]$subnetId)) {
                 $subnetParts = @($subnetId -split '/')
+                $subnetName = [string]$subnetParts[$subnetParts.Count - 1]
                 for ($i = 0; $i -lt $subnetParts.Count - 1; $i++) {
                     if ([string]::Equals([string]$subnetParts[$i], 'virtualNetworks', [System.StringComparison]::OrdinalIgnoreCase)) {
                         $vnetName = [string]$subnetParts[$i + 1]
@@ -319,6 +348,7 @@ function Get-AzVmVmNetworkDescriptor {
         PublicIpName = $publicIpName
         NsgName = $nsgName
         VnetName = $vnetName
+        SubnetName = $subnetName
     }
 }
 

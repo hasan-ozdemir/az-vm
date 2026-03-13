@@ -77,7 +77,7 @@ function Invoke-AzVmCommandDispatcher {
                 return
             }
             'create' {
-                Invoke-AzVmCreateCommand -Options $Options -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmCreateCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'update' {

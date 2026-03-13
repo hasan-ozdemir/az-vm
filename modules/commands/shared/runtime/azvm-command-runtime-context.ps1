@@ -7,14 +7,24 @@ function Initialize-AzVmCommandRuntimeContext {
         [switch]$WindowsFlag,
         [switch]$LinuxFlag,
         [hashtable]$ConfigMapOverrides = @{},
+        [string]$OperationName = 'generic',
         [switch]$UseInteractiveStep1,
-        [switch]$PersistGeneratedResourceGroup
+        [switch]$PersistGeneratedResourceGroup,
+        [switch]$DeferDotEnvWrites
     )
 
     $repoRoot = Get-AzVmRepoRoot
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
-    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $script:ConfigOverrides
+    $platformSelectionOverrides = @{}
+    foreach ($key in @($script:ConfigOverrides.Keys)) {
+        $platformSelectionOverrides[[string]$key] = [string]$script:ConfigOverrides[$key]
+    }
+    foreach ($key in @($ConfigMapOverrides.Keys)) {
+        $platformSelectionOverrides[[string]$key] = [string]$ConfigMapOverrides[$key]
+    }
+
+    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $platformSelectionOverrides -DeferEnvWrite:$DeferDotEnvWrites
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
     $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
     foreach ($key in @($ConfigMapOverrides.Keys)) {
@@ -42,7 +52,9 @@ function Initialize-AzVmCommandRuntimeContext {
         -VmImageDefault ([string]$platformDefaults.VmImageDefault) `
         -VmSizeDefault ([string]$platformDefaults.VmSizeDefault) `
         -VmDiskSizeDefault ([string]$platformDefaults.VmDiskSizeDefault) `
-        -ConfigOverrides $script:ConfigOverrides
+        -ConfigOverrides $script:ConfigOverrides `
+        -OperationName $OperationName `
+        -DeferEnvWrites:$DeferDotEnvWrites
 
     $step1Context['VmOsType'] = $platform
 

@@ -90,6 +90,8 @@
     'modules/commands/create/parameters/step.ps1'
     'modules/commands/create/parameters/destructive rebuild.ps1'
     'modules/commands/create/parameters/vm-name.ps1'
+    'modules/commands/create/parameters/vm-region.ps1'
+    'modules/commands/create/parameters/vm-size.ps1'
     'modules/commands/create/contract.ps1'
     'modules/commands/create/entry.ps1'
     'modules/commands/update/runtime.ps1'
@@ -217,5 +219,6 @@
     'modules/commands/help/contract.ps1'
     'modules/commands/help/entry.ps1'
     'modules/commands/shared/dispatcher/azvm-command-dispatcher.ps1'
+    'modules/commands/pipeline/azvm-main-workflow.ps1'
     'modules/commands/pipeline/azvm-main-command.ps1'
 )

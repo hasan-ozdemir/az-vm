@@ -8,6 +8,8 @@ $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $publicDesktop = "C:\Users\Public\Desktop"
+$dockerStartupShortcutPath = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk"
+$ollamaStartupShortcutPath = ("C:\Users\{0}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk" -f $managerUser)
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
@@ -40,6 +42,121 @@ function Invoke-CommandWithTimeout {
     $hadErrors = @($job.ChildJobs[0].Error).Count -gt 0
     Remove-Job -Job $job -Force
     return [pscustomobject]@{ Success = ($state -ne 'Failed' -and -not $hadErrors); TimedOut = $false }
+}
+
+function Invoke-RegQuiet {
+    param(
+        [string]$Verb,
+        [string[]]$Arguments
+    )
+
+    $segments = @('reg', [string]$Verb)
+    foreach ($argument in @($Arguments)) {
+        $segments += ('"{0}"' -f [string]$argument)
+    }
+
+    $command = ((@($segments) -join ' ') + ' >nul 2>&1')
+    cmd.exe /d /c $command | Out-Null
+    return [int]$LASTEXITCODE
+}
+
+function Test-TcpPortReachable {
+    param(
+        [string]$HostName,
+        [int]$Port,
+        [int]$TimeoutSeconds = 5
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$HostName) -or $Port -lt 1 -or $Port -gt 65535) {
+        return $false
+    }
+
+    $client = New-Object System.Net.Sockets.TcpClient
+    $waitHandle = $null
+    try {
+        $async = $client.BeginConnect([string]$HostName, [int]$Port, $null, $null)
+        $waitHandle = $async.AsyncWaitHandle
+        if (-not $waitHandle.WaitOne([TimeSpan]::FromSeconds($TimeoutSeconds), $false)) {
+            return $false
+        }
+
+        $client.EndConnect($async)
+        return $client.Connected
+    }
+    catch {
+        return $false
+    }
+    finally {
+        if ($null -ne $waitHandle) {
+            try { $waitHandle.Close() } catch { }
+        }
+        try { $client.Dispose() } catch { }
+    }
+}
+
+function Invoke-NativeCommandProbe {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments = @(),
+        [int]$TimeoutSeconds = 15
+    )
+
+    $job = Start-Job -ScriptBlock {
+        try {
+            $output = & $using:FilePath @using:Arguments 2>&1 | Out-String
+            return [pscustomobject]@{
+                ExitCode = [int]$LASTEXITCODE
+                Output = [string]$output
+                InvocationFailed = $false
+            }
+        }
+        catch {
+            return [pscustomobject]@{
+                ExitCode = 1
+                Output = [string]($_ | Out-String)
+                InvocationFailed = $true
+            }
+        }
+    }
+
+    $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
+    if (-not $completed) {
+        Stop-Job -Job $job -ErrorAction SilentlyContinue
+        Remove-Job -Job $job -Force
+        return [pscustomobject]@{
+            Success = $false
+            TimedOut = $true
+            ExitCode = -1
+            Output = ''
+        }
+    }
+
+    $probeResult = Receive-Job -Job $job -ErrorAction SilentlyContinue | Select-Object -Last 1
+    Remove-Job -Job $job -Force
+
+    $outputText = ''
+    $exitCode = 1
+    $invocationFailed = $true
+    if ($null -ne $probeResult) {
+        $outputText = [string]$probeResult.Output
+        $exitCode = [int]$probeResult.ExitCode
+        $invocationFailed = [bool]$probeResult.InvocationFailed
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$outputText)) {
+        foreach ($line in @([string]$outputText -split "(`r`n|`n|`r)")) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$line)) {
+                Write-Host $line
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        Success = (-not $invocationFailed -and $exitCode -eq 0)
+        TimedOut = $false
+        ExitCode = [int]$exitCode
+        Output = [string]$outputText
+    }
 }
 
 function Test-InvalidCompanyName {
@@ -116,6 +233,280 @@ function Get-ShortcutDetails {
         WindowStyle = [int]$shortcut.WindowStyle
         RunAsAdmin = [bool](Get-ShortcutRunAsAdministratorFlag -ShortcutPath $ShortcutPath)
     }
+}
+
+function Resolve-CommandPath {
+    param(
+        [string]$CommandName,
+        [string[]]$FallbackCandidates = @()
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$CommandName)) {
+        $command = Get-Command $CommandName -ErrorAction SilentlyContinue
+        if ($command -and -not [string]::IsNullOrWhiteSpace([string]$command.Source)) {
+            $candidate = [string]$command.Source
+            if ([System.IO.Path]::IsPathRooted($candidate) -and (Test-Path -LiteralPath $candidate)) {
+                return [string]$candidate
+            }
+        }
+    }
+
+    foreach ($candidate in @($FallbackCandidates)) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        $expandedCandidate = [Environment]::ExpandEnvironmentVariables([string]$candidate)
+        if (Test-Path -LiteralPath $expandedCandidate) {
+            return [string]$expandedCandidate
+        }
+    }
+
+    return ''
+}
+
+function Resolve-EmbeddedShortcutCommandPath {
+    param([string]$Arguments)
+
+    $expandedArguments = [Environment]::ExpandEnvironmentVariables([string]$Arguments)
+    if ([string]::IsNullOrWhiteSpace([string]$expandedArguments)) {
+        return ''
+    }
+
+    foreach ($pattern in @(
+        '(?i)if\s+exist\s+"([^"]+)"',
+        '(?i)start\s+""\s+"([^"]+)"',
+        '(?i)start\s+"?([^"\s]+\.(?:exe|cmd|bat))',
+        '(?i)&\s*''([^'']+\.(?:exe|cmd|bat))''',
+        '(?i)&\s*"([^"]+\.(?:exe|cmd|bat))"',
+        '(?i)(?:^|[&\s])("?[%A-Za-z0-9_:\\ .()-]+\.(?:exe|cmd|bat))',
+        '(?i)(?:^|[&\s])(docker|azd|az|gh|wsl|python|node|pwsh|powershell|rclone|ffmpeg|git-bash|copilot|gemini|codex|outlook)(?:\s|$)'
+    )) {
+        $match = [regex]::Match($expandedArguments, $pattern)
+        if (-not $match.Success) {
+            continue
+        }
+
+        $candidate = [string]$match.Groups[1].Value.Trim('"', '''', ' ')
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        $expandedCandidate = [Environment]::ExpandEnvironmentVariables($candidate)
+        if (Test-Path -LiteralPath $expandedCandidate) {
+            return [string]$expandedCandidate
+        }
+
+        $resolved = Resolve-CommandPath -CommandName ([System.IO.Path]::GetFileName($expandedCandidate))
+        if (-not [string]::IsNullOrWhiteSpace([string]$resolved)) {
+            return [string]$resolved
+        }
+    }
+
+    return ''
+}
+
+function Get-ShortcutHealth {
+    param([string]$ShortcutPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
+        return $null
+    }
+
+    $details = Get-ShortcutDetails -ShortcutPath $ShortcutPath
+    $targetPath = [string]$details.TargetPath
+    $arguments = [string]$details.Arguments
+    $targetExists = -not [string]::IsNullOrWhiteSpace([string]$targetPath) -and (Test-Path -LiteralPath $targetPath)
+    $embeddedTargetPath = ''
+    if ([System.IO.Path]::GetFileName($targetPath) -in @('cmd.exe', 'powershell.exe', 'pwsh.exe')) {
+        $embeddedTargetPath = Resolve-EmbeddedShortcutCommandPath -Arguments $arguments
+    }
+
+    $isStoreAppLaunch = (
+        [string]::Equals($targetPath, (Resolve-CommandPath -CommandName 'explorer.exe' -FallbackCandidates @('C:\Windows\explorer.exe')), [System.StringComparison]::OrdinalIgnoreCase) -and
+        $arguments.StartsWith('shell:AppsFolder\', [System.StringComparison]::OrdinalIgnoreCase)
+    )
+
+    $healthy = $false
+    if ($isStoreAppLaunch) {
+        $healthy = $targetExists -and -not [string]::IsNullOrWhiteSpace([string]$arguments)
+    }
+    elseif ([string]::IsNullOrWhiteSpace([string]$embeddedTargetPath)) {
+        $healthy = $targetExists
+    }
+    else {
+        $healthy = $targetExists -and (Test-Path -LiteralPath $embeddedTargetPath)
+    }
+
+    return [pscustomobject]@{
+        Details = $details
+        TargetExists = [bool]$targetExists
+        EmbeddedTargetPath = [string]$embeddedTargetPath
+        EmbeddedTargetExists = if ([string]::IsNullOrWhiteSpace([string]$embeddedTargetPath)) { $false } else { (Test-Path -LiteralPath $embeddedTargetPath) }
+        IsStoreAppLaunch = [bool]$isStoreAppLaunch
+        Healthy = [bool]$healthy
+    }
+}
+
+function Write-PackagedAppInventory {
+    Write-Host "PACKAGED APP INVENTORY:"
+
+    $appDefinitions = @(
+        [pscustomobject]@{ Label = 'Codex'; NameFragment = 'codex'; PackageHints = @('OpenAI.Codex', '2p2nqsd0c76g0') }
+        [pscustomobject]@{ Label = 'Be My Eyes'; NameFragment = 'be my eyes'; PackageHints = @('be my eyes', '9MSW46LTDWGF') }
+        [pscustomobject]@{ Label = 'Teams'; NameFragment = 'teams'; PackageHints = @('teams') }
+        [pscustomobject]@{ Label = 'WhatsApp'; NameFragment = 'whatsapp'; PackageHints = @('whatsapp', '5319275A.WhatsAppDesktop') }
+        [pscustomobject]@{ Label = 'Windscribe'; NameFragment = 'windscribe'; PackageHints = @('windscribe') }
+        [pscustomobject]@{ Label = 'iCloud'; NameFragment = 'icloud'; PackageHints = @('icloud', 'AppleInc.iCloud', '9PKTQ5699M62') }
+    )
+
+    $packages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    $startApps = @()
+    if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
+        $startApps = @(Get-StartApps)
+    }
+
+    foreach ($definition in @($appDefinitions)) {
+        $normalizedHints = @($definition.PackageHints | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { $_.ToLowerInvariant() })
+        $matchingPackage = @(
+            $packages | Where-Object {
+                $pkgName = [string]$_.Name
+                $pkgFamily = [string]$_.PackageFamilyName
+                $nameLower = $pkgName.ToLowerInvariant()
+                $familyLower = $pkgFamily.ToLowerInvariant()
+                foreach ($hint in @($normalizedHints)) {
+                    if ($nameLower.Contains($hint) -or $familyLower.Contains($hint)) {
+                        return $true
+                    }
+                }
+
+                return $false
+            } | Select-Object -First 1
+        )[0]
+
+        $appId = @(
+            $startApps | Where-Object {
+                $nameText = [string]$_.Name
+                if ([string]::IsNullOrWhiteSpace([string]$nameText)) { return $false }
+                return $nameText.ToLowerInvariant().Contains(([string]$definition.NameFragment).ToLowerInvariant())
+            } | Select-Object -ExpandProperty AppID -First 1
+        )[0]
+
+        $packageName = ''
+        $packageFamily = ''
+        $installLocation = ''
+        if ($null -ne $matchingPackage) {
+            $packageName = [string]$matchingPackage.Name
+            $packageFamily = [string]$matchingPackage.PackageFamilyName
+            $installLocation = [string]$matchingPackage.InstallLocation
+        }
+
+        Write-Host ("packaged-app => {0}" -f [string]$definition.Label)
+        Write-Host (" package-name => {0}" -f $packageName)
+        Write-Host (" package-family => {0}" -f $packageFamily)
+        Write-Host (" install-location => {0}" -f $installLocation)
+        Write-Host (" app-id => {0}" -f [string]$appId)
+    }
+}
+
+function Get-OllamaApiVersion {
+    try {
+        $response = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec 4 -ErrorAction Stop
+        if ($null -ne $response -and -not [string]::IsNullOrWhiteSpace([string]$response.version)) {
+            return [string]$response.version
+        }
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Write-CopyExclusionEvidence {
+    param(
+        [string]$ManagerProfilePath,
+        [string]$AssistantProfilePath,
+        [string]$DefaultProfilePath
+    )
+
+    Write-Host "COPY USER EXCLUSION EVIDENCE:"
+
+    $evidencePaths = @(
+        'AppData\Roaming\Microsoft\Credentials',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\Network',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\Safe Browsing Network',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\Cache',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\Code Cache',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\GPUCache',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\Service Worker\CacheStorage',
+        'AppData\Roaming\ollama app.exe\EBWebView\Default\Service Worker\ScriptCache',
+        'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
+    )
+
+    foreach ($relativePath in @($evidencePaths)) {
+        $managerPath = Join-Path $ManagerProfilePath $relativePath
+        $assistantPath = Join-Path $AssistantProfilePath $relativePath
+        $defaultPath = Join-Path $DefaultProfilePath $relativePath
+        Write-Host ("copy-exclusion => {0}" -f $relativePath)
+        Write-Host (" manager-source-present => {0}" -f (Test-Path -LiteralPath $managerPath))
+        Write-Host (" assistant-target-present => {0}" -f (Test-Path -LiteralPath $assistantPath))
+        Write-Host (" default-target-present => {0}" -f (Test-Path -LiteralPath $defaultPath))
+    }
+}
+
+function Resolve-ShortcutEmbeddedCommandPath {
+    param(
+        [string]$TargetPath,
+        [string]$Arguments
+    )
+
+    $targetText = [string]$TargetPath
+    $argumentsText = [string]$Arguments
+    if ([string]::IsNullOrWhiteSpace([string]$targetText)) {
+        return ''
+    }
+
+    $targetFileName = [System.IO.Path]::GetFileName([string]$targetText)
+    if (-not [string]::Equals($targetFileName, 'cmd.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not [string]::Equals($targetFileName, 'powershell.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
+        -not [string]::Equals($targetFileName, 'pwsh.exe', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ''
+    }
+
+    return (Resolve-EmbeddedShortcutCommandPath -Arguments $argumentsText)
+}
+
+function Get-ShortcutTargetHealth {
+    param(
+        [psobject]$Shortcut
+    )
+
+    $targetPath = if ($null -ne $Shortcut -and $Shortcut.PSObject.Properties.Match('TargetPath').Count -gt 0) { [string]$Shortcut.TargetPath } else { '' }
+    $arguments = if ($null -ne $Shortcut -and $Shortcut.PSObject.Properties.Match('Arguments').Count -gt 0) { [string]$Shortcut.Arguments } else { '' }
+
+    if ([string]::IsNullOrWhiteSpace([string]$targetPath)) {
+        return 'orphan-target'
+    }
+
+    if ([string]::Equals([System.IO.Path]::GetFileName([string]$targetPath), 'explorer.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]$arguments -like 'shell:AppsFolder\*') {
+        return 'appsfolder'
+    }
+
+    if (Test-Path -LiteralPath $targetPath) {
+        $embeddedCommandPath = Resolve-ShortcutEmbeddedCommandPath -TargetPath $targetPath -Arguments $arguments
+        if ([string]::IsNullOrWhiteSpace([string]$embeddedCommandPath)) {
+            return 'file'
+        }
+
+        if (Test-Path -LiteralPath $embeddedCommandPath) {
+            return 'file+embedded'
+        }
+
+        return 'wrapper-missing-command'
+    }
+
+    return 'orphan-target'
 }
 
 function Convert-Base64JsonToObjectArray {
@@ -402,6 +793,7 @@ function Write-ShortcutReadback {
     )
 
     $shortcut = Get-ShortcutDetails -ShortcutPath $ShortcutPath
+    $targetHealth = Get-ShortcutTargetHealth -Shortcut $shortcut
     Write-Host ("{0} => {1}" -f $Label, $ShortcutPath)
     Write-Host (" target => {0}" -f [string]$shortcut.TargetPath)
     Write-Host (" args => {0}" -f [string]$shortcut.Arguments)
@@ -409,6 +801,7 @@ function Write-ShortcutReadback {
     Write-Host (" start-in => {0}" -f [string]$shortcut.WorkingDirectory)
     Write-Host (" show => {0}" -f [int]$shortcut.WindowStyle)
     Write-Host (" run-as-admin => {0}" -f [bool]$shortcut.RunAsAdmin)
+    Write-Host (" target-health => {0}" -f [string]$targetHealth)
 }
 
 function Write-StartupEntryStatus {
@@ -649,27 +1042,56 @@ Get-ItemProperty -Path $rdpTcpRoot -Name UserAuthentication,SecurityLayer,MinEnc
 Get-ItemProperty -Path $terminalServerRoot -Name fDenyTSConnections -ErrorAction SilentlyContinue | Format-List *
 
 Write-Host "AUTOLOGON STATUS:"
-$winlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
-$winlogon = Get-ItemProperty -Path $winlogonPath -ErrorAction SilentlyContinue
-if ($null -eq $winlogon) {
+$winlogonBaseKey = $null
+$winlogonKey = $null
+$winlogonReadFailed = $false
+$autoAdminLogonValue = ''
+$defaultUserNameValue = ''
+$autologonDomain = ''
+$defaultPasswordPresent = $false
+try {
+    $winlogonBaseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+    $winlogonKey = $winlogonBaseKey.OpenSubKey('SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon')
+    if ($null -eq $winlogonKey) {
+        $winlogonReadFailed = $true
+    }
+    else {
+        $autoAdminLogonValue = [string]$winlogonKey.GetValue('AutoAdminLogon', '')
+        $defaultUserNameValue = [string]$winlogonKey.GetValue('DefaultUserName', '')
+        $autologonDomain = [string]$winlogonKey.GetValue('DefaultDomainName', '')
+        $defaultPasswordValue = [string]$winlogonKey.GetValue('DefaultPassword', '')
+        $defaultPasswordPresent = -not [string]::IsNullOrWhiteSpace([string]$defaultPasswordValue)
+    }
+}
+catch {
+    $winlogonReadFailed = $true
+}
+finally {
+    if ($null -ne $winlogonKey) {
+        $winlogonKey.Close()
+    }
+
+    if ($null -ne $winlogonBaseKey) {
+        $winlogonBaseKey.Close()
+    }
+}
+
+if ($winlogonReadFailed) {
     Write-Warning "Winlogon autologon state could not be read."
 }
 else {
-    $autologonDomain = ''
-    if ($winlogon.PSObject.Properties.Match('DefaultDomainName').Count -gt 0) {
-        $autologonDomain = [string]$winlogon.DefaultDomainName
-    }
-
     $managerAutologonConfigured = (
-        [string]::Equals([string]$winlogon.AutoAdminLogon, '1', [System.StringComparison]::OrdinalIgnoreCase) -and
-        [string]::Equals([string]$winlogon.DefaultUserName, $managerUser, [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$autoAdminLogonValue, '1', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$defaultUserNameValue, $managerUser, [System.StringComparison]::OrdinalIgnoreCase) -and
         -not [string]::IsNullOrWhiteSpace([string]$autologonDomain)
     )
 
     [pscustomobject]@{
-        AutoAdminLogon = [string]$winlogon.AutoAdminLogon
-        DefaultUserName = [string]$winlogon.DefaultUserName
+        AutoAdminLogon = [string]$autoAdminLogonValue
+        DefaultUserName = [string]$defaultUserNameValue
         DefaultDomainName = [string]$autologonDomain
+        DefaultPasswordPresent = [bool]$defaultPasswordPresent
+        CredentialStorageMode = $(if ($defaultPasswordPresent) { 'winlogon-defaultpassword' } else { 'sysinternals-autologon-or-external-store' })
         manager_autologon_configured = [bool]$managerAutologonConfigured
     } | Format-List *
 }
@@ -698,7 +1120,10 @@ foreach ($registryPath in @(
     Get-ItemProperty -Path $registryPath -ErrorAction SilentlyContinue | Format-List Mode,LogicalViewMode,GroupView,Sort,SortDirection,FolderType,IconSize
 }
 
+Write-PackagedAppInventory
+
 Write-Host "PUBLIC DESKTOP SHORTCUT STATUS:"
+$orphanManagedShortcutFiles = New-Object 'System.Collections.Generic.List[object]'
 foreach ($shortcutName in @($publicShortcutNames)) {
     $shortcutPath = Join-Path $publicDesktop ($shortcutName + ".lnk")
     if (-not (Test-Path -LiteralPath $shortcutPath)) {
@@ -706,7 +1131,8 @@ foreach ($shortcutName in @($publicShortcutNames)) {
         continue
     }
 
-    $shortcut = Get-ShortcutDetails -ShortcutPath $shortcutPath
+    $shortcutHealth = Get-ShortcutHealth -ShortcutPath $shortcutPath
+    $shortcut = $shortcutHealth.Details
     Write-Host "shortcut => $shortcutPath"
     Write-Host " target => $([string]$shortcut.TargetPath)"
     Write-Host " args => $([string]$shortcut.Arguments)"
@@ -714,6 +1140,17 @@ foreach ($shortcutName in @($publicShortcutNames)) {
     Write-Host " start-in => $([string]$shortcut.WorkingDirectory)"
     Write-Host " show => $([int]$shortcut.WindowStyle)"
     Write-Host " run-as-admin => $([bool]$shortcut.RunAsAdmin)"
+    Write-Host " target-exists => $([bool]$shortcutHealth.TargetExists)"
+    Write-Host " embedded-target => $([string]$shortcutHealth.EmbeddedTargetPath)"
+    Write-Host " embedded-target-exists => $([bool]$shortcutHealth.EmbeddedTargetExists)"
+    Write-Host " store-app-launch => $([bool]$shortcutHealth.IsStoreAppLaunch)"
+    Write-Host " healthy => $([bool]$shortcutHealth.Healthy)"
+    if (-not [bool]$shortcutHealth.Healthy) {
+        $orphanManagedShortcutFiles.Add([pscustomobject]@{
+            ShortcutPath = [string]$shortcutPath
+            Details = $shortcut
+        }) | Out-Null
+    }
 }
 
 Write-Host "PUBLIC DESKTOP RECONCILE STATUS:"
@@ -730,6 +1167,10 @@ $unmanagedPublicShortcutFiles = @(
 Write-Host ("unmanaged-public-shortcut-count={0}" -f @($unmanagedPublicShortcutFiles).Count)
 foreach ($shortcutFile in @($unmanagedPublicShortcutFiles)) {
     Write-ShortcutReadback -Label 'unmanaged-public-shortcut' -ShortcutPath ([string]$shortcutFile.FullName)
+}
+Write-Host ("orphan-managed-shortcut-count={0}" -f ([int]$orphanManagedShortcutFiles.Count))
+foreach ($orphanShortcut in $orphanManagedShortcutFiles) {
+    Write-ShortcutReadback -Label 'orphan-managed-shortcut' -ShortcutPath ([string]$orphanShortcut.ShortcutPath)
 }
 
 Write-Host "PER-USER DESKTOP STATUS:"
@@ -802,6 +1243,97 @@ finally {
     if ($null -ne $managerContext -and -not [string]::IsNullOrWhiteSpace([string]$managerContext.MountName)) {
         Dismount-RegistryHive -MountName ([string]$managerContext.MountName)
     }
+}
+
+Write-Host "DOCKER DESKTOP HEALTH:"
+$dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+Write-Host ("docker-desktop-exe-present => {0}" -f [bool](Test-Path -LiteralPath $dockerDesktopExe))
+$dockerCliResult = Invoke-NativeCommandProbe -FilePath 'docker' -Arguments @('--version') -TimeoutSeconds 10
+Write-Host ("docker-cli-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerCliResult.Success, [bool]$dockerCliResult.TimedOut, [int]$dockerCliResult.ExitCode)
+$dockerServices = @(Get-Service -Name 'com.docker*' -ErrorAction SilentlyContinue | Sort-Object Name)
+if (@($dockerServices).Count -eq 0) {
+    Write-Host 'docker-services => none'
+}
+else {
+    foreach ($dockerService in @($dockerServices)) {
+        Write-Host ("docker-service => {0} => status={1}; start-type={2}" -f [string]$dockerService.Name, [string]$dockerService.Status, [string]$dockerService.StartType)
+    }
+}
+$dockerDesktopProcesses = @(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)
+Write-Host ("docker-desktop-process-count => {0}" -f @($dockerDesktopProcesses).Count)
+if (Test-Path -LiteralPath $dockerStartupShortcutPath) {
+    Write-ShortcutReadback -Label 'docker-startup-shortcut' -ShortcutPath $dockerStartupShortcutPath
+    $dockerStartupShortcutHealth = Get-ShortcutHealth -ShortcutPath $dockerStartupShortcutPath
+    Write-Host ("docker-startup-shortcut-healthy => {0}" -f [bool]$dockerStartupShortcutHealth.Healthy)
+}
+else {
+    Write-Host ("docker-startup-shortcut => missing => {0}" -f $dockerStartupShortcutPath)
+}
+$dockerRunOncePath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
+$dockerRunOnceValue = ''
+if (Test-Path -LiteralPath $dockerRunOncePath) {
+    $dockerRunOnceItem = Get-ItemProperty -Path $dockerRunOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue
+    if ($null -ne $dockerRunOnceItem) {
+        $dockerRunOnceValue = [string]$dockerRunOnceItem.AzVmStartDockerDesktop
+    }
+}
+Write-Host ("docker-runas-once-present => {0}" -f (-not [string]::IsNullOrWhiteSpace([string]$dockerRunOnceValue)))
+$dockerStatusResult = Invoke-NativeCommandProbe -FilePath 'docker' -Arguments @('desktop', 'status') -TimeoutSeconds 20
+Write-Host ("docker-desktop-status-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerStatusResult.Success, [bool]$dockerStatusResult.TimedOut, [int]$dockerStatusResult.ExitCode)
+$dockerInfoResult = Invoke-NativeCommandProbe -FilePath 'docker' -Arguments @('info') -TimeoutSeconds 20
+Write-Host ("docker-info-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$dockerInfoResult.Success, [bool]$dockerInfoResult.TimedOut, [int]$dockerInfoResult.ExitCode)
+Write-Host ("docker-engine-ready => {0}" -f ([bool]$dockerCliResult.Success -and [bool]$dockerStatusResult.Success -and [bool]$dockerInfoResult.Success))
+
+Write-Host "OLLAMA HEALTH:"
+$ollamaExe = ''
+$ollamaCommand = Get-Command ollama -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -ne $ollamaCommand) {
+    $ollamaExe = [string]$ollamaCommand.Source
+}
+Write-Host ("ollama-cli => {0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$ollamaExe)) { 'not-found' } else { $ollamaExe }))
+$ollamaProcesses = @(Get-Process -Name 'ollama*' -ErrorAction SilentlyContinue)
+Write-Host ("ollama-process-count => {0}" -f @($ollamaProcesses).Count)
+if (Test-Path -LiteralPath $ollamaStartupShortcutPath) {
+    Write-ShortcutReadback -Label 'ollama-startup-shortcut' -ShortcutPath $ollamaStartupShortcutPath
+    $ollamaStartupShortcutHealth = Get-ShortcutHealth -ShortcutPath $ollamaStartupShortcutPath
+    Write-Host ("ollama-startup-shortcut-healthy => {0}" -f [bool]$ollamaStartupShortcutHealth.Healthy)
+}
+else {
+    Write-Host ("ollama-startup-shortcut => missing => {0}" -f $ollamaStartupShortcutPath)
+}
+$ollamaPortOpen = Test-TcpPortReachable -HostName '127.0.0.1' -Port 11434 -TimeoutSeconds 5
+Write-Host ("ollama-port-11434-open => {0}" -f [bool]$ollamaPortOpen)
+$ollamaApiVersion = Get-OllamaApiVersion
+Write-Host ("ollama-api-version => {0}" -f [string]$ollamaApiVersion)
+$ollamaApiProbeVersion = Get-OllamaApiVersion -TimeoutSeconds 10
+$ollamaApiProbeSuccess = -not [string]::IsNullOrWhiteSpace([string]$ollamaApiProbeVersion)
+$ollamaApiProbeTimedOut = $false
+if ($ollamaApiProbeSuccess) {
+    Write-Host ('ollama-api-version-response => {"version":"{0}"}' -f [string]$ollamaApiProbeVersion)
+}
+Write-Host ("ollama-api-probe => success={0}; timed-out={1}" -f [bool]$ollamaApiProbeSuccess, [bool]$ollamaApiProbeTimedOut)
+
+Write-Host "WSL HEALTH:"
+foreach ($serviceName in @('WslService', 'LxssManager')) {
+    $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($null -eq $svc) {
+        Write-Host ("wsl-service => {0} => missing" -f $serviceName)
+        continue
+    }
+
+    Write-Host ("wsl-service => {0} => status={1}; start-type={2}" -f [string]$svc.Name, [string]$svc.Status, [string]$svc.StartType)
+}
+$wslStatusResult = Invoke-NativeCommandProbe -FilePath 'wsl' -Arguments @('--status') -TimeoutSeconds 20
+Write-Host ("wsl-status-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$wslStatusResult.Success, [bool]$wslStatusResult.TimedOut, [int]$wslStatusResult.ExitCode)
+
+try {
+    $managerProfilePath = [string](Get-LocalUserProfileInfo -UserName $managerUser).ProfilePath
+    $assistantProfilePath = [string](Get-LocalUserProfileInfo -UserName $assistantUser).ProfilePath
+    $defaultProfilePath = 'C:\Users\Default'
+    Write-CopyExclusionEvidence -ManagerProfilePath $managerProfilePath -AssistantProfilePath $assistantProfilePath -DefaultProfilePath $defaultProfilePath
+}
+catch {
+    Write-Warning ("copy-exclusion-evidence-failed => {0}" -f $_.Exception.Message)
 }
 
 Write-Host "capture-snapshot-health-completed"

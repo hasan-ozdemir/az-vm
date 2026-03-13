@@ -1,10 +1,11 @@
 $ErrorActionPreference = "Stop"
-Write-Host "Update task started: autologon-manager-user"
+Write-Host "Init task started: autologon-manager-user"
 
 $vmAdminUser = "__VM_ADMIN_USER__"
 $vmAdminPass = "__VM_ADMIN_PASS__"
 $taskConfig = [ordered]@{
     WinlogonPath = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    WinlogonNativePath = 'HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     AutologonCandidates = @(
         'C:\ProgramData\chocolatey\lib\sysinternals\tools\Autologon.exe',
         'C:\ProgramData\chocolatey\lib\sysinternals\tools\Autologon64.exe',
@@ -16,7 +17,7 @@ $taskConfig = [ordered]@{
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
+        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -116,23 +117,62 @@ function Assert-LocalCredentialValid {
 }
 
 function Get-AutologonState {
-    $props = Get-ItemProperty -Path ([string]$taskConfig.WinlogonPath) -ErrorAction Stop
-    $defaultDomainName = ''
-    if ($props.PSObject.Properties.Match('DefaultDomainName').Count -gt 0) {
-        $defaultDomainName = [string]$props.DefaultDomainName
-    }
+    $baseKey = $null
+    $winlogonKey = $null
+    try {
+        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64)
+        $winlogonKey = $baseKey.OpenSubKey('SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon')
+        if ($null -eq $winlogonKey) {
+            throw "Winlogon registry key was not found in the 64-bit registry view."
+        }
 
-    $defaultPasswordPresent = $false
-    if ($props.PSObject.Properties.Match('DefaultPassword').Count -gt 0) {
-        $defaultPasswordPresent = -not [string]::IsNullOrWhiteSpace([string]$props.DefaultPassword)
-    }
+        $autoAdminLogon = [string]$winlogonKey.GetValue('AutoAdminLogon', '')
+        $defaultUserName = [string]$winlogonKey.GetValue('DefaultUserName', '')
+        $defaultDomainName = [string]$winlogonKey.GetValue('DefaultDomainName', '')
+        $defaultPassword = [string]$winlogonKey.GetValue('DefaultPassword', '')
 
-    return [pscustomobject]@{
-        AutoAdminLogon = [string]$props.AutoAdminLogon
-        DefaultUserName = [string]$props.DefaultUserName
-        DefaultDomainName = [string]$defaultDomainName
-        DefaultPasswordPresent = [bool]$defaultPasswordPresent
+        return [pscustomobject]@{
+            AutoAdminLogon = [string]$autoAdminLogon
+            DefaultUserName = [string]$defaultUserName
+            DefaultDomainName = [string]$defaultDomainName
+            DefaultPasswordPresent = (-not [string]::IsNullOrWhiteSpace([string]$defaultPassword))
+        }
     }
+    finally {
+        if ($null -ne $winlogonKey) {
+            $winlogonKey.Close()
+        }
+
+        if ($null -ne $baseKey) {
+            $baseKey.Close()
+        }
+    }
+}
+
+function Set-WinlogonStringValue {
+    param(
+        [string]$Name,
+        [string]$Value
+    )
+
+    $regOutput = & reg.exe add ([string]$taskConfig.WinlogonNativePath) /v ([string]$Name) /t REG_SZ /d ([string]$Value) /f /reg:64 2>&1
+    $regExitCode = [int]$LASTEXITCODE
+    if ($regExitCode -ne 0) {
+        throw ("Failed to set Winlogon value '{0}'. reg.exe exit code={1}. Output: {2}" -f [string]$Name, $regExitCode, ((@($regOutput) | ForEach-Object { [string]$_ }) -join ' '))
+    }
+}
+
+function Sync-WinlogonAutologonState {
+    param(
+        [string]$UserName,
+        [string]$Password
+    )
+
+    Set-WinlogonStringValue -Name 'AutoAdminLogon' -Value '1'
+    Set-WinlogonStringValue -Name 'DefaultUserName' -Value ([string]$UserName)
+    Set-WinlogonStringValue -Name 'DefaultDomainName' -Value '.'
+    Set-WinlogonStringValue -Name 'DefaultPassword' -Value ([string]$Password)
+    Write-Host "winlogon-sync => AutoAdminLogon, DefaultUserName, DefaultDomainName, DefaultPassword"
 }
 
 function Assert-AutologonConfigured {
@@ -165,6 +205,9 @@ function Assert-AutologonConfigured {
     }
 
     Write-Host ("autologon-state => AutoAdminLogon={0}; DefaultUserName={1}; DefaultDomainName={2}; DefaultPasswordPresent={3}" -f [string]$state.AutoAdminLogon, [string]$state.DefaultUserName, [string]$state.DefaultDomainName, [bool]$state.DefaultPasswordPresent)
+    if (-not [bool]$state.DefaultPasswordPresent) {
+        Write-Host "Autologon note: DefaultPassword is not present in Winlogon. Sysinternals Autologon can store the credential outside the visible Winlogon value while keeping autologon enabled."
+    }
 }
 
 if (Test-PlaceholderValue -Value $vmAdminUser) {
@@ -186,16 +229,28 @@ Write-Host ("Resolved autologon executable: {0}" -f [string]$autologonExe)
 Write-Host ("Running: {0} /accepteula {1} . <redacted>" -f [string]$autologonExe, [string]$vmAdminUser)
 $autologonOutput = & $autologonExe /accepteula $vmAdminUser '.' $vmAdminPass 2>&1
 $autologonExit = [int]$LASTEXITCODE
-if ($autologonOutput) {
-    $autologonOutput | ForEach-Object { Write-Host ([string]$_) }
+$filteredAutologonOutput = @(
+    @($autologonOutput) |
+        Where-Object {
+            $line = [string]$_
+            (-not [string]::Equals($line, "'wmic' is not recognized as an internal or external command,", [System.StringComparison]::OrdinalIgnoreCase)) -and
+            (-not [string]::Equals($line, 'operable program or batch file.', [System.StringComparison]::OrdinalIgnoreCase))
+        }
+)
+if (@($filteredAutologonOutput).Count -ne @($autologonOutput).Count) {
+    Write-Host "Autologon emitted legacy WMIC lookup output; continuing because the tool completed and registry state will be validated."
+}
+if (@($filteredAutologonOutput).Count -gt 0) {
+    $filteredAutologonOutput | ForEach-Object { Write-Host ([string]$_) }
 }
 
 if ($autologonExit -ne 0) {
     throw ("autologon exited with code {0}." -f $autologonExit)
 }
 
+Sync-WinlogonAutologonState -UserName $vmAdminUser -Password $vmAdminPass
 Start-Sleep -Seconds 1
 Assert-AutologonConfigured -ExpectedUserName $vmAdminUser
 
 Write-Host "autologon-manager-user-completed"
-Write-Host "Update task completed: autologon-manager-user"
+Write-Host "Init task completed: autologon-manager-user"

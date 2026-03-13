@@ -12,13 +12,15 @@ $taskConfig = [ordered]@{
     DockerStartupShortcutPath = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk'
     DockerInstallTimeoutSeconds = 900
     DockerVersionTimeoutSeconds = 8
+    DockerStatusTimeoutSeconds = 20
+    DockerInfoTimeoutSeconds = 20
     DockerLocalUsers = @('__VM_ADMIN_USER__', '__ASSISTANT_USER__')
 }
 
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`""
+        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
     }
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -230,6 +232,132 @@ function Start-DockerDesktopProcess {
     }
 }
 
+function Get-ShortcutContract {
+    param([string]$ShortcutPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or -not (Test-Path -LiteralPath $ShortcutPath)) {
+        return $null
+    }
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($ShortcutPath)
+    return [pscustomobject]@{
+        TargetPath = [string]$shortcut.TargetPath
+        Arguments = [string]$shortcut.Arguments
+        WorkingDirectory = [string]$shortcut.WorkingDirectory
+        IconLocation = [string]$shortcut.IconLocation
+    }
+}
+
+function Test-ShortcutMatches {
+    param(
+        [string]$ShortcutPath,
+        [string]$TargetPath,
+        [string]$Arguments = '',
+        [string]$WorkingDirectory = '',
+        [string]$IconLocation = ''
+    )
+
+    $contract = Get-ShortcutContract -ShortcutPath $ShortcutPath
+    if ($null -eq $contract) {
+        return $false
+    }
+
+    return (
+        [string]::Equals([string]$contract.TargetPath, [string]$TargetPath, [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$contract.Arguments, [string]$Arguments, [System.StringComparison]::Ordinal) -and
+        [string]::Equals([string]$contract.WorkingDirectory, [string]$WorkingDirectory, [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$contract.IconLocation, [string]$IconLocation, [System.StringComparison]::OrdinalIgnoreCase)
+    )
+}
+
+function Ensure-DockerStartupShortcut {
+    param([string]$DockerDesktopExe)
+
+    $startupPath = [string]$taskConfig.DockerStartupShortcutPath
+    $workingDirectory = Split-Path -Path $DockerDesktopExe -Parent
+    $iconLocation = "$DockerDesktopExe,0"
+    if (Test-ShortcutMatches -ShortcutPath $startupPath -TargetPath $DockerDesktopExe -Arguments '--minimized' -WorkingDirectory $workingDirectory -IconLocation $iconLocation) {
+        Write-Host "docker-step-ok: startup-shortcut-already-configured"
+        return
+    }
+
+    $shell = New-Object -ComObject WScript.Shell
+    $shortcut = $shell.CreateShortcut($startupPath)
+    $shortcut.TargetPath = $DockerDesktopExe
+    $shortcut.Arguments = '--minimized'
+    $shortcut.WorkingDirectory = $workingDirectory
+    $shortcut.IconLocation = $iconLocation
+    $shortcut.Save()
+
+    if (-not (Test-ShortcutMatches -ShortcutPath $startupPath -TargetPath $DockerDesktopExe -Arguments '--minimized' -WorkingDirectory $workingDirectory -IconLocation $iconLocation)) {
+        throw ("Docker Desktop startup shortcut validation failed: {0}" -f $startupPath)
+    }
+
+    Write-Host "docker-step-ok: startup-shortcut"
+}
+
+function Resolve-DockerServices {
+    $services = @(Get-Service -Name 'com.docker*' -ErrorAction SilentlyContinue | Sort-Object Name)
+    if (@($services).Count -eq 0) {
+        $primaryService = Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
+        if ($null -ne $primaryService) {
+            $services = @($primaryService)
+        }
+    }
+
+    return @($services)
+}
+
+function Ensure-DockerServicesStarted {
+    $services = @(Resolve-DockerServices)
+    if (@($services).Count -eq 0) {
+        throw ("{0} was not found after installation." -f [string]$taskConfig.DockerServiceName)
+    }
+
+    foreach ($service in @($services)) {
+        try {
+            Set-Service -Name ([string]$service.Name) -StartupType Automatic -ErrorAction Stop
+        }
+        catch {
+            Write-Warning ("docker-step-warning: failed to set service startup type for {0}: {1}" -f [string]$service.Name, $_.Exception.Message)
+        }
+
+        try {
+            if ([string]$service.Status -ne 'Running') {
+                Start-Service -Name ([string]$service.Name) -ErrorAction Stop
+            }
+        }
+        catch {
+            Write-Warning ("docker-step-warning: failed to start service {0}: {1}" -f [string]$service.Name, $_.Exception.Message)
+        }
+    }
+
+    Start-Sleep -Seconds 2
+    $resolvedServices = @(Resolve-DockerServices)
+    $runningServices = @($resolvedServices | Where-Object { [string]$_.Status -eq 'Running' })
+    Write-Host ("docker-step-ok: service-config => total={0}; running={1}" -f @($resolvedServices).Count, @($runningServices).Count)
+}
+
+function Test-DockerDesktopProcessRunning {
+    param([string]$DockerDesktopExe = '')
+
+    $nameMatches = @(Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue)
+    if (@($nameMatches).Count -gt 0) {
+        return $true
+    }
+
+    $candidatePath = [string]$DockerDesktopExe
+    if ([string]::IsNullOrWhiteSpace([string]$candidatePath)) {
+        return $false
+    }
+
+    $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        [string]::Equals([string]$_.ExecutablePath, $candidatePath, [System.StringComparison]::OrdinalIgnoreCase)
+    })
+    return (@($processes).Count -gt 0)
+}
+
 function Register-DockerDesktopDeferredStart {
     param([string]$DockerDesktopExe)
 
@@ -240,6 +368,11 @@ function Register-DockerDesktopDeferredStart {
 
     $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -FilePath ''{0}'' -ArgumentList ''--minimized'' -WindowStyle Hidden"' -f $DockerDesktopExe)
     Set-ItemProperty -Path $runOncePath -Name "AzVmStartDockerDesktop" -Value $commandValue -Type String
+
+    $actualValue = [string](Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction Stop).AzVmStartDockerDesktop
+    if (-not [string]::Equals($actualValue, $commandValue, [System.StringComparison]::Ordinal)) {
+        throw "Docker Desktop deferred-start RunOnce validation failed."
+    }
 }
 
 Refresh-SessionPath
@@ -289,25 +422,10 @@ if ($machinePathChanged) {
     Refresh-SessionPath
 }
 
-if (Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue) {
-    Set-Service -Name ([string]$taskConfig.DockerServiceName) -StartupType Automatic
-    Start-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
-    Write-Host "docker-step-ok: service-config"
-}
-else {
-    throw ("{0} was not found after installation." -f [string]$taskConfig.DockerServiceName)
-}
+Ensure-DockerServicesStarted
 
 if (Test-Path -LiteralPath $dockerDesktopExe) {
-    $startupPath = [string]$taskConfig.DockerStartupShortcutPath
-    $shell = New-Object -ComObject WScript.Shell
-    $shortcut = $shell.CreateShortcut($startupPath)
-    $shortcut.TargetPath = $dockerDesktopExe
-    $shortcut.Arguments = "--minimized"
-    $shortcut.WorkingDirectory = (Split-Path -Path $dockerDesktopExe -Parent)
-    $shortcut.IconLocation = "$dockerDesktopExe,0"
-    $shortcut.Save()
-    Write-Host "docker-step-ok: startup-shortcut"
+    Ensure-DockerStartupShortcut -DockerDesktopExe $dockerDesktopExe
 }
 else {
     throw "Docker Desktop executable not found at expected path."
@@ -333,6 +451,32 @@ $dockerDesktopLaunchState = Start-DockerDesktopProcess -DockerDesktopExe $docker
 if ($null -ne $dockerDesktopLaunchState -and [bool]$dockerDesktopLaunchState.StartedNow) {
     Register-DockerDesktopDeferredStart -DockerDesktopExe $dockerDesktopExe
     Write-Host "docker-step-deferred: interactive-sign-in-registered"
+}
+
+Ensure-DockerServicesStarted
+
+Start-Sleep -Seconds 5
+if (Test-DockerDesktopProcessRunning -DockerDesktopExe $dockerDesktopExe) {
+    Write-Host "docker-step-ok: docker-desktop-process"
+}
+else {
+    Write-Warning "docker-step-warning: Docker Desktop process is not visible yet after launch."
+}
+
+$dockerDesktopStatusResult = Invoke-ProcessWithTimeout -Label "docker desktop status" -FilePath "docker" -Arguments @("desktop", "status") -TimeoutSeconds ([int]$taskConfig.DockerStatusTimeoutSeconds)
+if ($dockerDesktopStatusResult.Success -and $dockerDesktopStatusResult.ExitCode -eq 0) {
+    Write-Host "docker-step-ok: docker-desktop-status"
+}
+else {
+    Write-Warning ("docker-step-warning: docker desktop status is not healthy yet (exit={0}). Interactive sign-in or first-run initialization may still be required." -f [int]$dockerDesktopStatusResult.ExitCode)
+}
+
+$dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds ([int]$taskConfig.DockerInfoTimeoutSeconds)
+if ($dockerInfoResult.Success -and $dockerInfoResult.ExitCode -eq 0) {
+    Write-Host "docker-step-ok: docker-engine-ready"
+}
+else {
+    Write-Warning ("docker-step-warning: docker info is not healthy yet (exit={0}). The Docker client is installed, but engine readiness still depends on interactive Desktop initialization." -f [int]$dockerInfoResult.ExitCode)
 }
 
 $global:LASTEXITCODE = 0

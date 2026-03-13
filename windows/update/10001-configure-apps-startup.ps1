@@ -13,7 +13,7 @@ $machineRun32ApprovalPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Exp
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
+        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -24,6 +24,22 @@ function Refresh-SessionPath {
     else {
         $env:Path = "$machinePath;$userPath"
     }
+}
+
+function Invoke-RegQuiet {
+    param(
+        [string]$Verb,
+        [string[]]$Arguments
+    )
+
+    $segments = @('reg', [string]$Verb)
+    foreach ($argument in @($Arguments)) {
+        $segments += ('"{0}"' -f [string]$argument)
+    }
+
+    $command = ((@($segments) -join ' ') + ' >nul 2>&1')
+    cmd.exe /d /c $command | Out-Null
+    return [int]$LASTEXITCODE
 }
 
 function Resolve-CommandPath {
@@ -156,6 +172,124 @@ function Resolve-AppPackageExecutablePath {
     }
 
     return ""
+}
+
+function Resolve-StartAppId {
+    param([string]$NameFragment)
+
+    if ([string]::IsNullOrWhiteSpace([string]$NameFragment)) {
+        return ""
+    }
+
+    if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        return ""
+    }
+
+    $normalized = $NameFragment.Trim().ToLowerInvariant()
+    $startApps = @(Get-StartApps | Where-Object {
+        $nameText = [string]$_.Name
+        if ([string]::IsNullOrWhiteSpace([string]$nameText)) {
+            return $false
+        }
+
+        return $nameText.ToLowerInvariant().Contains($normalized)
+    })
+
+    foreach ($entry in @($startApps)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
+            return [string]$entry.AppID
+        }
+    }
+
+    return ""
+}
+
+function Resolve-AppxAppIdFromPackage {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    if (@($allPackages).Count -eq 0) {
+        return ""
+    }
+
+    $normalizedNameFragment = [string]$NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+        $normalizedNameFragment = $normalizedNameFragment.Trim().ToLowerInvariant()
+    }
+
+    $normalizedHints = @(
+        @($PackageNameHints) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
+
+    $matchingPackages = @(
+        $allPackages | Where-Object {
+            $pkgName = [string]$_.Name
+            $pkgFamily = [string]$_.PackageFamilyName
+            $installLocation = [string]$_.InstallLocation
+            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) { return $false }
+            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) { return $false }
+
+            $pkgNameLower = $pkgName.ToLowerInvariant()
+            $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+                if ($pkgNameLower.Contains($normalizedNameFragment) -or $pkgFamilyLower.Contains($normalizedNameFragment)) {
+                    return $true
+                }
+            }
+
+            foreach ($hint in @($normalizedHints)) {
+                if ($pkgNameLower.Contains($hint) -or $pkgFamilyLower.Contains($hint)) {
+                    return $true
+                }
+            }
+
+            return $false
+        }
+    )
+
+    foreach ($package in @($matchingPackages)) {
+        $manifestPath = Join-Path ([string]$package.InstallLocation) 'AppxManifest.xml'
+        if (-not (Test-Path -LiteralPath $manifestPath)) {
+            continue
+        }
+
+        try {
+            [xml]$manifestXml = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop
+            $appNodes = @($manifestXml.SelectNodes("//*[local-name()='Application']"))
+            foreach ($appNode in @($appNodes)) {
+                $applicationId = [string]$appNode.GetAttribute('Id')
+                if ([string]::IsNullOrWhiteSpace([string]$applicationId)) {
+                    continue
+                }
+
+                return ("{0}!{1}" -f [string]$package.PackageFamilyName, $applicationId)
+            }
+        }
+        catch {
+        }
+    }
+
+    return ""
+}
+
+function Resolve-StoreAppId {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    $startAppsAppId = Resolve-StartAppId -NameFragment $NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$startAppsAppId)) {
+        return $startAppsAppId
+    }
+
+    return (Resolve-AppxAppIdFromPackage -NameFragment $NameFragment -PackageNameHints $PackageNameHints)
 }
 
 function Convert-Base64JsonToObjectArray {
@@ -429,26 +563,45 @@ function New-StartupShortcut {
     $shortcut.TargetPath = $TargetPath
     $shortcut.Arguments = $Arguments
 
+    $effectiveWorkingDirectory = ""
     if ([string]::IsNullOrWhiteSpace([string]$WorkingDirectory)) {
         $parentPath = Split-Path -Path $TargetPath -Parent
         if (-not [string]::IsNullOrWhiteSpace([string]$parentPath)) {
-            $shortcut.WorkingDirectory = $parentPath
+            $effectiveWorkingDirectory = [string]$parentPath
+            $shortcut.WorkingDirectory = $effectiveWorkingDirectory
         }
     }
     else {
-        $shortcut.WorkingDirectory = $WorkingDirectory
+        $effectiveWorkingDirectory = [string]$WorkingDirectory
+        $shortcut.WorkingDirectory = $effectiveWorkingDirectory
     }
 
+    $effectiveIconLocation = ""
     if ([string]::IsNullOrWhiteSpace([string]$IconLocation)) {
-        $shortcut.IconLocation = "$TargetPath,0"
+        $effectiveIconLocation = "$TargetPath,0"
+        $shortcut.IconLocation = $effectiveIconLocation
     }
     else {
-        $shortcut.IconLocation = $IconLocation
+        $effectiveIconLocation = [string]$IconLocation
+        $shortcut.IconLocation = $effectiveIconLocation
     }
 
     $shortcut.Save()
     Move-Item -LiteralPath $tempShortcutPath -Destination $shortcutPath -Force
     Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName ($Name + '.lnk')
+
+    if (-not (Test-Path -LiteralPath $shortcutPath)) {
+        throw ("Startup shortcut was not created: {0}" -f $shortcutPath)
+    }
+
+    if (-not (Test-ShortcutMatches -ShortcutPath $shortcutPath -TargetPath $TargetPath -Arguments $Arguments -WorkingDirectory $effectiveWorkingDirectory -IconLocation $effectiveIconLocation)) {
+        throw ("Startup shortcut validation failed for '{0}'." -f $Name)
+    }
+
+    $approvalCode = Get-StartupApprovedStateCode -Path $ApprovalPath -ValueName ($Name + '.lnk')
+    if ($approvalCode -ne 2) {
+        throw ("StartupApproved validation failed for shortcut '{0}'." -f $Name)
+    }
 }
 
 function Ensure-StartupShortcut {
@@ -544,6 +697,85 @@ function Get-CompatRunEntryContract {
         TargetPath = [string]$cmdExe
         Arguments = [string]$wrapperArguments
     }
+}
+
+function Resolve-EmbeddedStartupTargetPath {
+    param(
+        [string]$WrapperTargetPath,
+        [string]$Arguments = ''
+    )
+
+    $wrapperLeaf = [System.IO.Path]::GetFileName([string]$WrapperTargetPath)
+    if ($wrapperLeaf -notin @('cmd.exe', 'powershell.exe', 'pwsh.exe')) {
+        return [string]$WrapperTargetPath
+    }
+
+    $expandedArguments = [Environment]::ExpandEnvironmentVariables([string]$Arguments)
+    if ([string]::IsNullOrWhiteSpace([string]$expandedArguments)) {
+        return ''
+    }
+
+    foreach ($pattern in @(
+        '(?i)if\s+exist\s+"([^"]+)"',
+        '(?i)start\s+""\s+"([^"]+)"',
+        '(?i)start\s+"?([^"\s]+\.(?:exe|cmd|bat))',
+        '(?i)&\s*''([^'']+\.(?:exe|cmd|bat))''',
+        '(?i)&\s*"([^"]+\.(?:exe|cmd|bat))"',
+        '(?i)(?:^|[&\s])("?[%A-Za-z0-9_:\\ .()-]+\.(?:exe|cmd|bat))'
+    )) {
+        $match = [regex]::Match($expandedArguments, $pattern)
+        if (-not $match.Success) {
+            continue
+        }
+
+        $candidate = [string]$match.Groups[1].Value.Trim('"', '''', ' ')
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        $expandedCandidate = [Environment]::ExpandEnvironmentVariables($candidate)
+        if (Test-Path -LiteralPath $expandedCandidate) {
+            return [string]$expandedCandidate
+        }
+
+        $commandName = [System.IO.Path]::GetFileName($expandedCandidate)
+        if (-not [string]::IsNullOrWhiteSpace([string]$commandName)) {
+            $resolved = Resolve-CommandPath -CommandName $commandName
+            if (-not [string]::IsNullOrWhiteSpace([string]$resolved)) {
+                return [string]$resolved
+            }
+        }
+    }
+
+    return ''
+}
+
+function Test-StartupSpecEligible {
+    param([pscustomobject]$Spec)
+
+    if ($null -eq $Spec) {
+        return $false
+    }
+
+    $targetPath = [string]$Spec.TargetPath
+    if ([string]::IsNullOrWhiteSpace([string]$targetPath) -or -not (Test-Path -LiteralPath $targetPath)) {
+        return $false
+    }
+
+    $targetLeaf = [System.IO.Path]::GetFileName($targetPath)
+    if (($targetLeaf -eq 'explorer.exe') -and [string]::IsNullOrWhiteSpace([string]$Spec.Arguments)) {
+        return $false
+    }
+
+    $wrapperLeaf = $targetLeaf
+    if ($wrapperLeaf -in @('cmd.exe', 'powershell.exe', 'pwsh.exe')) {
+        $embeddedTargetPath = Resolve-EmbeddedStartupTargetPath -WrapperTargetPath $targetPath -Arguments ([string]$Spec.Arguments)
+        if ([string]::IsNullOrWhiteSpace([string]$embeddedTargetPath)) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Ensure-RunEntry {
@@ -810,8 +1042,8 @@ function Ensure-AppStartupLocation {
     )
 
     $targetPath = [string]$Spec.TargetPath
-    if ([string]::IsNullOrWhiteSpace([string]$targetPath) -or -not (Test-Path -LiteralPath $targetPath)) {
-        Write-Warning ("autostart-skip: {0} => guest target path was not found." -f [string]$Spec.Name)
+    if (-not (Test-StartupSpecEligible -Spec ([pscustomobject]$Spec))) {
+        Write-Warning ("autostart-skip: {0} => target or embedded startup command could not be resolved." -f [string]$Spec.Name)
         return
     }
 
@@ -839,6 +1071,7 @@ function Ensure-AppStartupLocation {
 Refresh-SessionPath
 
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
+$explorerExe = Resolve-CommandPath -CommandName "explorer.exe" -FallbackCandidates @("C:\Windows\explorer.exe")
 $dockerDesktopExe = Resolve-CommandPath -CommandName "Docker Desktop.exe" -FallbackCandidates @("C:\Program Files\Docker\Docker\Docker Desktop.exe")
 $iTunesHelperExe = Resolve-CommandPath -CommandName "iTunesHelper.exe" -FallbackCandidates @(
     'C:\Program Files\iTunes\iTunesHelper.exe',
@@ -869,9 +1102,7 @@ $anyDeskExe = Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates
     'C:\Program Files (x86)\AnyDesk\AnyDesk.exe'
 )
 $codexAppExe = Resolve-AppPackageExecutablePath -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0') -ExecutableName 'Codex.exe'
-if ([string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
-    $codexAppExe = 'C:\Program Files\WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe'
-}
+$codexAppId = Resolve-StoreAppId -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0')
 
 $hostStartupProfile = @(Convert-Base64JsonToObjectArray -Base64Text $hostStartupProfileJsonBase64)
 $hostStartupProfileByKey = @{}
@@ -970,10 +1201,10 @@ $supportedSpecs = [ordered]@{
     'codex-app' = [pscustomobject]@{
         Name = 'Codex App'
         OwnedNames = @('Codex App')
-        TargetPath = $codexAppExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$codexAppExe)) { '' } else { Split-Path -Path $codexAppExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$codexAppExe)) { '' } else { "$codexAppExe,0" }
+        TargetPath = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { $codexAppExe } else { $explorerExe }
+        Arguments = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { '' } elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) { ("shell:AppsFolder\" + $codexAppId) } else { '' }
+        WorkingDirectory = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { Split-Path -Path $codexAppExe -Parent } else { 'C:\Windows' }
+        IconLocation = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { "$codexAppExe,0" } else { "$explorerExe,0" }
     }
 }
 

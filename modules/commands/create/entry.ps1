@@ -4,10 +4,11 @@ function Invoke-AzVmCreateCommand {
     param(
         [hashtable]$Options,
         [switch]$WindowsFlag,
-        [switch]$LinuxFlag
+        [switch]$LinuxFlag,
+        [switch]$AutoMode
     )
 
-    $runtime = New-AzVmCreateCommandRuntime -Options $Options -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $runtime = New-AzVmCreateCommandRuntime -Options $Options -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -AutoMode:$AutoMode
     $script:UpdateMode = $false
     $script:RenewMode = [bool]$runtime.RenewMode
     $script:ExecutionMode = if ($script:RenewMode) { 'destructive rebuild' } else { 'default' }

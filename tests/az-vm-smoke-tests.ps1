@@ -1377,6 +1377,8 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
     try {
         $nextGroupIndex = Get-AzVmNextManagedResourceGroupIndex -NamePrefix ''
         Assert-True -Condition ($nextGroupIndex -eq 5) -Message "Managed resource group index must be global across all managed resource groups."
+        $nextGroupName = Resolve-AzVmResourceGroupNameFromTemplate -Template 'rg-{VM_NAME}-{REGION_CODE}-g{N}' -VmName 'examplevm' -RegionCode 'sec1' -UseNextIndex
+        Assert-True -Condition ([string]$nextGroupName -eq 'rg-examplevm-sec1-g5') -Message "Managed resource group name generation must use the next global gX value."
 
         $allocator = New-AzVmManagedResourceIndexAllocator
         $vnetName = Resolve-AzVmNameFromTemplate -Template 'net-{VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'net' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'VNET_NAME'
@@ -1384,6 +1386,8 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
 
         Assert-True -Condition ([string]$vnetName -eq 'net-examplevm-sec1-n11') -Message "First generated managed resource id must continue after the global max nX value."
         Assert-True -Condition ([string]$subnetName -eq 'subnet-examplevm-sec1-n12') -Message "Managed resource ids must stay sequential and unique within the same provisioning plan."
+        $reRegisterIndex = Register-AzVmManagedResourceNameIndex -Allocator $allocator -Name 'net-examplevm-sec1-n11' -LogicalName 'VNET_NAME'
+        Assert-True -Condition ($reRegisterIndex -eq 11) -Message "Managed resource name registration must be idempotent for the same logical resource."
 
         $threw = $false
         try {
@@ -1407,6 +1411,26 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
             }
         }
     }
+}
+
+Invoke-Test -Name "Create step1 ignores persisted managed resource names and uses templates" -Action {
+    $configMap = @{
+        VNET_NAME = 'net-examplevm-sec1-n1'
+        VNET_NAME_TEMPLATE = 'net-{VM_NAME}-{REGION_CODE}-n{N}'
+        NIC_NAME = 'nic-examplevm-sec1-n1'
+        NIC_NAME_TEMPLATE = 'nic-{VM_NAME}-{REGION_CODE}-n{N}'
+    }
+
+    $createVnetSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'create' -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{VM_NAME}-{REGION_CODE}-n{N}'
+    $createNicSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'create' -NameKey 'NIC_NAME' -TemplateKey 'NIC_NAME_TEMPLATE' -TemplateDefaultValue 'nic-{VM_NAME}-{REGION_CODE}-n{N}'
+    $updateVnetSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'update' -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{VM_NAME}-{REGION_CODE}-n{N}'
+
+    Assert-True -Condition (-not [bool]$createVnetSeed.Explicit) -Message "Create step1 must not treat persisted VNET_NAME as an explicit managed resource target."
+    Assert-True -Condition ([string]$createVnetSeed.Value -eq 'net-{VM_NAME}-{REGION_CODE}-n{N}') -Message "Create step1 must fall back to the VNET template when a persisted managed name exists."
+    Assert-True -Condition (-not [bool]$createNicSeed.Explicit) -Message "Create step1 must not treat persisted NIC_NAME as an explicit managed resource target."
+    Assert-True -Condition ([string]$createNicSeed.Value -eq 'nic-{VM_NAME}-{REGION_CODE}-n{N}') -Message "Create step1 must fall back to the NIC template when a persisted managed name exists."
+    Assert-True -Condition ([bool]$updateVnetSeed.Explicit) -Message "Update step1 must continue treating persisted VNET_NAME as the existing managed target."
+    Assert-True -Condition ([string]$updateVnetSeed.Value -eq 'net-examplevm-sec1-n1') -Message "Update step1 must preserve the persisted managed resource name for the existing target."
 }
 
 Invoke-Test -Name "VM create step redeploys existing VMs in update mode" -Action {
@@ -3635,6 +3659,9 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Network*') -Message "Copy user settings task must exclude Ollama WebView network state from roaming copies."
     Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Safe Browsing Network*') -Message "Copy user settings task must exclude Ollama WebView safe-browsing cookie state from roaming copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*ollama app.exe\EBWebView\Default\Cache*') -Message "Copy user settings task must exclude Ollama WebView cache directories from roaming copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Remove-StaleExcludedTargetPaths*') -Message "Copy user settings task must prune stale excluded target content on reruns."
+    Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune:*') -Message "Copy user settings task must log stale excluded target pruning on reruns."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
@@ -4058,6 +4085,7 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
         'DefaultDomainName',
         'DefaultPasswordPresent',
         'autologon-state =>',
+        'Autologon note: DefaultPassword is not present in Winlogon.',
         'autologon-manager-user-completed',
         'autologon.exe was not found',
         'Ensure 108-install-sysinternals-suite completed successfully.'
@@ -4068,7 +4096,9 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
     foreach ($fragment in @(
         'AUTOLOGON STATUS:',
         'manager_autologon_configured',
-        'DefaultDomainName'
+        'DefaultDomainName',
+        'CredentialStorageMode',
+        'sysinternals-autologon-or-external-store'
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include autologon fragment '{0}'." -f [string]$fragment)
     }

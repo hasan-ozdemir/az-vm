@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.298] - 2026-03-13
+
+### Changed
+- Split the interactive lifecycle contract more strictly: `create` now stays fresh-only with new managed target generation, while `update` stays existing-target-only with managed-target validation and review-first execution through the shared main workflow.
+- Hardened managed naming so resource groups keep a globally increasing `gX` suffix and every generated managed resource now consumes a globally unique `nX` suffix across all resource types without reusing ids.
+- Moved `108-install-sysinternals-suite` and `130-autologon-manager-user` into the Windows `vm-init` catalog and kept the Windows main flow restart barrier between `vm-init` and `vm-update`.
+- Reworked the Windows startup, public-shortcut, copy-user, Docker Desktop, Ollama, and snapshot-health tasks around live-VM findings so orphan managed shortcuts are skipped, startup artifacts are verified after writing, excluded profile-cache targets are pruned safely on reruns, and the health snapshot reports richer target-health, startup, Docker, Ollama, WSL, and autologon state.
+
+### Fixed
+- Fixed fresh create naming so configure-time managed resource-group generation now uses the real next global `gX` suffix instead of falling back to `g1` when the template still contains `{N}`.
+- Fixed fresh create resource naming so persisted `.env` managed resource names no longer leak into new-create planning unless they were explicitly overridden for the current invocation.
+- Fixed the managed `nX` allocator registration path so a logical resource can re-register its own reserved id idempotently without falsely colliding with itself.
+- Fixed `10005-copy-settings-user.ps1` rerun safety by pruning stale excluded target files and directories before and after the robocopy branch, preventing stale locked-cache content from surviving into later verification steps.
+- Fixed the autologon health contract so Sysinternals Autologon and visible Winlogon password storage are both reported accurately instead of producing false negative health output.
+
+### Tests
+- Revalidated the non-live gate with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
+- Revalidated the hardened live Windows path with isolated task/task-group runs on `rg-examplevm-sec1-g1/examplevm`, including `exec --init-task=108`, `exec --init-task=130`, `exec --update-task=114`, `exec --update-task=116`, `exec --update-task=10001`, `exec --update-task=10002`, `exec --update-task=10005`, and `exec --update-task=10099`, plus non-mutating `create --step=configure` and `update --step=configure` contract probes.
+
 ## [2026.3.13.297] - 2026-03-13
 
 ### Changed

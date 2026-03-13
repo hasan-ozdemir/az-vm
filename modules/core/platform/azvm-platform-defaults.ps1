@@ -119,7 +119,8 @@ function Resolve-AzVmPlatformSelection {
         [switch]$AutoMode,
         [switch]$WindowsFlag,
         [switch]$LinuxFlag,
-        [hashtable]$ConfigOverrides
+        [hashtable]$ConfigOverrides,
+        [switch]$DeferEnvWrite
     )
 
     if ($WindowsFlag -and $LinuxFlag) {
@@ -134,14 +135,31 @@ function Resolve-AzVmPlatformSelection {
         $selected = 'linux'
     }
     else {
-        $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_OS_TYPE' -DefaultValue '')
-        if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
-            $candidate = $fromEnv.Trim().ToLowerInvariant()
+        $fromOverride = ''
+        if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('VM_OS_TYPE')) {
+            $fromOverride = [string]$ConfigOverrides['VM_OS_TYPE']
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace([string]$fromOverride)) {
+            $candidate = $fromOverride.Trim().ToLowerInvariant()
             if ($candidate -eq 'windows' -or $candidate -eq 'linux') {
                 $selected = $candidate
             }
             else {
-                Write-Warning ("Invalid VM_OS_TYPE '{0}' in .env. Expected windows|linux." -f $fromEnv)
+                Write-Warning ("Invalid VM_OS_TYPE override '{0}'. Expected windows|linux." -f $fromOverride)
+            }
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$selected)) {
+            $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_OS_TYPE' -DefaultValue '')
+            if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
+                $candidate = $fromEnv.Trim().ToLowerInvariant()
+                if ($candidate -eq 'windows' -or $candidate -eq 'linux') {
+                    $selected = $candidate
+                }
+                else {
+                    Write-Warning ("Invalid VM_OS_TYPE '{0}' in .env. Expected windows|linux." -f $fromEnv)
+                }
             }
         }
     }
@@ -174,7 +192,7 @@ function Resolve-AzVmPlatformSelection {
         $ConfigOverrides['VM_OS_TYPE'] = $selected
     }
 
-    if (-not $AutoMode) {
+    if (-not $AutoMode -and -not $DeferEnvWrite) {
         Set-DotEnvValue -Path $EnvFilePath -Key 'VM_OS_TYPE' -Value $selected
     }
 

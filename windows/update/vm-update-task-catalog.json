@@ -68,13 +68,6 @@
       "timeout": 13
     },
     {
-      "name": "108-install-sysinternals-suite",
-      "taskType": "normal",
-      "priority": 108,
-      "enabled": true,
-      "timeout": 82
-    },
-    {
       "name": "109-install-ffmpeg-system",
       "taskType": "normal",
       "priority": 109,
@@ -220,13 +213,6 @@
       "priority": 129,
       "enabled": true,
       "timeout": 23
-    },
-    {
-      "name": "130-autologon-manager-user",
-      "taskType": "normal",
-      "priority": 130,
-      "enabled": true,
-      "timeout": 20
     },
     {
       "name": "131-install-icloud-system",

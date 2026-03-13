@@ -45,6 +45,20 @@
       "priority": 6,
       "enabled": true,
       "timeout": 180
+    },
+    {
+      "name": "108-install-sysinternals-suite",
+      "taskType": "normal",
+      "priority": 108,
+      "enabled": true,
+      "timeout": 82
+    },
+    {
+      "name": "130-autologon-manager-user",
+      "taskType": "normal",
+      "priority": 130,
+      "enabled": true,
+      "timeout": 20
     }
   ]
 }

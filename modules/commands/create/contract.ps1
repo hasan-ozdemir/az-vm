@@ -11,6 +11,8 @@ function Get-AzVmCreateOptionSpecifications {
         (Get-AzVmCreateStepFromOptionSpecification),
         (Get-AzVmCreateStepOptionSpecification),
         (Get-AzVmCreateRenewOptionSpecification),
-        (Get-AzVmCreateVmNameOptionSpecification)
+        (Get-AzVmCreateVmNameOptionSpecification),
+        (Get-AzVmCreateVmRegionOptionSpecification),
+        (Get-AzVmCreateVmSizeOptionSpecification)
     )
 }

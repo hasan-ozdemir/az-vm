@@ -12,12 +12,7 @@ function Invoke-AzVmUpdateVmRedeploy {
         Write-Host ("Update mode: VM redeploy for '{0}' was approved automatically." -f $VmName)
     }
     else {
-        $shouldRedeploy = Confirm-YesNo -PromptText ("Continue with Azure VM redeploy for '{0}'?" -f $VmName) -DefaultYes $false
-    }
-
-    if (-not $shouldRedeploy) {
-        Write-Host ("Update mode: VM redeploy for '{0}' was skipped by user choice." -f $VmName) -ForegroundColor Yellow
-        return
+        Write-Host ("Interactive review already approved Azure VM redeploy for '{0}'." -f $VmName) -ForegroundColor Yellow
     }
 
     Write-Host ("Update mode: redeploying existing VM '{0}' in resource group '{1}'..." -f $VmName, $ResourceGroup)
@@ -101,7 +96,8 @@ function Invoke-AzVmVmCreateStep {
                     Write-Host "Auto mode: VM deletion was confirmed automatically."
                 }
                 else {
-                    $shouldDeleteVm = Confirm-YesNo -PromptText "Are you sure you want to delete VM '$vmName'?" -DefaultYes $false
+                    $shouldDeleteVm = $true
+                    Write-Host "Interactive review already approved the destructive rebuild delete path for this VM." -ForegroundColor Yellow
                 }
             }
         }

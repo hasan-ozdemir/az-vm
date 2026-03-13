@@ -626,15 +626,16 @@ function Invoke-AzVmChangeCommand {
         $targetNsgRuleTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}")
         $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{VM_NAME}-{REGION_CODE}-n{N}")
         $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetResourceIndexAllocator = New-AzVmManagedResourceIndexAllocator
 
         $targetVmName = [string]$context.VmName
-        $targetDiskName = Resolve-AzVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetVnetName = Resolve-AzVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetSubnetName = Resolve-AzVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNsgName = Resolve-AzVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNsgRuleName = Resolve-AzVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetIpName = Resolve-AzVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
-        $targetNicName = Resolve-AzVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex
+        $targetDiskName = Resolve-AzVmNameFromTemplate -Template $targetDiskTemplate -ResourceType 'disk' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-disk'
+        $targetVnetName = Resolve-AzVmNameFromTemplate -Template $targetVnetTemplate -ResourceType 'net' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-vnet'
+        $targetSubnetName = Resolve-AzVmNameFromTemplate -Template $targetSubnetTemplate -ResourceType 'subnet' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-subnet'
+        $targetNsgName = Resolve-AzVmNameFromTemplate -Template $targetNsgTemplate -ResourceType 'nsg' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-nsg'
+        $targetNsgRuleName = Resolve-AzVmNameFromTemplate -Template $targetNsgRuleTemplate -ResourceType 'nsgrule' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-nsg-rule'
+        $targetIpName = Resolve-AzVmNameFromTemplate -Template $targetIpTemplate -ResourceType 'ip' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-ip'
+        $targetNicName = Resolve-AzVmNameFromTemplate -Template $targetNicTemplate -ResourceType 'nic' -VmName ([string]$context.VmName) -RegionCode $targetRegionCode -ResourceGroup $targetResourceGroup -UseNextIndex -IndexAllocator $targetResourceIndexAllocator -LogicalName 'move-target-nic'
 
         Write-Host ("Target naming resolved: rg={0}, vm={1}, disk={2}" -f $targetResourceGroup, $targetVmName, $targetDiskName)
 

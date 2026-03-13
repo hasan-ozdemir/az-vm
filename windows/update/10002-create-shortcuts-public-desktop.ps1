@@ -10,9 +10,9 @@ $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
 $beMyEyesStoreProductId = "9MSW46LTDWGF"
 $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
-$codexAppFallbackPath = Join-Path $env:ProgramFiles "WindowsApps\OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe"
-$whatsAppFallbackPath = "C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe"
-$iCloudFallbackPath = "C:\Program Files\WindowsApps\AppleInc.iCloud_15.7.56.0_x64__nzyj5cx40ttqa\iCloud\iCloudHome.exe"
+$codexAppFallbackPath = ""
+$whatsAppFallbackPath = ""
+$iCloudFallbackPath = ""
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
@@ -171,7 +171,7 @@ function Get-ChromeArgsPrefix {
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
+        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
     }
 
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -475,8 +475,9 @@ function Resolve-ExistingOrFallbackPath {
             continue
         }
 
-        if ((Test-Path -LiteralPath $candidate) -or [string]::Equals([string]$candidate, [string]$FallbackPath, [System.StringComparison]::OrdinalIgnoreCase)) {
-            return [string]$candidate
+        $expandedCandidate = [Environment]::ExpandEnvironmentVariables([string]$candidate)
+        if (Test-Path -LiteralPath $expandedCandidate) {
+            return [string]$expandedCandidate
         }
     }
 
@@ -492,15 +493,14 @@ function Resolve-ICloudExecutablePath {
 
     foreach ($candidate in @(
         "C:\Program Files\iCloud\iCloudHome.exe",
-        "C:\Program Files (x86)\iCloud\iCloudHome.exe",
-        $iCloudFallbackPath
+        "C:\Program Files (x86)\iCloud\iCloudHome.exe"
     )) {
         if (Test-Path -LiteralPath $candidate) {
             return [string]$candidate
         }
     }
 
-    return [string]$iCloudFallbackPath
+    return ""
 }
 
 function Ensure-Directory {
@@ -762,6 +762,94 @@ function New-ShortcutFromSpec {
     Write-Host ("shortcut-ok: {0}" -f $name)
 }
 
+function Resolve-EmbeddedShortcutCommandPath {
+    param([string]$Arguments)
+
+    $expandedArguments = [Environment]::ExpandEnvironmentVariables([string]$Arguments)
+    if ([string]::IsNullOrWhiteSpace([string]$expandedArguments)) {
+        return ""
+    }
+
+    foreach ($pattern in @(
+        '(?i)start\s+""\s+"([^"]+)"',
+        '(?i)start\s+"?([^"\s]+\.(?:exe|cmd|bat))',
+        '(?i)&\s*''([^'']+\.(?:exe|cmd|bat))''',
+        '(?i)&\s*"([^"]+\.(?:exe|cmd|bat))"',
+        '(?i)(?:^|[&\s])("?[%A-Za-z0-9_:\\ .()-]+\.(?:exe|cmd|bat))',
+        '(?i)(?:^|[&\s])(docker|azd|az|gh|wsl|python|node|pwsh|powershell|rclone|ffmpeg|git-bash|copilot|gemini|codex)(?:\s|$)'
+    )) {
+        $match = [regex]::Match($expandedArguments, $pattern)
+        if (-not $match.Success) {
+            continue
+        }
+
+        $candidate = [string]$match.Groups[1].Value.Trim('"', '''', ' ')
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        $expandedCandidate = [Environment]::ExpandEnvironmentVariables($candidate)
+        if (Test-Path -LiteralPath $expandedCandidate) {
+            return [string]$expandedCandidate
+        }
+
+        $commandName = [System.IO.Path]::GetFileName($expandedCandidate)
+        if (-not [string]::IsNullOrWhiteSpace([string]$commandName)) {
+            $resolved = Resolve-CommandPath -CommandName $commandName
+            if (-not [string]::IsNullOrWhiteSpace([string]$resolved)) {
+                return [string]$resolved
+            }
+        }
+    }
+
+    return ""
+}
+
+function Test-ShortcutSpecEligible {
+    param([pscustomobject]$Spec)
+
+    if ($null -eq $Spec) {
+        return $false
+    }
+
+    $targetPath = [string]$Spec.TargetPath
+    if ([string]::IsNullOrWhiteSpace([string]$targetPath)) {
+        return $false
+    }
+
+    $validationKind = [string]$Spec.ValidationKind
+    $targetExists = Test-Path -LiteralPath $targetPath
+    if (-not $targetExists) {
+        return $false
+    }
+
+    if (($validationKind -eq 'store-appid') -and [string]::IsNullOrWhiteSpace([string]$Spec.Arguments)) {
+        return $false
+    }
+
+    $targetLeaf = [System.IO.Path]::GetFileName([string]$targetPath)
+    if (($targetLeaf -in @('cmd.exe','powershell.exe','pwsh.exe')) -and ($validationKind -in @('console','app'))) {
+        $embeddedCommandPath = Resolve-EmbeddedShortcutCommandPath -Arguments ([string]$Spec.Arguments)
+        if ([string]::IsNullOrWhiteSpace([string]$embeddedCommandPath)) {
+            $normalizedArguments = ([string]$Spec.Arguments).Trim()
+            if (
+                ($validationKind -eq 'console') -and
+                [string]::Equals([string]$targetLeaf, 'cmd.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
+                (
+                    ($normalizedArguments -match '^(?i)/(k|c)\s+cd(?:\s|$)') -or
+                    ($normalizedArguments -match '^(?i)/(k|c)\s*$')
+                )
+            ) {
+                return $true
+            }
+
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Add-Spec {
     param(
         [System.Collections.Generic.List[object]]$List,
@@ -769,6 +857,11 @@ function Add-Spec {
     )
 
     if ($null -eq $List -or $null -eq $Spec) {
+        return
+    }
+
+    if (-not (Test-ShortcutSpecEligible -Spec $Spec)) {
+        Write-Warning ("public-shortcut-skip: {0} => target or embedded command could not be resolved." -f [string]$Spec.Name)
         return
     }
 
@@ -954,7 +1047,8 @@ function Find-ManagedShortcutSpecByDetails {
 function Test-PublicDesktopAlreadyNormalized {
     param(
         [string]$PublicDesktopPath,
-        [object[]]$Specs
+        [object[]]$Specs,
+        [string[]]$OwnedShortcutNames = @()
     )
 
     foreach ($spec in @($Specs)) {
@@ -984,6 +1078,10 @@ function Test-PublicDesktopAlreadyNormalized {
         $matchedSpec = Find-ManagedShortcutSpecByName -Specs $Specs -ShortcutBaseName $shortcutBaseName
         if ($null -ne $matchedSpec) {
             continue
+        }
+
+        if (@($OwnedShortcutNames) -contains [string]$shortcutBaseName) {
+            return $false
         }
 
         try {
@@ -1114,6 +1212,7 @@ $iCloudExe = Resolve-ICloudExecutablePath
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
 $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
 $beMyEyesAppId = Resolve-StoreAppId -NameFragment "be my eyes" -PackageNameHints @("be my eyes", $beMyEyesStoreProductId)
+$codexAppId = Resolve-StoreAppId -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0")
 $codexAppResolvedExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0") -ExecutableName "Codex.exe"
 $whatsAppRootExe = Resolve-AppPackageExecutablePath -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop") -ExecutableName "WhatsApp.Root.exe"
 
@@ -1123,14 +1222,11 @@ $excelExe = Resolve-OfficeExecutable -ExeName "EXCEL.EXE"
 $powerPointExe = Resolve-OfficeExecutable -ExeName "POWERPNT.EXE"
 $oneNoteExe = Resolve-OfficeExecutable -ExeName "ONENOTE.EXE"
 
-$codexAppExe = if (Test-Path -LiteralPath $codexAppFallbackPath) {
-    [string]$codexAppFallbackPath
-}
-elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppResolvedExe) -and (Test-Path -LiteralPath $codexAppResolvedExe)) {
+$codexAppExe = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppResolvedExe) -and (Test-Path -LiteralPath $codexAppResolvedExe)) {
     [string]$codexAppResolvedExe
 }
 else {
-    [string]$codexAppFallbackPath
+    ''
 }
 $whatsAppBusinessTarget = Resolve-ExistingOrFallbackPath -PreferredPath $whatsAppRootExe -ResolvedPath $whatsAppRootExe -FallbackPath $whatsAppFallbackPath
 $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData\chocolatey\bin\7z.exe" -ResolvedPath $sevenZipExe -FallbackPath "C:\ProgramData\chocolatey\bin\7z.exe"
@@ -1210,12 +1306,17 @@ $quickAccessWebShortcuts = @(
 )
 
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a1ChatGPT Web" -Url "https://chatgpt.com" -ProfileKind 'business' -Variant 'remote')
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -AllowMissingTargetPath $true -ValidationKind "app")
+if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -ValidationKind "app")
+}
+elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $codexAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
+}
 if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $beMyEyesAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
 }
 else {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments $beMyEyesStoreUri -IconLocation ($explorerExe + ",0") -ValidationKind "store-deeplink")
+    Write-Warning "public-shortcut-skip: a3Be My Eyes => installed package app id was not resolved."
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Business" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a5WhatsApp Personal" -Url "https://web.whatsapp.com" -ProfileKind 'personal' -Variant 'remote')
@@ -1245,7 +1346,13 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -Targ
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ("e1Mail {0}" -f $employeeEmailAddress) -TargetPath $cmdExe -Arguments ('/c start outlook.exe /select "outlook:\\{0}\\Inbox"' -f $employeeEmailAddress) -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
+$mailShortcutArguments = if (-not [string]::IsNullOrWhiteSpace([string]$outlookExe)) {
+    ('/c start "" "{0}" /select "outlook:\\{1}\\Inbox"' -f $outlookExe, $employeeEmailAddress)
+}
+else {
+    ('/c start outlook.exe /select "outlook:\\{0}\\Inbox"' -f $employeeEmailAddress)
+}
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name ("e1Mail {0}" -f $employeeEmailAddress) -TargetPath $cmdExe -Arguments $mailShortcutArguments -IconLocation (Resolve-IconLocation -PreferredPath $outlookExe -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "app")
 
 foreach ($spec in @($developerWebShortcuts)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind 'business' -Variant 'remote')
@@ -1294,7 +1401,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t5Pwsh" -TargetPath
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t6PS" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & powershell" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t7Azure CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & az" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t8WSL" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & wsl" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $wslExe -FallbackPath $cmdExe) -ValidationKind "console")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t9Docker CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & docker info" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $dockerExe -FallbackPath $cmdExe) -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t9Docker CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & docker" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $dockerExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t10Azd CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & azd" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $azdExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t11GH CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & gh" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ghExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "t12FFmpeg CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & ffmpeg -version" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $ffmpegExe -FallbackPath $cmdExe) -ValidationKind "console")
@@ -1308,10 +1415,127 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u3Control Panel" -T
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u7Network and Sharing" -TargetPath $controlExe -Arguments "/name Microsoft.NetworkAndSharingCenter" -IconLocation ($controlExe + ",0") -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v1VS2022Com" -TargetPath $vs2022CommunityExe -WorkingDirectory (Split-Path -Path $vs2022CommunityExe -Parent) -IconLocation (Resolve-IconLocation -PreferredPath $vs2022CommunityExe -FallbackPath $powershellExe) -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Visual Studio 2022") -CleanupMatchTargetOnly $true)
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments "-command ""&'%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd'""" -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments ('-command "&''{0}''"' -f '%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd') -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $cmdExe -Arguments $chromeSyncSetupCommand -IconLocation ($chromeTarget + ",0") -ValidationKind "chrome-setup")
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "z2Office365 Account Setup" -Url "https://portal.office.com" -ProfileKind 'business' -Variant 'setup')
+
+$ownedManagedShortcutNames = @(
+    "a1ChatGPT Web",
+    "a2CodexApp",
+    "a3Be My Eyes",
+    "a4WhatsApp Business",
+    "a5WhatsApp Personal",
+    "a6AnyDesk",
+    "a7Docker Desktop",
+    "a8WindScribe",
+    "a9VLC Player",
+    "a10NVDA",
+    "a11MS Edge",
+    "a12Itunes",
+    "b1GarantiBank Business",
+    "b2GarantiBank Personal",
+    "b3QnbBank Business",
+    "b4QnbBank Personal",
+    "b5AktifBank Business",
+    "b6AktifBank Personal",
+    "b7ZiraatBank Business",
+    "b8ZiraatBank Personal",
+    "c1Cmd",
+    "d1RClone CLI",
+    "d2One Drive",
+    "d3Google Drive",
+    "d4ICloud",
+    ("e1Mail {0}" -f $employeeEmailAddress),
+    "g1Apple Developer",
+    "g2Google Developer",
+    "g3Microsoft Developer",
+    "g4Azure Portal",
+    "i1Internet Business",
+    "i2Internet Personal",
+    "k1Codex CLI",
+    "k2Gemini CLI",
+    "k3Github Copilot CLI",
+    "m1Digital Tax Office",
+    "n1Notepad",
+    "o1Outlook",
+    "o2Teams",
+    "o3Word",
+    "o4Excel",
+    "o5Power Point",
+    "o6OneNote",
+    "q1SourTimes",
+    "q2Spotify",
+    "q3Netflix",
+    "q4eGovernment",
+    "q5Apple Account",
+    "q6AJet Flights",
+    "q7TCDD Train",
+    "q8OBilet Bus",
+    "r1Sahibinden Business",
+    "r2Sahibinden Personal",
+    "r3Letgo Business",
+    "r4Letgo Personal",
+    "r5Trendyol Business",
+    "r6Trendyol Personal",
+    "r7Amazon TR Business",
+    "r8Amazon TR Personal",
+    "r9HepsiBurada Business",
+    "r10HepsiBurada Personal",
+    "r11N11 Business",
+    "r12N11 Personal",
+    "r13ÇiçekSepeti Business",
+    "r14ÇiçekSepeti Personal",
+    "r15Pazarama Business",
+    "r16Pazarama Personal",
+    "r17PTTAVM Business",
+    "r18PTTAVM Personal",
+    "r19Ozon Business",
+    "r20Ozon Personal",
+    "r21Getir Business",
+    "r22Getir Personal",
+    "s1LinkedIn Business",
+    "s2LinkedIn Personal",
+    "s3YouTube Business",
+    "s4YouTube Personal",
+    "s5GitHub Business",
+    "s6GitHub Personal",
+    "s7TikTok Business",
+    "s8TikTok Personal",
+    "s9Instagram Business",
+    "s10Instagram Personal",
+    "s11Facebook Business",
+    "s12Facebook Personal",
+    "s13X-Twitter Business",
+    "s14X-Twitter Personal",
+    ("s15{0} Web" -f $companyDisplayName),
+    ("s16{0} Blog" -f $companyDisplayName),
+    "s17SnapChat Business",
+    "s18NextSosyal Business",
+    "t1Git Bash",
+    "t2Python CLI",
+    "t3NodeJS CLI",
+    "t4Ollama App",
+    "t5Pwsh",
+    "t6PS",
+    "t7Azure CLI",
+    "t8WSL",
+    "t9Docker CLI",
+    "t10Azd CLI",
+    "t11GH CLI",
+    "t12FFmpeg CLI",
+    "t13Seven Zip CLI",
+    "t14Process Explorer",
+    "t15Io Unlocker",
+    "u1User Files",
+    "u2This PC",
+    "u3Control Panel",
+    "u7Network and Sharing",
+    "v1VS2022Com",
+    "v5VS Code",
+    "z1Google Account Setup",
+    "z2Office365 Account Setup"
+) | Select-Object -Unique
 
 $managedShortcutNames = @($shortcutSpecs | ForEach-Object { [string]$_.Name })
 if (@($managedShortcutNames | Select-Object -Unique).Count -ne @($managedShortcutNames).Count) {
@@ -1324,7 +1548,7 @@ $managedUserDesktopRoots = @(
     "C:\Users\Default\Desktop"
 )
 $stagingRoot = ''
-$publicDesktopAlreadyNormalized = Test-PublicDesktopAlreadyNormalized -PublicDesktopPath $publicDesktop -Specs $shortcutSpecs
+$publicDesktopAlreadyNormalized = Test-PublicDesktopAlreadyNormalized -PublicDesktopPath $publicDesktop -Specs $shortcutSpecs -OwnedShortcutNames $ownedManagedShortcutNames
 
 try {
     if ($publicDesktopAlreadyNormalized) {
@@ -1346,6 +1570,7 @@ try {
         foreach ($existingShortcutFile in @(Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue)) {
             $shortcutBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$existingShortcutFile.Name)
             $matchedSpec = Find-ManagedShortcutSpecByName -Specs $shortcutSpecs -ShortcutBaseName $shortcutBaseName
+            $isOwnedManagedShortcutName = (@($ownedManagedShortcutNames) -contains [string]$shortcutBaseName)
 
             if ($null -eq $matchedSpec) {
                 $existingDetails = $null
@@ -1360,13 +1585,18 @@ try {
                 $matchedSpec = Find-ManagedShortcutSpecByDetails -Specs $shortcutSpecs -Details $existingDetails -ShortcutBaseName $shortcutBaseName
             }
 
-            if ($null -eq $matchedSpec) {
+            if ($null -eq $matchedSpec -and -not $isOwnedManagedShortcutName) {
                 continue
             }
 
             try {
                 Remove-Item -LiteralPath $existingShortcutFile.FullName -Force -ErrorAction Stop
-                Write-Host ("public-desktop-removed: {0} => managed-by {1}" -f $existingShortcutFile.Name, [string]$matchedSpec.Name)
+                if ($null -ne $matchedSpec) {
+                    Write-Host ("public-desktop-removed: {0} => managed-by {1}" -f $existingShortcutFile.Name, [string]$matchedSpec.Name)
+                }
+                else {
+                    Write-Host ("public-desktop-removed: {0} => inactive-managed-shortcut" -f $existingShortcutFile.Name)
+                }
             }
             catch {
                 throw ("Failed to remove existing public shortcut '{0}': {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
@@ -1382,6 +1612,17 @@ try {
             if (-not (Test-Path -LiteralPath $expectedShortcutPath)) {
                 throw ("Managed public shortcut was not created: {0}" -f $expectedShortcutPath)
             }
+        }
+
+        $inactiveManagedShortcuts = @(
+            Get-ChildItem -LiteralPath $publicDesktop -Filter "*.lnk" -File -ErrorAction SilentlyContinue |
+                Where-Object {
+                    $baseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name)
+                    (@($ownedManagedShortcutNames) -contains [string]$baseName) -and (@($managedShortcutNames) -notcontains [string]$baseName)
+                }
+        )
+        if (@($inactiveManagedShortcuts).Count -gt 0) {
+            throw ("Inactive managed shortcuts remain on the public desktop: {0}" -f ((@($inactiveManagedShortcuts | Select-Object -ExpandProperty Name)) -join ', '))
         }
     }
 

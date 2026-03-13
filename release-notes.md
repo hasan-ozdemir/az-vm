@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.298 - 2026-03-13
+
+### Summary
+This release finishes the runtime side of the fresh-create, existing-update, and live-grounded Windows hardening work. The create/update workflow now stays aligned with the review-first UX contract, managed naming keeps globally unique `gX` and `nX` ids, and the Windows init/update tasks were tightened using read-only findings from the current live VM so new VMs come up with fewer shortcut, startup, autologon, Docker, Ollama, and profile-copy regressions.
+
+### Highlights
+- Fresh `create` planning now always proposes a new managed resource group with the next global `gX` suffix, and every generated managed resource now consumes a globally unique `nX` suffix across all managed resource types instead of reusing per-type counters.
+- `create` no longer reuses persisted managed resource names from `.env` during fresh planning unless the current invocation explicitly overrides them, while `update` continues to target the existing managed RG and VM path.
+- Windows tracked task catalogs now place `108-install-sysinternals-suite` and `130-autologon-manager-user` in `vm-init`, with the Windows workflow keeping a restart barrier before `vm-update` when init ran.
+- `10001-configure-apps-startup.ps1`, `10002-create-shortcuts-public-desktop.ps1`, `114-install-docker-desktop.ps1`, `116-install-ollama-system.ps1`, `10005-copy-settings-user.ps1`, and `10099-capture-snapshot-health.ps1` now follow the live VM findings more closely: startup artifacts are written-and-verified, orphan managed shortcuts are skipped, packaged apps resolve through real executables or `shell:AppsFolder`, excluded profile-cache targets are pruned on reruns, and the health snapshot reports richer Docker/Ollama/WSL/autologon state.
+- The isolated live validation set completed successfully on `rg-examplevm-sec1-g1/examplevm`, including targeted init/update task reruns plus non-mutating `create --step=configure` and `update --step=configure` probes that confirmed the fresh naming and existing-target contracts.
+
 ## Release 2026.3.13.297 - 2026-03-13
 
 ### Summary

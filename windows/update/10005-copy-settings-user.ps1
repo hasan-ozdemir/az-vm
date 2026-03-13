@@ -14,6 +14,8 @@ if (-not (Test-Path -LiteralPath $helperPath)) {
 
 . $helperPath
 
+$copySkipEvidence = New-Object 'System.Collections.Generic.List[object]'
+
 function Write-Detail {
     param([string]$Text)
 
@@ -22,6 +24,45 @@ function Write-Detail {
     }
 
     Write-Host ([string]$Text)
+}
+
+function Add-CopySkipEvidence {
+    param(
+        [string]$Reason,
+        [string]$Label,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Reason)) {
+        return
+    }
+
+    $copySkipEvidence.Add([pscustomobject]@{
+        Reason = [string]$Reason
+        Label = [string]$Label
+        Path = [string]$Path
+    }) | Out-Null
+}
+
+function Write-CopySkipEvidenceSummary {
+    $skipCount = 0
+    if ($null -ne ([object]$copySkipEvidence)) {
+        $skipCount = [int]$copySkipEvidence.Count
+    }
+
+    if ($skipCount -eq 0) {
+        Write-Detail 'copy-settings-user-skip-summary: none'
+        return
+    }
+
+    Write-Detail ("copy-settings-user-skip-summary: count={0}" -f $skipCount)
+    foreach ($group in @($copySkipEvidence | Group-Object Reason | Sort-Object Name)) {
+        Write-Detail ("copy-settings-user-skip-reason: {0} => {1}" -f [string]$group.Name, [int]$group.Count)
+    }
+
+    foreach ($entry in @($copySkipEvidence | Select-Object -First 20)) {
+        Write-Detail ("copy-settings-user-skip-item: {0} => {1} => {2}" -f [string]$entry.Reason, [string]$entry.Label, [string]$entry.Path)
+    }
 }
 
 function Assert-RegistryValue {
@@ -478,6 +519,130 @@ function Get-ExistingRobocopyPathList {
     return @($paths)
 }
 
+function Write-ExistingCopyExclusions {
+    param(
+        [string]$SourcePath,
+        [string[]]$ExcludedDirectories = @(),
+        [string[]]$ExcludedFiles = @(),
+        [string]$Label
+    )
+
+    foreach ($relativeDirectory in @($ExcludedDirectories)) {
+        if ([string]::IsNullOrWhiteSpace([string]$relativeDirectory)) {
+            continue
+        }
+
+        $candidate = Join-Path $SourcePath $relativeDirectory
+        if (Test-Path -LiteralPath $candidate) {
+            Add-CopySkipEvidence -Reason 'excluded-directory' -Label $Label -Path $candidate
+            Write-Detail ("copy-settings-user-file-skip: {0} excluded-directory => {1}" -f $Label, $candidate)
+        }
+    }
+
+    foreach ($excludedFile in @($ExcludedFiles)) {
+        $excludedText = [string]$excludedFile
+        if ([string]::IsNullOrWhiteSpace([string]$excludedText)) {
+            continue
+        }
+
+        $candidate = if ($excludedText.Contains('\') -or $excludedText.Contains('/')) {
+            Join-Path $SourcePath $excludedText
+        }
+        else {
+            Join-Path $SourcePath $excludedText
+        }
+
+        if (Test-Path -LiteralPath $candidate) {
+            Add-CopySkipEvidence -Reason 'excluded-file' -Label $Label -Path $candidate
+            Write-Detail ("copy-settings-user-file-skip: {0} excluded-file => {1}" -f $Label, $candidate)
+        }
+    }
+}
+
+function Remove-StaleExcludedTargetPaths {
+    param(
+        [string]$TargetPath,
+        [string[]]$ExcludedDirectories = @(),
+        [string[]]$ExcludedFiles = @(),
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$TargetPath) -or -not (Test-Path -LiteralPath $TargetPath)) {
+        return
+    }
+
+    foreach ($relativeDirectory in @($ExcludedDirectories)) {
+        $relativeText = [string]$relativeDirectory
+        if ([string]::IsNullOrWhiteSpace([string]$relativeText)) {
+            continue
+        }
+
+        $targetCandidate = Join-Path $TargetPath $relativeText
+        if (-not (Test-Path -LiteralPath $targetCandidate)) {
+            continue
+        }
+
+        try {
+            Remove-Item -LiteralPath $targetCandidate -Recurse -Force -ErrorAction Stop
+            Add-CopySkipEvidence -Reason 'excluded-target-pruned' -Label $Label -Path $targetCandidate
+            Write-Detail ("copy-settings-user-target-prune: {0} excluded-directory => {1}" -f $Label, $targetCandidate)
+        }
+        catch {
+            throw ("Excluded target directory could not be cleared for {0}: {1}. {2}" -f $Label, $targetCandidate, $_.Exception.Message)
+        }
+    }
+
+    foreach ($excludedFile in @($ExcludedFiles)) {
+        $relativeText = [string]$excludedFile
+        if ([string]::IsNullOrWhiteSpace([string]$relativeText)) {
+            continue
+        }
+
+        $hasRelativeParent = ($relativeText.Contains('\') -or $relativeText.Contains('/'))
+        $parentRelativePath = ''
+        $leafPattern = $relativeText
+        if ($hasRelativeParent) {
+            $parentRelativePath = [string](Split-Path -Path $relativeText -Parent)
+            $leafPattern = [string](Split-Path -Path $relativeText -Leaf)
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$leafPattern)) {
+            continue
+        }
+
+        $searchRoot = $TargetPath
+        if (-not [string]::IsNullOrWhiteSpace([string]$parentRelativePath) -and $parentRelativePath -ne '.') {
+            $searchRoot = Join-Path $TargetPath $parentRelativePath
+        }
+
+        if (-not (Test-Path -LiteralPath $searchRoot)) {
+            continue
+        }
+
+        $matches = if ($hasRelativeParent) {
+            @(Get-ChildItem -LiteralPath $searchRoot -Force -File -Filter $leafPattern -ErrorAction SilentlyContinue)
+        }
+        else {
+            @(Get-ChildItem -LiteralPath $searchRoot -Force -File -Filter $leafPattern -Recurse -ErrorAction SilentlyContinue)
+        }
+
+        foreach ($targetCandidate in @($matches)) {
+            if ($null -eq $targetCandidate -or [string]::IsNullOrWhiteSpace([string]$targetCandidate.FullName)) {
+                continue
+            }
+
+            try {
+                Remove-Item -LiteralPath ([string]$targetCandidate.FullName) -Force -ErrorAction Stop
+                Add-CopySkipEvidence -Reason 'excluded-target-pruned' -Label $Label -Path ([string]$targetCandidate.FullName)
+                Write-Detail ("copy-settings-user-target-prune: {0} excluded-file => {1}" -f $Label, ([string]$targetCandidate.FullName))
+            }
+            catch {
+                throw ("Excluded target file could not be cleared for {0}: {1}. {2}" -f $Label, ([string]$targetCandidate.FullName), $_.Exception.Message)
+            }
+        }
+    }
+}
+
 function Invoke-RobocopyBranch {
     param(
         [string]$SourcePath,
@@ -488,6 +653,7 @@ function Invoke-RobocopyBranch {
     )
 
     if (-not (Test-Path -LiteralPath $SourcePath)) {
+        Add-CopySkipEvidence -Reason 'missing-source' -Label $Label -Path $SourcePath
         Write-Detail ("copy-settings-user-file-skip: missing source => {0}" -f $SourcePath)
         return
     }
@@ -497,6 +663,9 @@ function Invoke-RobocopyBranch {
     if (-not (Test-Path -LiteralPath $robocopyExe)) {
         throw "robocopy.exe was not found."
     }
+
+    Write-ExistingCopyExclusions -SourcePath $SourcePath -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles -Label $Label
+    Remove-StaleExcludedTargetPaths -TargetPath $TargetPath -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles -Label $Label
 
     $argumentList = @(
         $SourcePath,
@@ -561,7 +730,15 @@ function Invoke-RobocopyBranch {
         $normalizedDetail = $normalizedDetail.ToLowerInvariant()
         if ($exitCode -gt 7 -and $normalizedDetail.Contains('webcachelock.dat') -and $normalizedDetail.Contains('error 32')) {
             Write-Warning ("Ignoring locked WebCacheLock.dat while copying {0}; the live WebCache lock file is not required for the replicated profile." -f $Label)
+            Add-CopySkipEvidence -Reason 'locked-file' -Label $Label -Path (Join-Path $SourcePath 'Microsoft\Windows\WebCacheLock.dat')
             Write-Detail ("copy-settings-user-file-skip: {0} locked WebCacheLock.dat" -f $Label)
+            return
+        }
+
+        if ($exitCode -gt 7 -and ($normalizedDetail.Contains('access is denied') -or $normalizedDetail.Contains('error 5'))) {
+            Write-Warning ("Ignoring access denied items while copying {0}; protected or session-owned files are skipped for profile safety." -f $Label)
+            Add-CopySkipEvidence -Reason 'access-denied' -Label $Label -Path $SourcePath
+            Write-Detail ("copy-settings-user-file-skip: {0} access-denied => {1}" -f $Label, $SourcePath)
             return
         }
 
@@ -572,6 +749,7 @@ function Invoke-RobocopyBranch {
         throw ("robocopy failed for {0} with exit code {1}. detail: {2}" -f $Label, $exitCode, $detailText)
     }
 
+    Remove-StaleExcludedTargetPaths -TargetPath $TargetPath -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles -Label $Label
     Write-Detail ("copy-settings-user-file-ok: {0}" -f $Label)
 }
 
@@ -591,6 +769,7 @@ function Invoke-ProfileRelativeCopy {
 
     $sourcePath = Join-Path $SourceProfilePath $RelativePath
     if (-not (Test-Path -LiteralPath $sourcePath)) {
+        Add-CopySkipEvidence -Reason 'missing-source' -Label $Label -Path $sourcePath
         Write-Detail ("copy-settings-user-file-skip: missing source => {0}" -f $RelativePath)
         return
     }
@@ -599,6 +778,7 @@ function Invoke-ProfileRelativeCopy {
     $sourceItem = Get-Item -LiteralPath $sourcePath -Force -ErrorAction Stop
     $isSourceReparsePoint = (($sourceItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint)
     if ($isSourceReparsePoint) {
+        Add-CopySkipEvidence -Reason 'reparse-point' -Label $Label -Path $sourcePath
         Write-Detail ("copy-settings-user-file-skip: {0} source reparse-point => {1}" -f $Label, $RelativePath)
         return
     }
@@ -614,8 +794,29 @@ function Invoke-ProfileRelativeCopy {
     }
 
     Ensure-AzVmDirectory -Path (Split-Path -Path $targetPath -Parent)
-    Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force -ErrorAction Stop
-    Write-Detail ("copy-settings-user-file-ok: {0}" -f $Label)
+    try {
+        Copy-Item -LiteralPath $sourcePath -Destination $targetPath -Force -ErrorAction Stop
+        Write-Detail ("copy-settings-user-file-ok: {0}" -f $Label)
+    }
+    catch {
+        $message = [string]$_.Exception.Message
+        $normalizedMessage = $message.ToLowerInvariant()
+        if ($normalizedMessage.Contains('access to the path') -or $normalizedMessage.Contains('access is denied')) {
+            Add-CopySkipEvidence -Reason 'access-denied' -Label $Label -Path $sourcePath
+            Write-Warning ("Skipping access denied file while copying {0}: {1}" -f $Label, $sourcePath)
+            Write-Detail ("copy-settings-user-file-skip: {0} access-denied => {1}" -f $Label, $RelativePath)
+            return
+        }
+
+        if ($normalizedMessage.Contains('because it is being used by another process') -or $normalizedMessage.Contains('being used by another process')) {
+            Add-CopySkipEvidence -Reason 'locked-file' -Label $Label -Path $sourcePath
+            Write-Warning ("Skipping locked file while copying {0}: {1}" -f $Label, $sourcePath)
+            Write-Detail ("copy-settings-user-file-skip: {0} locked-file => {1}" -f $Label, $RelativePath)
+            return
+        }
+
+        throw
+    }
 }
 
 function Test-UserProcessesRunning {
@@ -984,6 +1185,13 @@ function Invoke-ProfileFileCopy {
         'Microsoft\IdentityCRL',
         'ollama app.exe\EBWebView\Default\Network',
         'ollama app.exe\EBWebView\Default\Safe Browsing Network',
+        'ollama app.exe\EBWebView\Default\Cache',
+        'ollama app.exe\EBWebView\Default\Code Cache',
+        'ollama app.exe\EBWebView\Default\GPUCache',
+        'ollama app.exe\EBWebView\Default\Service Worker\CacheStorage',
+        'ollama app.exe\EBWebView\Default\Service Worker\ScriptCache',
+        'ollama app.exe\EBWebView\Default\DawnCache',
+        'ollama app.exe\EBWebView\Default\GrShaderCache',
         'npm-cache'
     )
 
@@ -1029,6 +1237,7 @@ function Invoke-ProfileFileCopy {
         'Google\Chrome\User Data\Default\Code Cache',
         'Google\Chrome\User Data\Default\GPUCache',
         'Google\Chrome\User Data\Default\Service Worker\CacheStorage',
+        'Google\Chrome\User Data\Default\Service Worker\ScriptCache',
         'Google\Chrome\User Data\ShaderCache',
         'docker-secrets-engine',
         'npm-cache',
@@ -1163,8 +1372,14 @@ try {
     }
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\Microsoft\Credentials'
+    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Cache'
+    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Code Cache'
+    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\GPUCache'
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
     Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\Microsoft\Credentials'
+    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Cache'
+    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Code Cache'
+    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\GPUCache'
 }
 finally {
     foreach ($mountName in @($defaultMainMountName)) {
@@ -1188,6 +1403,7 @@ foreach ($mountName in @($defaultMainMountName)) {
     }
 }
 
+Write-CopySkipEvidenceSummary
 Write-Detail 'copy-settings-user-registry-validated'
 Write-Detail 'copy-settings-user-files-validated'
 Write-Host "copy-settings-user-completed"

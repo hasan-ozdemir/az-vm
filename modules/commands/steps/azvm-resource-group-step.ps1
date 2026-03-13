@@ -54,7 +54,7 @@ function Invoke-AzVmResourceGroupStep {
                     Write-Host "Auto mode: deletion was confirmed automatically."
                 }
                 else {
-                    $shouldDelete = Confirm-YesNo -PromptText "Are you sure you want to delete resource group '$resourceGroup'?" -DefaultYes $false
+                    Write-Host "Interactive review already approved the destructive rebuild delete path for this resource group." -ForegroundColor Yellow
                 }
 
                 if ($shouldDelete) {

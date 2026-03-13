@@ -1,39 +1,56 @@
 # Resource naming and path-resolution helpers.
 
-# Handles Get-AzVmNextNameIndex.
-function Get-AzVmNextNameIndex {
-    param(
-        [string]$ResourceGroup,
-        [string]$NamePrefix
+# Handles Get-AzVmManagedResourceNames.
+function Get-AzVmManagedResourceNames {
+    $rows = @()
+    try {
+        $rows = @(Get-AzVmManagedResourceGroupRows)
+    }
+    catch {
+        Throw-FriendlyError `
+            -Detail "Managed resource groups could not be listed while resolving the next resource id." `
+            -Code 22 `
+            -Summary "Managed resource naming could not be resolved." `
+            -Hint "Run az login and verify access to list tagged resource groups."
+    }
+
+    $names = @()
+    foreach ($row in @($rows)) {
+        $resourceGroup = [string]$row.name
+        if ([string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
+            continue
+        }
+
+        $groupNamesText = az resource list -g $resourceGroup --query "[].name" -o tsv --only-show-errors 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            continue
+        }
+
+        $names += @(Convert-AzVmCliTextToTokens -Text $groupNamesText)
+    }
+
+    return @(
+        @($names) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
     )
+}
 
-    if ([string]::IsNullOrWhiteSpace([string]$NamePrefix)) {
-        return 1
-    }
-
-    $groupExists = az group exists -n $ResourceGroup --only-show-errors
-    if ($LASTEXITCODE -ne 0 -or -not [string]::Equals([string]$groupExists, 'true', [System.StringComparison]::OrdinalIgnoreCase)) {
-        return 1
-    }
-
-    $namesText = az resource list -g $ResourceGroup --query "[].name" -o tsv --only-show-errors
-    if ($LASTEXITCODE -ne 0) {
-        return 1
-    }
-
-    $tokens = @(Convert-AzVmCliTextToTokens -Text $namesText)
-    if ($tokens.Count -eq 0) {
-        return 1
-    }
-
-    $pattern = '^' + [regex]::Escape([string]$NamePrefix) + '(\d+)$'
+# Handles Get-AzVmNextManagedResourceIndex.
+function Get-AzVmNextManagedResourceIndex {
+    $pattern = '-n(\d+)$'
     $maxIndex = 0
-    foreach ($token in @($tokens)) {
-        $name = [string]$token
-        $m = [regex]::Match($name, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
-        if (-not $m.Success) { continue }
-        $idxText = [string]$m.Groups[1].Value
-        if (-not ($idxText -match '^\d+$')) { continue }
+    foreach ($name in @(Get-AzVmManagedResourceNames)) {
+        $match = [regex]::Match([string]$name, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if (-not $match.Success) {
+            continue
+        }
+
+        $idxText = [string]$match.Groups[1].Value
+        if (-not ($idxText -match '^\d+$')) {
+            continue
+        }
+
         $idx = [int]$idxText
         if ($idx -gt $maxIndex) {
             $maxIndex = $idx
@@ -43,15 +60,126 @@ function Get-AzVmNextNameIndex {
     return ($maxIndex + 1)
 }
 
+# Handles New-AzVmManagedResourceIndexAllocator.
+function New-AzVmManagedResourceIndexAllocator {
+    return @{
+        ExistingMaxIndex = ((Get-AzVmNextManagedResourceIndex) - 1)
+        NextIndex = (Get-AzVmNextManagedResourceIndex)
+        AllocatedIndices = @{}
+    }
+}
+
+# Handles Get-AzVmManagedResourceNameIndex.
+function Get-AzVmManagedResourceNameIndex {
+    param(
+        [string]$Name
+    )
+
+    $match = [regex]::Match([string]$Name, '-n(\d+)$', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success) {
+        return 0
+    }
+
+    $idxText = [string]$match.Groups[1].Value
+    if (-not ($idxText -match '^\d+$')) {
+        return 0
+    }
+
+    return [int]$idxText
+}
+
+# Handles Register-AzVmManagedResourceNameIndex.
+function Register-AzVmManagedResourceNameIndex {
+    param(
+        [hashtable]$Allocator,
+        [string]$Name,
+        [string]$LogicalName = 'resource'
+    )
+
+    if ($null -eq $Allocator) {
+        return 0
+    }
+
+    if (-not $Allocator.ContainsKey('AllocatedIndices') -or $null -eq $Allocator['AllocatedIndices']) {
+        $Allocator['AllocatedIndices'] = @{}
+    }
+
+    $index = Get-AzVmManagedResourceNameIndex -Name $Name
+    if ($index -lt 1) {
+        return 0
+    }
+
+    $allocatedIndices = $Allocator['AllocatedIndices']
+    $existingMaxIndex = 0
+    if ($Allocator.ContainsKey('ExistingMaxIndex')) {
+        $existingMaxIndex = [int]$Allocator['ExistingMaxIndex']
+    }
+
+    if ($index -le $existingMaxIndex) {
+        Throw-FriendlyError `
+            -Detail ("Managed resource name '{0}' reuses existing global resource id n{1}." -f [string]$Name, $index) `
+            -Code 62 `
+            -Summary "Managed resource ids must be globally unique." `
+            -Hint "Accept the generated resource name or choose a custom name with an unused nX suffix."
+    }
+
+    if ($allocatedIndices.ContainsKey([string]$index)) {
+        $otherLogicalName = [string]$allocatedIndices[[string]$index]
+        if ([string]::Equals([string]$otherLogicalName, [string]$LogicalName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $index
+        }
+        Throw-FriendlyError `
+            -Detail ("Managed resource names '{0}' and '{1}' both use global resource id n{2}." -f [string]$LogicalName, [string]$otherLogicalName, $index) `
+            -Code 62 `
+            -Summary "Managed resource ids must stay unique within the provisioning plan." `
+            -Hint "Use generated names or choose custom names with distinct nX suffixes."
+    }
+
+    $allocatedIndices[[string]$index] = [string]$LogicalName
+    $Allocator['AllocatedIndices'] = $allocatedIndices
+    $nextIndex = [int]$Allocator['NextIndex']
+    if ($index -ge $nextIndex) {
+        $Allocator['NextIndex'] = ($index + 1)
+    }
+
+    return $index
+}
+
+# Handles Get-AzVmManagedResourceIndexFromAllocator.
+function Get-AzVmManagedResourceIndexFromAllocator {
+    param(
+        [hashtable]$Allocator,
+        [string]$LogicalName = 'resource'
+    )
+
+    if ($null -eq $Allocator) {
+        return (Get-AzVmNextManagedResourceIndex)
+    }
+
+    if (-not $Allocator.ContainsKey('NextIndex')) {
+        $Allocator['NextIndex'] = (Get-AzVmNextManagedResourceIndex)
+    }
+
+    $index = [int]$Allocator['NextIndex']
+    if ($index -lt 1) {
+        $index = 1
+    }
+
+    $Allocator['NextIndex'] = ($index + 1)
+    if (-not $Allocator.ContainsKey('AllocatedIndices') -or $null -eq $Allocator['AllocatedIndices']) {
+        $Allocator['AllocatedIndices'] = @{}
+    }
+    $allocatedIndices = $Allocator['AllocatedIndices']
+    $allocatedIndices[[string]$index] = [string]$LogicalName
+    $Allocator['AllocatedIndices'] = $allocatedIndices
+    return $index
+}
+
 # Handles Get-AzVmNextManagedResourceGroupIndex.
 function Get-AzVmNextManagedResourceGroupIndex {
     param(
         [string]$NamePrefix
     )
-
-    if ([string]::IsNullOrWhiteSpace([string]$NamePrefix)) {
-        return 1
-    }
 
     $rows = @()
     try {
@@ -59,13 +187,13 @@ function Get-AzVmNextManagedResourceGroupIndex {
     }
     catch {
         Throw-FriendlyError `
-            -Detail ("Managed resource groups could not be listed while resolving name prefix '{0}'." -f [string]$NamePrefix) `
+            -Detail "Managed resource groups could not be listed while resolving the next group id." `
             -Code 22 `
             -Summary "Resource group naming could not be resolved." `
             -Hint "Run az login and verify access to list tagged resource groups."
     }
 
-    $pattern = '^' + [regex]::Escape([string]$NamePrefix) + '(\d+)$'
+    $pattern = '-g(\d+)$'
     $maxIndex = 0
     foreach ($row in @($rows)) {
         $name = [string]$row.name
@@ -106,21 +234,19 @@ function Resolve-AzVmResourceGroupNameFromTemplate {
         $effectiveTemplate = "rg-{VM_NAME}-{REGION_CODE}-g{N}"
     }
 
-    $tokens = @{
+    $baseTokens = @{
         VM_NAME = [string]$VmName
         REGION_CODE = [string]$RegionCode
-        N = "1"
     }
 
-    $resolved = Resolve-AzVmTemplate -Template $effectiveTemplate -Tokens $tokens
+    $resolved = Resolve-AzVmTemplate -Template $effectiveTemplate -Tokens $baseTokens
     if ($resolved.IndexOf("{N}", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         return $resolved
     }
 
     $index = 1
     if ($UseNextIndex) {
-        $prefix = $resolved.Replace("{N}", "")
-        $index = Get-AzVmNextManagedResourceGroupIndex -NamePrefix $prefix
+        $index = Get-AzVmNextManagedResourceGroupIndex -NamePrefix ''
     }
 
     return $resolved.Replace("{N}", [string]$index)
@@ -134,7 +260,9 @@ function Resolve-AzVmNameFromTemplate {
         [string]$VmName,
         [string]$RegionCode,
         [string]$ResourceGroup,
-        [switch]$UseNextIndex
+        [switch]$UseNextIndex,
+        [hashtable]$IndexAllocator,
+        [string]$LogicalName = 'resource'
     )
 
     $effectiveTemplate = [string]$Template
@@ -155,8 +283,7 @@ function Resolve-AzVmNameFromTemplate {
 
     $index = 1
     if ($UseNextIndex) {
-        $prefix = $resolved.Replace("{N}", "")
-        $index = Get-AzVmNextNameIndex -ResourceGroup $ResourceGroup -NamePrefix $prefix
+        $index = Get-AzVmManagedResourceIndexFromAllocator -Allocator $IndexAllocator -LogicalName $LogicalName
     }
 
     return $resolved.Replace("{N}", [string]$index)

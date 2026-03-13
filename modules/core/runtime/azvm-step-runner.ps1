@@ -38,34 +38,16 @@ function Invoke-Step {
     }
 
     $before = @(Get-Variable)
-    if ($script:AutoMode) {
-        Write-Host "$prompt (mode: auto)" -ForegroundColor Cyan
-        $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
-        . $Action
-        if ($stepWatch.IsRunning) { $stepWatch.Stop() }
-        if ($script:PerfMode) {
-            Write-AzVmPerfTiming -Category "step" -Label ("{0} [mode:auto]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
-        }
-        $after = @(Get-Variable)
-        Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
-        return
+    $modeLabel = if ($script:AutoMode) { 'auto' } else { 'interactive' }
+    Write-Host ("{0} (mode: {1})" -f $prompt, $modeLabel) -ForegroundColor Cyan
+    $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    . $Action
+    if ($stepWatch.IsRunning) { $stepWatch.Stop() }
+    if ($script:PerfMode) {
+        Write-AzVmPerfTiming -Category "step" -Label ("{0} [mode:{1}]" -f $prompt, $modeLabel) -Seconds $stepWatch.Elapsed.TotalSeconds
     }
-    do {
-        $response = Read-Host "$prompt (mode: interactive) (yes/no)?"
-    } until ($response -match '^[yYnN]$')
-    if ($response -match '^[yY]$') {
-        $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
-        . $Action
-        if ($stepWatch.IsRunning) { $stepWatch.Stop() }
-        if ($script:PerfMode) {
-            Write-AzVmPerfTiming -Category "step" -Label ("{0} [mode:interactive]" -f $prompt) -Seconds $stepWatch.Elapsed.TotalSeconds
-        }
-        $after = @(Get-Variable)
-        Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
-    }
-    else {
-        Write-Host "Skipping this step." -ForegroundColor Cyan
-    }
+    $after = @(Get-Variable)
+    Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
 }
 
 # Handles Confirm-YesNo.
@@ -91,6 +73,92 @@ function Confirm-YesNo {
         }
 
         Write-Host "Please answer yes or no." -ForegroundColor Yellow
+    }
+}
+
+# Handles Confirm-AzVmYesNoCancel.
+function Confirm-AzVmYesNoCancel {
+    param(
+        [string]$PromptText,
+        [string]$DefaultChoice = 'yes'
+    )
+
+    $defaultValue = [string]$DefaultChoice
+    if ([string]::IsNullOrWhiteSpace([string]$defaultValue)) {
+        $defaultValue = 'yes'
+    }
+    $defaultValue = $defaultValue.Trim().ToLowerInvariant()
+    if ($defaultValue -notin @('yes', 'no', 'cancel')) {
+        $defaultValue = 'yes'
+    }
+
+    $hintText = switch ($defaultValue) {
+        'no' { ' [y/N/c]' }
+        'cancel' { ' [y/n/C]' }
+        default { ' [Y/n/c]' }
+    }
+
+    while ($true) {
+        $raw = Read-Host ($PromptText + $hintText)
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return $defaultValue
+        }
+
+        $value = $raw.Trim().ToLowerInvariant()
+        if ($value -in @('y', 'yes')) {
+            return 'yes'
+        }
+        if ($value -in @('n', 'no')) {
+            return 'no'
+        }
+        if ($value -in @('c', 'cancel')) {
+            return 'cancel'
+        }
+
+        Write-Host "Please answer yes, no, or cancel." -ForegroundColor Yellow
+    }
+}
+
+# Handles Confirm-YesNoCancel.
+function Confirm-YesNoCancel {
+    param(
+        [string]$PromptText,
+        [string]$DefaultChoice = 'yes'
+    )
+
+    $normalizedDefault = [string]$DefaultChoice
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedDefault)) {
+        $normalizedDefault = 'yes'
+    }
+    $normalizedDefault = $normalizedDefault.Trim().ToLowerInvariant()
+    if ($normalizedDefault -notin @('yes', 'no', 'cancel')) {
+        $normalizedDefault = 'yes'
+    }
+
+    $hintText = switch ($normalizedDefault) {
+        'yes' { ' [Y/n/c]' }
+        'no' { ' [y/N/c]' }
+        default { ' [y/n/C]' }
+    }
+
+    while ($true) {
+        $raw = Read-Host ($PromptText + $hintText)
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return $normalizedDefault
+        }
+
+        $value = $raw.Trim().ToLowerInvariant()
+        if ($value -in @('y', 'yes')) {
+            return 'yes'
+        }
+        if ($value -in @('n', 'no')) {
+            return 'no'
+        }
+        if ($value -in @('c', 'cancel')) {
+            return 'cancel'
+        }
+
+        Write-Host "Please answer yes, no, or cancel." -ForegroundColor Yellow
     }
 }
 
