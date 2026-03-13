@@ -8,6 +8,7 @@ $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
+$publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\userdata"
 $beMyEyesStoreProductId = "9MSW46LTDWGF"
 $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
 $codexAppFallbackPath = ""
@@ -168,6 +169,28 @@ function Get-ChromeArgsPrefix {
     }
 }
 
+function Get-EdgeArgsPrefix {
+    param(
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business',
+        [ValidateSet('remote','setup','bank')]
+        [string]$Variant = 'remote'
+    )
+
+    $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
+    switch ([string]$Variant) {
+        'setup' {
+            return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
+        }
+        'bank' {
+            return ('--new-window --start-maximized --profile-directory="{0}"' -f $profileDirectory)
+        }
+        default {
+            return ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
+        }
+    }
+}
+
 function Refresh-SessionPath {
     $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
     if (Test-Path -LiteralPath $refreshEnvCmd) {
@@ -232,7 +255,7 @@ function Resolve-ExecutableUnderDirectory {
             return [string]$directCandidate
         }
 
-        $match = Get-ChildItem -LiteralPath $rootPath -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName | Select-Object -First 1
+        $match = Get-ChildItem -LiteralPath $rootPath -Filter $ExecutableName -File -Recurse -ErrorAction SilentlyContinue | Sort-Object FullName -Descending | Select-Object -First 1
         if ($match -and (Test-Path -LiteralPath $match.FullName)) {
             return [string]$match.FullName
         }
@@ -264,24 +287,50 @@ function Resolve-OfficeExecutable {
 }
 
 function Resolve-StartAppId {
-    param([string]$NameFragment)
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
 
     if ([string]::IsNullOrWhiteSpace([string]$NameFragment)) {
-        return ""
+        if (@($PackageNameHints).Count -lt 1) {
+            return ""
+        }
     }
 
     if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
         return ""
     }
 
-    $normalized = $NameFragment.Trim().ToLowerInvariant()
+    $normalized = [string]$NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$normalized)) {
+        $normalized = $normalized.Trim().ToLowerInvariant()
+    }
+    $normalizedHints = @(
+        @($PackageNameHints) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
     $startApps = @(Get-StartApps | Where-Object {
         $nameText = [string]$_.Name
-        if ([string]::IsNullOrWhiteSpace([string]$nameText)) {
-            return $false
+        $appIdText = [string]$_.AppID
+
+        if (-not [string]::IsNullOrWhiteSpace([string]$normalized)) {
+            if ((-not [string]::IsNullOrWhiteSpace([string]$nameText) -and $nameText.ToLowerInvariant().Contains($normalized)) -or
+                (-not [string]::IsNullOrWhiteSpace([string]$appIdText) -and $appIdText.ToLowerInvariant().Contains($normalized))) {
+                return $true
+            }
         }
 
-        return $nameText.ToLowerInvariant().Contains($normalized)
+        foreach ($hint in @($normalizedHints)) {
+            if ((-not [string]::IsNullOrWhiteSpace([string]$nameText) -and $nameText.ToLowerInvariant().Contains($hint)) -or
+                (-not [string]::IsNullOrWhiteSpace([string]$appIdText) -and $appIdText.ToLowerInvariant().Contains($hint))) {
+                return $true
+            }
+        }
+
+        return $false
     })
 
     foreach ($entry in @($startApps)) {
@@ -377,7 +426,7 @@ function Resolve-StoreAppId {
         [string[]]$PackageNameHints = @()
     )
 
-    $startAppsAppId = Resolve-StartAppId -NameFragment $NameFragment
+    $startAppsAppId = Resolve-StartAppId -NameFragment $NameFragment -PackageNameHints $PackageNameHints
     if (-not [string]::IsNullOrWhiteSpace([string]$startAppsAppId)) {
         return $startAppsAppId
     }
@@ -891,6 +940,22 @@ function New-ChromeShortcutSpec {
         -CleanupAliases $CleanupAliases)
 }
 
+function New-StoreAppShortcutSpec {
+    param(
+        [string]$Name,
+        [string]$AppId,
+        [string[]]$CleanupAliases = @()
+    )
+
+    return (New-ShortcutSpec `
+        -Name $Name `
+        -TargetPath $explorerExe `
+        -Arguments ("shell:AppsFolder\" + [string]$AppId) `
+        -IconLocation ($explorerExe + ",0") `
+        -ValidationKind 'store-appid' `
+        -CleanupAliases $CleanupAliases)
+}
+
 function Get-NormalizedShortcutNameKey {
     param([string]$Value)
 
@@ -948,11 +1013,6 @@ function Test-ShortcutDetailsMatchManagedSpec {
     }
 
     $existingNameKey = Get-NormalizedShortcutNameKey -Value $ShortcutBaseName
-    $managedNameKey = Get-NormalizedShortcutNameKey -Value ([string]$Spec.Name)
-    if (-not [string]::IsNullOrWhiteSpace([string]$managedNameKey) -and [string]::Equals($existingNameKey, $managedNameKey, [System.StringComparison]::Ordinal)) {
-        return $true
-    }
-
     $existingTargetPath = Get-NormalizedShortcutPath -Value ([string]$Details.TargetPath)
     $managedTargetPath = Get-NormalizedShortcutPath -Value ([string]$Spec.TargetPath)
     $existingArguments = [string]$Details.Arguments
@@ -997,6 +1057,13 @@ function Test-ShortcutDetailsMatchManagedSpec {
     if (($Spec.ValidationKind -in @('store-appid', 'store-deeplink', 'explorer-shell')) -and
         [string]::Equals($existingTargetPath, $managedTargetPath, [System.StringComparison]::Ordinal) -and
         [string]::Equals(([string]$existingArguments).Trim(), ([string]$managedArguments).Trim(), [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    if (
+        [string]::Equals($existingTargetPath, $managedTargetPath, [System.StringComparison]::Ordinal) -and
+        [string]::Equals(([string]$existingArguments).Trim(), ([string]$managedArguments).Trim(), [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
         return $true
     }
 
@@ -1214,7 +1281,9 @@ $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHin
 $beMyEyesAppId = Resolve-StoreAppId -NameFragment "be my eyes" -PackageNameHints @("be my eyes", $beMyEyesStoreProductId)
 $codexAppId = Resolve-StoreAppId -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0")
 $codexAppResolvedExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0") -ExecutableName "Codex.exe"
+$whatsAppBusinessAppId = Resolve-StoreAppId -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop", "9NKSQGP7F2NH")
 $whatsAppRootExe = Resolve-AppPackageExecutablePath -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop") -ExecutableName "WhatsApp.Root.exe"
+$iCloudAppId = Resolve-StoreAppId -NameFragment "icloud" -PackageNameHints @("icloud", "AppleInc.iCloud", "9PKTQ5699M62")
 
 $outlookExe = Resolve-OfficeExecutable -ExeName "OUTLOOK.EXE"
 $wordExe = Resolve-OfficeExecutable -ExeName "WINWORD.EXE"
@@ -1229,6 +1298,7 @@ else {
     ''
 }
 $whatsAppBusinessTarget = Resolve-ExistingOrFallbackPath -PreferredPath $whatsAppRootExe -ResolvedPath $whatsAppRootExe -FallbackPath $whatsAppFallbackPath
+$edgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind 'business' -Variant 'remote'
 $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData\chocolatey\bin\7z.exe" -ResolvedPath $sevenZipExe -FallbackPath "C:\ProgramData\chocolatey\bin\7z.exe"
 
 $shortcutSpecs = New-Object 'System.Collections.Generic.List[object]'
@@ -1306,19 +1376,24 @@ $quickAccessWebShortcuts = @(
 )
 
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a1ChatGPT Web" -Url "https://chatgpt.com" -ProfileKind 'business' -Variant 'remote')
-if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
+if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "a2CodexApp" -AppId $codexAppId)
+}
+elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -ValidationKind "app")
 }
-elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $codexAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
-}
 if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a3Be My Eyes" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $beMyEyesAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
+    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "a3Be My Eyes" -AppId $beMyEyesAppId)
 }
 else {
     Write-Warning "public-shortcut-skip: a3Be My Eyes => installed package app id was not resolved."
 }
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Business" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
+if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppBusinessAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "a4WhatsApp Business" -AppId $whatsAppBusinessAppId)
+}
+else {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Business" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
+}
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a5WhatsApp Personal" -Url "https://web.whatsapp.com" -ProfileKind 'personal' -Variant 'remote')
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("AnyDesk") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a7Docker Desktop" -TargetPath $dockerDesktopExe -AllowMissingTargetPath $true -ValidationKind "app")
@@ -1333,7 +1408,7 @@ else {
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a9VLC Player" -TargetPath $vlcExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("VLC media player") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a10NVDA" -TargetPath $nvdaExe -Hotkey "Ctrl+Alt+N" -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("NVDA") -CleanupAliasMatchByNameOnly $true)
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -TargetPath $edgeExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Microsoft Edge") -CleanupMatchTargetOnly $true)
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a11MS Edge" -TargetPath $edgeExe -Arguments $edgeBusinessArgs -IconLocation ($edgeExe + ",0") -AllowMissingTargetPath $true -ValidationKind "edge-remote" -CleanupAliases @("Microsoft Edge"))
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a12Itunes" -TargetPath $itunesExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("iTunes") -CleanupMatchTargetOnly $true)
 
 foreach ($spec in @($bankShortcuts)) {
@@ -1345,7 +1420,12 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "c1Cmd" -TargetPath 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -TargetPath $cmdExe -Arguments "/k cd /d %UserProfile% & rclone" -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $rcloneExe -FallbackPath $cmdExe) -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
+if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId)) {
+    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "d4ICloud" -AppId $iCloudAppId)
+}
+else {
+    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
+}
 $mailShortcutArguments = if (-not [string]::IsNullOrWhiteSpace([string]$outlookExe)) {
     ('/c start "" "{0}" /select "outlook:\\{1}\\Inbox"' -f $outlookExe, $employeeEmailAddress)
 }
@@ -1373,7 +1453,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "n1Notepad" -TargetP
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o1Outlook" -TargetPath $outlookExe -AllowMissingTargetPath $true -ValidationKind "office")
 if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o2Teams" -TargetPath $explorerExe -Arguments ("shell:AppsFolder\" + $teamsAppId) -IconLocation ($explorerExe + ",0") -ValidationKind "store-appid")
+    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "o2Teams" -AppId $teamsAppId)
 }
 else {
     $teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @("C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe")

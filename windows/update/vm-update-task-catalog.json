@@ -229,6 +229,13 @@
       "timeout": 7200
     },
     {
+      "name": "133-restore-managed-app-state",
+      "taskType": "normal",
+      "priority": 133,
+      "enabled": true,
+      "timeout": 180
+    },
+    {
       "name": "10001-configure-apps-startup",
       "taskType": "final",
       "priority": 10001,

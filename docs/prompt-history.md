@@ -5082,3 +5082,31 @@ Update the README for this repo so that its first four major sections make it ab
 **Assistant Summary**
 
 Reworked the opening README narrative so the first four sections now present `az-vm` as a Windows-first, near-zero-touch remote workstation delivery path backed by the current task catalogs, while still positioning Linux honestly as a lighter but fully extensible platform. I added stronger customer and executive framing, expanded the audience-value table, introduced proof-oriented PoC / PoE scenarios, enriched the delivered-outcome matrix with desktop and personalization evidence, revalidated the full non-live gate, fast-forwarded `dev` to the tested `main` commit, and pushed both `dev` and `main`.
+
+### 2026-03-13 23:22 TRT
+
+**User Prompt**
+
+````text
+Plan and implement the next Windows-focused feature set in sequence. First, audit which current vm-update application installs have a realistic `winget + msstore` equivalent, present that matrix for approval, and standardize Store-backed public desktop shortcuts so they launch through `explorer.exe shell:AppsFolder\<AUMID>` instead of version-dependent executable paths. Second, snapshot the local Freedom Scientific / JAWS registry state and replay it on the target VM through local-only update tasks. Third, harden the WSL task so it enables the required DISM features for WSL and Docker Desktop. Fourth, build a save-and-restore model for every app installed by vm-update by snapshotting durable registry and config state, restoring that state after installation, and testing the touched tasks in isolation on the live VM. Also make the `a11MS Edge` shortcut start with `C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe` and use the shared Chromium-style arguments with `C:\Users\Public\AppData\Local\Microsoft\msedge\userdata` as the user-data root.
+````
+
+**Assistant Summary**
+
+Implemented the approved Windows hardening set in tracked code and in local-only overlay tasks. I added a tracked Store migration audit document, a new tracked managed app-state restore layer and task (`133-restore-managed-app-state.ps1`), WSL prerequisite evidence in the WSL install task and health snapshot, and a stronger public desktop shortcut contract that now normalizes Store-backed shortcuts through `explorer.exe shell:AppsFolder\<AUMID>` while keeping `a11MS Edge` on the requested direct `msedge.exe` launch path. I also fixed the shortcut normalization logic so same-name legacy shortcuts are no longer treated as healthy by name alone, which allowed the live Codex, WhatsApp Business, Edge, and Google Drive shortcuts to self-heal.
+
+On the local-only side, I extended the ignored JAWS snapshot and replay path, added a reusable ignored app-state overlay export and restore framework, regenerated the local overlay payload, and validated the changed surface with isolated live task runs instead of a full recreate. The live task chain passed for WSL (`113`), Docker Desktop (`114`), Ollama (`116`), tracked managed app-state replay (`133`), the JAWS local-only path (`1001`, `1002`, `1004`, `1005`), the local overlay replay (`1006`), public desktop shortcut refresh (`10002`), and the health snapshot (`10099`). The refreshed health evidence now shows Store-backed Codex and WhatsApp shortcuts using `AppsFolder`, the Edge shortcut matching the expected direct-launch arguments, Google Drive resolved to the current versioned executable, Docker engine readiness healthy, and WSL default distribution shifted to `docker-desktop`. I also updated the README, changelog, release notes, and the Store migration audit doc to reflect the new operator-visible behavior. No installer-source migration was applied for the approval-gated Store candidates.
+
+### 2026-03-13 23:23 TRT
+
+**User Prompt**
+
+````text
+Fix the WSL save-and-restore payload so only a single `docker-desktop` distro remains. Delete, exclude, or purge every other WSL distro from that payload and replay flow; only the Docker Desktop distro needs to be preserved.
+````
+
+**Assistant Summary**
+
+Narrowed the local-only WSL save-and-restore path so only the `docker-desktop` distro registry state is exported and replayed. I added an allow-list field to the local source manifest, taught the local overlay export helper to generate a filtered `HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss` registry export that retains only the `docker-desktop` child key and resets `DefaultDistribution` to that one entry, and taught the local overlay restore helper to purge non-allowed WSL distro keys from each mounted user hive before importing the filtered registry file.
+
+After regenerating the local overlay payload, I reran the isolated local overlay replay task (`1006`) and the live health snapshot (`10099`). The new payload now contains only the filtered `docker-desktop` Lxss export, and the live health readout on the target Windows VM reports `Default Distribution: docker-desktop` with `docker-wsl-prereq-ready => True`, confirming that the narrowed replay model is active without restoring unrelated WSL distributions.

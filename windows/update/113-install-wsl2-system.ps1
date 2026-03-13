@@ -70,6 +70,47 @@ function Test-WslReady {
     return ([int]$LASTEXITCODE -eq 0)
 }
 
+function Get-WindowsOptionalFeatureState {
+    param([string]$FeatureName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$FeatureName)) {
+        return ''
+    }
+
+    try {
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName $FeatureName -ErrorAction Stop
+        if ($null -ne $feature -and $feature.PSObject.Properties.Match('State').Count -gt 0) {
+            return [string]$feature.State
+        }
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Write-WslFeatureState {
+    param([string]$FeatureName)
+
+    $state = Get-WindowsOptionalFeatureState -FeatureName $FeatureName
+    if ([string]::IsNullOrWhiteSpace([string]$state)) {
+        Write-Warning ("{0} feature state could not be resolved." -f $FeatureName)
+        return
+    }
+
+    if ([string]::Equals([string]$FeatureName, 'Microsoft-Windows-Subsystem-Linux', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("wsl-feature-state => Microsoft-Windows-Subsystem-Linux => state={0}" -f $state)
+        return
+    }
+
+    if ([string]::Equals([string]$FeatureName, 'VirtualMachinePlatform', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("wsl-feature-state => VirtualMachinePlatform => state={0}" -f $state)
+        return
+    }
+
+    Write-Host ("wsl-feature-state => {0} => {1}" -f $FeatureName, $state)
+}
+
 Refresh-SessionPath
 
 $rebootRequired = $false
@@ -79,12 +120,14 @@ if ((Invoke-NativeStep -Label "dism enable-feature Microsoft-Windows-Subsystem-L
 }) -eq 3010) {
     $rebootRequired = $true
 }
+Write-WslFeatureState -FeatureName 'Microsoft-Windows-Subsystem-Linux'
 
 if ((Invoke-NativeStep -Label "dism enable-feature VirtualMachinePlatform" -AcceptedExitCodes @(0,3010) -Action {
     dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
 }) -eq 3010) {
     $rebootRequired = $true
 }
+Write-WslFeatureState -FeatureName 'VirtualMachinePlatform'
 
 $wslReadyBeforeBootstrap = Test-WslReady
 $wslPackageInstalled = Test-WslPackageInstalled
@@ -116,6 +159,16 @@ if ($wslUpdateExit -eq 3010) {
     $rebootRequired = $true
 }
 
+$defaultVersionExit = Invoke-NativeStep -Label "wsl --set-default-version 2" -AcceptedExitCodes @(0,1) -Action {
+    wsl.exe --set-default-version 2
+}
+if ($defaultVersionExit -eq 0) {
+    Write-Host "wsl-step-ok: default-version-2"
+}
+else {
+    Write-Warning "wsl --set-default-version 2 did not complete successfully. A reboot or follow-up WSL bootstrap may still be required."
+}
+
 $versionExit = Invoke-NativeStep -Label "wsl --version" -AcceptedExitCodes @(0) -Action {
     wsl.exe --version
 }
@@ -124,6 +177,8 @@ if ($versionExit -eq 0) {
     [void](Invoke-NativeStep -Label "wsl --status" -AcceptedExitCodes @(0) -Action {
         wsl.exe --status
     })
+    Write-WslFeatureState -FeatureName 'Microsoft-Windows-Subsystem-Linux'
+    Write-WslFeatureState -FeatureName 'VirtualMachinePlatform'
     Write-Host "wsl-step-ok: wsl-version"
 }
 else {

@@ -8,6 +8,7 @@ $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $publicDesktop = "C:\Users\Public\Desktop"
+$publicEdgeUserDataDir = 'C:\Users\Public\AppData\Local\Microsoft\msedge\userdata'
 $dockerStartupShortcutPath = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk"
 $ollamaStartupShortcutPath = ("C:\Users\{0}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk" -f $managerUser)
 $shortcutRunAsAdminFlag = 0x00002000
@@ -218,6 +219,80 @@ function ConvertTo-TitleCaseShortcutText {
 
     $textInfo = [System.Globalization.CultureInfo]::InvariantCulture.TextInfo
     return [string]$textInfo.ToTitleCase($Value.Trim().ToLowerInvariant())
+}
+
+function Get-EmployeeEmailBaseName {
+    param([string]$EmailAddress)
+
+    if (Test-InvalidEmployeeEmailAddress -Value $EmailAddress) {
+        return ''
+    }
+
+    return [string]($EmailAddress.Trim().Split('@')[0])
+}
+
+function ConvertTo-LowerInvariantText {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ''
+    }
+
+    return [string]$Value.Trim().ToLowerInvariant()
+}
+
+function Get-ChromeProfileDirectoryForShortcut {
+    param(
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business'
+    )
+
+    if ([string]::Equals([string]$ProfileKind, 'personal', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [string]$script:resolvedEmployeeEmailBaseName
+    }
+
+    return [string]$script:resolvedCompanyChromeProfileDirectory
+}
+
+function Get-EdgeArgsPrefix {
+    param(
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business',
+        [ValidateSet('remote','setup','bank')]
+        [string]$Variant = 'remote'
+    )
+
+    $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
+    switch ([string]$Variant) {
+        'setup' {
+            return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
+        }
+        'bank' {
+            return ('--new-window --start-maximized --profile-directory="{0}"' -f $profileDirectory)
+        }
+        default {
+            return ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
+        }
+    }
+}
+
+function Get-WindowsOptionalFeatureState {
+    param([string]$FeatureName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$FeatureName)) {
+        return ''
+    }
+
+    try {
+        $feature = Get-WindowsOptionalFeature -Online -FeatureName $FeatureName -ErrorAction Stop
+        if ($null -ne $feature -and $feature.PSObject.Properties.Match('State').Count -gt 0) {
+            return [string]$feature.State
+        }
+    }
+    catch {
+    }
+
+    return ''
 }
 
 function Get-ShortcutRunAsAdministratorFlag {
@@ -912,6 +987,9 @@ $resolvedCompanyName = if (Test-InvalidCompanyName -Value $companyName) { $unres
 $resolvedCompanyDisplayName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { ConvertTo-TitleCaseShortcutText -Value $companyName.Trim() }
 $resolvedEmployeeEmailAddress = if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) { $unresolvedEmployeeEmailAddressToken } else { $employeeEmailAddress.Trim() }
 $resolvedEmployeeFullName = if (Test-InvalidEmployeeFullName -Value $employeeFullName) { $unresolvedEmployeeFullNameToken } else { $employeeFullName.Trim() }
+$script:resolvedEmployeeEmailBaseName = ConvertTo-LowerInvariantText -Value (Get-EmployeeEmailBaseName -EmailAddress $resolvedEmployeeEmailAddress)
+$script:resolvedCompanyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $resolvedCompanyName
+$expectedEdgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind 'business' -Variant 'remote'
 $publicShortcutNames = @(
     "a1ChatGPT Web",
     "a2CodexApp",
@@ -1150,6 +1228,27 @@ foreach ($registryPath in @(
 
 Write-PackagedAppInventory
 
+Write-Host "WSL FEATURE STATE:"
+foreach ($featureName in @('Microsoft-Windows-Subsystem-Linux', 'VirtualMachinePlatform')) {
+    $featureState = Get-WindowsOptionalFeatureState -FeatureName $featureName
+    if ([string]::IsNullOrWhiteSpace([string]$featureState)) {
+        Write-Host ("wsl-feature => {0} => unavailable" -f $featureName)
+        continue
+    }
+
+    if ([string]::Equals([string]$featureName, 'Microsoft-Windows-Subsystem-Linux', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("wsl-feature => Microsoft-Windows-Subsystem-Linux => state={0}" -f $featureState)
+        continue
+    }
+
+    if ([string]::Equals([string]$featureName, 'VirtualMachinePlatform', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("wsl-feature => VirtualMachinePlatform => state={0}" -f $featureState)
+        continue
+    }
+
+    Write-Host ("wsl-feature => {0} => state={1}" -f $featureName, $featureState)
+}
+
 Write-Host "PUBLIC DESKTOP SHORTCUT STATUS:"
 $orphanManagedShortcutFiles = New-Object 'System.Collections.Generic.List[object]'
 foreach ($shortcutName in @($publicShortcutNames)) {
@@ -1199,6 +1298,22 @@ foreach ($shortcutFile in @($unmanagedPublicShortcutFiles)) {
 Write-Host ("orphan-managed-shortcut-count={0}" -f ([int]$orphanManagedShortcutFiles.Count))
 foreach ($orphanShortcut in $orphanManagedShortcutFiles) {
     Write-ShortcutReadback -Label 'orphan-managed-shortcut' -ShortcutPath ([string]$orphanShortcut.ShortcutPath)
+}
+
+$edgeShortcutPath = Join-Path $publicDesktop 'a11MS Edge.lnk'
+Write-Host "MS EDGE SHORTCUT CONTRACT:"
+if (Test-Path -LiteralPath $edgeShortcutPath) {
+    $edgeShortcutHealth = Get-ShortcutHealth -ShortcutPath $edgeShortcutPath
+    $edgeShortcutDetails = $edgeShortcutHealth.Details
+    $edgeArgsMatch = [string]::Equals(([string]$edgeShortcutDetails.Arguments).Trim(), ([string]$expectedEdgeBusinessArgs).Trim(), [System.StringComparison]::OrdinalIgnoreCase)
+    Write-Host ("edge-shortcut-target => {0}" -f [string]$edgeShortcutDetails.TargetPath)
+    Write-Host ("edge-shortcut-args => {0}" -f [string]$edgeShortcutDetails.Arguments)
+    Write-Host ("edge-shortcut-expected-args => {0}" -f [string]$expectedEdgeBusinessArgs)
+    Write-Host ("edge-shortcut-user-data-root => {0}" -f $publicEdgeUserDataDir)
+    Write-Host ("edge-shortcut-args-match => {0}" -f [bool]$edgeArgsMatch)
+}
+else {
+    Write-Host ("edge-shortcut-missing => {0}" -f $edgeShortcutPath)
 }
 
 Write-Host "PER-USER DESKTOP STATUS:"
@@ -1353,6 +1468,10 @@ if ($ollamaApiProbeSuccess) {
 Write-Host ("ollama-api-probe => success={0}; timed-out={1}" -f [bool]$ollamaApiProbeSuccess, [bool]$ollamaApiProbeTimedOut)
 
 Write-Host "WSL HEALTH:"
+Write-Host ("docker-wsl-prereq-ready => {0}" -f (
+    [string]::Equals((Get-WindowsOptionalFeatureState -FeatureName 'Microsoft-Windows-Subsystem-Linux'), 'Enabled', [System.StringComparison]::OrdinalIgnoreCase) -and
+    [string]::Equals((Get-WindowsOptionalFeatureState -FeatureName 'VirtualMachinePlatform'), 'Enabled', [System.StringComparison]::OrdinalIgnoreCase)
+))
 foreach ($serviceName in @('WslService', 'LxssManager')) {
     $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
     if ($null -eq $svc) {

@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.309] - 2026-03-13
+
+### Added
+- Added a tracked Windows managed app-state restore layer under `windows/update/app-state/` plus the new tracked task `133-restore-managed-app-state.ps1`, so tracked safe baselines for repo-installed apps can be replayed after installs without relying on broad fragile profile copies.
+- Added `docs/windows-store-migration-audit.md` to capture the current Windows installer-source matrix, explicitly separating Store-backed apps, approval-gated `winget + msstore` migration candidates, and apps that should stay on their current installer source.
+
+### Changed
+- Reworked `10002-create-shortcuts-public-desktop.ps1` so Store-backed public desktop shortcuts now prefer `explorer.exe` plus `shell:AppsFolder\<AUMID>` launch contracts, while `a11MS Edge` stays a direct `msedge.exe` shortcut with the repo-managed shared argument profile rooted at `C:\Users\Public\AppData\Local\Microsoft\msedge\userdata`.
+- Hardened shortcut reconciliation so same-name legacy `.lnk` files are no longer treated as healthy by name alone; normalization now rechecks target and argument contracts, which allowed Codex, WhatsApp Business, Edge, and Google Drive shortcuts to self-heal on the live VM.
+- Hardened `113-install-wsl2-system.ps1` and `10099-capture-snapshot-health.ps1` so the repo now logs explicit WSL feature-state evidence, surfaces Docker Desktop prerequisite readiness, and verifies the refreshed Edge shortcut contract in the live health snapshot.
+- Refreshed the README business/outcome story and documentation set so the current docs now mention Store-aware shortcuts, tracked safe replay, optional local-only overlays, Docker/WSL readiness hardening, and the dedicated Store migration audit document.
+
+### Fixed
+- Narrowed the local-only WSL save/restore payload so only the `docker-desktop` distro registry state is exported and replayed; non-Docker WSL distro entries are now excluded from the payload and purged during local overlay replay before the filtered Lxss state is imported.
+
+### Tests
+- Revalidated the tracked non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+- Revalidated the live isolated Windows task set on the active VM with `exec --update-task=113`, `114`, `116`, `10002`, `10006`, `10099`, plus the local-only task chain `1001`, `1002`, `1004`, `1005`, and `1006`.
+
 ## [2026.3.13.308] - 2026-03-13
 
 ### Changed

@@ -3590,6 +3590,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '129-configure-unlocker-io' = 23
         '131-install-icloud-system' = 120
         '132-install-vs2022community' = 7200
+        '133-restore-managed-app-state' = 180
         '10001-configure-apps-startup' = 45
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
@@ -4086,8 +4087,97 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     $advancedAssetCopies = @($resolvedAdvancedTask.AssetCopies)
     $advancedScriptBody = [string]$resolvedAdvancedTask.Script
     Assert-True -Condition ($advancedAssetCopies.Count -eq 0) -Message "Advanced settings task must not publish helper assets."
-    Assert-True -Condition ($advancedScriptBody -notlike '*VolumeControl*') -Message "Advanced settings task must not keep legacy audio tuning."
-    Assert-True -Condition (-not $resolvedAdvancedTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Advanced settings task must not publish reboot-resume metadata."
+Assert-True -Condition ($advancedScriptBody -notlike '*VolumeControl*') -Message "Advanced settings task must not keep legacy audio tuning."
+Assert-True -Condition (-not $resolvedAdvancedTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Advanced settings task must not publish reboot-resume metadata."
+}
+
+Invoke-Test -Name "Windows managed app-state restore task publishes full tracked inventory" -Action {
+    $updateDir = Join-Path $RepoRoot 'windows\update'
+    $taskPath = Join-Path $updateDir '133-restore-managed-app-state.ps1'
+    $manifestPath = Join-Path $updateDir 'app-state\managed-app-state-manifest.json'
+    $modulePath = Join-Path $updateDir 'app-state\managed-app-state-common.psm1'
+
+    Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Managed app-state restore task file was not found."
+    Assert-True -Condition (Test-Path -LiteralPath $manifestPath) -Message "Managed app-state manifest file was not found."
+    Assert-True -Condition (Test-Path -LiteralPath $modulePath) -Message "Managed app-state helper module was not found."
+
+    $context = [ordered]@{
+        VM_ADMIN_USER = 'manager'
+        VM_ADMIN_PASS = '<runtime-secret>'
+        ASSISTANT_USER = 'assistant'
+        ASSISTANT_PASS = '<runtime-secret>'
+        COMPANY_NAME = 'exampleorg'
+        EMPLOYEE_EMAIL_ADDRESS = 'employee_email_address'
+        EMPLOYEE_FULL_NAME = 'Example Worker'
+        SSH_PORT = '22'
+        RDP_PORT = '3389'
+        RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+        VM_NAME = 'samplevm'
+        AZ_LOCATION = 'austriaeast'
+        VM_SIZE = 'Standard_D4as_v5'
+        VM_IMAGE = 'MicrosoftWindowsDesktop:windows-11:win11-24h2-pro:latest'
+        VM_DISK_NAME = 'disk-samplevm-ate1-n7'
+        VM_DISK_SIZE = '127'
+        VM_STORAGE_SKU = 'Premium_LRS'
+    }
+
+    $templates = @(
+        [pscustomobject]@{
+            Name = '133-restore-managed-app-state'
+            Script = [string](Get-Content -LiteralPath $taskPath -Raw)
+            RelativePath = '133-restore-managed-app-state.ps1'
+            DirectoryPath = $updateDir
+            TimeoutSeconds = 180
+            AssetSpecs = @(
+                [pscustomobject]@{
+                    LocalPath = 'app-state/managed-app-state-common.psm1'
+                    RemotePath = 'C:/Windows/Temp/az-vm-managed-app-state-common.psm1'
+                },
+                [pscustomobject]@{
+                    LocalPath = 'app-state/managed-app-state-manifest.json'
+                    RemotePath = 'C:/Windows/Temp/az-vm-managed-app-state-manifest.json'
+                }
+            )
+        }
+    )
+
+    $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context)[0]
+    $assetCopies = @($resolvedTask.AssetCopies)
+    $taskBody = [string]$resolvedTask.Script
+    $manifestText = [string](Get-Content -LiteralPath $manifestPath -Raw)
+    $moduleText = [string](Get-Content -LiteralPath $modulePath -Raw)
+    $combinedText = $taskBody + $manifestText + $moduleText
+
+    Assert-True -Condition ($assetCopies.Count -eq 2) -Message "Managed app-state task must publish exactly two helper assets."
+    Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-managed-app-state-common.psm1') -Message "Managed app-state helper remote path mismatch."
+    Assert-True -Condition ([string]$assetCopies[1].RemotePath -eq 'C:/Windows/Temp/az-vm-managed-app-state-manifest.json') -Message "Managed app-state manifest remote path mismatch."
+
+    foreach ($fragment in @(
+        'Invoke-ManagedAppStateRestore',
+        'managed-app-state-summary =>',
+        'restore-managed-app-state-completed',
+        'managed-app-state-plan =>',
+        'tracked-safe-baseline',
+        'local-overlay-only',
+        '"id": "google-chrome"',
+        '"id": "microsoft-edge"',
+        '"id": "vscode"',
+        '"id": "docker-desktop"',
+        '"id": "ollama"',
+        '"id": "codex-app"',
+        '"id": "icloud"',
+        '"id": "vs2022community"',
+        '{publicChromeRoot}',
+        '{publicEdgeRoot}',
+        '{businessProfileDirectory}',
+        '{personalProfileDirectory}',
+        'Convert-ToManagedAppStateLowerText',
+        'Get-ManagedAppStateProfileTargets',
+        'Ensure-ManagedAppStateDirectory',
+        'Ensure-ManagedAppStateFile'
+    )) {
+        Assert-True -Condition ($combinedText.IndexOf([string]$fragment, [System.StringComparison]::Ordinal) -ge 0) -Message ("Managed app-state restore layer must include fragment '{0}'." -f [string]$fragment)
+    }
 }
 
 Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed public shortcuts" -Action {
@@ -4282,7 +4372,9 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         '$companyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $companyName',
         '$employeeEmailBaseName = ConvertTo-LowerInvariantText -Value $employeeEmailBaseName',
         'Get-ChromeArgsPrefix',
+        'Get-EdgeArgsPrefix',
         'Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind',
+        'New-StoreAppShortcutSpec',
         'New-ChromeShortcutSpec',
         'Get-NormalizedShortcutNameKey',
         'Get-ShortcutUrlFromArguments',
@@ -4348,9 +4440,12 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'shell:AppsFolder\',
         'OpenAI.Codex',
         'WhatsApp.Root.exe',
+        '9NKSQGP7F2NH',
         'Resolve-AppPackageExecutablePath -NameFragment "whatsapp"',
         '5319275A.WhatsAppDesktop',
         'iCloudHome.exe',
+        '$publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\userdata"',
+        '$edgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind ''business'' -Variant ''remote''',
         '/c start outlook.exe /select "outlook:\\{0}\\Inbox"',
         'https://developer.apple.com/account',
         'https://play.google.com/console/signin',
@@ -4440,8 +4535,42 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("NVDA")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit NVDA duplicate alias.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('CleanupAliasMatchByNameOnly $true', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must support explicit alias-only cleanup for installer shortcuts that wrap the managed app target.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('unexpected-public-shortcut', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep unexpected Public Desktop cleanup logic.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for Codex when a Store app id is available.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppBusinessAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for WhatsApp when a Store app id is available.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for iCloud when a Store app id is available.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('MS EDGE SHORTCUT CONTRACT:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the dedicated MS Edge shortcut contract.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-args-match =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge shortcut argument match state.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-user-data-root =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge shared user-data root.'
+}
+
+Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite signals" -Action {
+    $wslTaskPath = Join-Path $RepoRoot 'windows\update\113-install-wsl2-system.ps1'
+    $healthTaskPath = Join-Path $RepoRoot 'windows\update\10099-capture-snapshot-health.ps1'
+    $wslTaskText = [string](Get-Content -LiteralPath $wslTaskPath -Raw)
+    $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+
+    foreach ($fragment in @(
+        'Get-WindowsOptionalFeatureState',
+        'Write-WslFeatureState',
+        'wsl-feature-state => Microsoft-Windows-Subsystem-Linux =>',
+        'wsl-feature-state => VirtualMachinePlatform =>',
+        'wsl --set-default-version 2',
+        'wsl-step-ok: default-version-2'
+    )) {
+        Assert-True -Condition ($wslTaskText -like ('*' + [string]$fragment + '*')) -Message ("WSL task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($fragment in @(
+        'WSL FEATURE STATE:',
+        'wsl-feature => Microsoft-Windows-Subsystem-Linux => state=',
+        'wsl-feature => VirtualMachinePlatform => state=',
+        'docker-wsl-prereq-ready =>',
+        'WSL HEALTH:'
+    )) {
+        Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include WSL readiness fragment '{0}'." -f [string]$fragment)
+    }
 }
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {

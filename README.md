@@ -146,7 +146,7 @@ On the current Windows hero path, one successful `create` is designed to leave b
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### Fastest Safe Path To Value
-If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated:
+If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated. On the current Windows path that includes Store-aware public desktop shortcuts, tracked safe app-state replay, optional local-only overlay replay, and WSL2 plus Docker Desktop prerequisite hardening before developer-runtime health is considered ready:
 1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
 2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
@@ -181,7 +181,7 @@ az login
 
 `az-vm` compresses the time between "we need a working Azure VM" and "someone can remotely connect and start real work" into one operator workflow. The practical benefit is not just faster provisioning; it is lower variance after provisioning. The repo keeps infrastructure intent, guest configuration, direct task reruns, diagnostics, release notes, and support-facing guidance together, so a team does not have to rediscover the same setup logic every time a VM must be rebuilt, updated, resized, repaired, or handed to another person.
 
-The strongest current story is the Windows workstation path. With one command, the repo can provision Azure resources and continue until the guest looks and behaves much closer to a prepared remote computer than to an empty VM: core tooling is installed, common collaboration and storage apps are staged, startup behavior is configured, public desktop shortcuts are created and refreshed, advanced OS settings are applied, and safe user-level preferences are copied where the repo already has task coverage. The result is a near-zero-touch first session for the people who actually need to use the machine.
+The strongest current story is the Windows workstation path. With one command, the repo can provision Azure resources and continue until the guest looks and behaves much closer to a prepared remote computer than to an empty VM: core tooling is installed, common collaboration and storage apps are staged, startup behavior is configured, public desktop shortcuts are created and refreshed, Store-backed desktop apps can launch through `shell:AppsFolder\<AUMID>` instead of brittle version-pinned paths, advanced OS settings are applied, tracked safe app-state baselines are replayed, optional local-only overlays can restore deeper personal state, and safe user-level preferences are copied where the repo already has task coverage. The result is a near-zero-touch first session for the people who actually need to use the machine.
 
 From a customer-facing perspective, the value proposition is concrete:
 - one-command path to a near-zero-touch remote Windows workstation in Azure, backed by the current task catalogs
@@ -228,10 +228,10 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | --- | --- | --- | --- | --- |
 | Base access | Local users, OpenSSH, RDP, firewall ports, repo-managed connection flow | Local users, SSHD port config, firewall ports, repo-managed connection flow | Teams can connect immediately with less setup drift. | Handoffs happen faster and with less rediscovery. |
 | Core tooling | PowerShell 7, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, 7-Zip, Sysinternals, FFmpeg | System package upgrade, Node capability tuning, SSHD tuning | A new VM becomes useful for cloud, scripting, and diagnostics fast. | Less first-day setup work and less tool inconsistency. |
-| Developer runtime | Docker Desktop, WSL2, npm global package set, Ollama, Codex app, VS 2022 Community | Node-ready SSH environment and updated base packages | Engineering workflows can start earlier. | Faster onboarding and less rebuild waste. |
+| Developer runtime | Docker Desktop, WSL2, npm global package set, Ollama, Codex app, VS 2022 Community, WSL prerequisite hardening, Docker health probes, and docker-desktop-focused WSL state replay | Node-ready SSH environment and updated base packages | Engineering workflows can start earlier and recover with fewer hidden prerequisites. | Faster onboarding and less rebuild waste. |
 | Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | The machine feels operational, not half-finished. | Customer-facing and operator-facing use is easier to stage. |
 | Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Assisted-operation scenarios are easier to reproduce and support. | Broader usability and faster support response. |
-| Desktop and personalization | Startup configuration, grouped public desktop shortcuts, Windows UX tuning, advanced settings, and safe user preference copy | Extensible through the same task model rather than a rich built-in desktop catalog | People connect to a machine that already feels curated. | Less post-build manual cleanup and faster user adoption. |
+| Desktop and personalization | Startup configuration, grouped public desktop shortcuts, Store-backed `AppsFolder` launches where supported, Windows UX tuning, advanced settings, tracked safe app-state replay, optional local-only overlay replay, and safe user preference copy | Extensible through the same task model rather than a rich built-in desktop catalog | People connect to a machine that already feels curated and less drift-prone. | Less post-build manual cleanup and faster user adoption. |
 | Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting narrows quickly to the failing area. | Less wasted time during support and maintenance. |
 | Lifecycle changes | Create fresh, explicit rebuild by `delete` plus `create`, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, explicit rebuild by `delete` plus `create`, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
 
@@ -938,6 +938,7 @@ When a prompt changes repo files:
 - `release-notes.md`: current documented release summary.
 - `roadmap.md`: forward plan organized by business value.
 - `docs/prompt-history.md`: English-normalized prompt ledger.
+- `docs/windows-store-migration-audit.md`: current Windows installer-source audit, including which Store migrations are already active and which candidates still wait for explicit approval.
 
 ## License And Sponsorship
 This repository is distributed under the custom non-commercial license in [LICENSE](LICENSE).

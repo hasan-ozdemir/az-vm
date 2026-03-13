@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.309 - 2026-03-13
+
+### Summary
+This release hardens the Windows app-install and personalization surface around isolated live evidence. Store-backed public desktop shortcuts now normalize through `AppsFolder` launches, tracked safe app-state baselines can be replayed from a dedicated managed restore task, Docker and WSL prerequisite signals are surfaced more explicitly, and the local-only WSL overlay path now keeps only the `docker-desktop` distro state instead of replaying unrelated WSL distributions.
+
+### Highlights
+- Added the tracked managed app-state restore layer and task `133-restore-managed-app-state.ps1`, giving repo-installed Windows apps a safer replay path than broad profile mirroring.
+- Added `docs/windows-store-migration-audit.md` so the repo now documents which Windows apps are already Store-backed, which Store migrations are credible but still approval-gated, and which installers should stay on their current source.
+- Updated the Windows public desktop shortcut contract so Store-backed apps such as Codex, Teams, WhatsApp, and Be My Eyes prefer `explorer.exe` with `shell:AppsFolder\<AUMID>`, while `a11MS Edge` stays on the requested direct `msedge.exe` launch contract and Google Drive now refreshes to the newest versioned executable path.
+- Hardened the WSL/Docker path with explicit feature-state health evidence and narrowed the local-only WSL overlay replay so only `docker-desktop` remains in the exported and replayed distro state.
+- Revalidated the change set with isolated live task runs on the active Windows VM, including the refreshed shortcut normalization, the managed state replay task, and the filtered local overlay replay.
+
 ## Release 2026.3.13.308 - 2026-03-13
 
 ### Summary
