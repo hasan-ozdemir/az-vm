@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.302] - 2026-03-13
+
+### Changed
+- Reorganized `README.md` into an audience-first flow that now opens with a stronger at-a-glance introduction, a merged `Quick Start Guide`, `Customer Business Value`, `Executive Summary`, `Value By Audience`, and a richer delivered-outcome matrix before the deeper technical sections.
+- Added a new top-level `Operational Command Matrix` to `README.md` so operators, customers, executives, developers, visitors, and sponsors can scan every public command, global option, and practical command variation from tables before diving into the deeper narrative guide.
+- Polished the README presentation end to end so the same document now works better as an operator manual, stakeholder-facing overview, and public project landing page without reducing the underlying technical depth.
+
+### Tests
+- Updated `tests/documentation-contract-check.ps1` to enforce the new README heading hierarchy and the merged quick-start plus command-matrix structure.
+- Revalidated the non-live documentation-facing gate with `tests/documentation-contract-check.ps1`, `tests/az-vm-smoke-tests.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
+
 ## [2026.3.13.301] - 2026-03-13
 
 ### Changed

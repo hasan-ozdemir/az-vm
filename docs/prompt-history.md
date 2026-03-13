@@ -5002,3 +5002,17 @@ Fix bug: I am not happy with the execution performance of the `copy-user-setting
 **Assistant Summary**
 
 Narrowed `10005-copy-settings-user.ps1` to an explicit, durable allowlist instead of broad profile sweeps. The task now mirrors only known user roots plus selected Task Manager, VS Code, Chrome, and repo-managed CLI-wrapper settings, while continuing to prune excluded stale targets and skip locked or reparse-heavy cache paths safely. This removed the earlier shallow `AppData\Roaming` and `AppData\Local` mirroring behavior that kept wasting time and surfacing ACL, lock, and reparse-point issues during reruns. I revalidated that narrower copy contract through the local smoke and compatibility checks and then carried it through the successful live `create -> reboot -> update` release-bar run on `rg-examplevm-ate1-g2/examplevm`.
+
+### 2026-03-13 17:05 TRT
+
+**User Prompt**
+
+````text
+Update docs: reorganize `README.md` so the content starts with a merged quick-start guide, then `Customer Business Value`, then `Executive Summary`, and then a richer, more effective sequence of the remaining topics. The README should stay content-rich, become more presentable, and explain the value proposition clearly for executives, developers, customers, users, visitors, sponsors, and regular operators. Also include one strong table-driven section that explains all commands, parameters, and practical variations in an operational and pragmatic way. Then implement the plan.
+````
+
+**Assistant Summary**
+
+Rebuilt `README.md` into a more audience-first and presentation-ready document without thinning out the technical depth. The new README now opens with a stronger at-a-glance framing, a merged `Quick Start Guide`, `Customer Business Value`, a standalone `Executive Summary`, `Value By Audience`, and a richer delivered-outcome matrix before moving into the deeper technical guidance. I also added a new top-level `Operational Command Matrix` so every public command, shared option, and practical usage variation can be scanned quickly from tables before the reader moves into the narrative command guide and the deeper architecture and workflow sections.
+
+To keep the repo contract tight, I updated `tests/documentation-contract-check.ps1` so the new README heading order, the merged quick-start structure, and the new command-matrix sections are enforced explicitly. I also updated `CHANGELOG.md` and `release-notes.md` to the new documented release `2026.3.13.302`, preserving the repo's release-document discipline while making the main README more useful for customers, executives, developers, operators, visitors, and potential sponsors.

@@ -35,6 +35,22 @@ function Test-ContainsTurkishLetters {
     return $false
 }
 
+function Assert-HeadingOrder {
+    param(
+        [string]$Text,
+        [string[]]$Headings,
+        [string]$DocumentLabel = 'document'
+    )
+
+    $lastIndex = -1
+    foreach ($heading in @($Headings)) {
+        $match = [regex]::Match($Text, ('(?m)^{0}$' -f [regex]::Escape([string]$heading)))
+        Assert-True -Condition $match.Success -Message ("{0} must contain heading '{1}'." -f $DocumentLabel, [string]$heading)
+        Assert-True -Condition ($match.Index -gt $lastIndex) -Message ("{0} headings are out of order around '{1}'." -f $DocumentLabel, [string]$heading)
+        $lastIndex = [int]$match.Index
+    }
+}
+
 $requiredFiles = @(
     'AGENTS.md',
     'README.md',
@@ -106,6 +122,37 @@ foreach ($token in $requiredDocTokens) {
 
 Assert-True -Condition ($readmeText -match 'tools[\\/]+enable-git-hooks\.ps1') -Message 'README.md must mention tools/enable-git-hooks.ps1.'
 Assert-True -Condition ($readmeText -match 'tools[\\/]+disable-git-hooks\.ps1') -Message 'README.md must mention tools/disable-git-hooks.ps1.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('At a glance:')) -Message 'README.md must include the audience-facing at-a-glance intro.'
+Assert-True -Condition ($readmeText -match '(?m)^## Quick Start Guide$') -Message 'README.md must define the merged Quick Start Guide heading.'
+Assert-True -Condition ($readmeText -match '(?m)^## Executive Summary$') -Message 'README.md must define Executive Summary as a top-level heading.'
+Assert-True -Condition ($readmeText -match '(?m)^## Value By Audience$') -Message 'README.md must define the Value By Audience section.'
+Assert-True -Condition ($readmeText -match '(?m)^## Operational Command Matrix$') -Message 'README.md must define the Operational Command Matrix section.'
+Assert-True -Condition ($readmeText -match '(?m)^### Global Options Matrix$') -Message 'README.md must define the Global Options Matrix subsection.'
+Assert-True -Condition ($readmeText -match '(?m)^### Command Matrix$') -Message 'README.md must define the Command Matrix subsection.'
+Assert-True -Condition ($readmeText -match '(?m)^### Command Variations By Command$') -Message 'README.md must define the command variation matrix subsection.'
+Assert-True -Condition (-not ($readmeText -match '(?m)^## Quick Start$')) -Message 'README.md must not keep the retired Quick Start heading.'
+Assert-True -Condition (-not ($readmeText -match '(?m)^### Quick Accelerator$')) -Message 'README.md must not keep Quick Accelerator as a separate heading.'
+Assert-HeadingOrder -Text $readmeText -DocumentLabel 'README.md' -Headings @(
+    '## Quick Start Guide',
+    '## Customer Business Value',
+    '## Executive Summary',
+    '## Value By Audience',
+    '## Delivered VM Outcome Matrix',
+    '## Who az-vm Is For',
+    '## Why az-vm Exists',
+    '## Operational Command Matrix',
+    '## Practical And Extensive Usage Scenarios',
+    '## Command Guide',
+    '## Task Authoring And Execution',
+    '## Configuration Guide',
+    '## Developer Benefits',
+    '## Core Mental Model',
+    '## Architecture From Zero To Hero',
+    '## Troubleshooting Guide',
+    '## Developer Workflow',
+    '## Documentation Set',
+    '## License And Sponsorship'
+)
 Assert-True -Condition ($agentsText -match [regex]::Escape('docs/prompt-history.md')) -Message 'AGENTS.md must mention docs/prompt-history.md.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('CONTRIBUTING.md')) -Message 'AGENTS.md must mention CONTRIBUTING.md.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('SUPPORT.md')) -Message 'AGENTS.md must mention SUPPORT.md.'

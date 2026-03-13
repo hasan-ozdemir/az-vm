@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.302 - 2026-03-13
+
+### Summary
+This release is a documentation presentation refresh focused on readability, audience fit, and public-facing clarity. `README.md` now opens with a faster value story for customers and executives, keeps the technical depth for operators and maintainers, and adds a table-driven operational command reference so the full command surface is easier to scan and adopt.
+
+### Highlights
+- Merged the old quick-start and quick-accelerator material into one stronger `Quick Start Guide` and moved business impact to the top of the document through `Customer Business Value`, a standalone `Executive Summary`, and the new `Value By Audience` section.
+- Added the new `Operational Command Matrix` so every public command, important parameter group, and practical usage variation is visible in one pragmatic table-driven section before the deeper narrative command guide.
+- Updated the README information architecture to work better for customers, executives, developers, operators, visitors, and potential sponsors while preserving the repo's exact contract-heavy command and workflow wording.
+- Extended the documentation contract checks so the new heading order, the merged quick-start structure, and the new command-matrix sections remain enforced.
+
 ## Release 2026.3.13.301 - 2026-03-13
 
 ### Summary

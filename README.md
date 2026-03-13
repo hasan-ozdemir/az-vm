@@ -2,45 +2,46 @@
 
 `az-vm` is a unified Azure VM provisioning and lifecycle toolkit for Windows and Linux. It gives one operator-facing entrypoint for provisioning, updating, inspecting, connecting to, repairing, resizing, moving, and deleting managed Azure VMs with deterministic task execution and explicit validation before mutation.
 
+At a glance:
+- Customer teams get a repeatable Azure VM outcome instead of a portal-heavy, one-off setup path.
+- Executive teams get lower drift, clearer support handoff, and one repo that captures runtime behavior, release notes, and operating guidance together.
+- Developers and DevOps maintainers get one command surface for create, update, inspect, repair, task reruns, resize, move, and delete flows.
+- Operators and regular users get pragmatic day-to-day commands, review-first workflows, and readable diagnostics instead of hidden side effects.
+- Visitors and sponsors can evaluate a mature operational toolkit with an explicit docs, quality-gate, and release-discipline story.
+
 ## Table Of Contents
-- [Why az-vm Exists](#why-az-vm-exists)
-  - [What It Does](#what-it-does)
-  - [Problems It Solves](#problems-it-solves)
-  - [Who It Is For](#who-it-is-for)
-  - [When To Use It](#when-to-use-it)
-  - [When Not To Use It](#when-not-to-use-it)
-- [Quick Start](#quick-start)
+- [Quick Start Guide](#quick-start-guide)
+  - [Why Start Here](#why-start-here)
   - [Prerequisites](#prerequisites)
   - [Repository Layout](#repository-layout)
   - [First Configuration Pass](#first-configuration-pass)
+  - [Fastest Safe Path To Value](#fastest-safe-path-to-value)
   - [First End-To-End Run](#first-end-to-end-run)
   - [Daily Operator Shortcuts](#daily-operator-shortcuts)
-  - [Quick Accelerator](#quick-accelerator)
 - [Customer Business Value](#customer-business-value)
-  - [Executive Summary](#executive-summary)
-  - [Delivered VM Outcome Matrix](#delivered-vm-outcome-matrix)
-- [Developer Benefits](#developer-benefits)
-  - [Why Developers Move Faster](#why-developers-move-faster)
-  - [Daily Maintainer Flow](#daily-maintainer-flow)
-- [Core Mental Model](#core-mental-model)
-  - [One Entrypoint, Two Platforms](#one-entrypoint-two-platforms)
-  - [Top-Level Orchestration Steps](#top-level-orchestration-steps)
-  - [Init Tasks Versus Update Tasks](#init-tasks-versus-update-tasks)
-  - [Interactive Versus Auto Mode](#interactive-versus-auto-mode)
-  - [Naming And Managed Resource Rules](#naming-and-managed-resource-rules)
-- [Architecture From Zero To Hero](#architecture-from-zero-to-hero)
-  - [Entrypoints And Runtime Modules](#entrypoints-and-runtime-modules)
-  - [Configuration Resolution](#configuration-resolution)
-  - [Task Catalog Model](#task-catalog-model)
-  - [Windows And Linux Execution Model](#windows-and-linux-execution-model)
-  - [End-To-End Create And Update Flow](#end-to-end-create-and-update-flow)
-  - [Safety Model And Failure Handling](#safety-model-and-failure-handling)
-  - [Documentation, History, And Release Discipline](#documentation-history-and-release-discipline)
-- [Configuration Guide](#configuration-guide)
-  - [Runtime Precedence](#runtime-precedence)
-  - [High-Value `.env` Keys](#high-value-env-keys)
-  - [Platform-Specific Settings](#platform-specific-settings)
-  - [Connection And Task Settings](#connection-and-task-settings)
+- [Executive Summary](#executive-summary)
+- [Value By Audience](#value-by-audience)
+- [Delivered VM Outcome Matrix](#delivered-vm-outcome-matrix)
+- [Who az-vm Is For](#who-az-vm-is-for)
+- [Why az-vm Exists](#why-az-vm-exists)
+  - [What It Does](#what-it-does)
+  - [Problems It Solves](#problems-it-solves)
+  - [When To Use It](#when-to-use-it)
+  - [When Not To Use It](#when-not-to-use-it)
+- [Operational Command Matrix](#operational-command-matrix)
+  - [Global Options Matrix](#global-options-matrix)
+  - [Command Matrix](#command-matrix)
+  - [Command Variations By Command](#command-variations-by-command)
+- [Practical And Extensive Usage Scenarios](#practical-and-extensive-usage-scenarios)
+  - [Create A Fresh Managed VM](#create-a-fresh-managed-vm)
+  - [Update An Existing Managed VM](#update-an-existing-managed-vm)
+  - [Inspect Managed Resource Groups And VM State](#inspect-managed-resource-groups-and-vm-state)
+  - [Run One Task Or Open A Remote Shell](#run-one-task-or-open-a-remote-shell)
+  - [Resize Compute Or OS Disk In Place](#resize-compute-or-os-disk-in-place)
+  - [Move Regions And Clean Up Safely](#move-regions-and-clean-up-safely)
+  - [Delete Only The Scope You Intend](#delete-only-the-scope-you-intend)
+  - [Inspect And Control Power State](#inspect-and-control-power-state)
+  - [Connect With SSH Or RDP](#connect-with-ssh-or-rdp)
 - [Command Guide](#command-guide)
   - [Global Options](#global-options)
   - [`configure`](#configure)
@@ -63,14 +64,30 @@
   - [Task Naming Rules](#task-naming-rules)
   - [Timeouts, Priority, And Enable Flags](#timeouts-priority-and-enable-flags)
   - [Direct Task Execution With `exec`](#direct-task-execution-with-exec)
-- [Practical And Extensive Usage Scenarios](#practical-and-extensive-usage-scenarios)
-  - [Create A Fresh Managed VM](#create-a-fresh-managed-vm)
-  - [Update An Existing Managed VM](#update-an-existing-managed-vm)
-  - [Inspect Managed Resource Groups And VM State](#inspect-managed-resource-groups-and-vm-state)
-  - [Run One Task Or Open A Remote Shell](#run-one-task-or-open-a-remote-shell)
-  - [Resize Compute Or OS Disk In Place](#resize-compute-or-os-disk-in-place)
-  - [Move Regions And Clean Up Safely](#move-regions-and-clean-up-safely)
-  - [Delete Only The Scope You Intend](#delete-only-the-scope-you-intend)
+- [Configuration Guide](#configuration-guide)
+  - [Runtime Precedence](#runtime-precedence)
+  - [High-Value `.env` Keys](#high-value-env-keys)
+  - [Shared VM Feature Toggles](#shared-vm-feature-toggles)
+  - [Platform-Specific Settings](#platform-specific-settings)
+  - [Connection And Task Settings](#connection-and-task-settings)
+  - [Global Versus Task-Local Configuration](#global-versus-task-local-configuration)
+- [Developer Benefits](#developer-benefits)
+  - [Why Developers Move Faster](#why-developers-move-faster)
+  - [Daily Maintainer Flow](#daily-maintainer-flow)
+- [Core Mental Model](#core-mental-model)
+  - [One Entrypoint, Two Platforms](#one-entrypoint-two-platforms)
+  - [Top-Level Orchestration Steps](#top-level-orchestration-steps)
+  - [Init Tasks Versus Update Tasks](#init-tasks-versus-update-tasks)
+  - [Interactive Versus Auto Mode](#interactive-versus-auto-mode)
+  - [Naming And Managed Resource Rules](#naming-and-managed-resource-rules)
+- [Architecture From Zero To Hero](#architecture-from-zero-to-hero)
+  - [Entrypoints And Runtime Modules](#entrypoints-and-runtime-modules)
+  - [Configuration Resolution](#configuration-resolution)
+  - [Task Catalog Model](#task-catalog-model)
+  - [Windows And Linux Execution Model](#windows-and-linux-execution-model)
+  - [End-To-End Create And Update Flow](#end-to-end-create-and-update-flow)
+  - [Safety Model And Failure Handling](#safety-model-and-failure-handling)
+  - [Documentation, History, And Release Discipline](#documentation-history-and-release-discipline)
 - [Troubleshooting Guide](#troubleshooting-guide)
   - [Validation Failures](#validation-failures)
   - [Task Failures](#task-failures)
@@ -79,45 +96,17 @@
 - [Developer Workflow](#developer-workflow)
   - [Branching And Local Hooks](#branching-and-local-hooks)
   - [Quality Gates](#quality-gates)
+  - [Live Release Acceptance](#live-release-acceptance)
   - [Support And Contribution Paths](#support-and-contribution-paths)
   - [Documentation Contract](#documentation-contract)
   - [Prompt History Rule](#prompt-history-rule)
 - [Documentation Set](#documentation-set)
 - [License And Sponsorship](#license-and-sponsorship)
 
-## Why az-vm Exists
+## Quick Start Guide
 
-### What It Does
-- Provisions Azure infrastructure for one managed Windows or Linux VM from one orchestrator.
-- Applies deterministic guest initialization and guest update task catalogs.
-- Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate, move, resize, connect, inspect, and delete flows.
-- Keeps command wording, configuration behavior, and execution semantics as parallel as possible across Windows and Linux.
-
-### Problems It Solves
-- Eliminates ad hoc VM setup drift caused by one-off portal changes and manual guest tweaking.
-- Replaces hidden or implicit guest scripts with explicit, catalog-driven task ordering and timeouts.
-- Reduces unsafe Azure mutations by validating names, regions, SKUs, image values, and state before mutating resources.
-- Gives one repeatable operator workflow for create, update, repair, inspect, connect, and cutover work.
-- Captures repo behavior, release notes, and development decisions in the same repository instead of splitting them across chat history and tribal knowledge.
-
-### Who It Is For
-- Operators who want reproducible Azure VM environments without rebuilding the full stack by hand every time.
-- Maintainers who need Windows and Linux parity under one command surface.
-- Developers who want infrastructure, guest tasks, and operator workflows documented together.
-- Small teams that value pragmatic automation, explicit state, and readable PowerShell over opaque orchestration layers.
-
-### When To Use It
-- When one managed VM per flow is the main unit of operation.
-- When you need repeatable Windows or Linux workstation/server-like environments in Azure.
-- When you need deterministic reruns of guest-side tasks after provisioning.
-- When move, resize, hibernation, and isolated task reruns need to stay operator-friendly.
-
-### When Not To Use It
-- When you need large-scale fleet orchestration across many VMs at once.
-- When you want a generic IaC module library rather than one opinionated operator toolkit.
-- When you want a broad public open-source license with unrestricted commercial use.
-
-## Quick Start
+### Why Start Here
+This section is optimized for the reader who wants usable value quickly without skipping the repo's safety model. The goal is simple: get from clone to one visible Azure VM outcome fast, while still understanding what the command surface is doing, which config matters first, and how to verify that the result is healthy.
 
 ### Prerequisites
 - Windows host with PowerShell and the Azure CLI available.
@@ -146,13 +135,21 @@
 2. Set the minimum values:
    - `VM_OS_TYPE`
    - `VM_NAME`
-   - `azure_subscription_id` when you want a repo-local default subscription
+   - `azure_subscription_id` when you want a repo-local default Azure subscription id for Azure-touching commands.
    - `AZ_LOCATION`
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
    - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
    - platform-specific image and size keys as needed
 3. Set `company_name`, `employee_email_address`, and `employee_full_name` for Windows flows. Repo-managed public desktop web shortcuts require all three; business shortcuts use `company_name` and personal shortcuts use the email local-part from `employee_email_address` as the Chrome `--profile-directory`. The task normalizes both sources to lowercase before writing the Chrome profile name.
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
+
+### Fastest Safe Path To Value
+If you want the fastest safe path to value, use this order:
+1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
+2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
+3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
+4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
+5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
 
 ### First End-To-End Run
 ```powershell
@@ -172,594 +169,242 @@ az login
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
-### Quick Accelerator
-If you want the fastest safe path to value, use this order:
-1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
-2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
-3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
-4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
-5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
-
 ## Customer Business Value
 
-### Executive Summary
-`az-vm` compresses the time from "we need a working Azure VM" to "we have a repeatable, supportable, documented VM" into one repo-owned workflow. Instead of a portal-heavy build with hidden post-install steps, the operator gets one command surface for provisioning, guest bootstrap, guest software rollout, health capture, follow-up updates, repair actions, resizing, move operations, and eventual deletion.
+`az-vm` compresses the time between "we need a working Azure VM" and "we have a documented, repeatable, supportable environment" into one operator workflow. The practical benefit is not just faster provisioning; it is lower variance after provisioning. The repo keeps infrastructure intent, guest configuration, direct task reruns, diagnostics, release notes, and support-facing guidance together, so a team does not have to rediscover the same setup logic every time a VM must be rebuilt, updated, resized, repaired, or handed to another person.
 
-For executive and customer-facing teams, the practical value is speed with lower variance:
-- faster time to a usable VM
+From a customer-facing perspective, the value proposition is concrete:
 - less manual setup drift between environments
-- repeatable update and repair flows after the first deployment
-- clearer support handoff because runtime behavior, docs, release notes, and prompt history live together
+- faster time to a usable VM with known software and known guest-side configuration
+- safer day-two operations because the same toolkit handles update, inspect, resize, move, repair, and delete flows
+- more predictable support handoff because runtime behavior, docs, release notes, and prompt history live in the same repository
 
-### Delivered VM Outcome Matrix
-| Outcome Area | Windows managed VM outcome | Linux managed VM outcome | Business value |
+## Executive Summary
+
+For decision-makers, `az-vm` is an operational standardization asset. It turns a previously manual, portal-heavy, and person-dependent VM build into a repo-governed process with validation before mutation, visible orchestration steps, repeatable guest task catalogs, and non-live quality gates. That matters because environment drift, undocumented post-install tweaks, and ad hoc support work are expensive even when the VM count is small.
+
+The executive-level outcomes are straightforward:
+- lower operational variance across fresh builds and maintenance windows
+- faster onboarding for internal operators and downstream support teams
+- clearer release readiness because the repo already enforces docs, quality, and live acceptance discipline
+- stronger sponsor and stakeholder confidence because the value is visible in the repo structure, not only in verbal explanation
+
+## Value By Audience
+
+| Audience | What they care about | What `az-vm` delivers | Why it matters |
 | --- | --- | --- | --- |
-| Base access | Local users, OpenSSH, RDP, firewall ports, repo-managed connection flow | Local users, SSHD port config, firewall ports, repo-managed connection flow | Teams can connect and hand over access quickly without rediscovering the host setup. |
-| Core tooling | PowerShell 7, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, 7-Zip, Sysinternals, FFmpeg | System package upgrade, Node capability tuning, SSHD tuning | A new VM becomes productive for cloud, scripting, and developer workflows in minutes instead of after many manual installs. |
-| Developer runtime | Docker Desktop, WSL2, npm global package set, Ollama, Codex app, VS 2022 Community | Node-ready SSH environment and updated base packages | Engineering teams get a ready-to-use workstation or automation host with less first-day setup work. |
-| Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | Customer-facing and operator-facing daily-use software is staged consistently instead of being installed ad hoc. |
-| Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Support, accessibility, and assisted-operation scenarios are easier to reproduce and maintain. |
-| Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting time falls because the repo already knows how to inspect, rerun, and summarize the environment. |
-| Lifecycle changes | Create fresh, destructive rebuild, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, destructive rebuild, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit keeps working after day one, so operations do not regress to manual portal work. |
-
-## Developer Benefits
-
-### Why Developers Move Faster
-- One orchestrator means less context switching between separate scripts for provisioning, update, connection, and repair.
-- The same command surface covers Windows and Linux, so platform differences stay narrow and explicit.
-- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.
-- `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
-- `resize --disk-size=... --expand` gives a safe in-place managed OS disk growth path, while `resize --disk-size=... --shrink` stops early and explains the supported alternatives instead of risking data loss.
-- Direct `task` and `exec` flows let maintainers inspect and rerun exactly the step or task that matters.
-
-### Daily Maintainer Flow
-1. Confirm the target with `list`, `show`, `configure`, and `do --vm-action=status`.
-2. Use `create` for first deploys and fresh environments; use `create explicit destructive rebuild flow` only when a full destructive rebuild is intentional.
-3. Use `update` for ongoing maintenance, guest-task refresh, and Azure redeploy-backed repair on an existing VM.
-4. Use `task` and `exec` to isolate one failing init or update task instead of replaying the whole chain.
-5. Use `move`, `resize`, `set`, and `delete` only after the inventory and current state are explicit.
-
-## Core Mental Model
-
-### One Entrypoint, Two Platforms
-`az-vm.ps1` is the only orchestrator. Windows and Linux are treated as two platform flavors of the same operator model. Differences are allowed only where the guest OS or Azure platform requirements genuinely differ.
-
-### Top-Level Orchestration Steps
-`az-vm` uses these top-level steps:
-1. `configure`
-2. `group`
-3. `network`
-4. `vm-deploy`
-5. `vm-init`
-6. `vm-update`
-7. `vm-summary`
-
-`create` and `update` can run the full chain or a selected window of steps by using `--step-from`, `--step-to`, or `--step`.
-
-### Init Tasks Versus Update Tasks
-- `vm-init` is Azure Run Command driven and is used for early guest bootstrap.
-- `vm-update` is pyssh driven and is used for richer task-by-task update flows after the VM is reachable.
-- Both stages use catalog JSON files as the source of truth for ordering, timeout, and enable/disable state.
-- The natural execution order for both stages is: builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks.
-
-### Interactive Versus Auto Mode
-- Interactive mode is the default and prompts when required values are missing.
-- Interactive `create` and `update` always show the configuration screen first and the VM summary screen last.
-- Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
-- `--auto` is for unattended `create`, `update`, and `delete` flows.
-- Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
-- Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
-- Auto mode prints the same review context, but it continues without waiting for checkpoint confirmation.
-- `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
-- Operator commands such as `show`, `do`, `ssh`, and `rdp` stay direct and do not require `--auto`.
-
-### Naming And Managed Resource Rules
-- `VM_NAME` is the single naming seed.
-- Managed names are template-driven and deterministic.
-- Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.
-- Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.
-- Runtime code validates names before Azure mutation.
-
-## Architecture From Zero To Hero
-
-### Entrypoints And Runtime Modules
-- `az-vm.cmd` exists to give Windows operators a simple launcher path.
-- `az-vm.ps1` loads `modules/azvm-runtime-manifest.ps1`, then dot-sources the ordered runtime leaf files directly before dispatching the command surface.
-- There is no transitional root-loader layer for `core`, `config`, `commands`, `ui`, or `tasks`; the launcher now resolves the refactored module tree directly.
-- `modules/core/` now holds smaller domain files for shared contracts, CLI helpers, system/runtime utilities, task discovery, and host mirroring logic.
-- `modules/config/` isolates dotenv, naming-template, region-code, and related config helpers from command/UI code.
-- `modules/commands/` now owns the public command surface: each supported command lives under its own subtree with `entry.ps1`, `contract.ps1`, `runtime.ps1`, and `parameters/`, while shared create/update orchestration lives under `context/`, `steps/`, `features/`, `pipeline/`, and `shared/`.
-- `modules/ui/` is now restricted to operator interaction concerns such as prompts, selection flows, show rendering, and connection-facing helpers.
-- `modules/tasks/` is split into `run-command/` and `ssh/` internals so Azure Run Command and persistent SSH execution remain reusable without leaving task transport logic in command or UI files.
-
-### Configuration Resolution
-Runtime precedence is:
-1. CLI override
-2. `.env`
-3. hard-coded default
-
-This matters because:
-- command-line overrides are the safest way to test one change without rewriting local defaults
-- `.env.example` is the committed contract
-- `.env` remains local and untracked
-
-### Task Catalog Model
-Each task directory has a catalog JSON file that owns:
-- execution priority
-- enable/disable state
-- timeout per task
-
-The runtime never auto-writes or auto-syncs catalog files. Missing entries fall back to:
-- `priority=1000` for tracked tasks
-- `enabled=true`
-- `timeout=180`
-
-### Windows And Linux Execution Model
-- Windows and Linux use the same overall orchestration sequence.
-- The guest execution language differs by platform:
-  - Windows tasks are PowerShell
-  - Linux tasks are shell scripts
-- Connection and task transport differ by stage:
-  - Azure Run Command for init
-  - pyssh for update and isolated exec flows
-
-### End-To-End Create And Update Flow
-1. Resolve platform, config, and command intent.
-2. Validate naming, region, image, and SKU inputs.
-3. For `create`, synthesize the next fresh managed resource group name plus fresh globally unique managed resource names; for `update`, resolve one existing managed resource group plus one existing VM only.
-4. Create or reconcile network resources for the current mode.
-5. Create or update the VM, then redeploy when `update` targets an existing VM.
-6. Run init tasks.
-7. Run update tasks.
-8. Print a final VM/resource summary.
-
-`create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path. `configure` and `vm-summary` still render even when a partial step selection slices out interior stages.
-Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION`; set them to `false` when you want create/update to skip those feature paths even if the SKU supports them. When either key is `true`, create/update now treats that capability as a required verified outcome, not a best-effort warning.
-
-### Safety Model And Failure Handling
-- Validation happens before destructive Azure work.
-- Friendly failures include a short reason and a corrective hint.
-- Retry behavior is bounded and explicit.
-- Isolated reruns are preferred over destructive rebuild loops unless a rebuild is clearly what the operator requested.
-
-### Documentation, History, And Release Discipline
-- `AGENTS.md` defines the engineering contract.
-- `README.md` is the operator and contributor manual.
-- `CHANGELOG.md` records full project history.
-- `release-notes.md` summarizes the current documented release.
-- `roadmap.md` captures forward work by value and priority.
-- `docs/prompt-history.md` records completed prompt/summary pairs in English-normalized form.
-
-## Configuration Guide
-
-### Runtime Precedence
-- CLI override wins over everything else.
-- `.env` is the main local working configuration file.
-- Hard-coded defaults are the last fallback and should not be treated as the main operator contract.
-- Sensitive values such as VM passwords must be set explicitly. Placeholder values are treated as invalid configuration.
-- Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
-
-### High-Value `.env` Keys
-- `VM_OS_TYPE`: default platform for auto flows.
-- `VM_NAME`: actual Azure VM name and the naming seed for derived resources.
-- `azure_subscription_id`: optional repo-local default Azure subscription id for Azure-touching commands.
-- `company_name`: required for the Windows business public desktop shortcut flow and used as the lowercase Chrome `--profile-directory` for repo-managed Windows business web shortcuts.
-- `employee_email_address`: required for the Windows public desktop shortcut flow and used to derive the lowercase Chrome `--profile-directory` for repo-managed Windows personal web shortcuts by taking the email local-part before `@`.
-- `employee_full_name`: required Windows operator identity metadata for the public desktop shortcut contract.
-- `AZ_LOCATION`: default Azure region.
-- `RESOURCE_GROUP`, `VNET_NAME`, `SUBNET_NAME`, `NSG_NAME`, `PUBLIC_IP_NAME`, `NIC_NAME`, `VM_DISK_NAME`: optional explicit resource-name overrides.
-- `NSG_RULE_NAME`, `NSG_RULE_NAME_TEMPLATE`: explicit override or template for inbound-rule naming. The default template prefix is `nsg-rule-`.
-
-### Shared VM Feature Toggles
-- `VM_ENABLE_HIBERNATION`: `true` or `false`. Controls whether create/update flows should attempt post-deploy Azure hibernation enablement when the target SKU supports it.
-- `VM_ENABLE_NESTED_VIRTUALIZATION`: `true` or `false`. Controls whether create/update flows should require nested virtualization guest readiness. Azure single-VM APIs do not expose a separate nested-virtualization toggle here; the repo validates the capability from inside the guest on running VMs.
-- These are common keys, not platform-specific keys. Keep them in `.env` unless you are deliberately overriding them on the CLI/runtime side.
-
-### Platform-Specific Settings
-- Windows:
-  - `WIN_VM_IMAGE`
-  - `WIN_VM_SIZE`
-  - `WIN_VM_DISK_SIZE_GB`
-  - `WIN_VM_INIT_TASK_DIR`
-  - `WIN_VM_UPDATE_TASK_DIR`
-- Linux:
-  - `LIN_VM_IMAGE`
-  - `LIN_VM_SIZE`
-  - `LIN_VM_DISK_SIZE_GB`
-  - `LIN_VM_INIT_TASK_DIR`
-  - `LIN_VM_UPDATE_TASK_DIR`
-
-### Connection And Task Settings
-- `VM_ADMIN_USER`, `VM_ADMIN_PASS`
-- `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
-- `VM_SSH_PORT`, `VM_RDP_PORT`
-- `AZ_COMMAND_TIMEOUT_SECONDS`
-- `SSH_CONNECT_TIMEOUT_SECONDS`
-- `SSH_TASK_TIMEOUT_SECONDS`
-- `VM_TASK_OUTCOME_MODE`
-- `SSH_MAX_RETRIES`
-- `PYSSH_CLIENT_PATH`: defaults to the repo-relative client path `tools/pyssh/ssh_client.py`
-- `TCP_PORTS`
-
-### Global Versus Task-Local Configuration
-- Put app-wide identity, secrets, reusable ports, and cross-command overrides in `.env`.
-- Put task-only constants such as package IDs, product-specific fallback paths, shortcut bundles, and task-local URLs in the owning `vm-init` or `vm-update` script's top config block.
-- Keep the committed repo portable and brand-neutral. Avoid embedding personal, company-specific, or secret fallback values in shared runtime code.
-
-## Command Guide
-
-### Global Options
-- `--auto[=true|false]`: unattended create/update/delete.
-- `--perf[=true|false]`: timing output.
-- `--windows`, `--linux`: force platform for supported commands.
-- `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`.
-- `-h`, `--help`: show overview or command-specific help.
-- Azure-touching commands require `az login`.
-
-### `configure`
-Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.
-
-Typical usage:
-```powershell
-.\az-vm.cmd configure -h
-.\az-vm.cmd configure
-.\az-vm.cmd configure --vm-name=<vm-name>
-.\az-vm.cmd configure --group=<resource-group> --vm-name=<vm-name>
-```
-
-What to expect:
-- interactive managed RG and VM selection when parameters are omitted
-- actual Azure state drives the persisted `.env` values
-- `--subscription-id` / `-s` targets one Azure subscription; if omitted, configure uses `.env azure_subscription_id` or the active Azure CLI subscription
-- `--windows` and `--linux` act as validation-only platform checks against the real VM
-- stale opposite-platform keys are cleared
-- no create, update, or delete Azure mutation
-
-### `create`
-Purpose: build one fresh managed VM flow from the selected step range.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd create -h
-.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
-.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>
-.\az-vm.cmd create --step=network --linux
-.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
-.\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
-```
-
-Operator expectations:
-- validates config before mutation
-- creates one fresh managed resource group and one fresh VM target
-- requires `az login`; interactive mode prompts for Azure subscription first when `--subscription-id` is omitted
-- if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
-- interactive mode proposes the next globally unique managed `gX` resource group and globally unique managed `nX` resource ids
-- any interactive override for the generated managed resource group still has to be unused and template-compliant
-- interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
-- auto mode requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`
-- CLI `--subscription-id` / `-s` writes `azure_subscription_id` back into `.env`
-- uses `explicit destructive rebuild flow` as the explicit destructive recreate path
-- runs init and update task windows unless the step range slices them out
-- success ends with a summary of the managed VM state
-
-Failure patterns:
-- invalid region/image/SKU
-- resource naming conflicts
-- guest task failures depending on `VM_TASK_OUTCOME_MODE`
-
-### `update`
-Purpose: rerun create-or-update logic against one existing managed VM.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd update -h
-.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
-.\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd update --step=vm-update --windows
-```
-
-Operator expectations:
-- keeps the same orchestration model as `create`
-- requires an existing managed resource group and existing VM before it starts
-- requires `az login`; interactive mode prompts for Azure subscription first when `--subscription-id` is omitted
-- interactive mode only selects from existing managed resource groups and existing VM names
-- invalid free-form resource-group or VM-name input is rejected with a corrective hint
-- interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
-- auto mode requires an explicit platform plus `--group` and `--vm-name`
-- CLI `--subscription-id` / `-s` writes `azure_subscription_id` back into `.env`
-- targets already-managed resources without destructive delete behavior
-- runs `az vm redeploy` for an existing VM during the VM deploy stage
-- useful for post-fix reruns and guest task refreshes
-
-### `list`
-Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd list -h
-.\az-vm.cmd list
-.\az-vm.cmd list --type=group,vm -s <subscription-guid>
-.\az-vm.cmd list --type=nsg,nsg-rule --group=<resource-group>
-```
-
-What users see:
-- deterministic managed inventory sections
-- exact managed resource-group filtering with `--group`
-- Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `azure_subscription_id` when it comes from the CLI
-
-### `show`
-Purpose: print a readable system/configuration inventory for managed resources and VMs.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd show -h
-.\az-vm.cmd show
-.\az-vm.cmd show --group=<resource-group> -s <subscription-guid>
-```
-
-Good for:
-- pre-mutation inspections
-- post-create or post-move confirmation
-- support and diagnostics snapshots
-- subscription-scoped inspection across the selected Azure subscription
-
-Behavior notes:
-- password-bearing `.env` values are redacted in the rendered report
-- the VM detail section includes the effective hibernation state and, when the VM is running, guest-validated nested-virtualization state plus validation evidence
-
-### `do`
-Purpose: inspect or change one VM lifecycle state.
-
-Supported actions:
-- `status`
-- `start`
-- `restart`
-- `reapply`
-- `stop`
-- `deallocate`
-- `hibernate-stop`
-- `hibernate-deallocate`
-
-Usage patterns:
-```powershell
-.\az-vm.cmd do -h
-.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
-.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd do --vm-action=deallocate --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>
-```
-
-Behavior notes:
-- if parameters are omitted, the command falls back to interactive group/VM/action selection
-- `--subscription-id` / `-s` scopes the lifecycle action to one Azure subscription
-- mutating actions validate the current power/provisioning state before calling Azure
-- `reapply` calls `az vm reapply` and then prints a refreshed lifecycle snapshot; it stays available even when provisioning is not currently in the succeeded state
-- `hibernate-stop` requires a running VM plus working SSH access, runs `shutdown /h /f` through the repo-managed pyssh path, and waits until the guest is no longer running without Azure deallocation
-- `hibernate-deallocate` follows Azure hibernation semantics and deallocates the VM
-
-Friendly refusal examples:
-- trying `restart` on a stopped VM
-- trying `hibernate-stop` or `hibernate-deallocate` when the VM is not running
-- trying a mutating action while the VM is in a transitional Azure state
-
-### `task`
-Purpose: list the real discovered task inventory and execution order without mutating Azure or the guest VM.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd task -h
-.\az-vm.cmd task --list
-.\az-vm.cmd task --list --vm-init
-.\az-vm.cmd task --list --vm-update --disabled --windows
-```
-
-Behavior notes:
-- uses the same discovery pipeline as real init/update execution
-- lists tracked catalog-driven tasks and local metadata-driven tasks together
-- shows stage, source, task type, priority, timeout, enabled state, disabled reason, task name, and relative path
-- `--disabled` filters the output to disabled tasks only
-
-### `exec`
-Purpose: run one init task, one update task, or open an interactive remote shell path.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd exec -h
-.\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd exec --update-task=10002 --group=<resource-group> --vm-name=<vm-name> --windows
-.\az-vm.cmd exec --linux
-```
-
-Behavior notes:
-- direct task runs resolve only the selected VM plus task context
-- `--subscription-id` / `-s` scopes direct task execution to one Azure subscription
-- no broad resource-inventory traversal is needed for direct one-task execution
-- interactive shell mode is used when no task selector is provided
-
-Failure patterns:
-- unknown task number
-- task timeout
-- guest transport failure
-- strict task outcome mode halting a stage on first failure
-
-### `ssh`
-Purpose: launch the local Windows OpenSSH client for a managed VM.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd ssh -h
-.\az-vm.cmd ssh --vm-name=<vm-name>
-.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant
-.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=manager --test
-```
-
-Behavior notes:
-- only runs when the target VM is already running
-- `--subscription-id` / `-s` scopes SSH target resolution to one Azure subscription
-- uses current managed VM state and connection settings from config/runtime
-- politely refuses and suggests `az-vm do --vm-action=start` when the VM is not running
-- `--test` performs a non-interactive SSH authentication and `whoami` handshake by using the repo-managed pyssh client instead of opening `ssh.exe`
-
-### `rdp`
-Purpose: launch the local Remote Desktop client for a managed Windows VM.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd rdp -h
-.\az-vm.cmd rdp --vm-name=<vm-name>
-.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
-.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=manager --test
-```
-
-Behavior notes:
-- only runs when the target VM is already running
-- `--subscription-id` / `-s` scopes RDP target resolution to one Azure subscription
-- stages credentials via `cmdkey` and launches `mstsc.exe`
-- politely refuses and suggests `az-vm do --vm-action=start` when the VM is not running
-- `--test` performs a non-interactive TCP reachability check against the resolved RDP endpoint instead of launching `mstsc.exe`
-
-### `move`
-Purpose: move a managed VM to another Azure region with a health-gated cutover.
-
-Usage pattern:
-```powershell
-.\az-vm.cmd move -h
-.\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral -s <subscription-guid>
-```
-
-Observed reference timing:
-- live reference for `austriaeast -> swedencentral`, `Standard_D4as_v5`, `127 GB` OS disk: about `25-30 minutes`
-- the longest phase was cross-region snapshot copy at about `17-19 minutes`
-
-Move flow:
-1. Validate source group, target region, SKU availability, and cutover safety rules.
-2. Deallocate the source VM.
-3. Create the source snapshot and the target-region copy.
-4. Wait for target snapshot copy completion.
-5. Rebuild target-side network, disk, and VM.
-6. Re-apply hibernation state where needed and start the target VM.
-7. Run target health checks.
-8. Delete the old source group only after the target is confirmed healthy.
-
-What can fail:
-- invalid target region or unavailable SKU
-- Azure snapshot-copy delays
-- target health gate failure
-- old source cleanup failure after successful cutover
-
-### `resize`
-Purpose: change the VM size or expand the managed OS disk in-place within the current region.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd resize -h
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 -s <subscription-guid>
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=196gb --expand --windows
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=98304mb --expand
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=64gb --shrink
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D2as_v5 --windows
-.\az-vm.cmd resize
-```
-
-Behavior notes:
-- same-region only
-- `--subscription-id` / `-s` scopes resize to one Azure subscription
-- fully specified calls run directly
-- parameterless use falls back to interactive target and size selection
-- `--windows` and `--linux` act as expected-platform assertions
-- `--disk-size=... --expand` deallocates the VM, grows the managed OS disk, starts the VM again, and persists the new platform disk-size key in `.env`
-- `--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity
-
-### `set`
-Purpose: apply hibernation and sync nested-virtualization desired state.
-
-Supported flags:
-- `--hibernation=on|off`
-- `--nested-virtualization=on|off`
-
-Usage patterns:
-```powershell
-.\az-vm.cmd set -h
-.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off -s <subscription-guid>
-.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off
-.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off
-```
-
-Behavior notes:
-- `set` resolves the target VM directly and does not depend on the heavier Step-1 create/update runtime path.
-- `--subscription-id` / `-s` scopes feature changes to one Azure subscription.
-- Hibernation is changed through Azure.
-- Nested virtualization is governed by VM size, security type, and guest readiness; `--nested-virtualization=on` validates the capability from inside a running VM, while `--nested-virtualization=off` only updates repo desired state.
-- After each successful change, the command syncs the resolved `RESOURCE_GROUP`, `VM_NAME`, and the changed `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values back into the local `.env` file.
-- If one toggle succeeds and a later toggle fails, `.env` is still updated to match the successful change so local intent does not drift away from the actual VM state.
-
-### `delete`
-Purpose: delete a selected scope from a managed resource group.
-
-Supported targets:
-- `group`
-- `network`
-- `vm`
-- `disk`
-
-Usage patterns:
-```powershell
-.\az-vm.cmd delete -h
-.\az-vm.cmd delete --target=group --group=<resource-group> --yes -s <subscription-guid>
-.\az-vm.cmd delete --target=vm --group=<resource-group> --yes
-```
-
-Behavior notes:
-- destructive by design
-- `--subscription-id` / `-s` scopes deletion to one Azure subscription
-- requires clear target selection
-- `--yes` is for non-interactive confirmation bypass
-
-### `help`
-Purpose: print the quick overview or one-command help.
-
-Usage patterns:
-```powershell
-.\az-vm.cmd -h
-.\az-vm.cmd --help
-.\az-vm.cmd do -h
-.\az-vm.cmd help
-.\az-vm.cmd help move
-```
-
-## Task Authoring And Execution
-
-### Catalog Ownership
-Catalog JSON files are the source of truth for task ordering, enable state, and timeouts. Runtime code must not rewrite them automatically.
-
-### Task Naming Rules
-- `<task-number>-verb-noun-target.ext`
-- task-number bands:
-  - `01-99` = `initial`
-  - `101-999` = `normal`
-  - `1001-9999` = local-only
-  - `10001-10099` = `final`
-- 2-5 English words in kebab-case
-- `.ps1` for Windows
-- `.sh` for Linux
-
-### Timeouts, Priority, And Enable Flags
-- tracked task at the stage root: use catalog values
-- local-only task under `local/` may declare `# az-vm-task-meta: {...}` on the first non-empty comment line for `priority`, `enabled`, `timeout`, and `assets`
-- local-only tasks under `local/` are discovered from disk dynamically and do not consume catalog entries
-- local-only tasks under `local/disabled/` remain disabled by location even if their metadata says `enabled=true`
-- local-only asset paths are resolved relative to the local task file directory
-- if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
-- tracked missing `priority`: default to `1000`
-- local missing `priority`: script metadata first, then filename task number, then deterministic auto-detect from the `1001+` band
-- missing `timeout`: default to `180`
-- missing tracked entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
-
-### Direct Task Execution With `exec`
-Direct `exec --init-task` and `exec --update-task` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
+| Customer | A usable VM quickly, with fewer surprises | One command surface for create, update, inspect, connect, resize, move, and delete flows | The delivered environment is easier to understand, verify, and support. |
+| Executive / decision maker | Risk reduction, repeatability, supportability | Validation before mutation, explicit orchestration, repo-owned release and docs discipline | Operational work becomes more predictable and less person-dependent. |
+| Developer / DevOps / maintainer | Faster iteration, fewer hidden scripts, isolated reruns | Catalog-driven init/update tasks, direct `task` and `exec` paths, one Windows/Linux mental model | Maintenance and debugging become narrower, faster, and more deterministic. |
+| Operator / regular user | Practical daily commands that do what they say | Clear lifecycle, connection, inventory, and repair commands with readable output | Day-to-day work is easier without learning a sprawling platform surface first. |
+| Visitor / evaluator | Evidence that the repo is real and usable | Readable README, release notes, prompt history, tests, and workflow gates | Evaluation is based on visible substance rather than vague promises. |
+| Sponsor / backer | A credible project with continuing value | Strong operator documentation, explicit contracts, repeatable acceptance, and clear business framing | Sponsorship has a concrete quality and maintainability story behind it. |
+
+## Delivered VM Outcome Matrix
+
+| Outcome area | Windows managed VM outcome | Linux managed VM outcome | Operator impact | Business value |
+| --- | --- | --- | --- | --- |
+| Base access | Local users, OpenSSH, RDP, firewall ports, repo-managed connection flow | Local users, SSHD port config, firewall ports, repo-managed connection flow | Teams can connect immediately with less setup drift. | Handoffs happen faster and with less rediscovery. |
+| Core tooling | PowerShell 7, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, 7-Zip, Sysinternals, FFmpeg | System package upgrade, Node capability tuning, SSHD tuning | A new VM becomes useful for cloud, scripting, and diagnostics fast. | Less first-day setup work and less tool inconsistency. |
+| Developer runtime | Docker Desktop, WSL2, npm global package set, Ollama, Codex app, VS 2022 Community | Node-ready SSH environment and updated base packages | Engineering workflows can start earlier. | Faster onboarding and less rebuild waste. |
+| Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | The machine feels operational, not half-finished. | Customer-facing and operator-facing use is easier to stage. |
+| Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Assisted-operation scenarios are easier to reproduce and support. | Broader usability and faster support response. |
+| Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting narrows quickly to the failing area. | Less wasted time during support and maintenance. |
+| Lifecycle changes | Create fresh, destructive rebuild, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, destructive rebuild, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
+
+## Who az-vm Is For
+
+- Operators who want reproducible Azure VM environments without rebuilding the full stack by hand every time.
+- Maintainers who need Windows and Linux parity under one command surface.
+- Developers who want infrastructure, guest tasks, and operator workflows documented together.
+- Small teams that value pragmatic automation, explicit state, and readable PowerShell over opaque orchestration layers.
+- Stakeholders and sponsors who want visible evidence of operational maturity, not just a thin wrapper around Azure CLI calls.
+
+## Why az-vm Exists
+
+### What It Does
+- Provisions Azure infrastructure for one managed Windows or Linux VM from one orchestrator.
+- Applies deterministic guest initialization and guest update task catalogs.
+- Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate, move, resize, connect, inspect, and delete flows.
+- Keeps command wording, configuration behavior, and execution semantics as parallel as possible across Windows and Linux.
+
+### Problems It Solves
+- Eliminates ad hoc VM setup drift caused by one-off portal changes and manual guest tweaking.
+- Replaces hidden or implicit guest scripts with explicit, catalog-driven task ordering and timeouts.
+- Reduces unsafe Azure mutations by validating names, regions, SKUs, image values, and state before mutating resources.
+- Gives one repeatable operator workflow for create, update, repair, inspect, connect, and cutover work.
+- Captures repo behavior, release notes, and development decisions in the same repository instead of splitting them across chat history and tribal knowledge.
+
+### When To Use It
+- When one managed VM per flow is the main unit of operation.
+- When you need repeatable Windows or Linux workstation/server-like environments in Azure.
+- When you need deterministic reruns of guest-side tasks after provisioning.
+- When move, resize, hibernation, and isolated task reruns need to stay operator-friendly.
+
+### When Not To Use It
+- When you need large-scale fleet orchestration across many VMs at once.
+- When you want a generic IaC module library rather than one opinionated operator toolkit.
+- When you want a broad public open-source license with unrestricted commercial use.
+
+## Operational Command Matrix
+
+### Global Options Matrix
+
+| Option | Applies to | Operational effect | Common usage note |
+| --- | --- | --- | --- |
+| `--auto` | `create`, `update`, `delete` | Runs the command without waiting for interactive confirmation | Use it only when the target and intent are already explicit. |
+| `--perf` | Most public commands | Prints timing metrics for the current command | Useful during profiling, acceptance, and long-running change windows. |
+| `--windows` | `create`, `update`, `exec`, `resize` | Forces the Windows platform path or validates Windows expectation | Use this when the target platform must be explicit. |
+| `--linux` | `create`, `update`, `exec`, `resize` | Forces the Linux platform path or validates Linux expectation | Use this when the target platform must be explicit. |
+| `-s`, `--subscription-id=<subscription-guid>` | All Azure-touching commands except `task` and `help` | Targets Azure operations to one subscription and persists CLI-provided subscription intent locally | `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`. |
+| `-h`, `--help` | All public commands | Prints quick help or command-specific help | `-h`, `--help` are equivalent operator aliases. |
+
+### Command Matrix
+
+| Command | Purpose | Mutation level | When to use it | Primary outcome |
+| --- | --- | --- | --- | --- |
+| `configure` | Select one existing managed VM target and sync target-derived config | Azure-read-only | Before create/update work, or when local `.env` needs to match a real target | One selected managed target aligned into `.env` |
+| `create` | Build one fresh managed resource group and one fresh VM | Azure-mutating | First deployment or explicit rebuild flow | New managed VM environment |
+| `update` | Maintain one existing managed resource group and VM | Azure-mutating | Ongoing maintenance, guest-task refresh, redeploy-backed repair | Updated existing VM |
+| `list` | Print managed inventory by type | Azure-read-only | Inventory, targeting, quick visibility | Managed group/resource listings |
+| `show` | Print a full managed report | Azure-read-only | Health review, support handoff, release verification | Inventory and config dump |
+| `do` | Apply lifecycle or repair actions | Azure-mutating or read-only for `status` | Power-state control, reapply, hibernation flow | Target VM lifecycle action |
+| `task` | List discovered task inventory | Local/read-only | Understand task order, timeouts, disabled state | Visible task catalog |
+| `exec` | Run one task or open direct remote shell path | Azure-touching and guest-touching | Isolated diagnosis or targeted rerun | One direct task or shell session |
+| `ssh` | Launch or test SSH access | Azure-touching, local-client action | Linux or Windows SSH access | Direct SSH path |
+| `rdp` | Launch or test RDP access | Azure-touching, local-client action | Windows desktop access | Direct RDP path |
+| `move` | Move a managed VM to another region | Azure-mutating | Planned cutover or regional relocation | Health-gated regional move |
+| `resize` | Change VM SKU or expand OS disk | Azure-mutating | Compute sizing change or safe disk growth | Resized VM or grown OS disk |
+| `set` | Apply hibernation and desired nested virtualization state | Azure-mutating plus guest validation | Feature-state management | Updated feature intent and VM state |
+| `delete` | Purge a selected managed scope | Azure-mutating | Controlled cleanup | Deleted selected target scope |
+| `help` | Print the command catalog or one command's details | Local/read-only | Operator discovery and reference | Command documentation |
+
+### Command Variations By Command
+
+#### `configure`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd configure` | none | Interactive managed target selection | First targeting pass or local context realignment | Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`. |
+| `.\az-vm.cmd configure --group=<resource-group>` | `--group` | Targets one managed group and auto-selects only-VM groups when unambiguous | You know the group but want safe selection | Fails gracefully if the group has multiple VMs and no `--vm-name` was provided. |
+| `.\az-vm.cmd configure --vm-name=<vm-name>` | `--vm-name` | Searches az-vm-managed groups for a unique VM match | You know the VM name first | Requires uniqueness across managed groups. |
+| `.\az-vm.cmd configure --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--group`, `--vm-name`, `-s` | Direct managed target sync in one subscription | Deterministic `.env` alignment | Best for explicit maintenance targeting. |
+
+#### `create`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd create` | interactive | Review-first fresh create flow | Manual first build | Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`. |
+| `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Windows build | Repeatable release or scripted setup | Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`. |
+| `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Linux build | Repeatable release or scripted setup | if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection |
+| `.\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `explicit destructive rebuild flow` | Destructive recreate of the fresh target | Clean rebuild when intended | `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target. |
+| `.\az-vm.cmd create --step=network --linux` | `--step` | Runs one top-level create step | Targeted orchestration testing | `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path. |
+| `.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf` | `--step-from`, `--step-to`, `--perf` | Runs a partial create window | Controlled reruns | `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages. |
+
+#### `update`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd update` | interactive | Review-first maintenance flow on an existing target | Manual upkeep | interactive mode prompts for Azure subscription first when `--subscription-id` is omitted |
+| `.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>` | `--auto`, platform, `--group`, `--vm-name` | Unattended Windows update | Scheduled or controlled maintenance | Auto `update` requires an explicit platform plus `--group` and `--vm-name`. |
+| `.\az-vm.cmd update --auto --linux --group=<resource-group> --vm-name=<vm-name>` | same | Unattended Linux update | Scheduled or controlled maintenance | `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow. |
+| `.\az-vm.cmd update --step=vm-update --auto --windows --group=<resource-group> --vm-name=<vm-name>` | `--step` | Runs one update step | Isolated maintenance work | Useful for direct task-phase targeting. |
+| `.\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>` | `--step-to` | Runs an early partial update window | Controlled reruns | Same review-first step model as create. |
+
+#### `list`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd list` | none | Prints all managed inventory sections | Quick managed visibility | Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources. |
+| `.\az-vm.cmd list --type=group,vm` | `--type` | Narrows output to selected inventory types | Daily operator targeting | `list` gives a read-only managed inventory view across groups and resource types |
+| `.\az-vm.cmd list --type=nsg,nsg-rule --group=<resource-group>` | `--type`, `--group` | Group-filtered managed inventory | Resource-specific inspection | Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `azure_subscription_id` when it comes from the CLI |
+
+#### `show`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd show` | none | Prints the broader managed report | Environment audit | Good for multi-group review. |
+| `.\az-vm.cmd show --group=<resource-group>` | `--group` | Prints one managed group report | Support handoff and verification | `show` prints the expected inventory while password-bearing `.env` values are redacted. |
+
+#### `do`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` | `--vm-action=status` | Reads lifecycle state | Preflight and release checks | Fastest safety check before mutation. |
+| `.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>` | lifecycle action | Starts the VM | Connection prep | Use before `ssh` or `rdp`. |
+| `.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>` | `reapply` | Calls Azure reapply | Repair path | Good when provisioning succeeded but the instance needs Azure-side repair. |
+| `.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>` | `hibernate-stop` | Guest-triggered hibernation through SSH | Preserve guest state without Azure deallocation path | Requires the VM to be running first. |
+| `.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>` | `hibernate-deallocate` | Azure hibernation-through-deallocation path | Platform-backed hibernation path | Use when the VM is configured for hibernation. |
+
+#### `task`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd task --list --vm-init` | `--list`, `--vm-init` | Lists init tasks | Init audit | Shows real execution order. |
+| `.\az-vm.cmd task --list --vm-update --windows` | `--list`, `--vm-update`, `--windows` | Lists Windows update tasks | Update inspection | Good before isolated reruns. |
+| `.\az-vm.cmd task --list --disabled --vm-update --windows` | `--disabled` | Lists disabled tasks | Cleanup or contract review | Surfaces disabled reason and source. |
+
+#### `exec`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>` | `--init-task` | Runs one init task directly | Isolated bootstrap rerun | Good for diagnosis without replaying the whole pipeline. |
+| `.\az-vm.cmd exec --update-task=10002 --group=<resource-group> --vm-name=<vm-name> --windows` | `--update-task`, platform | Runs one update task directly | Isolated guest fix | Useful after one failing task. |
+| `.\az-vm.cmd exec --linux` | platform only | Opens the interactive remote-shell path | Manual guest work | Interactive shell mode is used when no task selector is provided. |
+
+#### `ssh`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd ssh --vm-name=<vm-name>` | `--vm-name` | Opens SSH with default targeting | Direct shell access | Only works when the VM is already running. |
+| `.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant` | `--group`, `--vm-name`, `--user` | Opens SSH as a selected user | Role-specific shell access | Password entry remains local. |
+| `.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=manager --test` | `--test` | Runs a non-interactive SSH handshake check | Release and connection verification | Helpful before opening a real session. |
+
+#### `rdp`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd rdp --vm-name=<vm-name>` | `--vm-name` | Opens RDP with default targeting | Windows desktop access | Only works when the VM is already running. |
+| `.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant` | `--group`, `--vm-name`, `--user` | Opens RDP as a selected user | Assistant desktop access | Uses `cmdkey` before `mstsc.exe`. |
+| `.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=manager --test` | `--test` | Runs a non-interactive TCP reachability check | Release and connection verification | Useful before a full interactive desktop session. |
+
+#### `move`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral -s <subscription-guid>` | `--group`, `--vm-name`, `--vm-region`, `-s` | Performs a health-gated regional move | Planned cutover | Expect a longer-running operation with snapshot copy time. |
+
+#### `resize`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows` | `--vm-size` | Changes the VM SKU in the same region | Compute sizing changes | Same-region only. |
+| `.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=196gb --expand --windows` | `--disk-size`, `--expand` | Performs supported managed OS disk growth | Safe in-place disk growth | Deallocates the VM, updates disk size, and starts it again. |
+| `.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=98304mb --expand` | `mb` units | Performs the same expand path with MB input | Operator convenience | The runtime normalizes to Azure-safe GB values. |
+| `.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=64gb --shrink` | `--shrink` | Stops before mutation and explains supported alternatives | Operator guidance only | `--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity |
+
+#### `set`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off -s <subscription-guid>` | `--hibernation` | Changes hibernation state | Feature-state management | Syncs the successful change into `.env`. |
+| `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off` | `--nested-virtualization` | Updates desired nested virtualization state | Repo intent tracking | Azure single-VM APIs do not expose a separate nested-virtualization toggle |
+| `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off` | both flags | Applies both feature controls | Coordinated feature changes | Partial success still updates local state for the successful part. |
+
+#### `delete`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd delete --target=vm --group=<resource-group> --yes` | `--target=vm`, `--yes` | Deletes only the VM scope | Controlled cleanup | Destructive by design. |
+| `.\az-vm.cmd delete --target=group --group=<resource-group> --yes -s <subscription-guid>` | `--target=group`, `--yes`, `-s` | Deletes the full managed group | Full teardown | Best used when the target is explicitly safe to purge. |
+
+#### `help`
+
+| Usage pattern | Key parameters | What it does | When to use it | Important notes |
+| --- | --- | --- | --- | --- |
+| `.\az-vm.cmd -h` | `-h` | Prints the quick overview | Fast discovery | Same as `--help`. |
+| `.\az-vm.cmd help` | `help` | Prints the detailed command catalog | Full command reference | Good onboarding path for new operators. |
+| `.\az-vm.cmd help move` | one command topic | Prints one command's details | Deep dive into one operation | Best companion to the command matrix. |
 
 ## Practical And Extensive Usage Scenarios
 
@@ -860,6 +505,322 @@ Practical outcomes:
 .\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
 
+## Command Guide
+
+### Global Options
+- `--auto`: unattended mode for `create`, `update`, and `delete`
+- `--perf`: print timing metrics
+- `--windows`, `--linux`: explicit platform selection or platform expectation
+- `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`.
+- `-h`, `--help`: print quick or command-specific help
+
+Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
+
+### `configure`
+Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.
+
+Behavior notes:
+- Azure-read-only command
+- validates `--windows` and `--linux` against the actual VM OS type
+- persists only target-derived values
+- best first step before support work, update work, or manual operator investigation
+
+### `create`
+Purpose: build one fresh managed resource group, one fresh managed VM, and then continue with the init/update workflow when selected.
+
+Behavior notes:
+- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.
+- `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
+- Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
+- if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
+- Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
+- `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
+
+### `update`
+Purpose: maintain one existing managed resource group and one existing VM target.
+
+Behavior notes:
+- `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
+- Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
+- best fit for day-two maintenance, guest-task refresh, and Azure redeploy-backed repair
+
+### `list`
+Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.
+
+Behavior notes:
+- supports `--type` and `--group` for managed inventory output
+- `list` gives a read-only managed inventory view across groups and resource types
+- Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `azure_subscription_id` when it comes from the CLI
+
+### `show`
+Purpose: print a full system and configuration dump for app resource groups and VMs.
+
+Behavior notes:
+- good for support handoff, release verification, and environment auditing
+- password-bearing `.env` values are redacted
+- when the VM is running, nested virtualization is shown from guest validation evidence
+
+### `do`
+Purpose: apply one VM lifecycle action or print the current VM lifecycle state.
+
+Behavior notes:
+- use `status` before mutating changes
+- `reapply` is available for Azure-side repair on an existing VM
+- `hibernate-stop` and `hibernate-deallocate` remain explicit, separate operator paths
+
+### `task`
+Purpose: list discovered init/update tasks in runtime order.
+
+Behavior notes:
+- shows tracked and local-only tasks together
+- useful before isolated reruns or when checking timeout and enable-state behavior
+
+### `exec`
+Purpose: run one init task, one update task, or open the direct remote shell path.
+
+Behavior notes:
+- ideal for isolated diagnosis
+- resolves only the selected VM plus task context
+- avoids replaying the entire orchestration chain when one task is the real problem
+
+### `ssh`
+Purpose: launch the local Windows OpenSSH client for a managed VM.
+
+Behavior notes:
+- only works when the VM is already running
+- `--test` performs a non-interactive SSH handshake instead of opening `ssh.exe`
+- politely suggests `az-vm do --vm-action=start` when the target is not running
+
+### `rdp`
+Purpose: launch the local Remote Desktop client for a managed Windows VM.
+
+Behavior notes:
+- only works when the VM is already running
+- `--test` performs a non-interactive reachability check instead of launching `mstsc.exe`
+- best paired with `do --vm-action=status` during preflight
+
+### `move`
+Purpose: move a managed VM to another Azure region with a health-gated cutover.
+
+Observed reference timing:
+- live reference for `austriaeast -> swedencentral`, `Standard_D4as_v5`, `127 GB` OS disk: about `25-30 minutes`
+- the longest phase was cross-region snapshot copy at about `17-19 minutes`
+
+### `resize`
+Purpose: change the VM size or expand the managed OS disk in-place within the current region.
+
+Behavior notes:
+- same-region only
+- `--vm-size` changes compute SKU
+- `--disk-size=... --expand` performs the supported managed OS disk growth path
+- `--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity
+
+### `set`
+Purpose: apply hibernation and sync nested-virtualization desired state.
+
+Behavior notes:
+- Hibernation is changed through Azure.
+- Azure single-VM APIs do not expose a separate nested-virtualization toggle
+- successful changes are synchronized back into local `.env`
+
+### `delete`
+Purpose: delete a selected scope from a managed resource group.
+
+Behavior notes:
+- destructive by design
+- requires explicit target selection
+- `--yes` is the non-interactive confirmation bypass
+
+### `help`
+Purpose: print the quick overview or one-command help.
+
+Behavior notes:
+- use `.\az-vm.cmd -h` or `.\az-vm.cmd --help` for the overview
+- use `.\az-vm.cmd help <command>` for one command topic
+
+## Task Authoring And Execution
+
+### Catalog Ownership
+Catalog JSON files are the source of truth for task ordering, enable state, and timeouts. Runtime code must not rewrite them automatically.
+
+### Task Naming Rules
+- `<task-number>-verb-noun-target.ext`
+- task-number bands:
+  - `01-99` = `initial`
+  - `101-999` = `normal`
+  - `1001-9999` = local-only
+  - `10001-10099` = `final`
+- 2-5 English words in kebab-case
+- `.ps1` for Windows
+- `.sh` for Linux
+
+### Timeouts, Priority, And Enable Flags
+- tracked task at the stage root: use catalog values
+- local-only task under `local/` may declare `# az-vm-task-meta: {...}` on the first non-empty comment line for `priority`, `enabled`, `timeout`, and `assets`
+- local-only tasks under `local/` are discovered from disk dynamically and do not consume catalog entries
+- local-only tasks under `local/disabled/` remain disabled by location
+- local-only asset paths are resolved relative to the local task file directory
+- if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
+- tracked missing `priority`: default to `1000`
+- local missing `priority`: script metadata first, then filename task number, then deterministic auto-detect from the `1001+` band
+- missing `timeout`: default to `180`
+- missing tracked entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
+- builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks
+
+### Direct Task Execution With `exec`
+Direct `exec --init-task` and `exec --update-task` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
+
+## Configuration Guide
+
+### Runtime Precedence
+Runtime precedence is:
+1. CLI override
+2. `.env`
+3. hard-coded default
+
+This matters because:
+- command-line overrides are the safest way to test one change without rewriting local defaults
+- `.env.example` is the committed configuration contract
+- `.env` remains local and untracked
+
+### High-Value `.env` Keys
+- `VM_OS_TYPE`: default platform flavor when the command path needs one
+- `VM_NAME`: single naming seed
+- `AZ_LOCATION`: target region default
+- `azure_subscription_id`: optional repo-local default Azure subscription id for Azure-touching commands.
+- `VM_ADMIN_USER`, `VM_ADMIN_PASS`: manager/admin identity
+- `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`: assistant identity
+- `company_name`, `employee_email_address`, `employee_full_name`: Windows shortcut and UX identity inputs
+- `PYSSH_CLIENT_PATH`: default path should remain `tools/pyssh/ssh_client.py`
+
+### Shared VM Feature Toggles
+- `VM_ENABLE_HIBERNATION`
+- `VM_ENABLE_NESTED_VIRTUALIZATION`
+
+Use these as shared cross-platform intent flags instead of creating platform-specific duplicates.
+
+### Platform-Specific Settings
+- `WIN_` keys are for Windows-only settings such as Windows image and disk-size defaults.
+- `LIN_` keys are for Linux-only settings such as Linux image and disk-size defaults.
+- Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.
+- Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.
+
+### Connection And Task Settings
+- Configure SSH and RDP ports through the committed runtime contract instead of editing tasks blindly.
+- Keep long-running task timeouts in task catalogs, not hidden in repo-wide runtime logic.
+- Use `--perf` when you want timing evidence for long-running flows.
+
+### Global Versus Task-Local Configuration
+- Keep app-wide customization, secrets, operator identity, and reusable overrides in `.env`.
+- Task-only constants should stay in the owning task script, in a clearly labeled config block at the top of the owning `vm-init` or `vm-update` script.
+
+## Developer Benefits
+
+### Why Developers Move Faster
+- One orchestrator means less context switching between separate scripts for provisioning, update, connection, and repair.
+- The same command surface covers Windows and Linux, so platform differences stay narrow and explicit.
+- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.
+- `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
+- `resize --disk-size=... --expand` gives a safe in-place managed OS disk growth path, while `resize --disk-size=... --shrink` stops early and explains the supported alternatives instead of risking data loss.
+- Direct `task` and `exec` flows let maintainers inspect and rerun exactly the step or task that matters.
+
+### Daily Maintainer Flow
+1. Confirm the target with `list`, `show`, `configure`, and `do --vm-action=status`.
+2. Use `create` for first deploys and fresh environments; use `create explicit destructive rebuild flow` only when a full destructive rebuild is intentional.
+3. Use `update` for ongoing maintenance, guest-task refresh, and Azure redeploy-backed repair on an existing VM.
+4. Use `task` and `exec` to isolate one failing init or update task instead of replaying the whole chain.
+5. Use `move`, `resize`, `set`, and `delete` only after the inventory and current state are explicit.
+
+## Core Mental Model
+
+### One Entrypoint, Two Platforms
+`az-vm.ps1` is the only orchestrator. Windows and Linux are treated as two platform flavors of the same operator model. Differences are allowed only where the guest OS or Azure platform requirements genuinely differ.
+
+### Top-Level Orchestration Steps
+`az-vm` uses these top-level steps:
+1. `configure`
+2. `group`
+3. `network`
+4. `vm-deploy`
+5. `vm-init`
+6. `vm-update`
+7. `vm-summary`
+
+`create` and `update` can run the full chain or a selected window of steps by using `--step-from`, `--step-to`, or `--step`.
+
+### Init Tasks Versus Update Tasks
+- `vm-init` is Azure Run Command driven and is used for early guest bootstrap.
+- `vm-update` is pyssh driven and is used for richer task-by-task update flows after the VM is reachable.
+- Both stages use catalog JSON files as the source of truth for ordering, timeout, and enable/disable state.
+- The natural execution order for both stages is: builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks.
+
+### Interactive Versus Auto Mode
+- Interactive mode is the default and prompts when required values are missing.
+- Interactive `create` and `update` always show the configuration screen first and the VM summary screen last.
+- Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
+- `--auto` is for unattended `create`, `update`, and `delete` flows.
+- Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
+- Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
+- Auto mode prints the same review context, but it continues without waiting for checkpoint confirmation.
+- `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
+- Operator commands such as `show`, `do`, `ssh`, and `rdp` stay direct and do not require `--auto`.
+
+### Naming And Managed Resource Rules
+- `VM_NAME` is the single naming seed.
+- Managed names are template-driven and deterministic.
+- Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.
+- Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.
+- Runtime code validates names before Azure mutation.
+
+## Architecture From Zero To Hero
+
+### Entrypoints And Runtime Modules
+- `az-vm.cmd` exists to give Windows operators a simple launcher path.
+- `az-vm.ps1` loads `modules/azvm-runtime-manifest.ps1`, then dot-sources the ordered runtime leaf files directly before dispatching the command surface.
+- There is no transitional root-loader layer for `core`, `config`, `commands`, `ui`, or `tasks`; the launcher resolves the refactored module tree directly.
+- `modules/core/` holds shared contracts, CLI helpers, system/runtime utilities, task discovery, and host mirroring logic.
+- `modules/config/` isolates dotenv, naming-template, region-code, and related config helpers from command and UI code.
+- `modules/commands/` owns the public command surface plus shared create/update pipeline helpers.
+- `modules/ui/` is restricted to operator interaction concerns such as prompts, selection flows, report rendering, and connection-facing helpers.
+- `modules/tasks/` is split into Azure Run Command and persistent SSH internals so guest transport logic stays reusable and explicit.
+
+### Configuration Resolution
+Runtime precedence is:
+1. CLI override
+2. `.env`
+3. hard-coded default
+
+This matters because:
+- command-line overrides are the safest way to test one change without rewriting local defaults
+- `.env.example` is the committed contract
+- `.env` remains local and untracked
+
+### Task Catalog Model
+Each task directory has a catalog JSON file that owns execution priority, enable/disable state, and timeout per task. The runtime never auto-writes catalog JSON files.
+
+### Windows And Linux Execution Model
+- Windows and Linux share the same top-level orchestration model.
+- Guest task language, package model, access model, and platform-specific tooling differ only where they must.
+- Help output, docs, and runtime wording try to stay parallel across both platforms.
+
+### End-To-End Create And Update Flow
+- `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
+- `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
+- `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.
+- `list` is the managed inventory command: it must stay Azure-read-only, must not mutate Azure resources, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
+
+### Safety Model And Failure Handling
+- Validate before mutating Azure resources.
+- Prefer fast, filtered Azure checks over broad slow listings.
+- If Azure does not support a requested operation safely, fail before mutation with the explicit platform reason and list the supported alternatives.
+- Avoid retry storms; retry behavior should stay explicit and intentionally bounded.
+
+### Documentation, History, And Release Discipline
+- `README.md` is the operator and contributor guide.
+- `CHANGELOG.md` and `release-notes.md` are updated in the same final change set as shipped behavior or contract changes.
+- `docs/prompt-history.md` keeps the English-normalized prompt ledger.
+- `.github/workflows/quality-gate.yml` is the non-live GitHub Actions quality gate workflow.
+
 ## Troubleshooting Guide
 
 ### Validation Failures
@@ -881,7 +842,7 @@ Practical outcomes:
 - `move` is a deliberate cutover operation with downtime and cross-region copy time.
 - `resize` is same-region only and is much smaller in scope than `move`.
 - managed OS disk shrink is intentionally blocked as an unsupported Azure scenario; use the printed rebuild or migration alternatives instead.
-- Both commands validate before mutation and return friendly hints on invalid state or configuration.
+- both commands validate before mutation and return friendly hints on invalid state or configuration.
 
 ## Developer Workflow
 
