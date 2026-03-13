@@ -44,7 +44,7 @@ function Assert-HeadingOrder {
 
     $lastIndex = -1
     foreach ($heading in @($Headings)) {
-        $match = [regex]::Match($Text, ('(?m)^{0}$' -f [regex]::Escape([string]$heading)))
+        $match = [regex]::Match($Text, ('(?m)^{0}\r?$' -f [regex]::Escape([string]$heading)))
         Assert-True -Condition $match.Success -Message ("{0} must contain heading '{1}'." -f $DocumentLabel, [string]$heading)
         Assert-True -Condition ($match.Index -gt $lastIndex) -Message ("{0} headings are out of order around '{1}'." -f $DocumentLabel, [string]$heading)
         $lastIndex = [int]$match.Index
@@ -123,15 +123,15 @@ foreach ($token in $requiredDocTokens) {
 Assert-True -Condition ($readmeText -match 'tools[\\/]+enable-git-hooks\.ps1') -Message 'README.md must mention tools/enable-git-hooks.ps1.'
 Assert-True -Condition ($readmeText -match 'tools[\\/]+disable-git-hooks\.ps1') -Message 'README.md must mention tools/disable-git-hooks.ps1.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('At a glance:')) -Message 'README.md must include the audience-facing at-a-glance intro.'
-Assert-True -Condition ($readmeText -match '(?m)^## Quick Start Guide$') -Message 'README.md must define the merged Quick Start Guide heading.'
-Assert-True -Condition ($readmeText -match '(?m)^## Executive Summary$') -Message 'README.md must define Executive Summary as a top-level heading.'
-Assert-True -Condition ($readmeText -match '(?m)^## Value By Audience$') -Message 'README.md must define the Value By Audience section.'
-Assert-True -Condition ($readmeText -match '(?m)^## Operational Command Matrix$') -Message 'README.md must define the Operational Command Matrix section.'
-Assert-True -Condition ($readmeText -match '(?m)^### Global Options Matrix$') -Message 'README.md must define the Global Options Matrix subsection.'
-Assert-True -Condition ($readmeText -match '(?m)^### Command Matrix$') -Message 'README.md must define the Command Matrix subsection.'
-Assert-True -Condition ($readmeText -match '(?m)^### Command Variations By Command$') -Message 'README.md must define the command variation matrix subsection.'
-Assert-True -Condition (-not ($readmeText -match '(?m)^## Quick Start$')) -Message 'README.md must not keep the retired Quick Start heading.'
-Assert-True -Condition (-not ($readmeText -match '(?m)^### Quick Accelerator$')) -Message 'README.md must not keep Quick Accelerator as a separate heading.'
+Assert-True -Condition ($readmeText -match '(?m)^## Quick Start Guide\r?$') -Message 'README.md must define the merged Quick Start Guide heading.'
+Assert-True -Condition ($readmeText -match '(?m)^## Executive Summary\r?$') -Message 'README.md must define Executive Summary as a top-level heading.'
+Assert-True -Condition ($readmeText -match '(?m)^## Value By Audience\r?$') -Message 'README.md must define the Value By Audience section.'
+Assert-True -Condition ($readmeText -match '(?m)^## Operational Command Matrix\r?$') -Message 'README.md must define the Operational Command Matrix section.'
+Assert-True -Condition ($readmeText -match '(?m)^### Global Options Matrix\r?$') -Message 'README.md must define the Global Options Matrix subsection.'
+Assert-True -Condition ($readmeText -match '(?m)^### Command Matrix\r?$') -Message 'README.md must define the Command Matrix subsection.'
+Assert-True -Condition ($readmeText -match '(?m)^### Command Variations By Command\r?$') -Message 'README.md must define the command variation matrix subsection.'
+Assert-True -Condition (-not ($readmeText -match '(?m)^## Quick Start\r?$')) -Message 'README.md must not keep the retired Quick Start heading.'
+Assert-True -Condition (-not ($readmeText -match '(?m)^### Quick Accelerator\r?$')) -Message 'README.md must not keep Quick Accelerator as a separate heading.'
 Assert-HeadingOrder -Text $readmeText -DocumentLabel 'README.md' -Headings @(
     '## Quick Start Guide',
     '## Customer Business Value',
@@ -210,7 +210,7 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('Task-only constants 
 Assert-True -Condition ($readmeText -match [regex]::Escape('`-h`, `--help`')) -Message 'README.md must document the -h and --help aliases together.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('--user=manager --test')) -Message 'README.md must document the automated --test examples for connection commands.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('password-bearing `.env` values are redacted')) -Message 'README.md must document show redaction for password-bearing values.'
-Assert-True -Condition ($readmeText -match [regex]::Escape('`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.')) -Message 'README.md must describe create as fresh-only.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.')) -Message 'README.md must describe create as fresh-only.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('`update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.')) -Message 'README.md must describe update as existing-managed-target only.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.')) -Message 'README.md must describe configure as a target-sync command.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.')) -Message 'README.md must describe list as a read-only inventory command.'

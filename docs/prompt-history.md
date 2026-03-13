@@ -1532,7 +1532,7 @@ feat: let's make the following changes and updates related to `az vm` setup and 
 *Make `pyssh` the default: remove the `--ssh` parameter.
 *The script's default behavior should now be as follows: if a resource group and its resources already exist, instead of deleting and recreating them, do nothing and move on to the next step; if they do not exist, create them; the delete operation should never run (the same behavior for both interactive and auto mode).
 *If the script is given the `--update` parameter, then in addition to the default behavior, all create commands must also always run.
-*If the script is given the `explicit destructive rebuild flow` parameter, then deletion confirmation should be asked as it is now (interactive mode), it should be deleted without asking (auto mode), and then the creation code should always run in all cases.
+*If the script is given an explicit destructive rebuild request, then deletion confirmation should be asked as it is now (interactive mode), it should be deleted without asking (auto mode), and then the creation code should always run in all cases.
 *The script's steps 5, 6, 8, and 9 should run in all cases.
 *After the VM is created/updated, that is, after step 7, as the first task of step 8: run `vm init`: `vm init` should perform only the installations, configurations, and checks related to `ssh` and `rdp` connectivity; it should guarantee remote connection methods. Use `az vm run-command` only in this part; do not use `run-command` anywhere else. The `vm init` scripts should also be collected into a single file; there is no need to run them in separate pieces.
 *Please remove the `--substep` parameter and substep mode from this repo as well: from now on, the `vm update` scripts should be collected into a single file as one piece; they should be run piece by piece using a persistent `pyssh` connection, executed on a task basis, and their results printed to the console.
@@ -1542,7 +1542,7 @@ feat: let's make the following changes and updates related to `az vm` setup and 
 
 **Assistant Summary**
 
-<proposed_plan> ## Win VM Flow Refactor Plan (PySSH Default, No Substep, No Reboot) ### Summary This plan only redefines behavior on the `win` side and simplifies the code accordingly. Goal: make `pyssh` the default, remove `--ssh` and `--substep` entirely, add `explicit destructive rebuild flow`, in the default mode existing resources ...
+<proposed_plan> ## Win VM Flow Refactor Plan (PySSH Default, No Substep, No Reboot) ### Summary This plan only redefines behavior on the `win` side and simplifies the code accordingly. Goal: make `pyssh` the default, remove `--ssh` and `--substep` entirely, formalize one explicit destructive rebuild flow, and in the default mode keep existing resources ...
 
 ### 2026-03-04 12:01 TRT
 
@@ -1555,7 +1555,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-The plan was implemented and committed. **What Changed** - The Win flow was migrated to the new semantics: `--auto`, `--update/-u`, `explicit destructive rebuild flow`; `--ssh` and `--substep` were removed on the Win side. [<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1) - Step 8 Win behavior was clarified: ...
+The plan was implemented and committed. **What Changed** - The Win flow was migrated to the new semantics: `--auto`, `--update/-u`, and an explicit destructive rebuild flow; `--ssh` and `--substep` were removed on the Win side. [<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1](<user-home>\source\az\az-vm\win-vm\az-vm-win.ps1) - Step 8 Win behavior was clarified: ...
 
 ### 2026-03-04 12:34 TRT
 
@@ -1812,7 +1812,7 @@ Implemented and committed: `195e5cf` What changed: 1. I kept the progress spinne
 
 ````text
 task: from now on, make the ./tools/install-pyssh-tools.ps1 file do the following: create a Python venv using the Python installed on the system; install all pip requirements for the ssh_client.py script under pyssh; in other words, make the SSH client fully self-contained, independent, stand-alone, and fully portable so it runs that way; finish this by running a simple isolated SSH connection test.
-test: then run the az-vm --auto explicit destructive rebuild flow test, confirm that our e2e live rebuild test also succeeds, and inform me.
+test: then run the az-vm explicit destructive rebuild acceptance test in auto mode, confirm that our e2e live rebuild test also succeeds, and inform me.
 
 ````
 
@@ -1865,13 +1865,13 @@ I fixed it. - The `VM power state ... (attempt x/y)` check is now capped at a ma
 **User Prompt**
 
 ````text
-task: please make explicit destructive rebuild flow the default behavior when az-vm is run interactively.
+task: please make the explicit destructive rebuild flow the default behavior when az-vm is run interactively.
 
 ````
 
 **Assistant Summary**
 
-Completed. - In interactive runs (when `--auto` is not used), if `--update` or `explicit destructive rebuild flow` is not specified, the default mode is now `destructive rebuild`. - The current default behavior of auto mode is preserved. - File: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) Commit: - `15247a9` — `feat: default interactive runs to destructive rebuild mode`
+Completed. - In interactive runs (when `--auto` is not used), if `--update` or the destructive rebuild flow is not specified, the default mode at that time became the destructive rebuild flow. - The current default behavior of auto mode was preserved. - File: [az-vm.ps1](<user-home>\source\az\az-vm\az-vm.ps1) Commit: - `15247a9` — `feat: default interactive runs to destructive rebuild mode`
 
 ### 2026-03-05 03:27 TRT
 
@@ -1945,7 +1945,7 @@ I ran the isolated test; results: - `powershell` (5.1): **successful** - NSG + a
 ````text
 feat: let's add some commands to the az-vm script:
 the CLI invocation format should change to: az-vm [command] --option-name=value
-*the first command, which is also the current behavior, should be create; --auto should remain; the explicit destructive rebuild flow parameter name should be changed to --purge, meaning that if the resource already exists, it should be deleted first before creating.
+*the first command, which is also the current behavior, should be create; --auto should remain; the previous destructive rebuild parameter name should be changed to --purge, meaning that if the resource already exists, it should be deleted first before creating.
 *the second command should be update; it should do on all resources what the "create" command does, regardless of whether they already exist or not; it should support --auto; it should not support --purge; it should also do what the --update parameter does, and the --update parameter should be removed.
 *the third and new command should be change; for now it should be able to change the VM region or VM size; the syntax should be like this: az-vm change --vm-region=austriaeast; before moving, it should check whether there is availability in the target region, and if not, the user should be warned and the process should end; if there is availability, the current VM should first be shut down, it should wait until the move operation is completed, and the process should be completed by reporting the result of the move operation. if only --vm-region is written, meaning the parameter value is empty, then please show the region picker we use in interactive mode and let the user make the selection interactively. 
 -change should also take another parameter in the form of --vm-size: it should behave exactly like --vm-size; if the parameter value is empty, it should show the application's VM size picker screen interactively. after the VM size is selected either as a parameter value or interactively, availability of the target VM size in the target region should be queried; if unavailable, warn and exit; if available, first shut down the VM, then perform the move operation, wait until the operation is finished, and close the process by showing the result to the user.
@@ -2201,7 +2201,7 @@ Let's avoid long-running tests; let's not do destructive tests; let's not do e2e
 
 **Assistant Summary**
 
-Okay, I’m locking in the test strategy accordingly. From now on: - I will not run `e2e`. - I will not make `destructive` calls (`delete/purge/destructive rebuild`, no RG/VM deletion). - No long-running flow tests (no full `create/update/change` runs). - Only short and isolated validations: - short `az` read calls (`show/list/exis...`
+Okay, I’m locking in the test strategy accordingly. From now on: - I will not run `e2e`. - I will not make `destructive` calls (`delete/purge/explicit destructive rebuild`, no RG/VM deletion). - No long-running flow tests (no full `create/update/change` runs). - Only short and isolated validations: - short `az` read calls (`show/list/exis...`
 
 ### 2026-03-05 21:31 TRT
 
@@ -4856,7 +4856,7 @@ Implement the plan.
 
 **Assistant Summary**
 
-Implemented the agreed release-readiness plan across runtime, tests, and docs. The public create/update step selectors were renamed to `--step`, `--step-from`, and `--step-to`, the retired selector forms were removed cleanly, and `create explicit destructive rebuild flow` was added as the explicit destructive recreate contract while default `create` now reuses existing managed resources when possible. `update` now fails early unless the target managed resource group and VM already exist, and the VM deploy stage now redeploys an existing VM after the create-or-update pass. `resize` now supports managed OS disk growth through `--disk-size=<number>gb|mb --expand`, while `--disk-size=<number>gb|mb --shrink` is a non-mutating fail-fast guidance path that explains Azure OS disk shrink is unsupported and prints supported rebuild alternatives. I updated the runtime manifest, parameter modules, parser, help output, README, AGENTS contract, changelog, release notes, and smoke coverage to match this new surface, then revalidated the non-live gate with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks.
+Implemented the agreed release-readiness plan across runtime, tests, and docs. The public create/update step selectors were renamed to `--step`, `--step-from`, and `--step-to`, the retired selector forms were removed cleanly, and destructive rebuild guidance was kept explicit while default `create` still reused existing managed resources at that point in history. `update` then failed early unless the target managed resource group and VM already existed, and the VM deploy stage redeployed an existing VM after the create-or-update pass. `resize` gained managed OS disk growth through `--disk-size=<number>gb|mb --expand`, while `--disk-size=<number>gb|mb --shrink` stayed a non-mutating fail-fast guidance path that explained Azure OS disk shrink was unsupported and printed supported rebuild alternatives. I updated the runtime manifest, parameter modules, parser, help output, README, AGENTS contract, changelog, release notes, and smoke coverage to match that surface, then revalidated the non-live gate with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks.
 
 ### 2026-03-12 21:59 TRT
 

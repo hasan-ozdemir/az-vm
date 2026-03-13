@@ -4,12 +4,12 @@
 function Invoke-AzVmNetworkStep {
     param(
         [hashtable]$Context,
-        [ValidateSet("default","update","destructive rebuild")]
+        [ValidateSet("default","update")]
         [string]$ExecutionMode = "default"
     )
 
     $effectiveMode = if ([string]::IsNullOrWhiteSpace([string]$ExecutionMode)) { "default" } else { [string]$ExecutionMode.Trim().ToLowerInvariant() }
-    $alwaysCreate = ($effectiveMode -in @("update","destructive rebuild"))
+    $alwaysCreate = ($effectiveMode -eq "update")
     Show-AzVmStepFirstUseValues `
         -StepLabel "Step 3/7 - network provisioning" `
         -Context $Context `

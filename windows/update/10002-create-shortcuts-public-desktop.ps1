@@ -1234,22 +1234,22 @@ $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData
 $shortcutSpecs = New-Object 'System.Collections.Generic.List[object]'
 
 $socialWebShortcuts = @(
-    @{ Name = "s1LinkedIn Business"; Url = "https://tr.linkedin.com/company/exampleorg"; ProfileKind = "business" },
-    @{ Name = "s2LinkedIn Personal"; Url = "https://linkedin.com/in/<social-handle>"; ProfileKind = "personal" },
-    @{ Name = "s3YouTube Business"; Url = "https://www.youtube.com/@exampleorg"; ProfileKind = "business" },
-    @{ Name = "s4YouTube Personal"; Url = "https://www.youtube.com/@hasanozdemir8"; ProfileKind = "personal" },
-    @{ Name = "s5GitHub Business"; Url = "https://github.com/exampleorg"; ProfileKind = "business" },
+    @{ Name = "s1LinkedIn Business"; Url = "https://www.linkedin.com/company/"; ProfileKind = "business" },
+    @{ Name = "s2LinkedIn Personal"; Url = "https://www.linkedin.com/"; ProfileKind = "personal" },
+    @{ Name = "s3YouTube Business"; Url = "https://www.youtube.com/"; ProfileKind = "business" },
+    @{ Name = "s4YouTube Personal"; Url = "https://www.youtube.com/"; ProfileKind = "personal" },
+    @{ Name = "s5GitHub Business"; Url = "https://github.com/"; ProfileKind = "business" },
     @{ Name = "s6GitHub Personal"; Url = "https://github.com/"; ProfileKind = "personal" },
-    @{ Name = "s7TikTok Business"; Url = "https://www.tiktok.com/@exampleorg"; ProfileKind = "business" },
-    @{ Name = "s8TikTok Personal"; Url = "https://www.tiktok.com/@exampleorg"; ProfileKind = "personal" },
-    @{ Name = "s9Instagram Business"; Url = "https://instagram.com/exampleorg"; ProfileKind = "business" },
-    @{ Name = "s10Instagram Personal"; Url = "https://instagram.com/hasanozdemirnet"; ProfileKind = "personal" },
-    @{ Name = "s11Facebook Business"; Url = "https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447"; ProfileKind = "business" },
-    @{ Name = "s12Facebook Personal"; Url = "https://facebook.com/ozdemirhasan"; ProfileKind = "personal" },
-    @{ Name = "s13X-Twitter Business"; Url = "https://x.com/exampleorg"; ProfileKind = "business" },
-    @{ Name = "s14X-Twitter Personal"; Url = "https://x.com/hasanozdemirnet"; ProfileKind = "personal" },
-    @{ Name = ("s15{0} Web" -f $companyDisplayName); Url = "https://www.exampleorg.com"; ProfileKind = "business" },
-    @{ Name = ("s16{0} Blog" -f $companyDisplayName); Url = "https://www.exampleorg.com/blog"; ProfileKind = "business" },
+    @{ Name = "s7TikTok Business"; Url = "https://www.tiktok.com/"; ProfileKind = "business" },
+    @{ Name = "s8TikTok Personal"; Url = "https://www.tiktok.com/"; ProfileKind = "personal" },
+    @{ Name = "s9Instagram Business"; Url = "https://instagram.com/"; ProfileKind = "business" },
+    @{ Name = "s10Instagram Personal"; Url = "https://instagram.com/"; ProfileKind = "personal" },
+    @{ Name = "s11Facebook Business"; Url = "https://www.facebook.com/"; ProfileKind = "business" },
+    @{ Name = "s12Facebook Personal"; Url = "https://www.facebook.com/"; ProfileKind = "personal" },
+    @{ Name = "s13X-Twitter Business"; Url = "https://x.com/"; ProfileKind = "business" },
+    @{ Name = "s14X-Twitter Personal"; Url = "https://x.com/"; ProfileKind = "personal" },
+    @{ Name = ("s15{0} Web" -f $companyDisplayName); Url = "https://example.invalid/"; ProfileKind = "business" },
+    @{ Name = ("s16{0} Blog" -f $companyDisplayName); Url = "https://example.invalid/blog"; ProfileKind = "business" },
     @{ Name = "s17SnapChat Business"; Url = "https://www.snapchat.com/@exampleorg"; ProfileKind = "business" },
     @{ Name = "s18NextSosyal Business"; Url = "https://sosyal.teknofest.app/@exampleorg"; ProfileKind = "business" }
 )
@@ -1358,7 +1358,7 @@ foreach ($spec in @($developerWebShortcuts)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind 'business' -Variant 'remote')
 }
 
-Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i1Internet Business" -Url "https://www.exampleorg.com" -ProfileKind 'business' -Variant 'remote' -CleanupAliases @("Google Chrome", "Chrome"))
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i1Internet Business" -Url "https://example.invalid/" -ProfileKind 'business' -Variant 'remote' -CleanupAliases @("Google Chrome", "Chrome"))
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i2Internet Personal" -Url "https://www.google.com" -ProfileKind 'personal' -Variant 'remote')
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")

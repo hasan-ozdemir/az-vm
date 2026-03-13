@@ -17,14 +17,13 @@ param(
 $script:ActiveCommand = ''
 $script:AutoMode = $false
 $script:UpdateMode = $false
-$script:RenewMode = $false
 $script:PerfMode = $false
 
 $script:TranscriptStarted = $false
 $script:HadError = $false
 $script:ExitCode = 0
 $script:ConfigOverrides = @{}
-$script:ExecutionMode = if ($script:RenewMode) { 'destructive rebuild' } elseif ($script:UpdateMode) { 'update' } else { 'default' }
+$script:ExecutionMode = if ($script:UpdateMode) { 'update' } else { 'default' }
 $script:AzCommandTimeoutSeconds = 1800
 $script:SshTaskTimeoutSeconds = 180
 $script:SshConnectTimeoutSeconds = 30

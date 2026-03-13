@@ -210,7 +210,7 @@ The executive-level outcomes are straightforward:
 | Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | The machine feels operational, not half-finished. | Customer-facing and operator-facing use is easier to stage. |
 | Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Assisted-operation scenarios are easier to reproduce and support. | Broader usability and faster support response. |
 | Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting narrows quickly to the failing area. | Less wasted time during support and maintenance. |
-| Lifecycle changes | Create fresh, destructive rebuild, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, destructive rebuild, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
+| Lifecycle changes | Create fresh, explicit rebuild by `delete` plus `create`, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, explicit rebuild by `delete` plus `create`, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
 
 ## Who az-vm Is For
 
@@ -297,7 +297,7 @@ The executive-level outcomes are straightforward:
 | `.\az-vm.cmd create` | interactive | Review-first fresh create flow | Manual first build | Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`. |
 | `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Windows build | Repeatable release or scripted setup | Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`. |
 | `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Linux build | Repeatable release or scripted setup | if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection |
-| `.\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `explicit destructive rebuild flow` | Destructive recreate of the fresh target | Clean rebuild when intended | `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target. |
+| `.\az-vm.cmd delete --target=group --group=<resource-group> --yes` then `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `delete`, `create` | Destructive rebuild of a managed target | Clean rebuild when intended | `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional. |
 | `.\az-vm.cmd create --step=network --linux` | `--step` | Runs one top-level create step | Targeted orchestration testing | `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path. |
 | `.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf` | `--step-from`, `--step-to`, `--perf` | Runs a partial create window | Controlled reruns | `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages. |
 
@@ -413,14 +413,15 @@ The executive-level outcomes are straightforward:
 .\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 .\az-vm.cmd create --step=network --linux
 .\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
-.\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
+.\az-vm.cmd delete --target=group --group=<resource-group> --yes
+.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 ```
 
 Practical outcomes:
 - the default path creates one fresh managed resource group and one fresh VM target
 - interactive mode proposes the next globally unique managed `gX` group id and globally unique managed `nX` resource ids
 - auto mode requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`
-- `explicit destructive rebuild flow` is the explicit rebuild path when the operator wants a destructive recreate
+- when a destructive rebuild is intentional, run `delete` first and then run `create`
 - the same step model works in interactive and auto mode
 
 ### Update An Existing Managed VM
@@ -529,7 +530,7 @@ Behavior notes:
 Purpose: build one fresh managed resource group, one fresh managed VM, and then continue with the init/update workflow when selected.
 
 Behavior notes:
-- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.
+- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
 - Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
@@ -719,14 +720,14 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 ### Why Developers Move Faster
 - One orchestrator means less context switching between separate scripts for provisioning, update, connection, and repair.
 - The same command surface covers Windows and Linux, so platform differences stay narrow and explicit.
-- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.
+- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
 - `resize --disk-size=... --expand` gives a safe in-place managed OS disk growth path, while `resize --disk-size=... --shrink` stops early and explains the supported alternatives instead of risking data loss.
 - Direct `task` and `exec` flows let maintainers inspect and rerun exactly the step or task that matters.
 
 ### Daily Maintainer Flow
 1. Confirm the target with `list`, `show`, `configure`, and `do --vm-action=status`.
-2. Use `create` for first deploys and fresh environments; use `create explicit destructive rebuild flow` only when a full destructive rebuild is intentional.
+2. Use `create` for first deploys and fresh environments; when a full destructive rebuild is intentional, run `delete` first and then run `create`.
 3. Use `update` for ongoing maintenance, guest-task refresh, and Azure redeploy-backed repair on an existing VM.
 4. Use `task` and `exec` to isolate one failing init or update task instead of replaying the whole chain.
 5. Use `move`, `resize`, `set`, and `delete` only after the inventory and current state are explicit.

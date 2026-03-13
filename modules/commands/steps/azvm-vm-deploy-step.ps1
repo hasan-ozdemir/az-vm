@@ -48,7 +48,7 @@ function Invoke-AzVmVmCreateStep {
         [hashtable]$Context,
         [switch]$AutoMode,
         [switch]$UpdateMode,
-        [ValidateSet("default","update","destructive rebuild")]
+        [ValidateSet("default","update")]
         [string]$ExecutionMode = "default",
         [scriptblock]$CreateVmAction
     )
@@ -90,16 +90,6 @@ function Invoke-AzVmVmCreateStep {
             "update" {
                 Write-Host "Update mode: existing VM will be kept; az vm create will run in create-or-update mode." -ForegroundColor Yellow
             }
-            "destructive rebuild" {
-                if ($AutoMode) {
-                    $shouldDeleteVm = $true
-                    Write-Host "Auto mode: VM deletion was confirmed automatically."
-                }
-                else {
-                    $shouldDeleteVm = $true
-                    Write-Host "Interactive review already approved the destructive rebuild delete path for this VM." -ForegroundColor Yellow
-                }
-            }
         }
 
         if ($shouldDeleteVm) {
@@ -110,9 +100,6 @@ function Invoke-AzVmVmCreateStep {
             } | Out-Null
             Write-Host "VM '$vmName' was deleted from resource group '$resourceGroup'."
             $vmDeletedInThisRun = $true
-        }
-        elseif ($effectiveMode -eq "destructive rebuild") {
-            Write-Host "destructive rebuild mode: VM '$vmName' was not deleted by user choice; az vm create will run on existing VM." -ForegroundColor Yellow
         }
         elseif ($effectiveMode -ne "default") {
             Write-Host "VM '$vmName' was not deleted by user choice; continuing with az vm create on existing VM." -ForegroundColor Yellow
@@ -142,7 +129,7 @@ function Invoke-AzVmVmCreateStep {
             # Azure can return a transient non-zero create result even when the VM deployment
             # eventually lands successfully. Keep the probe bounded so real failures still fail
             # quickly, but do not misclassify a completed VM deployment as a hard create error.
-            $shouldUseLongPresenceProbe = (($effectiveMode -in @("update","destructive rebuild")) -and $hasExistingVm)
+            $shouldUseLongPresenceProbe = (($effectiveMode -eq "update") -and $hasExistingVm)
             $presenceProbeAttempts = if ($shouldUseLongPresenceProbe) { 12 } elseif ($vmCreatedThisRun) { 6 } else { 3 }
             for ($presenceAttempt = 1; $presenceAttempt -le $presenceProbeAttempts; $presenceAttempt++) {
                 $vmExistsAfterCreate = if (Test-AzVmAzResourceExists -AzArgs @("vm", "show", "-g", $resourceGroup, "-n", $vmName)) {

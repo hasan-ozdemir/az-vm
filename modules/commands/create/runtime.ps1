@@ -85,7 +85,6 @@ function New-AzVmCreateCommandRuntime {
     return [pscustomobject]@{
         ActionPlan = $actionPlan
         InitialConfigOverrides = $createOverrides
-        RenewMode = (Get-AzVmCliOptionBool -Options $Options -Name 'destructive rebuild' -DefaultValue $false)
         WindowsFlag = [bool]$WindowsFlag
         LinuxFlag = [bool]$LinuxFlag
         AutoMode = [bool]$AutoMode

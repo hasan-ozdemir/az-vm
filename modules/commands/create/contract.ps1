@@ -10,7 +10,6 @@ function Get-AzVmCreateOptionSpecifications {
         (Get-AzVmCreateStepToOptionSpecification),
         (Get-AzVmCreateStepFromOptionSpecification),
         (Get-AzVmCreateStepOptionSpecification),
-        (Get-AzVmCreateRenewOptionSpecification),
         (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmCreateVmNameOptionSpecification),
         (Get-AzVmCreateVmRegionOptionSpecification),

@@ -106,7 +106,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Fixed `.github/workflows/quality-gate.yml` so every checkout now uses `fetch-depth: 0`, allowing the commit-count-based changelog and release-notes contract to validate correctly on GitHub Actions instead of seeing a shallow-history count of `1`.
 
 ### Release
-- Published the repository to the new public GitHub remote `the public GitHub remote`, pushed aligned `main` and `dev`, and removed all remaining local backup/preserve branches so only the two canonical branches remain.
+- Published the repository to the public GitHub remote, pushed aligned `main` and `dev`, and removed all remaining local backup/preserve branches so only the two canonical branches remain.
 
 ## [2026.3.12.294] - 2026-03-12
 
@@ -122,11 +122,11 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Added
 - Added explicit managed OS disk resize intent flags for `resize`: `--disk-size=<number>gb|mb --expand` now performs the supported in-place OS disk growth path, while `--disk-size=<number>gb|mb --shrink` stops before mutation and prints supported rebuild and migration alternatives because Azure does not support shrinking an existing managed OS disk in place.
-- Added the public `create explicit destructive rebuild flow` contract so destructive recreate stays explicit instead of being mixed into the default create path.
+- Standardized destructive rebuild guidance around an explicit `delete` followed by `create` flow so rebuild intent stays separate from the default fresh-create path.
 
 ### Changed
 - Renamed the public step selectors for `create` and `update` from `--single-step`, `--from-step`, and `--to-step` to `--step`, `--step-from`, and `--step-to`, then removed the retired forms from the parser, manifest, parameter modules, help output, README examples, and smoke coverage.
-- Continued the command-surface refresh around `create`, `update`, and `explicit destructive rebuild flow`, keeping operator messaging explicit while the managed-target contract moved toward the current fresh-only `create` model.
+- Continued the command-surface refresh around `create` and `update`, keeping destructive rebuild guidance explicit while the managed-target contract moved toward the current fresh-only `create` model.
 - Changed `update` so it now requires an existing managed resource group and existing VM before orchestration begins, and the VM deploy stage now redeploys an existing VM after the create-or-update pass.
 - Refreshed README, AGENTS, changelog wording, release notes, and prompt-history normalization so the maintained documentation now reflects the current release surface with stronger business-value, developer-benefit, and publish-readiness guidance.
 
@@ -681,7 +681,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Features
 - Add multi-action and single-action execution modes for create/update
 - Add command-based CLI flow with create/update/change/exec
-- Default interactive runs to destructive rebuild mode
+- Default interactive runs to the destructive rebuild mode used at that point in history
 - Make pyssh venv-based and verify with isolated ssh test
 
 ### Fixes
@@ -728,7 +728,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Refactors
 - Split init/update tasks, remove output suppression, and optimize docker/wsl checks
 - Unify linux/windows flow into az-vm.ps1 with task-file catalogs
-- Adopt default/update/destructive rebuild flow and pyssh-first step8
+- Adopt default/update/destructive-rebuild flow and pyssh-first step8
 
 ## [2026.3.3.135] - 2026-03-03
 

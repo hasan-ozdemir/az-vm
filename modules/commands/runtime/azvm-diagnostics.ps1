@@ -398,7 +398,6 @@ function Show-AzVmRuntimeConfigurationSnapshot {
         [string]$ScriptRoot,
         [switch]$AutoMode,
         [switch]$UpdateMode,
-        [switch]$RenewMode,
         [hashtable]$ConfigMap,
         [hashtable]$ConfigOverrides,
         [hashtable]$Context
@@ -467,14 +466,12 @@ function Show-AzVmRuntimeConfigurationSnapshot {
     $runtimeFields = [ordered]@{
         AutoMode = [bool]$AutoMode
         UpdateMode = [bool]$UpdateMode
-        RenewMode = [bool]$RenewMode
         ScriptRoot = [string]$ScriptRoot
         ScriptName = [string]$ScriptName
     }
     $runtimeLabels = @{
         AutoMode = "Auto mode"
         UpdateMode = "Update mode"
-        RenewMode = "destructive rebuild mode"
         ScriptRoot = "Script root"
         ScriptName = "Script name"
     }

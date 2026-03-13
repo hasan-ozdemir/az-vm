@@ -10,7 +10,6 @@ function Invoke-AzVmUpdateCommand {
 
     $runtime = New-AzVmUpdateCommandRuntime -Options $Options -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -AutoMode:$AutoMode
     $script:UpdateMode = $true
-    $script:RenewMode = $false
     $script:ExecutionMode = 'update'
     Invoke-AzVmMain -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -CommandName 'update' -InitialConfigOverrides $runtime.InitialConfigOverrides -ActionPlan $runtime.ActionPlan
 }

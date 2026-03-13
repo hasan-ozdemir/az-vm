@@ -6,7 +6,7 @@ function Invoke-AzVmResourceGroupStep {
         [hashtable]$Context,
         [switch]$AutoMode,
         [switch]$UpdateMode,
-        [ValidateSet("default","update","destructive rebuild")]
+        [ValidateSet("default","update")]
         [string]$ExecutionMode = "default"
     )
 
@@ -44,33 +44,6 @@ function Invoke-AzVmResourceGroupStep {
         "update" {
             if ($resourceExistsBool) {
                 Write-Host "Update mode: existing resource group '$resourceGroup' will be kept; create-or-update command will run." -ForegroundColor Yellow
-            }
-        }
-        "destructive rebuild" {
-            if ($resourceExistsBool) {
-                Write-Host "destructive rebuild mode: resource group '$resourceGroup' exists and can be deleted before recreate."
-                $shouldDelete = $true
-                if ($AutoMode) {
-                    Write-Host "Auto mode: deletion was confirmed automatically."
-                }
-                else {
-                    Write-Host "Interactive review already approved the destructive rebuild delete path for this resource group." -ForegroundColor Yellow
-                }
-
-                if ($shouldDelete) {
-                    Invoke-TrackedAction -Label "az group delete -n $resourceGroup --yes --no-wait" -Action {
-                        az group delete -n $resourceGroup --yes --no-wait
-                        Assert-LastExitCode "az group delete"
-                    } | Out-Null
-                    Invoke-TrackedAction -Label "az group wait -n $resourceGroup --deleted" -Action {
-                        az group wait -n $resourceGroup --deleted
-                        Assert-LastExitCode "az group wait deleted"
-                    } | Out-Null
-                    Write-Host "Resource group '$resourceGroup' was deleted."
-                }
-                else {
-                    Write-Host "Resource group '$resourceGroup' was not deleted by user choice; continuing with recreate command." -ForegroundColor Yellow
-                }
             }
         }
     }

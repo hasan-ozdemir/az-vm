@@ -38,42 +38,36 @@ function Invoke-AzVmCommandDispatcher {
         switch ($CommandName) {
             'help' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmHelpEntry -HelpTopic $HelpTopic
                 return
             }
             'configure' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmConfigureCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'list' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmListCommand -Options $Options
                 return
             }
             'show' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmShowCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'do' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmDoCommand -Options $Options
                 return
             }
             'task' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmTaskCommand -Options $Options -AutoMode:$false -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag | Out-Null
                 return
@@ -88,49 +82,42 @@ function Invoke-AzVmCommandDispatcher {
             }
             'move' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmMoveCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'resize' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmResizeCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'set' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmSetCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'exec' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return
             }
             'ssh' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmSshConnectCommand -Options $Options
                 return
             }
             'rdp' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmRdpConnectCommand -Options $Options
                 return
             }
             'delete' {
                 $script:UpdateMode = $false
-                $script:RenewMode = $false
                 $script:ExecutionMode = 'default'
                 Invoke-AzVmDeleteCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
                 return

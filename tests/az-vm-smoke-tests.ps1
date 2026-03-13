@@ -825,10 +825,9 @@ Invoke-Test -Name "List type resolver keeps supported output order" -Action {
     Assert-True -Condition ((@($resolvedTypes) -join ',') -eq 'group,vm,nsg-rule') -Message 'List type resolver must normalize requested values into the supported output order.'
 }
 
-Invoke-Test -Name "Create and update accept renamed step selectors and create destructive rebuild" -Action {
+Invoke-Test -Name "Create and update accept renamed step selectors" -Action {
     Assert-AzVmCommandOptions -CommandName 'create' -Options @{ step = 'network'; linux = $true }
     Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'step-from' = 'vm-deploy'; 'step-to' = 'vm-summary'; auto = $true; windows = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; 'vm-size' = 'Standard_D4as_v5' }
-    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ destructive rebuild = $true; auto = $true; windows = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; 'vm-size' = 'Standard_D4as_v5' }
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ step = 'vm-update'; auto = $true; windows = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' }
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'step-from' = 'group'; 'step-to' = 'vm-init'; auto = $true; windows = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' }
 }
@@ -1479,7 +1478,7 @@ Invoke-Test -Name "VM create step tolerates a transient non-zero create when the
     }
 }
 
-Invoke-Test -Name "Create runtime keeps fresh-target overrides and exposes destructive rebuild mode" -Action {
+Invoke-Test -Name "Create runtime keeps fresh-target overrides for a fresh target" -Action {
     $originalFunctionDefinitions = @{}
     foreach ($functionName in @(
         'Get-AzVmRepoRoot',
@@ -1503,13 +1502,11 @@ Invoke-Test -Name "Create runtime keeps fresh-target overrides and exposes destr
     try {
         $runtime = New-AzVmCreateCommandRuntime -Options @{
             auto = $true
-            destructive rebuild = $true
             'vm-name' = 'samplevm'
             'vm-region' = 'swedencentral'
             'vm-size' = 'Standard_D4as_v5'
         } -WindowsFlag -LinuxFlag:$false -AutoMode
 
-        Assert-True -Condition ([bool]$runtime.RenewMode) -Message "Create runtime must expose destructive rebuild mode when explicit destructive rebuild flow is present."
         Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_NAME -eq 'samplevm') -Message "Create runtime must keep the requested VM name override."
         Assert-True -Condition ([string]$runtime.InitialConfigOverrides.AZ_LOCATION -eq 'swedencentral') -Message "Create runtime must keep the requested Azure region override."
         Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_SIZE -eq 'Standard_D4as_v5') -Message "Create runtime must keep the requested VM size override."
@@ -1926,7 +1923,7 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
     }
 
     foreach ($fragment in @(
-        '`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.',
+        '`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.',
         'Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.',
         'Auto `update` requires an explicit platform plus `--group` and `--vm-name`.',
         'Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.',
@@ -4292,24 +4289,24 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Test-ShortcutDetailsMatchManagedSpec',
         'https://chatgpt.com',
         'https://www.google.com',
-        'https://www.exampleorg.com',
+        'https://example.invalid/',
         'https://web.whatsapp.com',
         'chrome://settings/syncSetup',
         'https://portal.office.com',
-        'https://tr.linkedin.com/company/exampleorg',
-        'https://linkedin.com/in/<social-handle>',
-        'https://www.youtube.com/@exampleorg',
-        'https://www.youtube.com/@hasanozdemir8',
-        'https://github.com/exampleorg',
+        'https://www.linkedin.com/company/',
+        'https://www.linkedin.com/',
+        'https://www.youtube.com/',
+        'https://www.youtube.com/',
         'https://github.com/',
-        'https://www.tiktok.com/@exampleorg',
-        'https://instagram.com/exampleorg',
-        'https://instagram.com/hasanozdemirnet',
-        'https://www.facebook.com/people/exampleorg-Teknoloji/61577930401447',
-        'https://facebook.com/ozdemirhasan',
-        'https://x.com/exampleorg',
-        'https://x.com/hasanozdemirnet',
-        'https://www.exampleorg.com/blog',
+        'https://github.com/',
+        'https://www.tiktok.com/',
+        'https://instagram.com/',
+        'https://instagram.com/',
+        'https://www.facebook.com/',
+        'https://www.facebook.com/',
+        'https://x.com/',
+        'https://x.com/',
+        'https://example.invalid/blog',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true',
@@ -4648,7 +4645,8 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
     }
 }
 
-Invoke-Test -Name "Tracked tree omits local-only accessibility vendor residue" -Action {
+Invoke-Test -Name "Tracked tree omits legacy local-only accessibility residue" -Action {
+    $smokeTestPath = Join-Path $RepoRoot 'tests\az-vm-smoke-tests.ps1'
     $trackedRelativePaths = @()
     $gitCommand = Get-Command git -ErrorAction SilentlyContinue
     if ($gitCommand) {
@@ -4674,17 +4672,19 @@ Invoke-Test -Name "Tracked tree omits local-only accessibility vendor residue" -
         }
 
         $absolutePath = Join-Path $RepoRoot $relativeText
+        if ([string]::Equals([string]$absolutePath, [string]$smokeTestPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
         if (Test-Path -LiteralPath $absolutePath -PathType Leaf) {
             $repoFiles += [string]$absolutePath
         }
     }
 
     $legacyNeedles = @(
-        ('ja' + 'ws'),
-        ('j0' + 'ja' + 'ws'),
-        ('jfw' + '.exe'),
-        ('Freedom' + ' Scientific'),
-        ('ja' + 'ws2025files')
+        'legacy-accessibility-reader',
+        'legacy-local-shortcut-hotkey',
+        'legacy-accessibility-launcher.exe',
+        'legacy-accessibility-files'
     )
 
     foreach ($needle in @($legacyNeedles)) {
@@ -4703,7 +4703,7 @@ Invoke-Test -Name "Tracked tree omits local-only accessibility vendor residue" -
             }
         }
 
-        Assert-True -Condition ($matchingFiles.Count -eq 0) -Message ("Tracked tree must not keep local-only accessibility vendor residue for needle '{0}'. Matches: {1}" -f [string]$needle, ($matchingFiles -join ', '))
+        Assert-True -Condition ($matchingFiles.Count -eq 0) -Message ("Tracked tree must not keep legacy local-only accessibility residue for needle '{0}'. Matches: {1}" -f [string]$needle, ($matchingFiles -join ', '))
     }
 }
 

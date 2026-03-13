@@ -88,7 +88,7 @@ This release fixes the GitHub Actions publish gate for the new public repository
 
 ### Highlights
 - Updated `.github/workflows/quality-gate.yml` so every `actions/checkout@v6` step uses `fetch-depth: 0`, preventing the release-document checks from seeing a shallow clone count of `1` on GitHub-hosted runners.
-- Published the repo to `the public GitHub remote` under the `<social-handle>` account, pushed aligned `main` and `dev`, and removed all remaining non-canonical local branches so the repo now keeps only the two intended long-lived branches.
+- Published the repo to the public GitHub remote, pushed aligned `main` and `dev`, and removed all remaining non-canonical local branches so the repo now keeps only the two intended long-lived branches.
 - The previous failing `main` workflow run was traced to shallow checkout depth rather than the actual code or docs contract; the follow-up push from this release is intended to produce the clean authoritative `main` Actions result.
 
 ## Release 2026.3.12.294 - 2026-03-12
@@ -105,11 +105,11 @@ This release closes the last live Windows publish blockers from the recreate-and
 ## Release 2026.3.12.293 - 2026-03-12
 
 ### Summary
-This release finishes the command-surface refresh for publish-readiness: step selectors are renamed to the new `--step` family, `create explicit destructive rebuild flow` becomes the explicit destructive rebuild control while the broader create/update contract continues toward the current fresh-only create model, `update` now requires an existing managed VM and redeploys it during the VM deploy stage, and `resize` gains a safe managed OS disk expand path plus an explicit non-mutating shrink guidance path.
+This release finishes the command-surface refresh for publish-readiness: step selectors are renamed to the new `--step` family, destructive rebuild guidance is made explicit through a `delete` then `create` flow while the broader create/update contract continues toward the current fresh-only create model, `update` now requires an existing managed VM and redeploys it during the VM deploy stage, and `resize` gains a safe managed OS disk expand path plus an explicit non-mutating shrink guidance path.
 
 ### Highlights
 - Renamed the create/update step selectors from `--single-step`, `--from-step`, and `--to-step` to `--step`, `--step-from`, and `--step-to`, then removed the retired option forms throughout the parser, manifest, parameter modules, help output, README, and smoke contract.
-- Added `create explicit destructive rebuild flow` as the explicit destructive recreate mode, keeping destructive rebuild intent separate from the evolving default create/update contract.
+- Standardized destructive rebuild guidance around an explicit `delete` followed by `create`, keeping destructive rebuild intent separate from the evolving default create/update contract.
 - Changed `update` so it fails early when the managed resource group or VM is missing, then uses Azure create-or-update plus `az vm redeploy` once an existing VM is confirmed.
 - Added `resize --disk-size=<number>gb|mb --expand` for the supported managed OS disk growth path, and `resize --disk-size=<number>gb|mb --shrink` as a fail-fast guidance path that explains Azure's OS disk shrink limit and lists supported rebuild alternatives.
 - Refreshed README and AGENTS with a stronger quick-start, business-value, developer-benefit, and practical-usage narrative while keeping the documentation contract aligned with the runtime surface.

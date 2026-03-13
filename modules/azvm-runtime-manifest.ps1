@@ -89,7 +89,6 @@
     'modules/commands/create/parameters/step-to.ps1'
     'modules/commands/create/parameters/step-from.ps1'
     'modules/commands/create/parameters/step.ps1'
-    'modules/commands/create/parameters/destructive rebuild.ps1'
     'modules/commands/create/parameters/vm-name.ps1'
     'modules/commands/create/parameters/vm-region.ps1'
     'modules/commands/create/parameters/vm-size.ps1'
