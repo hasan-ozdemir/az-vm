@@ -93,7 +93,7 @@ $preCommitCheckText = Get-Content -LiteralPath $preCommitCheckPath -Raw
 $preCommitText = Get-Content -LiteralPath $preCommitPath -Raw
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
 
-$requiredCommandTokens = @('configure','create','update','group','show','do','task','exec','ssh','rdp','move','resize','set','delete','help')
+$requiredCommandTokens = @('configure','create','update','list','show','do','task','exec','ssh','rdp','move','resize','set','delete','help')
 foreach ($token in $requiredCommandTokens) {
     $commandNeedle = ([string][char]96) + $token + ([string][char]96)
     Assert-True -Condition ($readmeText.Contains($commandNeedle)) -Message ("README.md must mention command '{0}'." -f $token)
@@ -122,6 +122,8 @@ Assert-True -Condition ($agentsText -match [regex]::Escape('Keep task-only custo
 Assert-True -Condition ($agentsText -match [regex]::Escape('Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.')) -Message 'AGENTS.md must forbid hard-coded personal/company/secret fallbacks.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('`create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.')) -Message 'AGENTS.md must define the fresh-only create contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('`update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.')) -Message 'AGENTS.md must define the existing-only update contract.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('`configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.')) -Message 'AGENTS.md must define the configure target-sync contract.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('`list` is the managed inventory command: it must stay Azure-read-only, must not write `.env`, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.')) -Message 'AGENTS.md must define the list inventory contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('`create --auto` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`; `update --auto` requires an explicit platform plus `--group` and `--vm-name`.')) -Message 'AGENTS.md must define the strict auto-mode contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Managed resource group ids use a globally increasing `gX` suffix across all managed groups, regardless of region.')) -Message 'AGENTS.md must document global managed resource-group ids.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Managed resource ids use a globally increasing `nX` suffix across all generated managed resources; one generated `nX` must not be reused by another managed resource, even across resource types.')) -Message 'AGENTS.md must document global managed resource ids.'
@@ -160,13 +162,18 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('--user=manager --tes
 Assert-True -Condition ($readmeText -match [regex]::Escape('password-bearing `.env` values are redacted')) -Message 'README.md must document show redaction for password-bearing values.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.')) -Message 'README.md must describe create as fresh-only.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('`update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.')) -Message 'README.md must describe update as existing-managed-target only.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.')) -Message 'README.md must describe configure as a target-sync command.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.')) -Message 'README.md must describe list as a read-only inventory command.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.')) -Message 'README.md must document strict create auto options.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Auto `update` requires an explicit platform plus `--group` and `--vm-name`.')) -Message 'README.md must document strict update auto options.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection')) -Message 'README.md must document the interactive create OS prompt.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.')) -Message 'README.md must document the four review checkpoints.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('`configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.')) -Message 'README.md must document the always-visible configure/vm-summary rule.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.')) -Message 'README.md must document global gX naming.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.')) -Message 'README.md must document global nX naming.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('`create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.')) -Message 'README.md must reject create reuse and implicit update create behavior.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('`list` gives a read-only managed inventory view across groups and resource types')) -Message 'README.md must explain the list inventory outcome.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('`configure` selects one managed VM target and synchronizes actual Azure state into `.env`')) -Message 'README.md must explain the configure synchronization outcome.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Azure single-VM APIs do not expose a separate nested-virtualization toggle')) -Message 'README.md must document the nested virtualization control model accurately.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks')) -Message 'README.md must document the natural task execution order.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'README.md must document VM_ENABLE_HIBERNATION.'
@@ -207,6 +214,10 @@ foreach ($legacyToken in $legacyTokens) {
     Assert-True -Condition (-not ($readmeText -match $pattern)) -Message ("README.md must not contain legacy token '{0}'." -f $legacyToken)
     Assert-True -Condition (-not ($agentsText -match $pattern)) -Message ("AGENTS.md must not contain legacy token '{0}'." -f $legacyToken)
 }
+
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('### `group`'))) -Message 'README.md must not document the removed group command.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('.\az-vm.cmd group'))) -Message 'README.md must not keep removed group command examples.'
+Assert-True -Condition (-not ($agentsText -match [regex]::Escape('Current public commands are: `configure`, `create`, `update`, `group`'))) -Message 'AGENTS.md must not keep the removed group command in the public command list.'
 
 $oldHookInstallerPattern = [regex]::Escape('install-git-hooks.ps1')
 Assert-True -Condition (-not ($readmeText -match $oldHookInstallerPattern)) -Message 'README.md must not mention install-git-hooks.ps1.'

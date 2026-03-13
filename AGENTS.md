@@ -49,7 +49,7 @@ Use these sources in this order when maintaining the repo:
 - Keep command behavior deterministic across interactive and auto flows.
 
 ## Command-Surface Rules
-- Current public commands are: `configure`, `create`, `update`, `group`, `show`, `do`, `task`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
+- Current public commands are: `configure`, `create`, `update`, `list`, `show`, `do`, `task`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
 - Do not preserve removed commands or aliases once the repo has cut over to a new surface.
 - If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
 - When a public option is renamed, rename the owning parameter files, manifest entries, parser lookups, help text, README examples, and smoke coverage in the same change; do not leave retired parameter-module filenames behind.
@@ -57,6 +57,8 @@ Use these sources in this order when maintaining the repo:
 - Keep help output, README examples, and runtime messages aligned with the actual parser contract.
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
+- `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.
+- `list` is the managed inventory command: it must stay Azure-read-only, must not write `.env`, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
 - Auto-mode strictness is part of the public contract: `create --auto` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`; `update --auto` requires an explicit platform plus `--group` and `--vm-name`.
 - `resize --disk-size` requires exactly one intent flag, `--expand` or `--shrink`; shrink remains a non-mutating guidance path when Azure cannot perform the requested change safely.
 

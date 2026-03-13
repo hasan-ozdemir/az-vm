@@ -12,95 +12,59 @@ function Invoke-AzVmConfigureCommand {
     $repoRoot = Get-AzVmRepoRoot
     $envFilePath = Join-Path $repoRoot '.env'
     $configBefore = Read-DotEnvFile -Path $envFilePath
-    $defaultResourceGroup = [string](Get-ConfigValue -Config $configBefore -Key 'RESOURCE_GROUP' -DefaultValue '')
-    $vmName = [string](Get-ConfigValue -Config $configBefore -Key 'VM_NAME' -DefaultValue '')
-    $selectedResourceGroup = Resolve-AzVmTargetResourceGroup `
+    $target = Resolve-AzVmManagedVmTarget `
         -Options $Options `
-        -AutoMode:$AutoMode `
-        -DefaultResourceGroup $defaultResourceGroup `
-        -VmName $vmName `
-        -OperationName 'configure'
+        -ConfigMap $configBefore `
+        -OperationName 'configure' `
+        -AutoSelectSingleVm `
+        -FailIfMultipleWithoutExplicitVmForExplicitGroup
+    $resourceGroup = [string]$target.ResourceGroup
+    $vmName = [string]$target.VmName
+    $flagPlatform = Get-AzVmConfigureFlagPlatform -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $targetState = Get-AzVmConfigureTargetState -ResourceGroup $resourceGroup -VmName $vmName -ConfigBefore $configBefore
+    $actualPlatform = [string]$targetState.Platform
 
-    $runtime = $null
-    $context = $null
-    $platform = ''
-    $step1Result = $null
-
-    $step1Result = Invoke-Step 'Step 1/3 - configuration values will be resolved...' {
-        $runtimeLocal = Initialize-AzVmCommandRuntimeContext `
-            -AutoMode:$AutoMode `
-            -WindowsFlag:$WindowsFlag `
-            -LinuxFlag:$LinuxFlag `
-            -ConfigMapOverrides @{ RESOURCE_GROUP = $selectedResourceGroup } `
-            -PersistGeneratedResourceGroup
-        [pscustomobject]@{
-            Runtime = $runtimeLocal
-            Context = $runtimeLocal.Context
-            Platform = [string]$runtimeLocal.Platform
-        }
-    }
-    if ($null -eq $step1Result -or @($step1Result).Count -eq 0) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$flagPlatform) -and -not [string]::Equals([string]$flagPlatform, [string]$actualPlatform, [System.StringComparison]::OrdinalIgnoreCase)) {
         Throw-FriendlyError `
-            -Detail "Interactive configuration step did not produce runtime context." `
-            -Code 64 `
-            -Summary "Configure command could not continue after step 1." `
-            -Hint "Rerun 'az-vm configure' and verify group selection."
-    }
-    if ($step1Result -is [System.Array]) {
-        $step1Result = $step1Result[-1]
-    }
-    $runtime = $step1Result.Runtime
-    $context = $step1Result.Context
-    $platform = [string]$step1Result.Platform
-    if ($null -eq $context) {
-        Throw-FriendlyError `
-            -Detail "Step 1 returned an empty context object." `
-            -Code 64 `
-            -Summary "Configure command could not continue after step 1." `
-            -Hint "Rerun 'az-vm configure' and verify interactive selections."
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$context.AzLocation)) {
-        Throw-FriendlyError `
-            -Detail "Step 1 returned empty AZ_LOCATION in context." `
-            -Code 64 `
-            -Summary "Configure command could not continue because region was not captured." `
-            -Hint "Select a valid region in step 1 and retry."
+            -Detail ("Configure target VM '{0}' in resource group '{1}' is '{2}', but flag '{3}' was requested." -f $vmName, $resourceGroup, $actualPlatform, $flagPlatform) `
+            -Code 66 `
+            -Summary 'Configure command platform validation failed.' `
+            -Hint 'Use the correct platform flag for the selected VM, or omit the flag and let configure read the actual platform.'
     }
 
-    Invoke-Step 'Step 2/3 - region, image, and VM size availability will be checked...' {
-        Invoke-AzVmPrecheckStep -Context $context
-    }
-
-    Invoke-Step 'Step 3/3 - resource group preview will be displayed...' {
-        $null = Invoke-AzVmResourceGroupPreviewStep -Context $context
-    }
-
-    $persistMap = Get-AzVmConfigPersistenceMap -Platform $platform -Context $context
-    $changes = Save-AzVmConfigToDotEnv -EnvFilePath ([string]$runtime.EnvFilePath) -ConfigBefore $configBefore -PersistMap $persistMap
-    $configAfter = Read-DotEnvFile -Path ([string]$runtime.EnvFilePath)
+    $changes = @(Save-AzVmConfigToDotEnv `
+        -EnvFilePath $envFilePath `
+        -ConfigBefore $configBefore `
+        -PersistMap $targetState.PersistMap `
+        -ClearReasonMap $targetState.ClearReasonMap)
 
     Write-Host ""
-    Show-AzVmKeyValueList -Title "Existing .env values (before configure):" -Values $configBefore
-    Write-Host ""
-    Show-AzVmKeyValueList -Title "Resolved configuration values:" -Values $context
-    Write-Host ""
-    Show-AzVmKeyValueList -Title ".env values after configure:" -Values $configAfter
+    Show-AzVmKeyValueList -Title "Configure target summary:" -Values $targetState.SummaryMap
     Write-Host ""
     if (@($changes).Count -gt 0) {
-        Write-Host "Saved .env changes:" -ForegroundColor Green
+        Write-Host ".env changes:" -ForegroundColor Green
         foreach ($change in @($changes)) {
             $oldValue = if ([string]::IsNullOrWhiteSpace([string]$change.OldValue)) { "(empty)" } else { [string]$change.OldValue }
             $newValue = if ([string]::IsNullOrWhiteSpace([string]$change.NewValue)) { "(empty)" } else { [string]$change.NewValue }
-            Write-Host ("- {0}: {1} -> {2}" -f [string]$change.Key, $oldValue, $newValue)
+            $suffix = ''
+            if ([string]::Equals([string]$change.ChangeKind, 'cleared', [System.StringComparison]::OrdinalIgnoreCase) -and -not [string]::IsNullOrWhiteSpace([string]$change.Reason)) {
+                $suffix = (" [{0}]" -f [string]$change.Reason)
+            }
+            Write-Host ("- {0}: {1} -> {2}{3}" -f [string]$change.Key, $oldValue, $newValue, $suffix)
         }
     }
     else {
-        Write-Host "No .env value changes were needed; current values are already aligned." -ForegroundColor Yellow
+        Write-Host "No .env changes were needed; selected target is already aligned." -ForegroundColor Yellow
+    }
+
+    if (@($targetState.SkippedFeatureKeys).Count -gt 0) {
+        Write-Host ""
+        Write-Host "Feature sync skipped for unreadable keys:" -ForegroundColor Yellow
+        foreach ($key in @($targetState.SkippedFeatureKeys)) {
+            Write-Host ("- {0}" -f [string]$key)
+        }
     }
 
     Write-Host ""
-    Write-Host "Configure completed successfully. No Azure resources were created, updated, or deleted." -ForegroundColor Green
-    Write-Host "Next actions:" -ForegroundColor Cyan
-    Write-Host "- az-vm create --auto"
-    Write-Host "- az-vm create --step-to=vm-deploy"
+    Write-Host ("Configure completed successfully for VM '{0}' in resource group '{1}'. No Azure resources were created, updated, or deleted." -f $vmName, $resourceGroup) -ForegroundColor Green
 }

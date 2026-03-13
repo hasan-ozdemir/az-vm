@@ -9,7 +9,7 @@ function Get-AzVmCommandOptionSpecifications {
         'create' { return @(Get-AzVmCreateOptionSpecifications) }
         'update' { return @(Get-AzVmUpdateOptionSpecifications) }
         'configure' { return @(Get-AzVmConfigureOptionSpecifications) }
-        'group' { return @(Get-AzVmGroupOptionSpecifications) }
+        'list' { return @(Get-AzVmListOptionSpecifications) }
         'show' { return @(Get-AzVmShowOptionSpecifications) }
         'do' { return @(Get-AzVmDoOptionSpecifications) }
         'task' { return @(Get-AzVmTaskOptionSpecifications) }
@@ -22,7 +22,7 @@ function Get-AzVmCommandOptionSpecifications {
         'delete' { return @(Get-AzVmDeleteOptionSpecifications) }
         'help' { return @(Get-AzVmHelpOptionSpecifications) }
         default {
-            Throw-FriendlyError -Detail ("Unsupported command '{0}'." -f $CommandName) -Code 2 -Summary "Unknown command." -Hint "Use one command: create | update | configure | group | show | do | task | exec | ssh | rdp | move | resize | set | delete | help."
+            Throw-FriendlyError -Detail ("Unsupported command '{0}'." -f $CommandName) -Code 2 -Summary "Unknown command." -Hint "Use one command: create | update | configure | list | show | do | task | exec | ssh | rdp | move | resize | set | delete | help."
         }
     }
 }

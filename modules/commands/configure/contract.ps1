@@ -6,6 +6,7 @@ function Get-AzVmConfigureOptionSpecifications {
         (Get-AzVmConfigureWindowsOptionSpecification),
         (Get-AzVmConfigureLinuxOptionSpecification),
         (Get-AzVmConfigureHelpOptionSpecification),
-        (Get-AzVmConfigureGroupOptionSpecification)
+        (Get-AzVmConfigureGroupOptionSpecification),
+        (Get-AzVmConfigureVmNameOptionSpecification)
     )
 }

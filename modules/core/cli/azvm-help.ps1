@@ -2,7 +2,7 @@
 
 # Handles Get-AzVmValidCommandList.
 function Get-AzVmValidCommandList {
-    return @('create', 'update', 'configure', 'group', 'show', 'do', 'task', 'move', 'resize', 'set', 'exec', 'ssh', 'rdp', 'delete', 'help')
+    return @('create', 'update', 'configure', 'list', 'show', 'do', 'task', 'move', 'resize', 'set', 'exec', 'ssh', 'rdp', 'delete', 'help')
 }
 
 # Handles Show-AzVmCommandHelpOverview.
@@ -13,8 +13,8 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "Commands (full details: az-vm help <command>):"
     Write-Host "  create  Create one fresh managed resource group and one fresh managed VM."
     Write-Host "  update  Update one existing managed VM in one existing managed resource group."
-    Write-Host "  configure  Configure precheck/preview flow for a target resource group."
-    Write-Host "  group   List/select managed resource groups for active context."
+    Write-Host "  configure  Select one managed VM target and sync target-derived values into .env."
+    Write-Host "  list    List managed resource groups and managed Azure resources by type."
     Write-Host "  show    Print system and configuration dump for resource groups and VMs."
     Write-Host "  do      Apply one VM lifecycle action or print current VM state."
     Write-Host "  task    List discovered init/update tasks in real execution order."
@@ -40,11 +40,11 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm -h"
     Write-Host "  az-vm --help"
     Write-Host "  az-vm create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>"
-    Write-Host "  az-vm configure"
+    Write-Host "  az-vm configure --vm-name=<vm-name>"
     Write-Host "  az-vm create --step-from=vm-init --linux"
     Write-Host "  az-vm update --auto --windows --group=<resource-group> --vm-name=<vm-name>"
-    Write-Host "  az-vm group --list=<vm-name>"
-    Write-Host "  az-vm group --select=<resource-group>"
+    Write-Host "  az-vm list --type=group,vm"
+    Write-Host "  az-vm list --type=nsg,nsg-rule --group=<resource-group>"
     Write-Host "  az-vm do --vm-action=status --vm-name=<vm-name>"
     Write-Host "  az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>"
     Write-Host "  az-vm do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>"
@@ -65,7 +65,7 @@ function Show-AzVmCommandHelpOverview {
     Write-Host "  az-vm help"
     Write-Host "  az-vm do -h"
     Write-Host "  az-vm help create"
-    Write-Host "  az-vm help group"
+    Write-Host "  az-vm help list"
     Write-Host "  az-vm help move"
 }
 
@@ -100,8 +100,8 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "Command reference:"
         Write-Host "  create  : supports --step-to, --step-from, --step, explicit destructive rebuild flow, --vm-name, --vm-region, --vm-size"
         Write-Host "  update  : supports --step-to, --step-from, --step, --group, --vm-name"
-        Write-Host "  configure  : configure precheck/preview for selected resource group"
-        Write-Host "  group   : list/select active managed resource group"
+        Write-Host "  configure  : select one managed VM target and sync target-derived values into .env"
+        Write-Host "  list    : supports --type and --group for managed inventory output"
         Write-Host "  show    : print system and configuration dump for resource groups and VMs"
         Write-Host "  do      : supports --group, --vm-name, --vm-action"
         Write-Host "  task    : supports --list, --vm-init, --vm-update, --disabled, --windows, --linux"
@@ -115,11 +115,11 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host ""
         Write-Host "Examples:"
         Write-Host "  az-vm create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>"
-        Write-Host "  az-vm configure"
+        Write-Host "  az-vm configure --vm-name=<vm-name>"
         Write-Host "  az-vm create --step=configure --linux"
         Write-Host "  az-vm update --auto --windows --group=<resource-group> --vm-name=<vm-name>"
-        Write-Host "  az-vm group --list=<vm-name>"
-        Write-Host "  az-vm group --select=<resource-group>"
+        Write-Host "  az-vm list --type=group,vm"
+        Write-Host "  az-vm list --type=nsg,nsg-rule --group=<resource-group>"
         Write-Host "  az-vm do --vm-action=status --vm-name=<vm-name>"
         Write-Host "  az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>"
         Write-Host "  az-vm do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>"
@@ -136,7 +136,7 @@ function Show-AzVmCommandHelpDetailed {
         Write-Host "  az-vm show --group=<resource-group>"
         Write-Host "  az-vm delete --target=vm --group=<resource-group> --yes"
         Write-Host ""
-        Write-Host "For per-command docs: az-vm help <create|update|configure|group|show|do|task|move|resize|set|exec|ssh|rdp|delete>"
+        Write-Host "For per-command docs: az-vm help <create|update|configure|list|show|do|task|move|resize|set|exec|ssh|rdp|delete>"
         return
     }
 
@@ -145,7 +145,7 @@ function Show-AzVmCommandHelpDetailed {
             -Detail ("Unknown help topic '{0}'." -f $topicText) `
             -Code 2 `
             -Summary "Unknown help topic." `
-            -Hint "Use az-vm help or az-vm help <create|update|configure|group|show|do|task|move|resize|set|exec|ssh|rdp|delete>."
+            -Hint "Use az-vm help or az-vm help <create|update|configure|list|show|do|task|move|resize|set|exec|ssh|rdp|delete>."
     }
 
     switch ($topicName) {
@@ -170,7 +170,7 @@ function Show-AzVmCommandHelpDetailed {
             Write-Host "  az-vm create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>"
             Write-Host "  az-vm create --step=network --linux"
             Write-Host "  az-vm create --step-from=vm-deploy --step-to=vm-summary --perf"
-            Write-Host "Notes: create always targets a fresh managed resource group and fresh managed resources. Interactive mode always shows configure first, proposes the next global gX name plus globally unique nX resource ids, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode requires an explicit platform plus --vm-name, --vm-region, and --vm-size. vm-summary always renders, even for partial step windows. Use explicit destructive rebuild flow only when you want a destructive recreate of the fresh target."
+            Write-Host "Notes: create always targets a fresh managed resource group and fresh managed resources. Interactive mode always shows configure first, asks for VM OS type first when --windows/--linux is omitted, proposes the next global gX name plus globally unique nX resource ids, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode requires an explicit platform plus --vm-name, --vm-region, and --vm-size. vm-summary always renders, even for partial step windows. Use explicit destructive rebuild flow only when you want a destructive recreate of the fresh target."
             return
         }
         'update' {
@@ -196,31 +196,30 @@ function Show-AzVmCommandHelpDetailed {
         }
         'configure' {
             Write-Host "Command: configure"
-            Write-Host "Description: run configure precheck/preview for a target managed resource group."
+            Write-Host "Description: select one existing managed VM target, read actual Azure state, and sync target-derived values into .env."
             Write-Host "Usage:"
-            Write-Host "  az-vm configure [--group=<resource-group>]"
+            Write-Host "  az-vm configure [--group=<resource-group>] [--vm-name=<vm-name>] [--windows|--linux] [--perf]"
             Write-Host "  az-vm configure -h"
             Write-Host "  az-vm configure --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm configure --group=<resource-group>"
-            Write-Host "Notes: this command does not create/update/delete Azure resources."
+            Write-Host "  az-vm configure"
+            Write-Host "  az-vm configure --group=<resource-group> --vm-name=<vm-name>"
+            Write-Host "  az-vm configure --vm-name=<vm-name>"
+            Write-Host "Notes: configure is read-only against Azure. It selects only az-vm-managed resource groups and existing VMs, validates --windows/--linux against the actual VM OS type, writes only target-derived .env values, clears stale opposite-platform keys, and prints a compact diff plus skipped unreadable feature keys."
             return
         }
-        'group' {
-            Write-Host "Command: group"
-            Write-Host "Description: list/select managed resource groups and set active group."
+        'list' {
+            Write-Host "Command: list"
+            Write-Host "Description: print read-only managed inventory sections for az-vm-tagged resource groups and resources."
             Write-Host "Usage:"
-            Write-Host "  az-vm group"
-            Write-Host "  az-vm group --list"
-            Write-Host "  az-vm group --list=<filter>"
-            Write-Host "  az-vm group --select=<resource-group>"
-            Write-Host "  az-vm group --select="
-            Write-Host "  az-vm group -h"
-            Write-Host "  az-vm group --help"
+            Write-Host "  az-vm list [--type=<group,vm,disk,vnet,subnet,nic,ip,nsg,nsg-rule>] [--group=<resource-group>] [--perf]"
+            Write-Host "  az-vm list -h"
+            Write-Host "  az-vm list --help"
             Write-Host "Examples:"
-            Write-Host "  az-vm group --list=<vm-name>"
-            Write-Host "  az-vm group --select=<resource-group>"
-            Write-Host "  az-vm group --select="
+            Write-Host "  az-vm list"
+            Write-Host "  az-vm list --type=group,vm"
+            Write-Host "  az-vm list --type=nsg,nsg-rule --group=<resource-group>"
+            Write-Host "Notes: list is read-only and does not update .env. --type uses comma-separated values. --group is an exact managed resource-group filter. Without --type, list prints all supported managed inventory sections in deterministic order."
             return
         }
         'show' {

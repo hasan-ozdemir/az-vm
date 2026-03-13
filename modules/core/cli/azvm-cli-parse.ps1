@@ -147,7 +147,7 @@ function Parse-AzVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete | help."
+                -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | ssh | rdp | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -161,7 +161,7 @@ function Parse-AzVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | configure | group | show | do | task | move | resize | set | exec | ssh | rdp | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | ssh | rdp | delete | help. Example: az-vm create --auto"
     }
 
     if ($command -eq 'help') {

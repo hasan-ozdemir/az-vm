@@ -494,6 +494,7 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "create" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "update" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "configure" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "list" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "show" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "do" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "task" -Options @{ help = $true }
@@ -516,6 +517,124 @@ Invoke-Test -Name "SSH and RDP commands accept automated test mode" -Action {
 Invoke-Test -Name "Create and update accept vm-name override" -Action {
     Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'vm-name' = 'samplevm'; auto = $true }
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'samplevm'; auto = $true }
+}
+
+Invoke-Test -Name "Configure and list accept current option contract" -Action {
+    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ 'vm-name' = 'samplevm'; linux = $true }
+    Assert-AzVmCommandOptions -CommandName 'list' -Options @{}
+    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'group,vm' }
+    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'nsg,nsg-rule'; group = 'rg-samplevm-ate1-g1' }
+}
+
+Invoke-Test -Name "List rejects invalid type filter" -Action {
+    foreach ($invalidValue in @('group;vm', 'group,unknown')) {
+        $threw = $false
+        try {
+            Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = $invalidValue }
+        }
+        catch {
+            $threw = $true
+        }
+
+        Assert-True -Condition $threw -Message ("List must reject invalid type filter '{0}'." -f [string]$invalidValue)
+    }
+}
+
+Invoke-Test -Name "Interactive create platform prompt ignores persisted VM_OS_TYPE when flags are missing" -Action {
+    function Read-Host {
+        param([string]$Prompt)
+        return ''
+    }
+
+    try {
+        $configOverrides = @{}
+        $promptedPlatform = Resolve-AzVmPlatformSelection `
+            -ConfigMap @{ VM_OS_TYPE = 'linux' } `
+            -EnvFilePath 'ignored.env' `
+            -AutoMode:$false `
+            -WindowsFlag:$false `
+            -LinuxFlag:$false `
+            -ConfigOverrides $configOverrides `
+            -DeferEnvWrite `
+            -PromptWhenFlagsMissing
+        Assert-True -Condition ([string]$promptedPlatform -eq 'windows') -Message 'Interactive create platform prompt must default blank input to windows.'
+        Assert-True -Condition ([string]$configOverrides['VM_OS_TYPE'] -eq 'windows') -Message 'Interactive create platform prompt must persist the prompted platform into config overrides.'
+
+        $envDrivenPlatform = Resolve-AzVmPlatformSelection `
+            -ConfigMap @{ VM_OS_TYPE = 'linux' } `
+            -EnvFilePath 'ignored.env' `
+            -AutoMode:$false `
+            -WindowsFlag:$false `
+            -LinuxFlag:$false `
+            -ConfigOverrides @{} `
+            -DeferEnvWrite
+        Assert-True -Condition ([string]$envDrivenPlatform -eq 'linux') -Message 'Platform selection without PromptWhenFlagsMissing must still honor .env VM_OS_TYPE.'
+    }
+    finally {
+        Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+        Remove-Item Function:\global:Read-Host -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Configure VM selection helper auto-selects one VM and rejects ambiguous explicit groups" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @('Get-AzVmVmNamesForResourceGroup')) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function Get-AzVmVmNamesForResourceGroup {
+        param([string]$ResourceGroup)
+        if ([string]::Equals([string]$ResourceGroup, 'rg-single', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return @('vm-single')
+        }
+        return @('vm-a', 'vm-b')
+    }
+
+    try {
+        $resolvedVm = Resolve-AzVmVmSelectionForResourceGroup `
+            -ResourceGroup 'rg-single' `
+            -RequestedVmName '' `
+            -DefaultVmName '' `
+            -AutoSelectSingleVm `
+            -FailIfMultipleWithoutExplicitVm `
+            -OperationName 'configure'
+        Assert-True -Condition ([string]$resolvedVm -eq 'vm-single') -Message 'Configure VM helper must auto-select the single VM in the selected resource group.'
+
+        $threw = $false
+        try {
+            Resolve-AzVmVmSelectionForResourceGroup `
+                -ResourceGroup 'rg-multi' `
+                -RequestedVmName '' `
+                -DefaultVmName '' `
+                -AutoSelectSingleVm `
+                -FailIfMultipleWithoutExplicitVm `
+                -OperationName 'configure' | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*contains multiple VMs*') -Message 'Configure VM helper failure must explain the ambiguous resource group.'
+        }
+
+        Assert-True -Condition $threw -Message 'Configure VM helper must reject explicit managed groups that contain multiple VMs when vm-name is omitted.'
+    }
+    finally {
+        foreach ($functionName in @('Get-AzVmVmNamesForResourceGroup')) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
+Invoke-Test -Name "List type resolver keeps supported output order" -Action {
+    $resolvedTypes = @(Resolve-AzVmListRequestedTypes -Options @{ type = 'nsg-rule,group,vm' })
+    Assert-True -Condition ((@($resolvedTypes) -join ',') -eq 'group,vm,nsg-rule') -Message 'List type resolver must normalize requested values into the supported output order.'
 }
 
 Invoke-Test -Name "Create and update accept renamed step selectors and create destructive rebuild" -Action {
@@ -1571,9 +1690,12 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
 
     foreach ($fragment in @(
         'create always targets a fresh managed resource group and fresh managed resources',
+        'asks for VM OS type first when --windows/--linux is omitted',
         'proposes the next global gX name plus globally unique nX resource ids',
         'Auto mode requires an explicit platform plus --vm-name, --vm-region, and --vm-size',
         'Auto mode requires an explicit platform plus --group and --vm-name',
+        'select one existing managed VM target, read actual Azure state, and sync target-derived values into .env',
+        'supports --type and --group for managed inventory output',
         'vm-summary always renders, even for partial step windows',
         '--disk-size requires exactly one intent flag: --expand or --shrink'
     )) {
@@ -1584,11 +1706,16 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
         '`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.',
         'Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.',
         'Auto `update` requires an explicit platform plus `--group` and `--vm-name`.',
+        'Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.',
+        'Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.',
+        'if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection',
         'Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.',
         '`configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.',
         'Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.',
         'Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.',
         '`create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.',
+        '`list` gives a read-only managed inventory view across groups and resource types',
+        '`configure` selects one managed VM target and synchronizes actual Azure state into `.env`',
         '`--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity'
     )) {
         Assert-True -Condition ($readmeText -match [regex]::Escape([string]$fragment)) -Message ("README must include fragment '{0}'." -f [string]$fragment)
@@ -1598,7 +1725,9 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
         '--single-step',
         '--from-step',
         '--to-step',
-        'Create, reuse, destructive rebuild'
+        'Create, reuse, destructive rebuild',
+        '.\az-vm.cmd group',
+        '### `group`'
     )) {
         Assert-True -Condition (-not ($helpText -match [regex]::Escape([string]$legacyFragment))) -Message ("CLI help must not include retired fragment '{0}'." -f [string]$legacyFragment)
         Assert-True -Condition (-not ($readmeText -match [regex]::Escape([string]$legacyFragment))) -Message ("README must not include retired fragment '{0}'." -f [string]$legacyFragment)
@@ -1606,7 +1735,7 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
 }
 
 Invoke-Test -Name "Auto option scope contract" -Action {
-    $invalidAutoCommands = @('configure','show','do','move','resize','set','exec','ssh','rdp','group','help')
+    $invalidAutoCommands = @('configure','list','show','do','move','resize','set','exec','ssh','rdp','help')
     foreach ($commandName in $invalidAutoCommands) {
         $threw = $false
         try {
@@ -1954,6 +2083,7 @@ Invoke-Test -Name "Help --command syntax was removed" -Action {
 Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-AzVmCommandHelp -Topic "create"
     Show-AzVmCommandHelp -Topic "configure"
+    Show-AzVmCommandHelp -Topic "list"
     Show-AzVmCommandHelp -Topic "do"
     Show-AzVmCommandHelp -Topic "resize"
     Show-AzVmCommandHelp -Topic "ssh"

@@ -46,7 +46,7 @@
   - [`configure`](#configure)
   - [`create`](#create)
   - [`update`](#update)
-  - [`group`](#group)
+  - [`list`](#list)
   - [`show`](#show)
   - [`do`](#do)
   - [`task`](#task)
@@ -210,7 +210,7 @@ For executive and customer-facing teams, the practical value is speed with lower
 - Direct `task` and `exec` flows let maintainers inspect and rerun exactly the step or task that matters.
 
 ### Daily Maintainer Flow
-1. Confirm the target with `show`, `group`, and `do --vm-action=status`.
+1. Confirm the target with `list`, `show`, `configure`, and `do --vm-action=status`.
 2. Use `create` for first deploys and fresh environments; use `create explicit destructive rebuild flow` only when a full destructive rebuild is intentional.
 3. Use `update` for ongoing maintenance, guest-task refresh, and Azure redeploy-backed repair on an existing VM.
 4. Use `task` and `exec` to isolate one failing init or update task instead of replaying the whole chain.
@@ -390,19 +390,22 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 - `-h`, `--help`: show overview or command-specific help.
 
 ### `configure`
-Purpose: preview and validate the target configuration before Azure mutation.
+Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.
 
 Typical usage:
 ```powershell
 .\az-vm.cmd configure -h
 .\az-vm.cmd configure
-.\az-vm.cmd configure --windows
+.\az-vm.cmd configure --vm-name=<vm-name>
+.\az-vm.cmd configure --group=<resource-group> --vm-name=<vm-name>
 ```
 
 What to expect:
-- interactive selection or confirmation when needed
-- validation-focused output
-- no destructive Azure mutation
+- interactive managed RG and VM selection when parameters are omitted
+- actual Azure state drives the persisted `.env` values
+- `--windows` and `--linux` act as validation-only platform checks against the real VM
+- stale opposite-platform keys are cleared
+- no create, update, or delete Azure mutation
 
 ### `create`
 Purpose: build one fresh managed VM flow from the selected step range.
@@ -419,6 +422,7 @@ Usage patterns:
 Operator expectations:
 - validates config before mutation
 - creates one fresh managed resource group and one fresh VM target
+- if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - interactive mode proposes the next globally unique managed `gX` resource group and globally unique managed `nX` resource ids
 - any interactive override for the generated managed resource group still has to be unused and template-compliant
 - interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
@@ -454,19 +458,21 @@ Operator expectations:
 - runs `az vm redeploy` for an existing VM during the VM deploy stage
 - useful for post-fix reruns and guest task refreshes
 
-### `group`
-Purpose: list or select managed resource groups.
+### `list`
+Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.
 
 Usage patterns:
 ```powershell
-.\az-vm.cmd group -h
-.\az-vm.cmd group --list=<vm-name>
-.\az-vm.cmd group --select=<resource-group>
+.\az-vm.cmd list -h
+.\az-vm.cmd list
+.\az-vm.cmd list --type=group,vm
+.\az-vm.cmd list --type=nsg,nsg-rule --group=<resource-group>
 ```
 
 What users see:
-- a human-readable group selection or inventory path
-- direct control over the active managed context
+- deterministic managed inventory sections
+- exact managed resource-group filtering with `--group`
+- read-only output; `.env` selection and synchronization stay in `configure`
 
 ### `show`
 Purpose: print a readable system/configuration inventory for managed resources and VMs.
@@ -765,14 +771,15 @@ Practical outcomes:
 
 ### Inspect Managed Resource Groups And VM State
 ```powershell
-.\az-vm.cmd group --list=<vm-name>
-.\az-vm.cmd group --select=<resource-group>
+.\az-vm.cmd list --type=group,vm
+.\az-vm.cmd configure --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 ```
 
 Practical outcomes:
-- the operator can select the active managed group explicitly
+- `list` gives a read-only managed inventory view across groups and resource types
+- `configure` selects one managed VM target and synchronizes actual Azure state into `.env`
 - `show` gives an inventory snapshot while password-bearing `.env` values are redacted
 - `do --vm-action=status` is the quickest preflight check before a mutating change
 

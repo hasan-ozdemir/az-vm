@@ -235,6 +235,62 @@ function Select-AzVmVmInteractive {
     }
 }
 
+# Handles Resolve-AzVmVmSelectionForResourceGroup.
+function Resolve-AzVmVmSelectionForResourceGroup {
+    param(
+        [string]$ResourceGroup,
+        [string]$RequestedVmName,
+        [string]$DefaultVmName,
+        [switch]$AutoSelectSingleVm,
+        [switch]$FailIfMultipleWithoutExplicitVm,
+        [string]$OperationName = 'operation'
+    )
+
+    $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $ResourceGroup)
+    if ($vmNames.Count -eq 0) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' does not contain any VM." -f $ResourceGroup) `
+            -Code 65 `
+            -Summary ("{0} command cannot continue because the VM list is empty." -f $OperationName) `
+            -Hint "Create a VM first or choose another managed resource group."
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$RequestedVmName)) {
+        $resolvedVmName = @(
+            $vmNames |
+                Where-Object {
+                    [string]::Equals([string]$_, [string]$RequestedVmName, [System.StringComparison]::OrdinalIgnoreCase)
+                } |
+                Select-Object -First 1
+        )
+        if (@($resolvedVmName).Count -eq 0) {
+            Throw-FriendlyError `
+                -Detail ("VM '{0}' was not found in resource group '{1}'." -f $RequestedVmName, $ResourceGroup) `
+                -Code 66 `
+                -Summary ("{0} command could not resolve the target VM." -f $OperationName) `
+                -Hint "Provide an exact VM name in the selected managed resource group, or omit --vm-name to select interactively."
+        }
+
+        return [string]$resolvedVmName[0]
+    }
+
+    if ($AutoSelectSingleVm -and $vmNames.Count -eq 1) {
+        $resolvedSingleVm = [string]$vmNames[0]
+        Write-Host ("Resolved target VM '{0}' automatically because resource group '{1}' contains exactly one VM." -f $resolvedSingleVm, $ResourceGroup) -ForegroundColor Cyan
+        return $resolvedSingleVm
+    }
+
+    if ($FailIfMultipleWithoutExplicitVm -and $vmNames.Count -gt 1) {
+        Throw-FriendlyError `
+            -Detail ("Resource group '{0}' contains multiple VMs: {1}." -f $ResourceGroup, (@($vmNames) -join ', ')) `
+            -Code 66 `
+            -Summary ("{0} command needs an explicit VM for the selected resource group." -f $OperationName) `
+            -Hint "Provide --vm-name=<name>, or rerun configure without --group to select both target values interactively."
+    }
+
+    return (Select-AzVmVmInteractive -ResourceGroup $ResourceGroup -DefaultVmName $DefaultVmName)
+}
+
 # Handles Resolve-AzVmTargetVmName.
 function Resolve-AzVmTargetVmName {
     param(
@@ -390,7 +446,9 @@ function Resolve-AzVmManagedVmTarget {
     param(
         [hashtable]$Options,
         [hashtable]$ConfigMap,
-        [string]$OperationName
+        [string]$OperationName,
+        [switch]$AutoSelectSingleVm,
+        [switch]$FailIfMultipleWithoutExplicitVmForExplicitGroup
     )
 
     $defaultResourceGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'RESOURCE_GROUP' -DefaultValue '')
@@ -408,21 +466,13 @@ function Resolve-AzVmManagedVmTarget {
             -VmName $requestedVmName `
             -OperationName $OperationName
 
-        if ([string]::IsNullOrWhiteSpace([string]$requestedVmName)) {
-            $vmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
-        }
-        else {
-            $vmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $resourceGroup)
-            $resolvedVmName = @($vmNames | Where-Object { [string]::Equals([string]$_, $requestedVmName, [System.StringComparison]::OrdinalIgnoreCase) } | Select-Object -First 1)
-            if (@($resolvedVmName).Count -eq 0) {
-                Throw-FriendlyError `
-                    -Detail ("VM '{0}' was not found in resource group '{1}'." -f $requestedVmName, $resourceGroup) `
-                    -Code 66 `
-                    -Summary ("{0} command could not resolve the target VM." -f $OperationName) `
-                    -Hint "Provide an exact VM name in the selected resource group, or omit --vm-name to select interactively."
-            }
-            $vmName = [string]$resolvedVmName[0]
-        }
+        $vmName = Resolve-AzVmVmSelectionForResourceGroup `
+            -ResourceGroup $resourceGroup `
+            -RequestedVmName $requestedVmName `
+            -DefaultVmName $defaultVmName `
+            -AutoSelectSingleVm:$AutoSelectSingleVm `
+            -FailIfMultipleWithoutExplicitVm:$FailIfMultipleWithoutExplicitVmForExplicitGroup `
+            -OperationName $OperationName
 
         return [pscustomobject]@{
             ResourceGroup = $resourceGroup
@@ -477,7 +527,12 @@ function Resolve-AzVmManagedVmTarget {
     }
 
     $resourceGroup = Select-AzVmResourceGroupInteractive -DefaultResourceGroup $defaultResourceGroup -VmName $defaultVmName
-    $vmName = Select-AzVmVmInteractive -ResourceGroup $resourceGroup -DefaultVmName $defaultVmName
+    $vmName = Resolve-AzVmVmSelectionForResourceGroup `
+        -ResourceGroup $resourceGroup `
+        -RequestedVmName '' `
+        -DefaultVmName $defaultVmName `
+        -AutoSelectSingleVm:$AutoSelectSingleVm `
+        -OperationName $OperationName
     return [pscustomobject]@{
         ResourceGroup = $resourceGroup
         VmName = $vmName

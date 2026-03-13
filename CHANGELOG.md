@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.299] - 2026-03-13
+
+### Changed
+- Reworked `configure` into the managed target-selection and `.env` synchronization command: it now selects one az-vm-managed VM target, reads actual Azure state, validates optional platform flags against the real VM OS type, and writes only target-derived values back to `.env`.
+- Added the new read-only `list` command and removed the public `group` command. Managed inventory is now exposed through `az-vm list` with `--type=group,vm,disk,vnet,subnet,nic,ip,nsg,nsg-rule` plus optional exact `--group` filtering.
+- Updated interactive `create` so the VM OS choice is prompted first whenever `--windows` or `--linux` is omitted, and the platform-specific size, disk, and image defaults now flow from that explicit selection instead of silently reusing `.env VM_OS_TYPE`.
+
+### Fixed
+- Fixed the configure command entry so it no longer relies on the retired step-1 precheck/preview path or the removed `Get-AzVmConfigPersistenceMap` helper.
+- Fixed the command surface cutover by removing the retired `group` command files and shared `select` option module from the runtime manifest after the new `list` command took over the managed inventory role.
+
+### Tests
+- Revalidated the non-live gate with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
+
 ## [2026.3.13.298] - 2026-03-13
 
 ### Changed

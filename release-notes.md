@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.299 - 2026-03-13
+
+### Summary
+This release finishes the `configure` and public inventory command-surface refresh. `configure` now acts as the managed target selector and `.env` synchronization command for existing az-vm-managed VMs, interactive `create` now asks for the VM OS first when no platform flag is supplied, and the old `group` command has been replaced by the new read-only `list` command.
+
+### Highlights
+- `az-vm configure` now accepts `--group` and `--vm-name`, selects only az-vm-managed targets, reads actual Azure VM, disk, and network state, validates optional platform flags against the real VM OS type, and writes only target-derived `.env` values.
+- `az-vm list` now exposes managed inventory sections through `--type=group,vm,disk,vnet,subnet,nic,ip,nsg,nsg-rule` with optional exact `--group` filtering, replacing the removed public `group` command.
+- Interactive `create` no longer silently inherits `.env VM_OS_TYPE` when platform flags are missing; it now prompts for the VM OS first and scopes image, size, and disk defaults from that explicit choice.
+- Help, README, AGENTS, and smoke/documentation/code-quality checks were all updated together so the repo no longer documents or tests the removed `group` command surface.
+
 ## Release 2026.3.13.298 - 2026-03-13
 
 ### Summary

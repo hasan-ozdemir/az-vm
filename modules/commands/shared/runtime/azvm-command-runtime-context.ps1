@@ -24,7 +24,8 @@ function Initialize-AzVmCommandRuntimeContext {
         $platformSelectionOverrides[[string]$key] = [string]$ConfigMapOverrides[$key]
     }
 
-    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $platformSelectionOverrides -DeferEnvWrite:$DeferDotEnvWrites
+    $promptForPlatformSelection = (-not $AutoMode) -and [string]::Equals([string]$OperationName, 'create', [System.StringComparison]::OrdinalIgnoreCase)
+    $platform = Resolve-AzVmPlatformSelection -ConfigMap $configMap -EnvFilePath $envFilePath -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigOverrides $platformSelectionOverrides -DeferEnvWrite:$DeferDotEnvWrites -PromptWhenFlagsMissing:$promptForPlatformSelection
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
     $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
     foreach ($key in @($ConfigMapOverrides.Keys)) {
