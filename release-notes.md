@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.297 - 2026-03-13
+
+### Summary
+This release finishes the help/docs/tests side of the in-progress command-surface refresh. The maintained documentation now describes `create` as a fresh-only flow, `update` as an existing-managed-target flow, the review-first interactive UX, globally unique managed `gX`/`nX` naming, and the strict auto-mode requirements without carrying the earlier reuse-oriented wording.
+
+### Highlights
+- Updated `modules/core/cli/azvm-help.ps1` and `README.md` so `create --auto` now documents the required explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`, while `update --auto` documents the required explicit platform plus `--group` and `--vm-name`.
+- Documented the review-first UX more precisely: only `group`, `vm-deploy`, `vm-init`, and `vm-update` use `yes/no/cancel`, while `configure` and `vm-summary` always render even when a partial step window skips interior stages.
+- Updated the naming guidance so managed resource groups use globally increasing `gX` ids and managed resources use globally increasing `nX` ids that are never reused across resource types.
+- Refreshed the smoke/documentation contracts to match the current in-progress implementation, including the current autologon health snapshot output rather than a future `DefaultPasswordPresent` health-field expectation.
+
 ## Release 2026.3.12.296 - 2026-03-12
 
 ### Summary
@@ -36,11 +47,11 @@ This release closes the last live Windows publish blockers from the recreate-and
 ## Release 2026.3.12.293 - 2026-03-12
 
 ### Summary
-This release finishes the command-surface refresh for publish-readiness: step selectors are renamed to the new `--step` family, `create` now reuses managed targets by default with explicit `explicit destructive rebuild flow` for destructive rebuilds, `update` now requires an existing managed VM and redeploys it during the VM deploy stage, and `resize` gains a safe managed OS disk expand path plus an explicit non-mutating shrink guidance path.
+This release finishes the command-surface refresh for publish-readiness: step selectors are renamed to the new `--step` family, `create explicit destructive rebuild flow` becomes the explicit destructive rebuild control while the broader create/update contract continues toward the current fresh-only create model, `update` now requires an existing managed VM and redeploys it during the VM deploy stage, and `resize` gains a safe managed OS disk expand path plus an explicit non-mutating shrink guidance path.
 
 ### Highlights
 - Renamed the create/update step selectors from `--single-step`, `--from-step`, and `--to-step` to `--step`, `--step-from`, and `--step-to`, then removed the retired option forms throughout the parser, manifest, parameter modules, help output, README, and smoke contract.
-- Added `create explicit destructive rebuild flow` as the explicit destructive recreate mode while the default `create` path now reuses existing managed resources and keeps the operator informed instead of deleting by surprise.
+- Added `create explicit destructive rebuild flow` as the explicit destructive recreate mode, keeping destructive rebuild intent separate from the evolving default create/update contract.
 - Changed `update` so it fails early when the managed resource group or VM is missing, then uses Azure create-or-update plus `az vm redeploy` once an existing VM is confirmed.
 - Added `resize --disk-size=<number>gb|mb --expand` for the supported managed OS disk growth path, and `resize --disk-size=<number>gb|mb --shrink` as a fail-fast guidance path that explains Azure's OS disk shrink limit and lists supported rebuild alternatives.
 - Refreshed README and AGENTS with a stronger quick-start, business-value, developer-benefit, and practical-usage narrative while keeping the documentation contract aligned with the runtime surface.

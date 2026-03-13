@@ -277,6 +277,7 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     $featureSupportText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\features\azvm-feature-support.ps1') -Raw
     $commandRuntimeText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\shared\runtime\azvm-command-runtime-context.ps1') -Raw
     $mainText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1') -Raw
+    $mainWorkflowText = Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-workflow.ps1') -Raw
 
     Assert-True -Condition ($platformDefaultsText -match [regex]::Escape("return 'tools/pyssh/ssh_client.py'")) -Message 'Platform defaults must publish a non-empty PYSSH client path.'
     Assert-True -Condition ($commandContextText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'Command context must read VM_ENABLE_HIBERNATION.'
@@ -284,8 +285,9 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_HIBERNATION=false')) -Message 'Feature support must honor disabling hibernation by config.'
     Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Feature support must honor disabling nested virtualization by config.'
     Assert-True -Condition ($commandContextText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'Command context must use the nsg-rule naming prefix.'
-    Assert-True -Condition ($mainText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Command main must consume the shared PYSSH client default.'
-    Assert-True -Condition ($mainText -match [regex]::Escape('Write-Host ("script description: {0}" -f $scriptDescription)')) -Message 'Command main must render script description on a single line.'
+    Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Shared command runtime must consume the shared PYSSH client default.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('Write-AzVmMainBanner')) -Message 'Command main must render the review-first banner helper.'
+    Assert-True -Condition ($mainWorkflowText -match [regex]::Escape('function Write-AzVmMainBanner')) -Message 'Main workflow helper must publish the banner renderer.'
     Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must not fall back company_name to VM_NAME.'
     Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key ''employee_email_address'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must read employee_email_address from config.'
     Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key ''employee_full_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must read employee_full_name from config.'
@@ -329,6 +331,25 @@ Invoke-Test -Name "Create and update always execute vm-init stage" -Action {
 
     Assert-True -Condition ($mainText -notmatch [regex]::Escape('Default mode with existing VM: init tasks are skipped; proceeding directly to update tasks.')) -Message "Main command runtime must not skip vm-init for existing VMs in full create/update flow."
     Assert-True -Condition ($mainText -notmatch '\$shouldRunInitTasks\s*=') -Message "Main command runtime must not gate vm-init execution behind a should-run flag in full create/update flow."
+}
+
+Invoke-Test -Name "Create and update use review-first workflow checkpoints" -Action {
+    $mainPath = Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1'
+    $mainWorkflowPath = Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-workflow.ps1'
+    $mainText = Get-Content -LiteralPath $mainPath -Raw
+    $mainWorkflowText = Get-Content -LiteralPath $mainWorkflowPath -Raw
+
+    $checkpointMatches = [regex]::Matches($mainText, [regex]::Escape('Invoke-AzVmReviewCheckpoint'))
+    Assert-True -Condition ($checkpointMatches.Count -eq 4) -Message 'Main command must invoke exactly four review checkpoints.'
+    Assert-True -Condition ($mainText -match [regex]::Escape("Show-AzVmStepReview -Title 'Configuration review'")) -Message 'Main command must always show the configuration review screen.'
+    Assert-True -Condition ($mainText -match [regex]::Escape("Write-AzVmWorkflowSummary")) -Message 'Main command must always print the workflow summary stage.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('$groupDecision = Invoke-AzVmReviewCheckpoint')) -Message 'Group stage must use a review checkpoint.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('$deployDecision = Invoke-AzVmReviewCheckpoint')) -Message 'VM deploy stage must use a review checkpoint.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('$initDecision = Invoke-AzVmReviewCheckpoint')) -Message 'VM init stage must use a review checkpoint.'
+    Assert-True -Condition ($mainText -match [regex]::Escape('$updateDecision = Invoke-AzVmReviewCheckpoint')) -Message 'VM update stage must use a review checkpoint.'
+    Assert-True -Condition (-not ($mainText -match [regex]::Escape('$configureDecision = Invoke-AzVmReviewCheckpoint'))) -Message 'Configure stage must not request confirmation.'
+    Assert-True -Condition (-not ($mainText -match [regex]::Escape('$summaryDecision = Invoke-AzVmReviewCheckpoint'))) -Message 'VM summary stage must not request confirmation.'
+    Assert-True -Condition ($mainWorkflowText -match [regex]::Escape('Confirm-YesNoCancel')) -Message 'Review workflow must use yes/no/cancel prompts.'
 }
 
 Invoke-Test -Name "Task catalog discovery" -Action {
@@ -499,10 +520,10 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
 
 Invoke-Test -Name "Create and update accept renamed step selectors and create destructive rebuild" -Action {
     Assert-AzVmCommandOptions -CommandName 'create' -Options @{ step = 'network'; linux = $true }
-    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'step-from' = 'vm-deploy'; 'step-to' = 'vm-summary'; auto = $true; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ destructive rebuild = $true; auto = $true; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ step = 'vm-update'; auto = $true; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'step-from' = 'group'; 'step-to' = 'vm-init'; auto = $true }
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ 'step-from' = 'vm-deploy'; 'step-to' = 'vm-summary'; auto = $true; windows = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; 'vm-size' = 'Standard_D4as_v5' }
+    Assert-AzVmCommandOptions -CommandName 'create' -Options @{ destructive rebuild = $true; auto = $true; windows = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; 'vm-size' = 'Standard_D4as_v5' }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ step = 'vm-update'; auto = $true; windows = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' }
+    Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'step-from' = 'group'; 'step-to' = 'vm-init'; auto = $true; windows = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' }
 }
 
 Invoke-Test -Name "Create and update reject retired step selectors" -Action {
@@ -1151,12 +1172,11 @@ Invoke-Test -Name "VM create step tolerates a transient non-zero create when the
     }
 }
 
-Invoke-Test -Name "Create runtime reuses the existing managed resource group and exposes destructive rebuild mode" -Action {
+Invoke-Test -Name "Create runtime keeps fresh-target overrides and exposes destructive rebuild mode" -Action {
     $originalFunctionDefinitions = @{}
     foreach ($functionName in @(
         'Get-AzVmRepoRoot',
-        'Read-DotEnvFile',
-        'Get-AzVmManagedVmMatchRows'
+        'Read-DotEnvFile'
     )) {
         $command = Get-Command $functionName -ErrorAction SilentlyContinue
         if ($null -ne $command) {
@@ -1168,27 +1188,31 @@ Invoke-Test -Name "Create runtime reuses the existing managed resource group and
     function Read-DotEnvFile {
         param([string]$Path)
         return @{
-            RESOURCE_GROUP = ''
-            VM_NAME = 'samplevm'
+            RESOURCE_GROUP = 'rg-stalevm-ate1-g4'
+            VM_NAME = 'seedvm'
         }
-    }
-    function Get-AzVmManagedVmMatchRows {
-        param([string]$VmName)
-        return @([pscustomobject]@{ ResourceGroup = 'rg-samplevm-ate1-g1' })
     }
 
     try {
-        $runtime = New-AzVmCreateCommandRuntime -Options @{ auto = $true; destructive rebuild = $true } -WindowsFlag -LinuxFlag:$false
+        $runtime = New-AzVmCreateCommandRuntime -Options @{
+            auto = $true
+            destructive rebuild = $true
+            'vm-name' = 'samplevm'
+            'vm-region' = 'swedencentral'
+            'vm-size' = 'Standard_D4as_v5'
+        } -WindowsFlag -LinuxFlag:$false -AutoMode
 
         Assert-True -Condition ([bool]$runtime.RenewMode) -Message "Create runtime must expose destructive rebuild mode when explicit destructive rebuild flow is present."
-        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.RESOURCE_GROUP -eq 'rg-samplevm-ate1-g1') -Message "Create runtime must reuse the existing managed resource group when one managed VM match is found."
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_NAME -eq 'samplevm') -Message "Create runtime must keep the requested VM name override."
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.AZ_LOCATION -eq 'swedencentral') -Message "Create runtime must keep the requested Azure region override."
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_SIZE -eq 'Standard_D4as_v5') -Message "Create runtime must keep the requested VM size override."
+        Assert-True -Condition (-not $runtime.InitialConfigOverrides.ContainsKey('RESOURCE_GROUP')) -Message "Create runtime must not reuse an existing managed resource group."
         Assert-True -Condition ([string]$runtime.ActionPlan.Target -eq 'vm-summary') -Message "Create runtime without step selectors must default to the full action plan."
     }
     finally {
         foreach ($functionName in @(
             'Get-AzVmRepoRoot',
-            'Read-DotEnvFile',
-            'Get-AzVmManagedVmMatchRows'
+            'Read-DotEnvFile'
         )) {
             Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
@@ -1198,6 +1222,41 @@ Invoke-Test -Name "Create runtime reuses the existing managed resource group and
             }
         }
     }
+}
+
+Invoke-Test -Name "Create auto mode requires vm-name vm-region and vm-size" -Action {
+    $threw = $false
+    try {
+        New-AzVmCreateCommandRuntime -Options @{ auto = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral' } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
+    }
+    catch {
+        $threw = $true
+        Assert-True -Condition ([string]$_.Exception.Message -like '*requires --vm-size*') -Message "Create auto mode failure must explain the missing vm-size option."
+    }
+
+    Assert-True -Condition $threw -Message "Create auto mode must fail when one of the required options is missing."
+}
+
+Invoke-Test -Name "Create and update auto mode require explicit platform flags" -Action {
+    $createThrew = $false
+    try {
+        New-AzVmCreateCommandRuntime -Options @{ auto = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; 'vm-size' = 'Standard_D4as_v5' } -WindowsFlag:$false -LinuxFlag:$false -AutoMode | Out-Null
+    }
+    catch {
+        $createThrew = $true
+        Assert-True -Condition ([string]$_.Exception.Message -like '*requires an explicit platform flag*') -Message "Create auto mode failure must explain the missing platform flag."
+    }
+    Assert-True -Condition $createThrew -Message "Create auto mode must fail when the platform flag is missing."
+
+    $updateThrew = $false
+    try {
+        New-AzVmUpdateCommandRuntime -Options @{ auto = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' } -WindowsFlag:$false -LinuxFlag:$false -AutoMode | Out-Null
+    }
+    catch {
+        $updateThrew = $true
+        Assert-True -Condition ([string]$_.Exception.Message -like '*requires an explicit platform flag*') -Message "Update auto mode failure must explain the missing platform flag."
+    }
+    Assert-True -Condition $updateThrew -Message "Update auto mode must fail when the platform flag is missing."
 }
 
 Invoke-Test -Name "Update runtime requires an existing managed VM before orchestration starts" -Action {
@@ -1239,7 +1298,7 @@ Invoke-Test -Name "Update runtime requires an existing managed VM before orchest
     try {
         $threw = $false
         try {
-            New-AzVmUpdateCommandRuntime -Options @{ auto = $true } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
+            New-AzVmUpdateCommandRuntime -Options @{ auto = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
         }
         catch {
             $threw = $true
@@ -1255,6 +1314,90 @@ Invoke-Test -Name "Update runtime requires an existing managed VM before orchest
             'Resolve-AzVmTargetResourceGroup',
             'Resolve-AzVmTargetVmName',
             'Test-AzVmAzResourceExists'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
+Invoke-Test -Name "Update auto mode requires group and vm-name" -Action {
+    $threw = $false
+    try {
+        New-AzVmUpdateCommandRuntime -Options @{ auto = $true; group = 'rg-samplevm-ate1-g1' } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
+    }
+    catch {
+        $threw = $true
+        Assert-True -Condition ([string]$_.Exception.Message -like '*requires --vm-name*') -Message "Update auto mode failure must explain the missing vm-name option."
+    }
+
+    Assert-True -Condition $threw -Message "Update auto mode must fail when vm-name is missing."
+}
+
+Invoke-Test -Name "Managed naming uses global gX and sequential global nX allocation" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @(
+        'Get-AzVmManagedResourceGroupRows',
+        'az'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function Get-AzVmManagedResourceGroupRows {
+        return @(
+            [pscustomobject]@{ name = 'rg-examplevm-ate1-g1' },
+            [pscustomobject]@{ name = 'rg-examplevm-sec1-g4' }
+        )
+    }
+    function az {
+        $global:LASTEXITCODE = 0
+        $argText = (@($args) | ForEach-Object { [string]$_ }) -join ' '
+        if ($argText -like 'resource list -g rg-examplevm-ate1-g1*') {
+            return @(
+                'net-examplevm-ate1-n7'
+                'nic-examplevm-ate1-n8'
+            )
+        }
+        if ($argText -like 'resource list -g rg-examplevm-sec1-g4*') {
+            return @(
+                'ip-examplevm-sec1-n9'
+                'disk-examplevm-sec1-n10'
+            )
+        }
+        return @()
+    }
+
+    try {
+        $nextGroupIndex = Get-AzVmNextManagedResourceGroupIndex -NamePrefix ''
+        Assert-True -Condition ($nextGroupIndex -eq 5) -Message "Managed resource group index must be global across all managed resource groups."
+
+        $allocator = New-AzVmManagedResourceIndexAllocator
+        $vnetName = Resolve-AzVmNameFromTemplate -Template 'net-{VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'net' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'VNET_NAME'
+        $subnetName = Resolve-AzVmNameFromTemplate -Template 'subnet-{VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'subnet' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'SUBNET_NAME'
+
+        Assert-True -Condition ([string]$vnetName -eq 'net-examplevm-sec1-n11') -Message "First generated managed resource id must continue after the global max nX value."
+        Assert-True -Condition ([string]$subnetName -eq 'subnet-examplevm-sec1-n12') -Message "Managed resource ids must stay sequential and unique within the same provisioning plan."
+
+        $threw = $false
+        try {
+            Register-AzVmManagedResourceNameIndex -Allocator $allocator -Name 'nic-examplevm-sec1-n12' -LogicalName 'NIC_NAME' | Out-Null
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message "Managed resource name registration must reject duplicate nX ids within the same provisioning plan."
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmManagedResourceGroupRows',
+            'az'
         )) {
             Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
@@ -1396,6 +1539,46 @@ Invoke-Test -Name "Do help and README document reapply" -Action {
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a reapply usage example.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-stop usage example.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-deallocate usage example.'
+}
+
+Invoke-Test -Name "Create update and resize docs reflect the current operator contract" -Action {
+    $helpText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\cli\azvm-help.ps1') -Raw)
+    $readmeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'README.md') -Raw)
+
+    foreach ($fragment in @(
+        'create always targets a fresh managed resource group and fresh managed resources',
+        'proposes the next global gX name plus globally unique nX resource ids',
+        'Auto mode requires an explicit platform plus --vm-name, --vm-region, and --vm-size',
+        'Auto mode requires an explicit platform plus --group and --vm-name',
+        'vm-summary always renders, even for partial step windows',
+        '--disk-size requires exactly one intent flag: --expand or --shrink'
+    )) {
+        Assert-True -Condition ($helpText -match [regex]::Escape([string]$fragment)) -Message ("CLI help must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($fragment in @(
+        '`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.',
+        'Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.',
+        'Auto `update` requires an explicit platform plus `--group` and `--vm-name`.',
+        'Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.',
+        '`configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.',
+        'Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.',
+        'Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.',
+        '`create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.',
+        '`--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity'
+    )) {
+        Assert-True -Condition ($readmeText -match [regex]::Escape([string]$fragment)) -Message ("README must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($legacyFragment in @(
+        '--single-step',
+        '--from-step',
+        '--to-step',
+        'Create, reuse, destructive rebuild'
+    )) {
+        Assert-True -Condition (-not ($helpText -match [regex]::Escape([string]$legacyFragment))) -Message ("CLI help must not include retired fragment '{0}'." -f [string]$legacyFragment)
+        Assert-True -Condition (-not ($readmeText -match [regex]::Escape([string]$legacyFragment))) -Message ("README must not include retired fragment '{0}'." -f [string]$legacyFragment)
+    }
 }
 
 Invoke-Test -Name "Auto option scope contract" -Action {
@@ -2993,7 +3176,6 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '105-install-azure-cli' = 139
         '106-install-gh-cli' = 11
         '107-install-7zip-system' = 13
-        '108-install-sysinternals-suite' = 82
         '109-install-ffmpeg-system' = 34
         '110-install-vscode-system' = 104
         '111-install-edge-browser' = 120
@@ -3015,7 +3197,6 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '127-install-nvda-system' = 54
         '128-install-rclone-system' = 13
         '129-configure-unlocker-io' = 23
-        '130-autologon-manager-user' = 20
         '131-install-icloud-system' = 120
         '132-install-vs2022community' = 7200
         '10001-configure-apps-startup' = 45
@@ -3043,6 +3224,18 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         Assert-True -Condition ($currentIndex -gt $lastSeenIndex) -Message ("Tracked task order must keep '{0}' after the previous tracked task." -f $taskName)
         $lastSeenIndex = $currentIndex
     }
+
+    Assert-True -Condition ($activeNames -notcontains '108-install-sysinternals-suite') -Message 'Windows update catalog must no longer keep 108-install-sysinternals-suite after the init move.'
+    Assert-True -Condition ($activeNames -notcontains '130-autologon-manager-user') -Message 'Windows update catalog must no longer keep 130-autologon-manager-user after the init move.'
+
+    $initCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot 'windows\init') -Platform windows -Stage init
+    $initActive = @($initCatalog.ActiveTasks)
+    $sysinternalsTask = @($initActive | Where-Object { [string]$_.Name -eq '108-install-sysinternals-suite' } | Select-Object -First 1)
+    $autologonTask = @($initActive | Where-Object { [string]$_.Name -eq '130-autologon-manager-user' } | Select-Object -First 1)
+    Assert-True -Condition (@($sysinternalsTask).Count -eq 1) -Message 'Windows init catalog must include 108-install-sysinternals-suite.'
+    Assert-True -Condition (@($autologonTask).Count -eq 1) -Message 'Windows init catalog must include 130-autologon-manager-user.'
+    Assert-True -Condition ([int]$sysinternalsTask[0].TimeoutSeconds -eq 82) -Message 'Windows init catalog must keep 108-install-sysinternals-suite timeout at 82.'
+    Assert-True -Condition ([int]$autologonTask[0].TimeoutSeconds -eq 20) -Message 'Windows init catalog must keep 130-autologon-manager-user timeout at 20.'
 }
 
 Invoke-Test -Name "Task script metadata controls local-only task discovery" -Action {
@@ -3340,7 +3533,9 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
     Assert-True -Condition ($taskScript -like '*docker-step-deferred: interactive-sign-in-registered*') -Message 'Docker Desktop task must explicitly defer engine readiness to interactive sign-in instead of retrying long noninteractive daemon probes.'
     Assert-True -Condition (-not ($taskScript -like '*Wait-DockerDaemonReady*')) -Message 'Docker Desktop task must not keep the old daemon probe retry loop.'
-    Assert-True -Condition (($taskScript.IndexOf('docker info', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Docker Desktop task must not block on docker info during noninteractive update runs.'
+    Assert-True -Condition ($taskScript -like '*docker desktop status*') -Message 'Docker Desktop task must include a bounded docker desktop status probe.'
+    Assert-True -Condition ($taskScript -like '*docker info*') -Message 'Docker Desktop task must include a bounded docker info probe.'
+    Assert-True -Condition ($taskScript -like '*docker-step-warning: docker info is not healthy yet*') -Message 'Docker Desktop task must downgrade non-ready engine checks to a structured warning.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
 }
 
@@ -3718,9 +3913,13 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Resolve-AppPackageExecutablePath',
         'Resolve-StoreAppId',
         'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
-        'OpenAI.Codex_26.306.996.0_x64__2p2nqsd0c76g0\app\Codex.exe',
+        'Resolve-EmbeddedShortcutCommandPath',
+        'public-shortcut-skip:',
+        'shell:AppsFolder\',
+        'OpenAI.Codex',
         'WhatsApp.Root.exe',
-        '5319275A.WhatsAppDesktop_2.2606.102.0_x64__cv1g1gvanyjgm\WhatsApp.Root.exe',
+        'Resolve-AppPackageExecutablePath -NameFragment "whatsapp"',
+        '5319275A.WhatsAppDesktop',
         'iCloudHome.exe',
         '/c start outlook.exe /select "outlook:\\{0}\\Inbox"',
         'https://developer.apple.com/account',
@@ -3736,7 +3935,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://ebilet.tcddtasimacilik.gov.tr',
         'https://www.obilet.com/?giris',
         'TaskKill -im "ollama app.exe"',
-        '/k cd /d %UserProfile% & docker info',
+        '/k cd /d %UserProfile% & docker',
         '%UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5',
         'C:\ProgramData\chocolatey\bin\7z.exe',
         '--enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search',
@@ -3842,7 +4041,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 }
 
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
-    $taskPath = Join-Path $RepoRoot 'windows\update\130-autologon-manager-user.ps1'
+    $taskPath = Join-Path $RepoRoot 'windows\init\130-autologon-manager-user.ps1'
     $healthTaskPath = Join-Path $RepoRoot 'windows\update\10099-capture-snapshot-health.ps1'
 
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Autologon manager task file was not found.'
@@ -3857,6 +4056,7 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
         'AutoAdminLogon',
         'DefaultUserName',
         'DefaultDomainName',
+        'DefaultPasswordPresent',
         'autologon-state =>',
         'autologon-manager-user-completed',
         'autologon.exe was not found',
@@ -3960,7 +4160,13 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
     }
 
     foreach ($entry in $expectedHealthySkipFragments.GetEnumerator()) {
-        $taskPath = Join-Path $RepoRoot ('windows\update\' + [string]$entry.Key)
+        $taskRelativePath = if ([string]$entry.Key -eq '108-install-sysinternals-suite.ps1') {
+            ('windows\init\' + [string]$entry.Key)
+        }
+        else {
+            ('windows\update\' + [string]$entry.Key)
+        }
+        $taskPath = Join-Path $RepoRoot $taskRelativePath
         $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
         foreach ($fragment in @($entry.Value)) {
             Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Task '{0}' must include fragment '{1}'." -f [string]$entry.Key, [string]$fragment)

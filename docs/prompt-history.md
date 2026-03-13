@@ -4893,3 +4893,40 @@ Fix: these gates were passing much faster on my local machine, and the smoke tes
 **Assistant Summary**
 
 Investigated the slow GitHub Actions `smoke-contracts` gate and confirmed that the runner was not deadlocked. The real problem was that several smoke tests in `tests/az-vm-smoke-tests.ps1` were declaring their doubles with `global:` scope, so the runtime kept calling the original `.env` and Azure CLI backed implementations on CI instead of the intended test stubs. I fixed those smoke doubles to shadow the runtime functions in the active test scope, reran the full smoke suite successfully, refreshed `CHANGELOG.md` and `release-notes.md` to `2026.3.12.296`, and prepared the repo for a fresh aligned push so the remote `main` workflow can finish against the corrected non-live gate.
+
+### 2026-03-13 04:35 TRT
+
+**User Prompt**
+
+````text
+You are responsible only for help/docs/tests alignment. Do not edit runtime/orchestration code outside the files below. You are not alone in the codebase; do not revert others' edits, and adapt around concurrent changes.
+
+Ownership / allowed write set:
+- modules/core/cli/azvm-help.ps1
+- README.md
+- CHANGELOG.md
+- release-notes.md
+- AGENTS.md
+- docs/prompt-history.md
+- tests/az-vm-smoke-tests.ps1
+- tests/documentation-contract-check.ps1
+- tests/code-quality-check.ps1 (only if needed for new contracts)
+
+Align these artifacts with the current requested behavior and in-progress implementation:
+1. create is fresh-only: interactive create proposes a new managed RG with global gX; no existing RG reuse.
+2. managed resource nX values are now globally unique across all managed resources, not per resource type.
+3. update is existing-managed-target only.
+4. interactive create/update use review-first UX with only four y/n/c review checkpoints (group, vm-deploy, vm-init, vm-update); config and vm-summary always show without confirmation.
+5. create auto is strict and requires explicit platform + vm-name + vm-region + vm-size.
+6. update auto is strict and requires explicit platform + group + vm-name.
+7. resize supports --disk-size with --expand/--shrink, with shrink as non-mutating guidance.
+8. help/docs must not mention retired step options or create reusing existing resources by default.
+9. smoke/documentation checks must be updated to the new contract; remove or replace assertions that expect create resource reuse or old step-option names.
+10. If the runtime currently keeps configure/vm-summary always visible even under partial step selection, reflect that in docs/tests.
+
+Use apply_patch for edits. Run targeted local validation on your changed docs/tests if feasible. At the end, report exactly which files you changed and any unresolved caveats.
+````
+
+**Assistant Summary**
+
+Aligned the owned help/docs/tests surface with the in-progress fresh-only `create`, existing-only `update`, strict auto-mode, review-first UX, global `gX`/`nX`, and `resize --disk-size ... --expand|--shrink` contract without touching runtime/orchestration files outside the allowed write set. I updated `modules/core/cli/azvm-help.ps1`, `README.md`, `AGENTS.md`, `CHANGELOG.md`, `release-notes.md`, `tests/az-vm-smoke-tests.ps1`, and `tests/documentation-contract-check.ps1`, tightened the smoke and documentation assertions around the new wording, and corrected the remaining public-shortcut/autologon smoke expectations so they match the current in-progress implementation. I then revalidated the owned surface with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/code-quality-check.ps1`, and `tests/powershell-compatibility-check.ps1`, all passing.

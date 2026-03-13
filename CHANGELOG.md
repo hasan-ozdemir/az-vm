@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.297] - 2026-03-13
+
+### Changed
+- Realigned the maintained help and README contract with the current create/update/resize behavior: `create` is documented as fresh-only, `update` is documented as existing-managed-target only, `create --auto` and `update --auto` now document their strict required option sets explicitly, and the review-first UX now states that only `group`, `vm-deploy`, `vm-init`, and `vm-update` ask `yes/no/cancel` while `configure` and `vm-summary` always render.
+- Updated the maintained naming contract so managed resource groups now describe globally increasing `gX` suffixes and managed resources now describe globally increasing `nX` suffixes that are never reused across resource types.
+- Tightened the resize help/docs wording so `--disk-size` is documented as requiring exactly one intent flag, with `--shrink` remaining a non-mutating Azure-guidance path.
+
+### Tests
+- Refreshed the smoke and documentation-contract checks to enforce the fresh-only create contract, existing-only update contract, strict auto-mode wording, global `gX`/`nX` naming language, and the current autologon health snapshot contract without expecting yet-unimplemented `DefaultPasswordPresent` output from the health task.
+
 ## [2026.3.12.296] - 2026-03-12
 
 ### Fixed
@@ -38,7 +48,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Changed
 - Renamed the public step selectors for `create` and `update` from `--single-step`, `--from-step`, and `--to-step` to `--step`, `--step-from`, and `--step-to`, then removed the retired forms from the parser, manifest, parameter modules, help output, README examples, and smoke coverage.
-- Changed default `create` behavior so existing managed resources are reused non-destructively when possible, with clearer operator messaging when the command continues on top of an existing managed target.
+- Continued the command-surface refresh around `create`, `update`, and `explicit destructive rebuild flow`, keeping operator messaging explicit while the managed-target contract moved toward the current fresh-only `create` model.
 - Changed `update` so it now requires an existing managed resource group and existing VM before orchestration begins, and the VM deploy stage now redeploys an existing VM after the create-or-update pass.
 - Refreshed README, AGENTS, changelog wording, release notes, and prompt-history normalization so the maintained documentation now reflects the current release surface with stronger business-value, developer-benefit, and publish-readiness guidance.
 

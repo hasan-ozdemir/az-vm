@@ -64,7 +64,7 @@
   - [Timeouts, Priority, And Enable Flags](#timeouts-priority-and-enable-flags)
   - [Direct Task Execution With `exec`](#direct-task-execution-with-exec)
 - [Practical And Extensive Usage Scenarios](#practical-and-extensive-usage-scenarios)
-  - [Create Or Reuse A Managed VM](#create-or-reuse-a-managed-vm)
+  - [Create A Fresh Managed VM](#create-a-fresh-managed-vm)
   - [Update An Existing Managed VM](#update-an-existing-managed-vm)
   - [Inspect Managed Resource Groups And VM State](#inspect-managed-resource-groups-and-vm-state)
   - [Run One Task Or Open A Remote Shell](#run-one-task-or-open-a-remote-shell)
@@ -155,7 +155,7 @@
 ### First End-To-End Run
 ```powershell
 .\az-vm.cmd configure
-.\az-vm.cmd create --auto --windows
+.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd rdp --vm-name=<vm-name>
 ```
@@ -172,7 +172,7 @@
 ### Quick Accelerator
 If you want the fastest safe path to value, use this order:
 1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
-2. Run `.\az-vm.cmd create --auto --windows` or `.\az-vm.cmd create --auto --linux`.
+2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>`.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
 4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
 5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
@@ -197,21 +197,21 @@ For executive and customer-facing teams, the practical value is speed with lower
 | Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | Customer-facing and operator-facing daily-use software is staged consistently instead of being installed ad hoc. |
 | Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Support, accessibility, and assisted-operation scenarios are easier to reproduce and maintain. |
 | Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting time falls because the repo already knows how to inspect, rerun, and summarize the environment. |
-| Lifecycle changes | Create, reuse, destructive rebuild, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create, reuse, destructive rebuild, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit keeps working after day one, so operations do not regress to manual portal work. |
+| Lifecycle changes | Create fresh, destructive rebuild, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, destructive rebuild, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit keeps working after day one, so operations do not regress to manual portal work. |
 
 ## Developer Benefits
 
 ### Why Developers Move Faster
 - One orchestrator means less context switching between separate scripts for provisioning, update, connection, and repair.
 - The same command surface covers Windows and Linux, so platform differences stay narrow and explicit.
-- `create` now reuses existing managed resources by default, which is faster and safer for iterative work; `create explicit destructive rebuild flow` remains the explicit destructive path.
+- `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; `create explicit destructive rebuild flow` remains the explicit destructive rebuild path for that fresh target.
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
 - `resize --disk-size=... --expand` gives a safe in-place managed OS disk growth path, while `resize --disk-size=... --shrink` stops early and explains the supported alternatives instead of risking data loss.
 - Direct `task` and `exec` flows let maintainers inspect and rerun exactly the step or task that matters.
 
 ### Daily Maintainer Flow
 1. Confirm the target with `show`, `group`, and `do --vm-action=status`.
-2. Use `create` for first deploys or non-destructive reuse; use `create explicit destructive rebuild flow` only when a full rebuild is intentional.
+2. Use `create` for first deploys and fresh environments; use `create explicit destructive rebuild flow` only when a full destructive rebuild is intentional.
 3. Use `update` for ongoing maintenance, guest-task refresh, and Azure redeploy-backed repair on an existing VM.
 4. Use `task` and `exec` to isolate one failing init or update task instead of replaying the whole chain.
 5. Use `move`, `resize`, `set`, and `delete` only after the inventory and current state are explicit.
@@ -241,13 +241,20 @@ For executive and customer-facing teams, the practical value is speed with lower
 
 ### Interactive Versus Auto Mode
 - Interactive mode is the default and prompts when required values are missing.
+- Interactive `create` and `update` always show the configuration screen first and the VM summary screen last.
+- Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `--auto` is for unattended `create`, `update`, and `delete` flows.
+- Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
+- Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
+- Auto mode prints the same review context, but it continues without waiting for checkpoint confirmation.
+- `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
 - Operator commands such as `show`, `do`, `ssh`, and `rdp` stay direct and do not require `--auto`.
 
 ### Naming And Managed Resource Rules
 - `VM_NAME` is the single naming seed.
 - Managed names are template-driven and deterministic.
-- Regional uniqueness is suffix-based and explicit.
+- Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.
+- Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.
 - Runtime code validates names before Azure mutation.
 
 ## Architecture From Zero To Hero
@@ -296,14 +303,14 @@ The runtime never auto-writes or auto-syncs catalog files. Missing entries fall 
 ### End-To-End Create And Update Flow
 1. Resolve platform, config, and command intent.
 2. Validate naming, region, image, and SKU inputs.
-3. Resolve or select the active managed resource group.
-4. Create or reconcile network resources.
-5. Create or update the VM.
+3. For `create`, synthesize the next fresh managed resource group name plus fresh globally unique managed resource names; for `update`, resolve one existing managed resource group plus one existing VM only.
+4. Create or reconcile network resources for the current mode.
+5. Create or update the VM, then redeploy when `update` targets an existing VM.
 6. Run init tasks.
 7. Run update tasks.
 8. Print a final VM/resource summary.
 
-The same mental model applies to `update`, except that existing managed resources are reconciled instead of always starting from empty state.
+`create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path. `configure` and `vm-summary` still render even when a partial step selection slices out interior stages.
 Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION`; set them to `false` when you want create/update to skip those feature paths even if the SKU supports them. When either key is `true`, create/update now treats that capability as a required verified outcome, not a best-effort warning.
 
 ### Safety Model And Failure Handling
@@ -398,21 +405,24 @@ What to expect:
 - no destructive Azure mutation
 
 ### `create`
-Purpose: build or reuse one managed VM flow from the selected step range.
+Purpose: build one fresh managed VM flow from the selected step range.
 
 Usage patterns:
 ```powershell
 .\az-vm.cmd create -h
-.\az-vm.cmd create --auto --windows
+.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 .\az-vm.cmd create --step=network --linux
 .\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
-.\az-vm.cmd create explicit destructive rebuild flow --auto --windows
+.\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 ```
 
 Operator expectations:
 - validates config before mutation
-- creates missing resources
-- keeps existing managed resources by default and informs the operator when reuse happens
+- creates one fresh managed resource group and one fresh VM target
+- interactive mode proposes the next globally unique managed `gX` resource group and globally unique managed `nX` resource ids
+- any interactive override for the generated managed resource group still has to be unused and template-compliant
+- interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
+- auto mode requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`
 - uses `explicit destructive rebuild flow` as the explicit destructive recreate path
 - runs init and update task windows unless the step range slices them out
 - success ends with a summary of the managed VM state
@@ -428,14 +438,18 @@ Purpose: rerun create-or-update logic against one existing managed VM.
 Usage patterns:
 ```powershell
 .\az-vm.cmd update -h
-.\az-vm.cmd update --auto
-.\az-vm.cmd update --step-to=vm-init --auto
+.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd update --step=vm-update --windows
 ```
 
 Operator expectations:
 - keeps the same orchestration model as `create`
 - requires an existing managed resource group and existing VM before it starts
+- interactive mode only selects from existing managed resource groups and existing VM names
+- invalid free-form resource-group or VM-name input is rejected with a corrective hint
+- interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
+- auto mode requires an explicit platform plus `--group` and `--vm-name`
 - targets already-managed resources without destructive delete behavior
 - runs `az vm redeploy` for an existing VM during the VM deploy stage
 - useful for post-fix reruns and guest task refreshes
@@ -721,28 +735,31 @@ Direct `exec --init-task` and `exec --update-task` are the main diagnosis path w
 
 ## Practical And Extensive Usage Scenarios
 
-### Create Or Reuse A Managed VM
+### Create A Fresh Managed VM
 ```powershell
-.\az-vm.cmd create --auto --windows
+.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 .\az-vm.cmd create --step=network --linux
 .\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
-.\az-vm.cmd create explicit destructive rebuild flow --auto --windows
+.\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
 ```
 
 Practical outcomes:
-- the default path creates missing Azure resources and reuses existing managed ones without deleting them
+- the default path creates one fresh managed resource group and one fresh VM target
+- interactive mode proposes the next globally unique managed `gX` group id and globally unique managed `nX` resource ids
+- auto mode requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`
 - `explicit destructive rebuild flow` is the explicit rebuild path when the operator wants a destructive recreate
 - the same step model works in interactive and auto mode
 
 ### Update An Existing Managed VM
 ```powershell
-.\az-vm.cmd update --auto --windows
-.\az-vm.cmd update --step=vm-update --auto --windows
-.\az-vm.cmd update --step-to=vm-init --auto
+.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd update --step=vm-update --auto --windows --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>
 ```
 
 Practical outcomes:
 - the command fails fast if the managed resource group or VM does not exist, and it points the operator to `create`
+- auto mode requires an explicit platform plus `--group` and `--vm-name`
 - the VM deploy step uses Azure create-or-update plus `az vm redeploy` when the target VM already exists
 - update is the main maintenance path after the first deployment
 
@@ -865,8 +882,8 @@ GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` wor
 ### Live Release Acceptance
 Before calling the repo or the active profile release-ready for a live publish, run one end-to-end live acceptance cycle against the current `.env` target:
 - if the target group is safe to purge, prefer a full recreate by running `az-vm delete --target=group --group=<resource-group> --yes` before the live create
-- run a clean `az-vm create --auto --windows --perf` or `az-vm create --auto --linux --perf`
-- rerun `az-vm update --auto --windows --perf` or `az-vm update --auto --linux --perf` without changing the natural task order
+- run a clean `az-vm create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> --perf` or `az-vm create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> --perf`
+- rerun `az-vm update --auto --windows --group=<resource-group> --vm-name=<vm-name> --perf` or `az-vm update --auto --linux --group=<resource-group> --vm-name=<vm-name> --perf` without changing the natural task order
 - confirm `az-vm show` prints the expected inventory while password-bearing `.env` values stay redacted
 - confirm `az-vm do --vm-action=status --vm-name=<vm-name>` reports the VM as started
 - confirm `az-vm ssh --vm-name=<vm-name> --user=manager --test`; for Windows also confirm `az-vm rdp --vm-name=<vm-name> --user=manager --test`

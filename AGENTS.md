@@ -55,6 +55,10 @@ Use these sources in this order when maintaining the repo:
 - When a public option is renamed, rename the owning parameter files, manifest entries, parser lookups, help text, README examples, and smoke coverage in the same change; do not leave retired parameter-module filenames behind.
 - Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.
 - Keep help output, README examples, and runtime messages aligned with the actual parser contract.
+- `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
+- `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
+- Auto-mode strictness is part of the public contract: `create --auto` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`; `update --auto` requires an explicit platform plus `--group` and `--vm-name`.
+- `resize --disk-size` requires exactly one intent flag, `--expand` or `--shrink`; shrink remains a non-mutating guidance path when Azure cannot perform the requested change safely.
 
 ## Configuration Rules
 - Runtime precedence is: CLI override > `.env` value > hard-coded default.
@@ -77,6 +81,8 @@ Use these sources in this order when maintaining the repo:
 - Template-driven resource names must derive from `VM_NAME`, region code, and the committed templates.
 - Resource-group uniqueness is suffix-based and deterministic.
 - Managed resource name generation must remain explicit, predictable, and validation-backed.
+- Managed resource group ids use a globally increasing `gX` suffix across all managed groups, regardless of region.
+- Managed resource ids use a globally increasing `nX` suffix across all generated managed resources; one generated `nX` must not be reused by another managed resource, even across resource types.
 - If naming rules change, update README, tests, and any naming-related summaries in the same change.
 
 ## Task Catalog Rules
@@ -121,12 +127,16 @@ Use these sources in this order when maintaining the repo:
 - Do not emit duplicate informational lines without a real state change.
 - Show durations for long-running operations when the feature exists, but avoid noisy transcript spam.
 - When a stage produces warnings, failures, or reboot requests, summarize them clearly at stage end.
+- Interactive `create` and `update` are review-first flows: only `group`, `vm-deploy`, `vm-init`, and `vm-update` may ask `yes/no/cancel` review questions.
+- `configure` and `vm-summary` must always render without confirmation, even when partial step selection skips interior mutation stages.
 
 ## Windows Package and Path Rules
 - Bootstrap Chocolatey unattended when missing.
 - Enable `allowGlobalConfirmation` exactly once immediately after Chocolatey bootstrap.
 - Call `refreshenv.cmd` after Chocolatey bootstrap and after each package installation verification step that depends on updated PATH resolution.
 - Keep package-install behavior explicit. Do not add silent fallback installers unless the user explicitly requests them.
+- Repo-managed Windows shortcuts must resolve to a real executable path, a validated embedded command path, or a valid `shell:AppsFolder\\<AUMID>` launch target; otherwise the shortcut must be skipped with a warning and stale managed aliases cleaned up.
+- When a Windows task writes startup shortcuts or startup registry entries, it must verify the written artifact immediately instead of assuming startup registration succeeded.
 
 ## Python Tooling Rules
 - Repo-managed Python execution must not generate `__pycache__`, `.pyc`, or `.pyo` artifacts.
