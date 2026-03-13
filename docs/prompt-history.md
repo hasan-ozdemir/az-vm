@@ -5042,3 +5042,15 @@ Implement the plan.
 **Assistant Summary**
 
 Completed the final post-cleanup documentation polish so the current tracked docs no longer restate retired surface tokens, removed sample terms, or replacement metadata explicitly. I updated the top changelog and release-notes entries, rewrote the related prompt-history wording in neutral language, reran the non-live quality gate, and then synchronized the same clean commit to both `dev` and `main`.
+
+### 2026-03-13 16:42 TRT
+
+**User Prompt**
+
+````text
+First, tell me whether the cleanup task really finished exactly as planned and whether anything is still missing. Also add a standing rule so this repo never accepts commits that contain secret-like values, personal information, or security-sensitive values such as passwords; make that rule explicit in AGENTS.md and make the behavior a permanent advantage for the repo.
+````
+
+**Assistant Summary**
+
+Confirmed that the accepted cleanup plan was completed as implemented, with the intentional exception that git author and committer metadata still follows the previously approved maintainer-identity rule. I then turned the cleanup discipline into a standing repo control by adding a dedicated sensitive-content audit, wiring it into local hooks and the non-live quality gate, documenting the rule in AGENTS.md and README.md, and revalidating the repo with the standard non-live checks.

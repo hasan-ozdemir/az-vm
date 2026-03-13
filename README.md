@@ -857,11 +857,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\enable-git-hooks.ps1
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\disable-git-hooks.ps1
 ```
+- The local hook path blocks obvious contact-style values, concrete identity leaks, and non-placeholder sensitive config drift before commits and pushes are shared.
 
 ### Quality Gates
 Run these locally:
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\code-quality-check.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\sensitive-content-check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\documentation-contract-check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\powershell-compatibility-check.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\az-vm-smoke-tests.ps1

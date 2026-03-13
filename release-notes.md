@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.306 - 2026-03-13
+
+### Summary
+This release turns the recent cleanup discipline into a standing engineering control. The repo now has an always-on sensitive-content audit in local hooks and in the non-live quality gate, so obvious contact-style values, concrete identity leaks, and non-placeholder sensitive config drift are blocked before they become shared history.
+
+### Highlights
+- Added `tests\sensitive-content-check.ps1` as a dedicated repo-authored hygiene audit for tracked files, committed configuration placeholders, and reachable commit messages.
+- Added a native `commit-msg` hook so commit messages are checked before the commit is accepted, not only after the content reaches CI.
+- Updated `AGENTS.md`, `README.md`, and the documentation contract so contributors see the rule clearly and the repo keeps enforcing it automatically.
+
 ## Release 2026.3.13.305 - 2026-03-13
 
 ### Summary

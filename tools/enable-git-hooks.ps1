@@ -62,6 +62,7 @@ function Enable-RepoGitHooks {
     Write-Host "Configured native git hooks path: .githooks" -ForegroundColor Green
     Write-Host "Hook commands:" -ForegroundColor Cyan
     Write-Host "- pre-commit -> tests/code-quality-check.ps1 + tests/pre-commit-release-doc-check.ps1"
+    Write-Host "- commit-msg -> tests/sensitive-content-check.ps1 (commit-message audit)"
     Write-Host "- pre-push   -> tests/code-quality-check.ps1 + tests/bash-syntax-check.ps1 + tests/powershell-compatibility-check.ps1"
 }
 

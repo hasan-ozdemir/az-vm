@@ -86,6 +86,19 @@ Invoke-AuditStep -Name "PowerShell parse (*.ps1)" -Action {
     }
 }
 
+Invoke-AuditStep -Name "Sensitive-content audit" -Action {
+    $auditPath = Join-Path $RepoRoot "tests\sensitive-content-check.ps1"
+    if (-not (Test-Path -LiteralPath $auditPath)) {
+        throw "sensitive-content-check.ps1 was not found."
+    }
+
+    $powerShellHost = Resolve-PowerShellHost
+    & $powerShellHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $auditPath -RepoRoot $RepoRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "sensitive-content-check.ps1 failed."
+    }
+}
+
 Invoke-AuditStep -Name "Documentation contract" -Action {
     $docContractPath = Join-Path $RepoRoot "tests\documentation-contract-check.ps1"
     if (-not (Test-Path -LiteralPath $docContractPath)) {

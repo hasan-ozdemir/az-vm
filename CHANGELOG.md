@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.306] - 2026-03-13
+
+### Changed
+- Added a repo-wide sensitive-content guardrail for future work: local hooks, the non-live quality gate, and the engineering contract now require a dedicated audit that blocks obvious contact-style values, concrete identity leaks, and non-placeholder sensitive config drift before commits and pushes are shared.
+- Added a dedicated `commit-msg` hook plus `tests/sensitive-content-check.ps1` so both repo-authored tracked files and commit messages receive the same high-signal hygiene checks.
+- Documented the new guardrail in `AGENTS.md`, `README.md`, and the documentation contract so the rule stays visible and enforceable as part of normal developer workflow.
+
+### Tests
+- Revalidated the updated process guardrails with `tests\sensitive-content-check.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, `tests\powershell-compatibility-check.ps1`, `tests\az-vm-smoke-tests.ps1`, and `tests\bash-syntax-check.ps1`.
+
 ## [2026.3.13.305] - 2026-03-13
 
 ### Changed

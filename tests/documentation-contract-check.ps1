@@ -66,7 +66,9 @@ $requiredFiles = @(
     'tools\enable-git-hooks.ps1',
     'tools\disable-git-hooks.ps1',
     'tests\pre-commit-release-doc-check.ps1',
+    'tests\sensitive-content-check.ps1',
     '.githooks\pre-commit',
+    '.githooks\commit-msg',
     '.github\workflows\quality-gate.yml',
     '.github\ISSUE_TEMPLATE\bug-report.yml',
     '.github\ISSUE_TEMPLATE\feature-request.yml',
@@ -91,7 +93,9 @@ $releaseNotesPath = Join-Path $RepoRoot 'release-notes.md'
 $roadmapPath = Join-Path $RepoRoot 'roadmap.md'
 $promptHistoryPath = Join-Path $RepoRoot 'docs\prompt-history.md'
 $preCommitCheckPath = Join-Path $RepoRoot 'tests\pre-commit-release-doc-check.ps1'
+$sensitiveContentCheckPath = Join-Path $RepoRoot 'tests\sensitive-content-check.ps1'
 $preCommitPath = Join-Path $RepoRoot '.githooks\pre-commit'
+$commitMsgPath = Join-Path $RepoRoot '.githooks\commit-msg'
 $workflowPath = Join-Path $RepoRoot '.github\workflows\quality-gate.yml'
 
 $agentsText = Get-Content -LiteralPath $agentsPath -Raw
@@ -106,7 +110,9 @@ $releaseNotesText = Get-Content -LiteralPath $releaseNotesPath -Raw
 $roadmapText = Get-Content -LiteralPath $roadmapPath -Raw
 $promptHistoryText = Get-Content -LiteralPath $promptHistoryPath -Raw
 $preCommitCheckText = Get-Content -LiteralPath $preCommitCheckPath -Raw
+$sensitiveContentCheckText = Get-Content -LiteralPath $sensitiveContentCheckPath -Raw
 $preCommitText = Get-Content -LiteralPath $preCommitPath -Raw
+$commitMsgText = Get-Content -LiteralPath $commitMsgPath -Raw
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
 
 $requiredCommandTokens = @('configure','create','update','list','show','do','task','exec','ssh','rdp','move','resize','set','delete','help')
@@ -167,6 +173,8 @@ Assert-True -Condition ($agentsText -match [regex]::Escape('Keep maintained repo
 Assert-True -Condition ($agentsText -match [regex]::Escape('Keep app-wide customization, secrets, operator identity, and reusable overrides in `.env`.')) -Message 'AGENTS.md must require app-wide customization to live in .env.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Keep task-only customization in a clearly labeled config block at the top of the owning `vm-init` or `vm-update` script.')) -Message 'AGENTS.md must define the task-local config-block rule.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.')) -Message 'AGENTS.md must forbid hard-coded personal/company/secret fallbacks.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('No commit may introduce concrete secrets, contact-style values, personal identifiers, organization identifiers, or live-target sample values into tracked code, docs, examples, tests, or commit messages.')) -Message 'AGENTS.md must forbid committing concrete sensitive or identity-like values.'
+Assert-True -Condition ($agentsText -match [regex]::Escape('Maintain an always-on sensitive-content audit in local hooks and CI; update that audit in the same change whenever new committed surfaces or new leak-prone example formats are introduced.')) -Message 'AGENTS.md must require an always-on sensitive-content audit.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('`create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.')) -Message 'AGENTS.md must define the fresh-only create contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('`update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.')) -Message 'AGENTS.md must define the existing-only update contract.'
 Assert-True -Condition ($agentsText -match [regex]::Escape('`configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.')) -Message 'AGENTS.md must define the configure target-sync contract.'
@@ -236,6 +244,8 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('VM_ENABLE_HIBERNATIO
 Assert-True -Condition ($readmeText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'README.md must document VM_ENABLE_NESTED_VIRTUALIZATION.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('tools/pyssh/ssh_client.py')) -Message 'README.md must document the default PYSSH client path.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('.github/workflows/quality-gate.yml')) -Message 'README.md must mention the GitHub Actions quality gate workflow.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('The local hook path blocks obvious contact-style values, concrete identity leaks, and non-placeholder sensitive config drift before commits and pushes are shared.')) -Message 'README.md must explain the local sensitive-content guardrail.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('.\tests\sensitive-content-check.ps1')) -Message 'README.md must document the sensitive-content check entrypoint.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('### Live Release Acceptance')) -Message 'README.md must define the live release-acceptance section.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('confirm `az-vm do --vm-action=status --vm-name=<vm-name>` reports the VM as started')) -Message 'README.md must require a started-state check in the live release gate.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('<task-number>-verb-noun-target.ext')) -Message 'README.md must define the normalized task filename contract.'
@@ -251,6 +261,12 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('tracked missing `pri
 Assert-True -Condition ($readmeText -match [regex]::Escape('missing tracked entry entirely: `priority=1000`, `enabled=true`, `timeout=180`')) -Message 'README.md must document the tracked missing-entry fallback.'
 Assert-True -Condition ($roadmapText -match [regex]::Escape('business value')) -Message 'roadmap.md must be framed around business value.'
 Assert-True -Condition ($preCommitText -match [regex]::Escape('tests/pre-commit-release-doc-check.ps1')) -Message '.githooks/pre-commit must run the release-doc pre-commit check.'
+Assert-True -Condition ($commitMsgText -match [regex]::Escape('tests/sensitive-content-check.ps1')) -Message '.githooks/commit-msg must run the sensitive-content check.'
+Assert-True -Condition ($sensitiveContentCheckText -match [regex]::Escape('VM_ADMIN_PASS')) -Message 'sensitive-content-check.ps1 must validate the .env.example admin-password placeholder.'
+Assert-True -Condition ($sensitiveContentCheckText -match [regex]::Escape('VM_ASSISTANT_PASS')) -Message 'sensitive-content-check.ps1 must validate the .env.example assistant-password placeholder.'
+Assert-True -Condition ($sensitiveContentCheckText -match [regex]::Escape('employee_email_address')) -Message 'sensitive-content-check.ps1 must validate the employee_email_address placeholder.'
+Assert-True -Condition ($sensitiveContentCheckText -match [regex]::Escape('log --all --format=%B')) -Message 'sensitive-content-check.ps1 must scan reachable commit messages.'
+Assert-True -Condition ($workflowText -match [regex]::Escape('tests\code-quality-check.ps1')) -Message 'quality-gate.yml must run tests/code-quality-check.ps1.'
 Assert-True -Condition ($preCommitCheckText -match [regex]::Escape('CHANGELOG.md')) -Message 'pre-commit-release-doc-check.ps1 must require CHANGELOG.md.'
 Assert-True -Condition ($preCommitCheckText -match [regex]::Escape('release-notes.md')) -Message 'pre-commit-release-doc-check.ps1 must require release-notes.md.'
 Assert-True -Condition ($preCommitCheckText -match [regex]::Escape('docs/prompt-history.md')) -Message 'pre-commit-release-doc-check.ps1 must exempt docs/prompt-history.md from recursive release-doc enforcement.'

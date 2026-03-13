@@ -154,6 +154,8 @@ Use these sources in this order when maintaining the repo:
 - Keep non-live quality checks runnable locally.
 - Keep CI non-destructive and non-live; do not run real Azure provisioning in GitHub Actions.
 - Maintain a local hook path and a GitHub Actions quality gate together.
+- No commit may introduce concrete secrets, contact-style values, personal identifiers, organization identifiers, or live-target sample values into tracked code, docs, examples, tests, or commit messages.
+- Maintain an always-on sensitive-content audit in local hooks and CI; update that audit in the same change whenever new committed surfaces or new leak-prone example formats are introduced.
 - For live publish or release-readiness claims, require one successful end-to-end live acceptance cycle against the active profile: clean `create` when safe, full natural-order `update`, `show` redaction check, `do --vm-action=status`, connection tests, and enabled feature verification.
 - Update audit/contract checks when command names, docs, env keys, or task catalog behavior change.
 
