@@ -5022,11 +5022,23 @@ To keep the repo contract tight, I updated `tests/documentation-contract-check.p
 **User Prompt**
 
 ````text
-Clean up this repository historically and currently so sensitive-looking operator data does not remain in the repo surface or reachable git history. Remove concrete email addresses, literal password samples and hints, human names, company-like names, contact-style values, and similar examples from code, docs, tests, and commit messages. Also add these explicit cleanup rules: remove `private local-only accessibility`, `private local-only accessibility`, and related legacy accessibility residue from the current tree and reachable history, and remove the public `explicit destructive rebuild flow` parameter so destructive rebuild guidance is expressed through `delete` and then `create`. Start from `dev`, keep the repo behavior aligned, and implement the plan.
+Clean up this repository historically and currently so sensitive-looking operator data does not remain in the repo surface or reachable git history. Remove concrete contact-style values, literal secret samples and hints, identity-like names, organization-like names, and similar examples from code, docs, tests, and commit messages. Also remove the remaining retired rebuild shortcut from the public command surface, keep destructive rebuild guidance aligned with `delete` followed by `create`, start from `dev`, keep the repo behavior aligned, and implement the plan.
 ````
 
 **Assistant Summary**
 
-Removed the current `explicit destructive rebuild flow` command surface from runtime modules, help, README, tests, and release docs, and rewrote the operator guidance so destructive rebuilds now use explicit `delete` plus `create`. I also redacted the current tracked repo content by replacing concrete contact values, secret samples, social handles, organization-style examples, subscription identifiers, and live acceptance target names with generic placeholders or neutral examples, then tightened the documentation and smoke contracts to enforce that cleaned surface.
+Removed the retired destructive-rebuild shortcut from runtime modules, help, README, tests, and release docs, and rewrote the operator guidance so destructive rebuilds now use explicit `delete` plus `create`. I also redacted the current tracked repo content by replacing concrete contact values, secret samples, social handles, organization-style examples, subscription identifiers, and live acceptance target names with generic placeholders or neutral examples, then tightened the documentation and smoke contracts to enforce that cleaned surface.
 
-After committing that cleanup on `dev`, I created local safety backups, rewrote the full reachable history in an isolated clone with `git-filter-repo`, and applied the same replacement map to blob contents, commit messages, and author/committer metadata. Historical legacy accessibility vendor residue, obsolete destructive-rebuild wording, concrete contact data, organization-like names, and sample secret strings were removed from reachable history, while commit metadata was standardized to `<person-name> <<email>>` as requested. I then revalidated the rewritten repo with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks before preparing the rewritten branches for remote rollout.
+After committing that cleanup on `dev`, I created local safety backups, rewrote the full reachable history in an isolated clone with `git-filter-repo`, and applied the same replacement map to blob contents, commit messages, and author/committer metadata. Historical retired wording, legacy product residue, concrete contact data, organization-like names, and sample secret strings were removed from reachable history, while commit metadata was standardized to the configured maintainer identity. I then revalidated the rewritten repo with smoke, documentation-contract, PowerShell compatibility, code-quality, and bash-syntax checks before preparing the rewritten branches for remote rollout.
+
+### 2026-03-13 16:18 TRT
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Completed the final post-cleanup documentation polish so the current tracked docs no longer restate retired surface tokens, removed sample terms, or replacement metadata explicitly. I updated the top changelog and release-notes entries, rewrote the related prompt-history wording in neutral language, reran the non-live quality gate, and then synchronized the same clean commit to both `dev` and `main`.

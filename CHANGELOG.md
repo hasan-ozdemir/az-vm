@@ -3,16 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.305] - 2026-03-13
+
+### Changed
+- Polished the post-cleanup maintained docs so the current repository surface no longer restates retired tokens, removed sample values, or replacement metadata explicitly in release-facing text.
+- Reworded the reconstructed prompt ledger entry for the repository-wide cleanup pass so the current tracked documentation stays aligned with the sanitized public surface.
+
+### Tests
+- Revalidated the maintained tip with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
+
 ## [2026.3.13.304] - 2026-03-13
 
 ### Changed
-- Removed the retired public `explicit destructive rebuild flow` surface from the create contract, runtime wiring, help output, tests, and maintained docs. Destructive rebuild guidance is now expressed consistently as an explicit `delete` followed by `create`.
+- Removed the retired destructive-rebuild shortcut from the create contract, runtime wiring, help output, tests, and maintained docs. Rebuild guidance is now expressed consistently as an explicit `delete` followed by `create`.
 - Redacted the current tracked repository surface so concrete contact-style values, secret samples, organization-style example names, live acceptance target names, and real subscription identifiers no longer remain in shared code, docs, or tests. The remaining examples are now generic placeholders or neutral sample targets.
-- Tightened the current docs and smoke contracts so the cleaned public surface stays aligned with the repo's current command contract and no longer reintroduces the retired rebuild flag or the banned legacy accessibility-vendor residue.
+- Tightened the current docs and smoke contracts so the cleaned public surface stays aligned with the repo's current command contract and no longer reintroduces retired rebuild wording or legacy product residue.
 
 ### Security
-- Rewrote the reachable git history in a controlled offline clone with the same replacement map applied to blob contents and commit messages, removing the requested legacy accessibility vendor terms, obsolete destructive-rebuild wording, and concrete sensitive-looking sample values from reachable history.
-- Standardized all rewritten author and committer metadata to `<person-name> <<email>>` while preserving original commit timestamps, as requested for the post-cleanup repository history.
+- Rewrote the reachable git history in a controlled offline clone with the same replacement map applied to blob contents and commit messages, removing retired wording, legacy product residue, and concrete sensitive-looking sample values from reachable history.
+- Standardized rewritten author and committer metadata to the configured maintainer identity while preserving original commit timestamps for the rewritten repository history.
 
 ### Tests
 - Revalidated the rewritten current tip with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
