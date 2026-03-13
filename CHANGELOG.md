@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.308] - 2026-03-13
+
+### Changed
+- Reframed the top of `README.md` around the repo's current Windows flagship outcome: a near-zero-touch remote workstation experience with curated apps, startup behavior, desktop shortcuts, UX tuning, advanced settings, and user-preference carryover where the current task catalogs already provide it.
+- Strengthened the first four README sections with audience-specific value language for employees, administrative teams, workers, developers, customers, operators, visitors, and sponsors, while keeping Linux positioned honestly as a stable and fully extensible lighter path.
+- Added proof-oriented PoC / PoE narratives and expanded the delivered-outcome matrix so the public README shows concrete end-user and business value rather than only command-surface depth.
+
+### Tests
+- Revalidated the documentation refresh with `tests\\documentation-contract-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\az-vm-smoke-tests.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.13.307] - 2026-03-13
 
 ### Changed

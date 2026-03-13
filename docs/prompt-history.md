@@ -5070,3 +5070,15 @@ Under the prompt-history rules I just defined, should that tiny instruction be r
 **Assistant Summary**
 
 Refined the prompt-history contract so very short approval or follow-up prompts and non-mutating question or analysis turns are no longer auto-recorded, while every other substantive prompt remains a mandatory English-normalized prompt-history entry. I aligned AGENTS.md, README.md, the documentation contract, changelog, and release notes to that narrower rule, confirmed that a tiny instruction like `git push to main` would not be recorded by itself, confirmed that this full substantive prompt should be recorded, and then pushed `main` after re-running the relevant non-live checks.
+
+### 2026-03-13 18:05 TRT
+
+**User Prompt**
+
+````text
+Update the README for this repo so that its first four major sections make it absolutely clear that `az-vm` delivers an end-to-end operating-system user experience for employees, developers, administrative teams, workers, customers, general users, and anyone else who needs it. It should communicate, in a practical and striking way, that one command can produce a nearly zero-touch machine with the needed applications installed, the relevant configuration and fine-tuning already applied, desktop shortcuts created and organized, and the system prepared from top to bottom so the user can connect remotely and use it almost like their own computer at home. Re-check the current repo capabilities and express this with strong PoC / PoE-style scenarios in the README, then sync `dev` and `main` and push `main`.
+````
+
+**Assistant Summary**
+
+Reworked the opening README narrative so the first four sections now present `az-vm` as a Windows-first, near-zero-touch remote workstation delivery path backed by the current task catalogs, while still positioning Linux honestly as a lighter but fully extensible platform. I added stronger customer and executive framing, expanded the audience-value table, introduced proof-oriented PoC / PoE scenarios, enriched the delivered-outcome matrix with desktop and personalization evidence, revalidated the full non-live gate, fast-forwarded `dev` to the tested `main` commit, and pushed both `dev` and `main`.

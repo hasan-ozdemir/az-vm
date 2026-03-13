@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.308 - 2026-03-13
+
+### Summary
+This release turns the top of the README into a much stronger public value story. The repo now presents `az-vm` more clearly as a Windows-first, near-zero-touch remote workstation delivery path while still describing Linux accurately as a lighter but fully extensible platform under the same operator model.
+
+### Highlights
+- Rewrote the opening README funnel so the first sections emphasize the prepared remote-computer outcome: installed applications, curated startup behavior, desktop shortcuts, UX tuning, advanced settings, and task-driven customization.
+- Added concrete PoC / PoE-style stories for customer demos, employee workstations, developer workstations, and support-oriented machines.
+- Expanded the audience framing so customers, executives, employees, administrative teams, workers, developers, operators, visitors, and sponsors can all see a credible value proposition quickly.
+
 ## Release 2026.3.13.307 - 2026-03-13
 
 ### Summary

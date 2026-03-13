@@ -1,13 +1,13 @@
 # az-vm
 
-`az-vm` is a unified Azure VM provisioning and lifecycle toolkit for Windows and Linux. It gives one operator-facing entrypoint for provisioning, updating, inspecting, connecting to, repairing, resizing, moving, and deleting managed Azure VMs with deterministic task execution and explicit validation before mutation.
+`az-vm` is a unified Azure VM provisioning and lifecycle toolkit for Windows and Linux. It gives one operator-facing entrypoint for provisioning, updating, inspecting, connecting to, repairing, resizing, moving, and deleting managed Azure VMs with deterministic task execution and explicit validation before mutation. In its current Windows flagship path, the repo goes beyond raw infrastructure creation and drives the machine toward a ready-to-use remote workstation experience: core apps installed, startup behavior configured, public desktop shortcuts prepared, advanced settings applied, and day-one user experience shaped before the first serious session begins.
 
 At a glance:
-- Customer teams get a repeatable Azure VM outcome instead of a portal-heavy, one-off setup path.
-- Executive teams get lower drift, clearer support handoff, and one repo that captures runtime behavior, release notes, and operating guidance together.
-- Developers and DevOps maintainers get one command surface for create, update, inspect, repair, task reruns, resize, move, and delete flows.
-- Operators and regular users get pragmatic day-to-day commands, review-first workflows, and readable diagnostics instead of hidden side effects.
-- Visitors and sponsors can evaluate a mature operational toolkit with an explicit docs, quality-gate, and release-discipline story.
+- Customer teams get a repeatable Azure VM outcome that can feel closer to an all-in-one prepared remote computer than a portal-built raw VM.
+- Executive teams get lower drift, faster support handoff, and one repo that captures runtime behavior, guest-configuration intent, release notes, and operating guidance together.
+- Developers and DevOps maintainers get one command surface plus task catalogs that can preload apps, services, settings, desktop behavior, and UX details on both Windows and Linux.
+- Employees, administrative teams, workers, and regular operators get a near-zero-touch first session: connect remotely and find the machine already prepared for common daily work.
+- Visitors and sponsors can evaluate a mature operational toolkit with visible docs, quality gates, release discipline, and proof-of-outcome scenarios instead of vague promises.
 
 ## Table Of Contents
 - [Quick Start Guide](#quick-start-guide)
@@ -108,6 +108,8 @@ At a glance:
 ### Why Start Here
 This section is optimized for the reader who wants usable value quickly without skipping the repo's safety model. The goal is simple: get from clone to one visible Azure VM outcome fast, while still understanding what the command surface is doing, which config matters first, and how to verify that the result is healthy.
 
+On the current Windows hero path, one successful `create` is designed to leave behind much more than infrastructure. The machine can arrive with cloud and developer tooling, collaboration and storage apps, accessibility and support tools, startup flows, public desktop shortcuts, advanced Windows tuning, and copied user preferences where the repo already has tasks for them. Linux is intentionally lighter today, but it is already stable and uses the same task model, so teams can extend it with their own apps, services, settings, and UX decisions without changing the operator surface.
+
 ### Prerequisites
 - Windows host with PowerShell and the Azure CLI available.
 - Azure subscription access with permission to create, update, and delete compute and networking resources.
@@ -144,12 +146,18 @@ This section is optimized for the reader who wants usable value quickly without 
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### Fastest Safe Path To Value
-If you want the fastest safe path to value, use this order:
+If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated:
 1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
 2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
 4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
 5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
+
+Representative PoC / PoE outcomes from the current repo shape:
+- Employee or knowledge-worker desktop: connect over RDP and land on a machine with browser, collaboration, storage, media, support, and accessibility tooling already staged, with desktop shortcuts and startup behavior already prepared.
+- Developer or DevOps workstation: connect and find PowerShell, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, WSL2, Docker Desktop, Ollama, Codex app, and other repo-managed tooling prepared by current task catalogs.
+- Administrative or support machine: connect and find remote-support, startup, health-capture, user-copy, and advanced settings tasks already applied so day-two assistance is easier.
+- Linux proof path: use the same orchestrator, connection flow, and task-catalog model today, then extend the lighter default guest with your own task-authored apps, services, and settings as needed.
 
 ### First End-To-End Run
 ```powershell
@@ -171,33 +179,47 @@ az login
 
 ## Customer Business Value
 
-`az-vm` compresses the time between "we need a working Azure VM" and "we have a documented, repeatable, supportable environment" into one operator workflow. The practical benefit is not just faster provisioning; it is lower variance after provisioning. The repo keeps infrastructure intent, guest configuration, direct task reruns, diagnostics, release notes, and support-facing guidance together, so a team does not have to rediscover the same setup logic every time a VM must be rebuilt, updated, resized, repaired, or handed to another person.
+`az-vm` compresses the time between "we need a working Azure VM" and "someone can remotely connect and start real work" into one operator workflow. The practical benefit is not just faster provisioning; it is lower variance after provisioning. The repo keeps infrastructure intent, guest configuration, direct task reruns, diagnostics, release notes, and support-facing guidance together, so a team does not have to rediscover the same setup logic every time a VM must be rebuilt, updated, resized, repaired, or handed to another person.
+
+The strongest current story is the Windows workstation path. With one command, the repo can provision Azure resources and continue until the guest looks and behaves much closer to a prepared remote computer than to an empty VM: core tooling is installed, common collaboration and storage apps are staged, startup behavior is configured, public desktop shortcuts are created and refreshed, advanced OS settings are applied, and safe user-level preferences are copied where the repo already has task coverage. The result is a near-zero-touch first session for the people who actually need to use the machine.
 
 From a customer-facing perspective, the value proposition is concrete:
-- less manual setup drift between environments
-- faster time to a usable VM with known software and known guest-side configuration
+- one-command path to a near-zero-touch remote Windows workstation in Azure, backed by the current task catalogs
+- faster time to a usable VM with known software, known guest-side configuration, and a prepared desktop experience
 - safer day-two operations because the same toolkit handles update, inspect, resize, move, repair, and delete flows
 - more predictable support handoff because runtime behavior, docs, release notes, and prompt history live in the same repository
+
+Representative PoC / PoE stories the current repo can already support:
+- A customer demo or pilot machine that already contains the common tooling, shortcuts, and tuned settings needed to make the environment feel complete on first login.
+- A cloud-hosted employee workstation where the user connects remotely and finds mainstream daily apps, developer tools, service tooling, startup entries, and desktop organization already staged.
+- A support or accessibility-focused machine where remote-support tools, accessibility apps, and curated desktop/startup behavior reduce the amount of manual aftercare needed after provisioning.
 
 ## Executive Summary
 
 For decision-makers, `az-vm` is an operational standardization asset. It turns a previously manual, portal-heavy, and person-dependent VM build into a repo-governed process with validation before mutation, visible orchestration steps, repeatable guest task catalogs, and non-live quality gates. That matters because environment drift, undocumented post-install tweaks, and ad hoc support work are expensive even when the VM count is small.
 
+Viewed as a service outcome rather than a scripting repo, `az-vm` helps teams deliver an Azure-hosted computer experience, not just an Azure-hosted VM. The flagship Windows path is intentionally positioned to produce an all-in-one remote workstation feel: applications installed, desktop experience shaped, startup behavior prepared, advanced settings applied, and supportability built in. That shortens the path from "budget approved" to "someone is productively connected and working."
+
 The executive-level outcomes are straightforward:
 - lower operational variance across fresh builds and maintenance windows
-- faster onboarding for internal operators and downstream support teams
+- faster onboarding for internal operators, downstream support teams, and end users who simply need a prepared machine
 - clearer release readiness because the repo already enforces docs, quality, and live acceptance discipline
 - stronger sponsor and stakeholder confidence because the value is visible in the repo structure, not only in verbal explanation
+
+Windows is the richest end-user path today. Linux is already reliable, intentionally lighter by default, and fully extensible through the same task model, so the platform story can keep expanding without replacing the operator contract.
 
 ## Value By Audience
 
 | Audience | What they care about | What `az-vm` delivers | Why it matters |
 | --- | --- | --- | --- |
-| Customer | A usable VM quickly, with fewer surprises | One command surface for create, update, inspect, connect, resize, move, and delete flows | The delivered environment is easier to understand, verify, and support. |
-| Executive / decision maker | Risk reduction, repeatability, supportability | Validation before mutation, explicit orchestration, repo-owned release and docs discipline | Operational work becomes more predictable and less person-dependent. |
-| Developer / DevOps / maintainer | Faster iteration, fewer hidden scripts, isolated reruns | Catalog-driven init/update tasks, direct `task` and `exec` paths, one Windows/Linux mental model | Maintenance and debugging become narrower, faster, and more deterministic. |
+| Customer | A usable VM quickly, with fewer surprises | One command surface for create, update, inspect, connect, resize, move, and delete flows, plus a prepared guest experience on the Windows hero path | The delivered environment is easier to understand, verify, and support. |
+| Executive / decision maker | Risk reduction, repeatability, supportability | Validation before mutation, explicit orchestration, repo-owned release and docs discipline, and a service-like remote workstation outcome | Operational work becomes more predictable and less person-dependent. |
+| Employee / knowledge worker | A machine that feels ready on first login | Browsers, collaboration apps, storage tools, desktop shortcuts, startup entries, and tuned settings from current Windows task coverage | The first remote session can feel closer to "sit down and work" than "finish setting up the machine." |
+| Administrative / support team | Easier handoff, assistance, and guided maintenance | Remote-support tooling, health capture, curated desktop/startup behavior, and readable lifecycle commands | Supporting the machine takes less rediscovery and less ad hoc recovery work. |
+| Developer / DevOps / maintainer | Faster iteration, fewer hidden scripts, isolated reruns | Catalog-driven init/update tasks, direct `task` and `exec` paths, one Windows/Linux mental model, and easy task-based extensibility | Maintenance and debugging become narrower, faster, and more deterministic. |
+| Worker / field operator | Reliable access to the same prepared toolset from anywhere | Remote connection flow, curated shortcuts, common apps, and a repeatable rebuild/update path | The cloud machine behaves more like a stable working environment than a one-off build. |
 | Operator / regular user | Practical daily commands that do what they say | Clear lifecycle, connection, inventory, and repair commands with readable output | Day-to-day work is easier without learning a sprawling platform surface first. |
-| Visitor / evaluator | Evidence that the repo is real and usable | Readable README, release notes, prompt history, tests, and workflow gates | Evaluation is based on visible substance rather than vague promises. |
+| Visitor / evaluator | Evidence that the repo is real and usable | Readable README, release notes, prompt history, tests, workflow gates, and proof-of-outcome scenarios | Evaluation is based on visible substance rather than vague promises. |
 | Sponsor / backer | A credible project with continuing value | Strong operator documentation, explicit contracts, repeatable acceptance, and clear business framing | Sponsorship has a concrete quality and maintainability story behind it. |
 
 ## Delivered VM Outcome Matrix
@@ -209,6 +231,7 @@ The executive-level outcomes are straightforward:
 | Developer runtime | Docker Desktop, WSL2, npm global package set, Ollama, Codex app, VS 2022 Community | Node-ready SSH environment and updated base packages | Engineering workflows can start earlier. | Faster onboarding and less rebuild waste. |
 | Collaboration and daily apps | Edge, Chrome validation, Teams, WhatsApp, OneDrive, Google Drive, VLC, iTunes, iCloud | Minimal by design | The machine feels operational, not half-finished. | Customer-facing and operator-facing use is easier to stage. |
 | Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Assisted-operation scenarios are easier to reproduce and support. | Broader usability and faster support response. |
+| Desktop and personalization | Startup configuration, grouped public desktop shortcuts, Windows UX tuning, advanced settings, and safe user preference copy | Extensible through the same task model rather than a rich built-in desktop catalog | People connect to a machine that already feels curated. | Less post-build manual cleanup and faster user adoption. |
 | Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting narrows quickly to the failing area. | Less wasted time during support and maintenance. |
 | Lifecycle changes | Create fresh, explicit rebuild by `delete` plus `create`, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, explicit rebuild by `delete` plus `create`, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
 
