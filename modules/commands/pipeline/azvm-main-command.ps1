@@ -109,7 +109,14 @@ function Invoke-AzVmMain {
         $sshConnectTimeoutSeconds = [int]$runtime.SshConnectTimeoutSeconds
         $modeLabel = if ($script:AutoMode) { 'auto' } else { 'interactive' }
 
-        Write-AzVmMainBanner -CommandName $CommandName -Mode $modeLabel -Platform $platform -ActionPlan $effectiveActionPlan -LogPath $logPath
+        Write-AzVmMainBanner `
+            -CommandName $CommandName `
+            -Mode $modeLabel `
+            -Platform $platform `
+            -ActionPlan $effectiveActionPlan `
+            -LogPath $logPath `
+            -SubscriptionName ([string]$step1Context.AzureSubscriptionName) `
+            -SubscriptionId ([string]$step1Context.AzureSubscriptionId)
 
         $runGroupAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'group'
         $runNetworkAction = Test-AzVmActionIncluded -ActionPlan $effectiveActionPlan -ActionName 'network'
@@ -148,6 +155,8 @@ function Invoke-AzVmMain {
                 -AutoMode:$script:AutoMode `
                 -StageName 'resource group step' `
                 -Values ([ordered]@{
+                    AzureSubscriptionName = [string]$step1Context.AzureSubscriptionName
+                    AzureSubscriptionId = [string]$step1Context.AzureSubscriptionId
                     ResourceGroup = [string]$step1Context.ResourceGroup
                     AzLocation = [string]$step1Context.AzLocation
                     ExecutionMode = [string]$script:ExecutionMode
@@ -194,6 +203,8 @@ function Invoke-AzVmMain {
                 -AutoMode:$script:AutoMode `
                 -StageName 'vm deploy step' `
                 -Values ([ordered]@{
+                    AzureSubscriptionName = [string]$step1Context.AzureSubscriptionName
+                    AzureSubscriptionId = [string]$step1Context.AzureSubscriptionId
                     ResourceGroup = [string]$step1Context.ResourceGroup
                     VmName = [string]$step1Context.VmName
                     VmImage = [string]$step1Context.VmImage

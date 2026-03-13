@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.300] - 2026-03-13
+
+### Changed
+- Added shared Azure subscription targeting across every Azure-touching public command: `create`, `update`, `configure`, `list`, `show`, `do`, `move`, `resize`, `set`, `exec`, `ssh`, `rdp`, and `delete` now support `--subscription-id=<subscription-guid>` plus `-s <subscription-guid>` / `-s=<subscription-guid>`.
+- Added a shared Azure subscription resolver with the committed precedence `CLI --subscription-id/-s -> .env azure_subscription_id -> active Azure CLI subscription`, and updated interactive `create` and `update` so they prompt for subscription selection before any Azure-backed discovery when no CLI subscription override is supplied.
+- Updated the shared Azure CLI wrapper, diagnostics, create/update review summaries, `configure`, `list`, quick help, README, AGENTS, and `.env.example` so the resolved subscription context is visible, `azure_subscription_id` is documented as the repo-local default selector, and Azure-touching commands now state explicitly that `az login` is required.
+
+### Fixed
+- Fixed the shared `subscription-id` option validator so it only enforces a value when the option is actually present, instead of tripping unrelated command contracts that omitted `-s`.
+- Fixed subscription precedence resolution so stale in-memory overrides no longer outrank `.env azure_subscription_id` during later command resolution or smoke testing.
+- Fixed the smoke contract for subscription-aware commands so `delete` is validated with its required `--target` option while `task` and `help` continue to reject subscription targeting.
+
+### Tests
+- Revalidated the non-live gate with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`.
+
 ## [2026.3.13.299] - 2026-03-13
 
 ### Changed

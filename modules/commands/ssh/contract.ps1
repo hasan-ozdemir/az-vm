@@ -4,6 +4,7 @@ function Get-AzVmSshOptionSpecifications {
     return @(
         (Get-AzVmSshPerfOptionSpecification),
         (Get-AzVmSshHelpOptionSpecification),
+        (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmSshGroupOptionSpecification),
         (Get-AzVmSshVmNameOptionSpecification),
         (Get-AzVmSshUserOptionSpecification),

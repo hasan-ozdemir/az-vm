@@ -6,6 +6,7 @@ function Get-AzVmExecOptionSpecifications {
         (Get-AzVmExecWindowsOptionSpecification),
         (Get-AzVmExecLinuxOptionSpecification),
         (Get-AzVmExecHelpOptionSpecification),
+        (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmExecGroupOptionSpecification),
         (Get-AzVmExecVmNameOptionSpecification),
         (Get-AzVmExecInitTaskOptionSpecification),

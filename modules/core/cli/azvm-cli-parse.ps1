@@ -95,12 +95,38 @@ function Parse-AzVmCliArguments {
             $normalizedArgs += "--help=true"
             continue
         }
+        if ($rawArgText -match '^-s=(.+)$') {
+            $normalizedArgs += ("--subscription-id={0}" -f [string]$Matches[1])
+            continue
+        }
+        if ($rawArgText -eq '-s') {
+            if (($i + 1) -ge @($remaining).Count) {
+                Throw-FriendlyError `
+                    -Detail "Option '-s' requires a value." `
+                    -Code 2 `
+                    -Summary "Invalid option format." `
+                    -Hint "Use '-s <subscription-guid>' or '--subscription-id=<subscription-guid>'."
+            }
+
+            $nextArgText = if ($null -eq $remaining[$i + 1]) { '' } else { [string]$remaining[$i + 1] }
+            if ([string]::IsNullOrWhiteSpace([string]$nextArgText) -or $nextArgText.StartsWith('-')) {
+                Throw-FriendlyError `
+                    -Detail "Option '-s' requires a value." `
+                    -Code 2 `
+                    -Summary "Invalid option format." `
+                    -Hint "Use '-s <subscription-guid>' or '--subscription-id=<subscription-guid>'."
+            }
+
+            $normalizedArgs += ("--subscription-id={0}" -f $nextArgText)
+            $i++
+            continue
+        }
 
         Throw-FriendlyError `
             -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
             -Code 2 `
             -Summary "Invalid option format." `
-            -Hint "Supported short options: -g, -y, -a, -h. Use long options for others."
+            -Hint "Supported short options: -g, -s, -y, -a, -h. Use long options for others."
     }
 
     $options = @{}

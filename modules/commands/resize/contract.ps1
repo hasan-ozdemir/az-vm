@@ -4,6 +4,7 @@ function Get-AzVmResizeOptionSpecifications {
     return @(
         (Get-AzVmResizePerfOptionSpecification),
         (Get-AzVmResizeHelpOptionSpecification),
+        (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmResizeGroupOptionSpecification),
         (Get-AzVmResizeVmNameOptionSpecification),
         (Get-AzVmResizeVmSizeOptionSpecification),

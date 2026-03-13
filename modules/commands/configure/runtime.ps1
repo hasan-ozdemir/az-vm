@@ -453,6 +453,8 @@ function Get-AzVmConfigureTargetState {
         ClearReasonMap = $clearReasons
         SkippedFeatureKeys = @($featureSync.SkippedKeys)
         SummaryMap = [ordered]@{
+            AzureSubscriptionName = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionName)
+            AzureSubscriptionId = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
             Platform = [string]$actualPlatform
             ResourceGroup = [string]$ResourceGroup
             VmName = [string]$VmName

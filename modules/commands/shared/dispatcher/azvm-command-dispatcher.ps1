@@ -33,6 +33,8 @@ function Invoke-AzVmCommandDispatcher {
             return
         }
 
+        Initialize-AzVmCommandSubscriptionState -CommandName $CommandName -Options $Options | Out-Null
+
         switch ($CommandName) {
             'help' {
                 $script:UpdateMode = $false

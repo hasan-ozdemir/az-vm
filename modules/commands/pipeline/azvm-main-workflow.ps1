@@ -6,7 +6,9 @@ function Write-AzVmMainBanner {
         [string]$Mode,
         [string]$Platform,
         [psobject]$ActionPlan,
-        [string]$LogPath
+        [string]$LogPath,
+        [string]$SubscriptionName = '',
+        [string]$SubscriptionId = ''
     )
 
     $stepWindow = 'full'
@@ -23,6 +25,10 @@ function Write-AzVmMainBanner {
     Write-Host ("- command: {0}" -f [string]$CommandName)
     Write-Host ("- mode: {0}" -f [string]$Mode)
     Write-Host ("- platform: {0}" -f [string]$Platform)
+    if (-not [string]::IsNullOrWhiteSpace([string]$SubscriptionId)) {
+        $subscriptionDisplay = if ([string]::IsNullOrWhiteSpace([string]$SubscriptionName)) { [string]$SubscriptionId } else { ("{0} ({1})" -f [string]$SubscriptionName, [string]$SubscriptionId) }
+        Write-Host ("- subscription: {0}" -f $subscriptionDisplay)
+    }
     Write-Host ("- steps: {0}" -f [string]$stepWindow)
     Write-Host ("- transcript: {0}" -f [System.IO.Path]::GetFileName([string]$LogPath))
 }

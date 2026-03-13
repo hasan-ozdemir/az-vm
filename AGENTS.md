@@ -58,7 +58,10 @@ Use these sources in this order when maintaining the repo:
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
 - `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.
-- `list` is the managed inventory command: it must stay Azure-read-only, must not write `.env`, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
+- Azure-touching commands support `--subscription-id` plus `-s`; resolution precedence is CLI override -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
+- Azure-touching commands require an authenticated Azure CLI session; help, README, and runtime errors must say `az login` is required.
+- Interactive `create` and `update` must prompt for Azure subscription selection when `--subscription-id` is omitted.
+- `list` is the managed inventory command: it must stay Azure-read-only, must not mutate Azure resources, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
 - Auto-mode strictness is part of the public contract: `create --auto` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`; `update --auto` requires an explicit platform plus `--group` and `--vm-name`.
 - `resize --disk-size` requires exactly one intent flag, `--expand` or `--shrink`; shrink remains a non-mutating guidance path when Azure cannot perform the requested change safely.
 
@@ -70,6 +73,7 @@ Use these sources in this order when maintaining the repo:
 - Keep task-only customization in a clearly labeled config block at the top of the owning `vm-init` or `vm-update` script.
 - Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.
 - Use generic env keys whenever possible.
+- Use `azure_subscription_id` as the shared default Azure subscription selector for Azure-touching commands.
 - Use `company_name` for repo-managed Windows business web shortcuts and `employee_email_address` local-part for repo-managed Windows personal web shortcuts.
 - Normalize repo-managed Windows Chrome `--profile-directory` values to lowercase even when `.env` casing differs.
 - Keep `employee_full_name` in `.env` as required operator identity metadata for the Windows public desktop shortcut contract.

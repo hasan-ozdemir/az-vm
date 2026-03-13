@@ -4,6 +4,7 @@ function Get-AzVmShowOptionSpecifications {
     return @(
         (Get-AzVmShowPerfOptionSpecification),
         (Get-AzVmShowHelpOptionSpecification),
+        (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmShowGroupOptionSpecification)
     )
 }

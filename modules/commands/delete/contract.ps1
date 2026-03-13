@@ -5,6 +5,7 @@ function Get-AzVmDeleteOptionSpecifications {
         (Get-AzVmDeleteAutoOptionSpecification),
         (Get-AzVmDeletePerfOptionSpecification),
         (Get-AzVmDeleteHelpOptionSpecification),
+        (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmDeleteTargetOptionSpecification),
         (Get-AzVmDeleteGroupOptionSpecification),
         (Get-AzVmDeleteYesOptionSpecification)

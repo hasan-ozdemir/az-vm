@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.300 - 2026-03-13
+
+### Summary
+This release closes the Azure subscription-selection gap across the command surface. Every Azure-touching command now accepts `--subscription-id` / `-s`, the runtime resolves subscriptions with the committed `CLI -> .env -> active Azure CLI` precedence, interactive `create` and `update` now ask for the subscription before Azure-backed discovery when no CLI override is present, and the docs/help/tests now treat `az login` as a strict prerequisite for Azure operations.
+
+### Highlights
+- Added shared subscription targeting for `create`, `update`, `configure`, `list`, `show`, `do`, `move`, `resize`, `set`, `exec`, `ssh`, `rdp`, and `delete`, while keeping `task` and `help` local-only and intentionally outside the subscription-aware contract.
+- Added the repo-local `azure_subscription_id` configuration key to `.env.example` and documented the exact precedence rule everywhere the operator contract lives: CLI `--subscription-id` / `-s` wins first, `.env azure_subscription_id` wins next, and the active Azure CLI subscription is the final fallback.
+- Updated the shared Azure CLI wrapper so normal `az` calls inherit the resolved subscription automatically through Azure CLI's global `--subscription` argument, while account-discovery helpers can still bypass forced subscription injection when they need to inspect the full accessible subscription set.
+- Interactive `create` and `update` now show a numbered Azure subscription picker before region, SKU, managed resource-group, or VM discovery when `--subscription-id` is omitted, and successful CLI `-s` usage persists `azure_subscription_id` back into `.env`.
+- Revalidated the entire non-live gate after the contract landed: smoke, documentation contract, PowerShell compatibility, code quality, and bash syntax all pass against the subscription-aware surface.
+
 ## Release 2026.3.13.299 - 2026-03-13
 
 ### Summary

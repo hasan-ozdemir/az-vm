@@ -58,6 +58,12 @@ function Initialize-AzVmCommandRuntimeContext {
         -DeferEnvWrites:$DeferDotEnvWrites
 
     $step1Context['VmOsType'] = $platform
+    $subscriptionContext = Get-AzVmResolvedSubscriptionContext
+    if ($null -ne $subscriptionContext) {
+        $step1Context['AzureSubscriptionId'] = [string]$subscriptionContext.SubscriptionId
+        $step1Context['AzureSubscriptionName'] = [string]$subscriptionContext.SubscriptionName
+        $step1Context['AzureSubscriptionResolutionSource'] = [string]$subscriptionContext.ResolutionSource
+    }
 
     $taskOutcomeModeRaw = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_TASK_OUTCOME_MODE' -DefaultValue 'continue')
     if ([string]::IsNullOrWhiteSpace($taskOutcomeModeRaw)) { $taskOutcomeModeRaw = 'continue' }
@@ -234,6 +240,8 @@ function Initialize-AzVmExecCommandRuntimeContext {
         VmInitTaskDir = [string]$vmInitTaskDir
         VmUpdateTaskDir = [string]$vmUpdateTaskDir
         VmOsType = [string]$platform
+        AzureSubscriptionId = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
+        AzureSubscriptionName = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionName)
         AzCommandTimeoutSeconds = [int]$azCommandTimeoutSeconds
         SshTaskTimeoutSeconds = [int]$sshTaskTimeoutSeconds
         SshConnectTimeoutSeconds = [int]$sshConnectTimeoutSeconds

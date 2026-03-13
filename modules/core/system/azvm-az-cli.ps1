@@ -78,6 +78,22 @@ function Invoke-AzVmAzCliCommand {
     )
 
     $argValues = @($Arguments | ForEach-Object { [string]$_ })
+    $bypassSubscription = ($script:BypassAzCliSubscription -and ([int]$script:BypassAzCliSubscription -gt 0))
+    if (-not $bypassSubscription -and -not [string]::IsNullOrWhiteSpace([string]$script:AzVmActiveSubscriptionId)) {
+        $hasSubscriptionArgument = $false
+        foreach ($argValue in @($argValues)) {
+            $candidate = [string]$argValue
+            if ([string]::Equals($candidate, '--subscription', [System.StringComparison]::OrdinalIgnoreCase) -or
+                $candidate.StartsWith('--subscription=', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $hasSubscriptionArgument = $true
+                break
+            }
+        }
+        if (-not $hasSubscriptionArgument) {
+            $argValues += @('--subscription', [string]$script:AzVmActiveSubscriptionId)
+        }
+    }
+
     $perfWatch = $null
     $perfLabel = ''
     $shouldEmitPerf = $script:PerfMode -and ([int]$script:PerfSuppressAzTimingDepth -le 0)
@@ -170,6 +186,35 @@ function Invoke-AzVmAzCliCommand {
         }
         if ($null -ne $perfWatch -and $shouldEmitPerf) {
             Write-AzVmPerfTiming -Category "az" -Label $perfLabel -Seconds $perfWatch.Elapsed.TotalSeconds
+        }
+    }
+}
+
+# Handles Invoke-AzVmWithBypassedAzCliSubscription.
+function Invoke-AzVmWithBypassedAzCliSubscription {
+    param(
+        [scriptblock]$Action
+    )
+
+    if ($null -eq $Action) {
+        throw 'Invoke-AzVmWithBypassedAzCliSubscription requires an action.'
+    }
+
+    $previousDepth = 0
+    if ($script:BypassAzCliSubscription) {
+        $previousDepth = [int]$script:BypassAzCliSubscription
+    }
+
+    $script:BypassAzCliSubscription = $previousDepth + 1
+    try {
+        return (& $Action)
+    }
+    finally {
+        if ($previousDepth -gt 0) {
+            $script:BypassAzCliSubscription = $previousDepth
+        }
+        else {
+            $script:BypassAzCliSubscription = 0
         }
     }
 }

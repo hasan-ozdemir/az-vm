@@ -4962,3 +4962,17 @@ Implemented the command-surface refresh across runtime, help, README, AGENTS, an
 I also changed interactive `create` so the first prompt becomes the VM OS choice whenever platform flags are missing. That prompt now ignores persisted `.env VM_OS_TYPE` for interactive create, defaults blank input to Windows, and then scopes image, size, and disk defaults from the selected platform. On the public inventory side, I removed the `group` command and replaced it with the new read-only `list` command. `az-vm list` now prints managed inventory by section, supports `--type=group,vm,disk,vnet,subnet,nic,ip,nsg,nsg-rule`, and accepts optional exact `--group` filtering without writing `.env`.
 
 To keep the repo contract coherent, I removed the retired `group` command modules and the unused shared `select` option module, updated the runtime manifest, parser hints, dispatcher wiring, and CLI help, and refreshed `README.md`, `AGENTS.md`, `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, and `tests/code-quality-check.ps1` to the new surface. I revalidated the non-live gate with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`, all passing.
+
+### 2026-03-13 07:16 TRT
+
+**User Prompt**
+
+````text
+Add Azure subscription targeting across the Azure-touching command surface. All relevant commands must support `--subscription-id` / `-s=<id>` so the underlying `az` operations run against the selected subscription. Then implement the plan.
+````
+
+**Assistant Summary**
+
+Implemented Azure subscription targeting across the full Azure-touching command surface: `create`, `update`, `configure`, `list`, `show`, `do`, `move`, `resize`, `set`, `exec`, `ssh`, `rdp`, and `delete` now accept `--subscription-id=<subscription-guid>` plus `-s <subscription-guid>` / `-s=<subscription-guid>`, while `task` and `help` remain intentionally local-only and reject the option. I added a shared subscription option module, short-option parsing for `-s`, a shared subscription resolver with the committed precedence `CLI -> .env azure_subscription_id -> active Azure CLI subscription`, and a central Azure CLI injection path so normal `az` commands automatically inherit the resolved subscription while account-discovery helpers can still bypass that injection when needed.
+
+I also updated interactive `create` and `update` so they prompt for Azure subscription selection before Azure-backed discovery when `--subscription-id` is omitted, and I wired the resolved subscription into runtime summaries, diagnostics, `configure`, and `list`. Successful CLI `-s` usage now persists `azure_subscription_id` into `.env`, `.env.example` documents that key, and the shared help/README/AGENTS text now states explicitly that `az login` is required for Azure-touching commands. After fixing the two edge cases exposed by smoke testing, I revalidated the change with `tests/az-vm-smoke-tests.ps1`, `tests/documentation-contract-check.ps1`, `tests/powershell-compatibility-check.ps1`, `tests/code-quality-check.ps1`, and `tests/bash-syntax-check.ps1`, all passing.

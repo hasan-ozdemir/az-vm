@@ -10,6 +10,7 @@ function Get-AzVmUpdateOptionSpecifications {
         (Get-AzVmUpdateStepToOptionSpecification),
         (Get-AzVmUpdateStepFromOptionSpecification),
         (Get-AzVmUpdateStepOptionSpecification),
+        (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmUpdateGroupOptionSpecification),
         (Get-AzVmUpdateVmNameOptionSpecification)
     )

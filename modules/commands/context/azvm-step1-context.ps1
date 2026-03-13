@@ -17,6 +17,7 @@ function Get-AzVmStep1ContextPersistenceMap {
 
     $persist = [ordered]@{
         VM_OS_TYPE = [string]$Platform
+        azure_subscription_id = [string]$Context.AzureSubscriptionId
         AZ_LOCATION = [string]$Context.AzLocation
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VNET_NAME = [string]$Context.VNET
@@ -65,6 +66,8 @@ function New-AzVmStep1ConfigDisplayMap {
     $values = [ordered]@{
         Operation = [string]$OperationName
         Platform = [string]$Platform
+        AzureSubscriptionName = [string]$Context.AzureSubscriptionName
+        AzureSubscriptionId = [string]$Context.AzureSubscriptionId
         ResourceGroup = [string]$Context.ResourceGroup
         AzLocation = [string]$Context.AzLocation
         VmName = [string]$Context.VmName

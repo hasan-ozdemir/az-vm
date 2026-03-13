@@ -10,8 +10,18 @@ function Invoke-AzVmListCommand {
     $configMap = Read-DotEnvFile -Path $envFilePath
     $requestedTypes = @(Resolve-AzVmListRequestedTypes -Options $Options)
     $resourceGroups = @(Get-AzVmListTargetResourceGroups -Options $Options -ConfigMap $configMap)
+    $subscriptionContext = Get-AzVmResolvedSubscriptionContext
 
     Write-Host "Managed az-vm inventory:" -ForegroundColor Cyan
+    if ($null -ne $subscriptionContext -and -not [string]::IsNullOrWhiteSpace([string]$subscriptionContext.SubscriptionId)) {
+        $subscriptionDisplay = if ([string]::IsNullOrWhiteSpace([string]$subscriptionContext.SubscriptionName)) {
+            [string]$subscriptionContext.SubscriptionId
+        }
+        else {
+            ("{0} ({1})" -f [string]$subscriptionContext.SubscriptionName, [string]$subscriptionContext.SubscriptionId)
+        }
+        Write-Host ("- subscription: {0}" -f $subscriptionDisplay)
+    }
     if (@($resourceGroups).Count -eq 0) {
         Write-Host "- No managed resource groups were found."
         return

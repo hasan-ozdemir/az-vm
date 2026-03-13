@@ -236,7 +236,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Za-z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','VM_NAME','company_name','employee_email_address','employee_full_name','AZ_LOCATION',
+        'VM_OS_TYPE','VM_NAME','company_name','employee_email_address','employee_full_name','azure_subscription_id','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
@@ -442,6 +442,13 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedResizeShortHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("-h")
     Assert-True -Condition ([string]$parsedResizeShortHelp.Command -eq "resize") -Message "Resize command with -h parse failed."
     Assert-True -Condition ($parsedResizeShortHelp.Options.ContainsKey("help")) -Message "Resize command -h option was not captured."
+
+    $parsedSubscriptionShort = Parse-AzVmCliArguments -CommandToken "show" -RawArgs @("-s", "11111111-1111-1111-1111-111111111111")
+    Assert-True -Condition ([string]$parsedSubscriptionShort.Command -eq "show") -Message "Subscription short option must preserve the command token."
+    Assert-True -Condition ([string]$parsedSubscriptionShort.Options['subscription-id'] -eq '11111111-1111-1111-1111-111111111111') -Message "Short -s must normalize into subscription-id."
+
+    $parsedSubscriptionInline = Parse-AzVmCliArguments -CommandToken "show" -RawArgs @("-s=22222222-2222-2222-2222-222222222222")
+    Assert-True -Condition ([string]$parsedSubscriptionInline.Options['subscription-id'] -eq '22222222-2222-2222-2222-222222222222') -Message "Inline -s=value must normalize into subscription-id."
 }
 
 Invoke-Test -Name "Task catalog fallback defaults" -Action {
@@ -520,11 +527,149 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
 }
 
 Invoke-Test -Name "Configure and list accept current option contract" -Action {
-    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ 'vm-name' = 'samplevm'; linux = $true }
-    Assert-AzVmCommandOptions -CommandName 'list' -Options @{}
-    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'group,vm' }
-    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'nsg,nsg-rule'; group = 'rg-samplevm-ate1-g1' }
+    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ 'vm-name' = 'samplevm'; linux = $true; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'group,vm'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'nsg,nsg-rule'; group = 'rg-samplevm-ate1-g1'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+}
+
+Invoke-Test -Name "Azure-touching commands accept subscription-id and local-only commands reject it" -Action {
+    $commandOptionCases = @(
+        @{ Command = 'create'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'update'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'configure'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'list'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'show'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'do'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'move'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'resize'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'set'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'exec'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'ssh'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'rdp'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'delete'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111'; target = 'vm' } }
+    )
+    foreach ($case in @($commandOptionCases)) {
+        Assert-AzVmCommandOptions -CommandName ([string]$case.Command) -Options ([hashtable]$case.Options)
+    }
+
+    foreach ($commandName in @('task','help')) {
+        $threw = $false
+        try {
+            Assert-AzVmCommandOptions -CommandName $commandName -Options $subscriptionOptions
+        }
+        catch {
+            $threw = $true
+        }
+        Assert-True -Condition $threw -Message ("Command '{0}' must reject subscription-id." -f [string]$commandName)
+    }
+}
+
+Invoke-Test -Name "Subscription resolver uses CLI then env then active precedence and persists CLI overrides" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-subscription-test-" + [guid]::NewGuid().ToString('N'))
+    $null = New-Item -ItemType Directory -Path $tempRoot -Force
+    $envFilePath = Join-Path $tempRoot '.env'
+    Write-TextFileNormalized -Path $envFilePath -Content "azure_subscription_id=33333333-3333-3333-3333-333333333333" -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
+
+    try {
+        function Get-AzVmRepoRoot { return $tempRoot }
+        function az {
+            $line = @($args) -join ' '
+            $global:LASTEXITCODE = 0
+            if ($line -like 'account list*') {
+                return @'
+[
+  {"id":"11111111-1111-1111-1111-111111111111","name":"cli-sub","tenantId":"tenant-a","isDefault":false},
+  {"id":"33333333-3333-3333-3333-333333333333","name":"env-sub","tenantId":"tenant-b","isDefault":false},
+  {"id":"44444444-4444-4444-4444-444444444444","name":"active-sub","tenantId":"tenant-c","isDefault":true}
+]
+'@
+            }
+            if ($line -like 'account show*') {
+                return '{"id":"44444444-4444-4444-4444-444444444444","name":"active-sub","tenantId":"tenant-c"}'
+            }
+            return ''
+        }
+
+        $cliContext = Initialize-AzVmCommandSubscriptionState -CommandName 'show' -Options @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+        Assert-True -Condition ([string]$cliContext.SubscriptionId -eq '11111111-1111-1111-1111-111111111111') -Message 'CLI subscription must win.'
+        Assert-True -Condition ([string]$cliContext.ResolutionSource -eq 'cli') -Message 'CLI resolution source must be recorded.'
+        $envAfterCli = Read-DotEnvFile -Path $envFilePath
+        Assert-True -Condition ([string]$envAfterCli['azure_subscription_id'] -eq '11111111-1111-1111-1111-111111111111') -Message 'CLI subscription must persist into .env.'
+
+        Set-DotEnvValue -Path $envFilePath -Key 'azure_subscription_id' -Value '33333333-3333-3333-3333-333333333333'
+        $envContext = Initialize-AzVmCommandSubscriptionState -CommandName 'show' -Options @{}
+        Assert-True -Condition ([string]$envContext.SubscriptionId -eq '33333333-3333-3333-3333-333333333333') -Message '.env subscription must win when CLI is absent.'
+        Assert-True -Condition ([string]$envContext.ResolutionSource -eq 'env') -Message '.env resolution source must be recorded.'
+
+        Set-DotEnvValue -Path $envFilePath -Key 'azure_subscription_id' -Value ''
+        $activeContext = Initialize-AzVmCommandSubscriptionState -CommandName 'show' -Options @{}
+        Assert-True -Condition ([string]$activeContext.SubscriptionId -eq '44444444-4444-4444-4444-444444444444') -Message 'Active Azure CLI subscription must be the final fallback.'
+        Assert-True -Condition ([string]$activeContext.ResolutionSource -eq 'active') -Message 'Active resolution source must be recorded.'
+    }
+    finally {
+        foreach ($functionName in @('Get-AzVmRepoRoot','az')) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        Clear-AzVmResolvedSubscriptionContext
+    }
+}
+
+Invoke-Test -Name "Interactive create and update subscription picker stores selected subscription" -Action {
+    $subscriptionRows = @(
+        [pscustomobject]@{ id = '11111111-1111-1111-1111-111111111111'; name = 'default-sub'; tenantId = 'tenant-a'; isDefault = $true },
+        [pscustomobject]@{ id = '22222222-2222-2222-2222-222222222222'; name = 'other-sub'; tenantId = 'tenant-b'; isDefault = $false }
+    )
+
+    try {
+        function Get-AzVmRepoRoot { return $RepoRoot }
+        function Read-DotEnvFile { param([string]$Path) return @{} }
+        function Resolve-AzVmActionPlan { param([string]$CommandName, [hashtable]$Options) return [pscustomobject]@{ Mode='full'; Target='vm-summary'; Actions=@('configure','group','network','vm-deploy','vm-init','vm-update','vm-summary') } }
+        function Get-AzVmAccessibleSubscriptionRows { return @($subscriptionRows) }
+        function Read-Host { param([string]$Prompt) return '2' }
+        function Get-AzVmCliOptionText { param([hashtable]$Options, [string]$Name) if ($Options.ContainsKey($Name)) { return [string]$Options[$Name] } return '' }
+        function Get-AzVmCliOptionBool { param([hashtable]$Options, [string]$Name, [bool]$DefaultValue = $false) return $DefaultValue }
+        function Assert-AzVmCreateAutoOptions { param([hashtable]$Options, [switch]$WindowsFlag, [switch]$LinuxFlag) }
+        function Assert-AzVmUpdateAutoOptions { param([hashtable]$Options, [switch]$WindowsFlag, [switch]$LinuxFlag) }
+        function Resolve-AzVmTargetResourceGroup { param([hashtable]$Options, [switch]$AutoMode, [string]$DefaultResourceGroup, [string]$VmName, [string]$OperationName) return 'rg-samplevm-ate1-g1' }
+        function Resolve-AzVmTargetVmName { param([string]$ResourceGroup, [string]$DefaultVmName, [switch]$AutoMode, [string]$OperationName) return 'samplevm' }
+        function Test-AzVmAzResourceExists { param([string[]]$AzArgs) return $true }
+        function Get-AzVmResourceGroupLocation { param([string]$ResourceGroup) return 'austriaeast' }
+        function Get-AzVmManagedTargetOsType { param([string]$ResourceGroup, [string]$VmName) return 'windows' }
+        function Get-AzVmVmNetworkDescriptor {
+            param([string]$ResourceGroup, [string]$VmName)
+            return [pscustomobject]@{
+                VnetName = 'net-samplevm-ate1-n1'
+                SubnetName = 'subnet-samplevm-ate1-n1'
+                NsgName = 'nsg-samplevm-ate1-n1'
+                PublicIpName = 'ip-samplevm-ate1-n1'
+                NicName = 'nic-samplevm-ate1-n1'
+                OsDiskName = 'disk-samplevm-ate1-n1'
+            }
+        }
+
+        Set-AzVmResolvedSubscriptionContext -SubscriptionId '11111111-1111-1111-1111-111111111111' -SubscriptionName 'default-sub' -TenantId 'tenant-a' -ResolutionSource 'active'
+        $createRuntime = New-AzVmCreateCommandRuntime -Options @{} -WindowsFlag:$false -LinuxFlag:$false -AutoMode:$false
+        Assert-True -Condition ([string]$createRuntime.InitialConfigOverrides['azure_subscription_id'] -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive create must persist the selected subscription id.'
+        Assert-True -Condition ([string](Get-AzVmResolvedSubscriptionContext).SubscriptionId -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive create must update the active subscription context.'
+
+        Set-AzVmResolvedSubscriptionContext -SubscriptionId '11111111-1111-1111-1111-111111111111' -SubscriptionName 'default-sub' -TenantId 'tenant-a' -ResolutionSource 'active'
+        $updateRuntime = New-AzVmUpdateCommandRuntime -Options @{} -WindowsFlag:$false -LinuxFlag:$false -AutoMode:$false
+        Assert-True -Condition ([string]$updateRuntime.InitialConfigOverrides['azure_subscription_id'] -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive update must persist the selected subscription id.'
+        Assert-True -Condition ([string](Get-AzVmResolvedSubscriptionContext).SubscriptionId -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive update must update the active subscription context.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot','Read-DotEnvFile','Resolve-AzVmActionPlan','Get-AzVmAccessibleSubscriptionRows','Read-Host','Get-AzVmCliOptionText','Get-AzVmCliOptionBool',
+            'Assert-AzVmCreateAutoOptions','Assert-AzVmUpdateAutoOptions','Resolve-AzVmTargetResourceGroup','Resolve-AzVmTargetVmName','Test-AzVmAzResourceExists',
+            'Get-AzVmResourceGroupLocation','Get-AzVmManagedTargetOsType','Get-AzVmVmNetworkDescriptor'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Clear-AzVmResolvedSubscriptionContext
+    }
 }
 
 Invoke-Test -Name "List rejects invalid type filter" -Action {

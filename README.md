@@ -122,6 +122,7 @@
 ### Prerequisites
 - Windows host with PowerShell and the Azure CLI available.
 - Azure subscription access with permission to create, update, and delete compute and networking resources.
+- Azure CLI sign-in is strictly required for Azure-touching commands. Run `az login` before using `configure`, `create`, `update`, `list`, `show`, `do`, `move`, `resize`, `set`, `exec`, `ssh`, `rdp`, or `delete`.
 - Local Git for the repo workflow and hook support.
 - Python available when the repo-managed pyssh helper is needed.
 
@@ -145,6 +146,7 @@
 2. Set the minimum values:
    - `VM_OS_TYPE`
    - `VM_NAME`
+   - `azure_subscription_id` when you want a repo-local default subscription
    - `AZ_LOCATION`
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
    - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
@@ -154,8 +156,9 @@
 
 ### First End-To-End Run
 ```powershell
+az login
 .\az-vm.cmd configure
-.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
+.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd rdp --vm-name=<vm-name>
 ```
@@ -164,7 +167,7 @@
 ```powershell
 .\az-vm.cmd -h
 .\az-vm.cmd show --group=<resource-group>
-.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
 .\az-vm.cmd task --list --vm-update --windows
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
@@ -172,7 +175,7 @@
 ### Quick Accelerator
 If you want the fastest safe path to value, use this order:
 1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
-2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>`.
+2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
 4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
 5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
@@ -334,10 +337,12 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 - `.env` is the main local working configuration file.
 - Hard-coded defaults are the last fallback and should not be treated as the main operator contract.
 - Sensitive values such as VM passwords must be set explicitly. Placeholder values are treated as invalid configuration.
+- Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
 
 ### High-Value `.env` Keys
 - `VM_OS_TYPE`: default platform for auto flows.
 - `VM_NAME`: actual Azure VM name and the naming seed for derived resources.
+- `azure_subscription_id`: optional repo-local default Azure subscription id for Azure-touching commands.
 - `company_name`: required for the Windows business public desktop shortcut flow and used as the lowercase Chrome `--profile-directory` for repo-managed Windows business web shortcuts.
 - `employee_email_address`: required for the Windows public desktop shortcut flow and used to derive the lowercase Chrome `--profile-directory` for repo-managed Windows personal web shortcuts by taking the email local-part before `@`.
 - `employee_full_name`: required Windows operator identity metadata for the public desktop shortcut contract.
@@ -387,7 +392,9 @@ Shared post-deploy feature intent comes from `.env` keys `VM_ENABLE_HIBERNATION`
 - `--auto[=true|false]`: unattended create/update/delete.
 - `--perf[=true|false]`: timing output.
 - `--windows`, `--linux`: force platform for supported commands.
+- `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`.
 - `-h`, `--help`: show overview or command-specific help.
+- Azure-touching commands require `az login`.
 
 ### `configure`
 Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.
@@ -403,6 +410,7 @@ Typical usage:
 What to expect:
 - interactive managed RG and VM selection when parameters are omitted
 - actual Azure state drives the persisted `.env` values
+- `--subscription-id` / `-s` targets one Azure subscription; if omitted, configure uses `.env azure_subscription_id` or the active Azure CLI subscription
 - `--windows` and `--linux` act as validation-only platform checks against the real VM
 - stale opposite-platform keys are cleared
 - no create, update, or delete Azure mutation
@@ -414,6 +422,7 @@ Usage patterns:
 ```powershell
 .\az-vm.cmd create -h
 .\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
+.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>
 .\az-vm.cmd create --step=network --linux
 .\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
 .\az-vm.cmd create explicit destructive rebuild flow --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
@@ -422,11 +431,13 @@ Usage patterns:
 Operator expectations:
 - validates config before mutation
 - creates one fresh managed resource group and one fresh VM target
+- requires `az login`; interactive mode prompts for Azure subscription first when `--subscription-id` is omitted
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - interactive mode proposes the next globally unique managed `gX` resource group and globally unique managed `nX` resource ids
 - any interactive override for the generated managed resource group still has to be unused and template-compliant
 - interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
 - auto mode requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`
+- CLI `--subscription-id` / `-s` writes `azure_subscription_id` back into `.env`
 - uses `explicit destructive rebuild flow` as the explicit destructive recreate path
 - runs init and update task windows unless the step range slices them out
 - success ends with a summary of the managed VM state
@@ -443,6 +454,7 @@ Usage patterns:
 ```powershell
 .\az-vm.cmd update -h
 .\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
 .\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd update --step=vm-update --windows
 ```
@@ -450,10 +462,12 @@ Usage patterns:
 Operator expectations:
 - keeps the same orchestration model as `create`
 - requires an existing managed resource group and existing VM before it starts
+- requires `az login`; interactive mode prompts for Azure subscription first when `--subscription-id` is omitted
 - interactive mode only selects from existing managed resource groups and existing VM names
 - invalid free-form resource-group or VM-name input is rejected with a corrective hint
 - interactive mode shows configuration first, always shows `vm-summary` last, and uses review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`
 - auto mode requires an explicit platform plus `--group` and `--vm-name`
+- CLI `--subscription-id` / `-s` writes `azure_subscription_id` back into `.env`
 - targets already-managed resources without destructive delete behavior
 - runs `az vm redeploy` for an existing VM during the VM deploy stage
 - useful for post-fix reruns and guest task refreshes
@@ -465,14 +479,14 @@ Usage patterns:
 ```powershell
 .\az-vm.cmd list -h
 .\az-vm.cmd list
-.\az-vm.cmd list --type=group,vm
+.\az-vm.cmd list --type=group,vm -s <subscription-guid>
 .\az-vm.cmd list --type=nsg,nsg-rule --group=<resource-group>
 ```
 
 What users see:
 - deterministic managed inventory sections
 - exact managed resource-group filtering with `--group`
-- read-only output; `.env` selection and synchronization stay in `configure`
+- Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `azure_subscription_id` when it comes from the CLI
 
 ### `show`
 Purpose: print a readable system/configuration inventory for managed resources and VMs.
@@ -481,13 +495,14 @@ Usage patterns:
 ```powershell
 .\az-vm.cmd show -h
 .\az-vm.cmd show
-.\az-vm.cmd show --group=<resource-group>
+.\az-vm.cmd show --group=<resource-group> -s <subscription-guid>
 ```
 
 Good for:
 - pre-mutation inspections
 - post-create or post-move confirmation
 - support and diagnostics snapshots
+- subscription-scoped inspection across the selected Azure subscription
 
 Behavior notes:
 - password-bearing `.env` values are redacted in the rendered report
@@ -519,6 +534,7 @@ Usage patterns:
 
 Behavior notes:
 - if parameters are omitted, the command falls back to interactive group/VM/action selection
+- `--subscription-id` / `-s` scopes the lifecycle action to one Azure subscription
 - mutating actions validate the current power/provisioning state before calling Azure
 - `reapply` calls `az vm reapply` and then prints a refreshed lifecycle snapshot; it stays available even when provisioning is not currently in the succeeded state
 - `hibernate-stop` requires a running VM plus working SSH access, runs `shutdown /h /f` through the repo-managed pyssh path, and waits until the guest is no longer running without Azure deallocation
@@ -559,6 +575,7 @@ Usage patterns:
 
 Behavior notes:
 - direct task runs resolve only the selected VM plus task context
+- `--subscription-id` / `-s` scopes direct task execution to one Azure subscription
 - no broad resource-inventory traversal is needed for direct one-task execution
 - interactive shell mode is used when no task selector is provided
 
@@ -581,6 +598,7 @@ Usage patterns:
 
 Behavior notes:
 - only runs when the target VM is already running
+- `--subscription-id` / `-s` scopes SSH target resolution to one Azure subscription
 - uses current managed VM state and connection settings from config/runtime
 - politely refuses and suggests `az-vm do --vm-action=start` when the VM is not running
 - `--test` performs a non-interactive SSH authentication and `whoami` handshake by using the repo-managed pyssh client instead of opening `ssh.exe`
@@ -598,6 +616,7 @@ Usage patterns:
 
 Behavior notes:
 - only runs when the target VM is already running
+- `--subscription-id` / `-s` scopes RDP target resolution to one Azure subscription
 - stages credentials via `cmdkey` and launches `mstsc.exe`
 - politely refuses and suggests `az-vm do --vm-action=start` when the VM is not running
 - `--test` performs a non-interactive TCP reachability check against the resolved RDP endpoint instead of launching `mstsc.exe`
@@ -608,7 +627,7 @@ Purpose: move a managed VM to another Azure region with a health-gated cutover.
 Usage pattern:
 ```powershell
 .\az-vm.cmd move -h
-.\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral
+.\az-vm.cmd move --group=<resource-group> --vm-name=<vm-name> --vm-region=swedencentral -s <subscription-guid>
 ```
 
 Observed reference timing:
@@ -637,7 +656,7 @@ Purpose: change the VM size or expand the managed OS disk in-place within the cu
 Usage patterns:
 ```powershell
 .\az-vm.cmd resize -h
-.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5
+.\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 -s <subscription-guid>
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=196gb --expand --windows
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=98304mb --expand
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --disk-size=64gb --shrink
@@ -647,6 +666,7 @@ Usage patterns:
 
 Behavior notes:
 - same-region only
+- `--subscription-id` / `-s` scopes resize to one Azure subscription
 - fully specified calls run directly
 - parameterless use falls back to interactive target and size selection
 - `--windows` and `--linux` act as expected-platform assertions
@@ -663,13 +683,14 @@ Supported flags:
 Usage patterns:
 ```powershell
 .\az-vm.cmd set -h
-.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off
+.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off -s <subscription-guid>
 .\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off
 .\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off
 ```
 
 Behavior notes:
 - `set` resolves the target VM directly and does not depend on the heavier Step-1 create/update runtime path.
+- `--subscription-id` / `-s` scopes feature changes to one Azure subscription.
 - Hibernation is changed through Azure.
 - Nested virtualization is governed by VM size, security type, and guest readiness; `--nested-virtualization=on` validates the capability from inside a running VM, while `--nested-virtualization=off` only updates repo desired state.
 - After each successful change, the command syncs the resolved `RESOURCE_GROUP`, `VM_NAME`, and the changed `VM_ENABLE_HIBERNATION` / `VM_ENABLE_NESTED_VIRTUALIZATION` values back into the local `.env` file.
@@ -687,12 +708,13 @@ Supported targets:
 Usage patterns:
 ```powershell
 .\az-vm.cmd delete -h
-.\az-vm.cmd delete --target=group --group=<resource-group> --yes
+.\az-vm.cmd delete --target=group --group=<resource-group> --yes -s <subscription-guid>
 .\az-vm.cmd delete --target=vm --group=<resource-group> --yes
 ```
 
 Behavior notes:
 - destructive by design
+- `--subscription-id` / `-s` scopes deletion to one Azure subscription
 - requires clear target selection
 - `--yes` is for non-interactive confirmation bypass
 

@@ -64,6 +64,18 @@ function New-AzVmUpdateCommandRuntime {
     $actionPlan = Resolve-AzVmActionPlan -CommandName 'update' -Options $Options
     $envFilePath = Join-Path (Get-AzVmRepoRoot) '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
+    $cliSubscriptionId = [string](Get-AzVmCliOptionText -Options $Options -Name 'subscription-id')
+
+    if (-not $AutoMode -and [string]::IsNullOrWhiteSpace([string]$cliSubscriptionId)) {
+        $currentSubscription = Get-AzVmResolvedSubscriptionContext
+        $selectedSubscription = Select-AzVmSubscriptionInteractive -DefaultSubscriptionId ([string]$currentSubscription.SubscriptionId)
+        Set-AzVmResolvedSubscriptionContext `
+            -SubscriptionId ([string]$selectedSubscription.id) `
+            -SubscriptionName ([string]$selectedSubscription.name) `
+            -TenantId ([string]$selectedSubscription.tenantId) `
+            -ResolutionSource 'interactive'
+    }
+
     $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
     $vmNameOverride = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     $vmName = if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) { $vmNameOverride.Trim() } else { [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '') }
@@ -82,6 +94,7 @@ function New-AzVmUpdateCommandRuntime {
     $networkDescriptor = Get-AzVmVmNetworkDescriptor -ResourceGroup $targetResourceGroup -VmName $resolvedVmName
 
     $updateOverrides = @{
+        azure_subscription_id = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
         RESOURCE_GROUP = $targetResourceGroup
         VM_NAME = $resolvedVmName
         AZ_LOCATION = $targetLocation

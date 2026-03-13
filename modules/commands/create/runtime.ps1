@@ -48,6 +48,18 @@ function New-AzVmCreateCommandRuntime {
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $createOverrides = @{}
+    $cliSubscriptionId = [string](Get-AzVmCliOptionText -Options $Options -Name 'subscription-id')
+
+    if (-not $AutoMode -and [string]::IsNullOrWhiteSpace([string]$cliSubscriptionId)) {
+        $currentSubscription = Get-AzVmResolvedSubscriptionContext
+        $selectedSubscription = Select-AzVmSubscriptionInteractive -DefaultSubscriptionId ([string]$currentSubscription.SubscriptionId)
+        Set-AzVmResolvedSubscriptionContext `
+            -SubscriptionId ([string]$selectedSubscription.id) `
+            -SubscriptionName ([string]$selectedSubscription.name) `
+            -TenantId ([string]$selectedSubscription.tenantId) `
+            -ResolutionSource 'interactive'
+        $createOverrides['azure_subscription_id'] = [string]$selectedSubscription.id
+    }
 
     $createVmName = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     if (-not [string]::IsNullOrWhiteSpace([string]$createVmName)) {

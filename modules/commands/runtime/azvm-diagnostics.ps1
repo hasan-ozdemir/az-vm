@@ -238,9 +238,18 @@ function Get-AzVmAzAccountSnapshot {
     $snapshot = [ordered]@{
         SubscriptionName = ""
         SubscriptionId = ""
+        SubscriptionSource = ""
         TenantName = ""
         TenantId = ""
         UserName = ""
+    }
+
+    $resolvedSubscription = Get-AzVmResolvedSubscriptionContext
+    if ($null -ne $resolvedSubscription) {
+        $snapshot.SubscriptionId = [string]$resolvedSubscription.SubscriptionId
+        $snapshot.SubscriptionName = [string]$resolvedSubscription.SubscriptionName
+        $snapshot.TenantId = [string]$resolvedSubscription.TenantId
+        $snapshot.SubscriptionSource = [string]$resolvedSubscription.ResolutionSource
     }
 
     $accountResult = Invoke-AzVmAzCommandWithTimeout `
@@ -264,7 +273,8 @@ function Get-AzVmAzAccountSnapshot {
     if (-not [string]::IsNullOrWhiteSpace($snapshot.TenantId)) {
         $tenantResult = Invoke-AzVmAzCommandWithTimeout `
             -AzArgs @("account", "tenant", "list", "-o", "json", "--only-show-errors") `
-            -TimeoutSeconds 20
+            -TimeoutSeconds 20 `
+            -BypassForcedSubscription
         if (-not $tenantResult.TimedOut -and $tenantResult.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$tenantResult.Output)) {
             $tenantList = ConvertFrom-JsonArrayCompat -InputObject $tenantResult.Output
             foreach ($tenant in @($tenantList)) {
@@ -295,7 +305,8 @@ function Get-AzVmAzAccountSnapshot {
 function Invoke-AzVmAzCommandWithTimeout {
     param(
         [string[]]$AzArgs,
-        [int]$TimeoutSeconds = 15
+        [int]$TimeoutSeconds = 15,
+        [switch]$BypassForcedSubscription
     )
 
     if (-not $AzArgs -or $AzArgs.Count -eq 0) {
@@ -306,12 +317,37 @@ function Invoke-AzVmAzCommandWithTimeout {
         $TimeoutSeconds = 1
     }
 
+    $azExecutable = Get-AzVmAzCliExecutable
+    $resolvedSubscription = Get-AzVmResolvedSubscriptionContext
+    $subscriptionId = ''
+    if (-not $BypassForcedSubscription -and $null -ne $resolvedSubscription -and -not [string]::IsNullOrWhiteSpace([string]$resolvedSubscription.SubscriptionId)) {
+        $subscriptionId = [string]$resolvedSubscription.SubscriptionId
+    }
+
     $job = Start-Job -ScriptBlock {
         param(
+            [string]$AzExecutablePath,
+            [string]$SubscriptionId,
+            [bool]$BypassSubscription,
             [string[]]$InnerArgs
         )
 
-        $outputLines = & az @InnerArgs 2>$null
+        $argList = @($InnerArgs | ForEach-Object { [string]$_ })
+        if (-not $BypassSubscription -and -not [string]::IsNullOrWhiteSpace([string]$SubscriptionId)) {
+            $hasSubscriptionArg = $false
+            foreach ($argValue in @($argList)) {
+                if ([string]::Equals([string]$argValue, '--subscription', [System.StringComparison]::OrdinalIgnoreCase) -or
+                    ([string]$argValue).StartsWith('--subscription=', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $hasSubscriptionArg = $true
+                    break
+                }
+            }
+            if (-not $hasSubscriptionArg) {
+                $argList += @('--subscription', [string]$SubscriptionId)
+            }
+        }
+
+        $outputLines = & $AzExecutablePath @argList 2>$null
         $outputText = ""
         if ($null -ne $outputLines) {
             $outputText = (@($outputLines) -join [Environment]::NewLine)
@@ -321,7 +357,7 @@ function Invoke-AzVmAzCommandWithTimeout {
             ExitCode = [int]$LASTEXITCODE
             Output = [string]$outputText
         }
-    } -ArgumentList (,$AzArgs)
+    } -ArgumentList $azExecutable, $subscriptionId, ([bool]$BypassForcedSubscription), (,$AzArgs)
 
     try {
         $completed = Wait-Job -Job $job -Timeout $TimeoutSeconds
@@ -376,6 +412,7 @@ function Show-AzVmRuntimeConfigurationSnapshot {
     $accountFields = [ordered]@{
         SubscriptionName = "Subscription Name"
         SubscriptionId = "Subscription ID"
+        SubscriptionSource = "Subscription Source"
         TenantName = "Tenant Name"
         TenantId = "Tenant ID"
         UserName = "Account User"
