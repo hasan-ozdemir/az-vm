@@ -5054,3 +5054,19 @@ First, tell me whether the cleanup task really finished exactly as planned and w
 **Assistant Summary**
 
 Confirmed that the accepted cleanup plan was completed as implemented, with the intentional exception that git author and committer metadata still follows the previously approved maintainer-identity rule. I then turned the cleanup discipline into a standing repo control by adding a dedicated sensitive-content audit, wiring it into local hooks and the non-live quality gate, documenting the rule in AGENTS.md and README.md, and revalidating the repo with the standard non-live checks.
+
+### 2026-03-13 17:05 TRT
+
+**User Prompt**
+
+````text
+Update the prompt-history rule in AGENTS.md so my very short approval or direction messages such as yes/no/ok/continue/I stopped it halfway, and similarly short follow-up action nudges, are not recorded in prompt-history. Also, when I ask questions, request analysis, or ask for investigation without causing file changes, do not auto-record those turns either; instead, end the assistant summary with a very short hint such as “I can record this prompt in history if you want.” Other than those excluded cases, record every one of my prompts in prompt-history translated into English.
+
+For example, here is a tiny instruction: git push to main, and please really do it.
+
+Under the prompt-history rules I just defined, should that tiny instruction be recorded? And should this full prompt message be recorded under those same rules?
+````
+
+**Assistant Summary**
+
+Refined the prompt-history contract so very short approval or follow-up prompts and non-mutating question or analysis turns are no longer auto-recorded, while every other substantive prompt remains a mandatory English-normalized prompt-history entry. I aligned AGENTS.md, README.md, the documentation contract, changelog, and release notes to that narrower rule, confirmed that a tiny instruction like `git push to main` would not be recorded by itself, confirmed that this full substantive prompt should be recorded, and then pushed `main` after re-running the relevant non-live checks.

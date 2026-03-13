@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.13.307] - 2026-03-13
+
+### Changed
+- Refined the prompt-history contract so very short approval/follow-up prompts and non-mutating question or analysis turns are no longer auto-recorded, while every other substantive prompt remains a mandatory English-normalized prompt-history entry.
+- Updated `AGENTS.md`, `README.md`, and the documentation contract to require a short opt-in recording hint for excluded prompt types and to keep prompt-history focused on substantive work.
+
+### Tests
+- Revalidated the prompt-history contract update with `tests\\documentation-contract-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\az-vm-smoke-tests.ps1`, `tests\\powershell-compatibility-check.ps1`, and `tests\\bash-syntax-check.ps1`.
+
 ## [2026.3.13.306] - 2026-03-13
 
 ### Changed

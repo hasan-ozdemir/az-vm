@@ -178,12 +178,13 @@ Use these sources in this order when maintaining the repo:
 - Keep changelog and release-notes version labels aligned for the current documented release.
 
 ## Prompt-History Rule
-- For every completed user prompt that causes code or repo file changes, append the user prompt and the assistant's final summary to `docs/prompt-history.md`.
-- For user prompts that do not cause any repo file changes, do not update `docs/prompt-history.md` automatically.
-- For non-mutating prompts, the assistant must answer normally and then ask whether the user wants that prompt recorded in the repo history.
+- Do not auto-record very short approval, confirmation, interruption, or follow-up prompts such as `yes`, `no`, `ok`, `continue`, `I stopped it halfway`, or similarly short action nudges.
+- Do not auto-record non-mutating user prompts that only ask questions, request analysis, or request investigation without causing repo file changes.
+- For those excluded prompt types, the assistant must answer normally and end with a short hint that the prompt can be recorded on request.
+- Record every other completed user prompt in `docs/prompt-history.md`, including substantive repo-changing prompts and substantive operational prompts, together with the assistant's final summary.
 - If the user replies yes or gives another clearly positive confirmation, append the most recent user-assistant dialog to `docs/prompt-history.md` and create the corresponding git commit as a special exception.
 - Maintain full two-way dialog continuity for recorded turns.
-- Do not omit completed turns that changed repo files.
+- Do not omit completed substantive turns that changed repo files.
 - Keep the file appendable, chronologically ordered, and human-readable.
 - Record prompt-history entries in English.
 - If the original user prompt or assistant summary is not English, translate it to English before recording it in `docs/prompt-history.md`.

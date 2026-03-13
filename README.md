@@ -897,8 +897,10 @@ When a prompt changes repo files:
 - update `docs/prompt-history.md` with the English-normalized prompt and final summary
 
 ### Prompt History Rule
-- Repo-changing prompts must be recorded.
-- Non-mutating prompts are recorded only after explicit user confirmation.
+- Very short approval/confirmation/follow-up prompts are not auto-recorded.
+- Non-mutating questions, analysis requests, and investigation-only prompts are not auto-recorded.
+- All other substantive prompts are recorded.
+- Excluded prompt types are recorded only after explicit user confirmation.
 - Recorded entries are stored in English. If the original dialog was not English, it is translated before recording.
 
 ## Documentation Set

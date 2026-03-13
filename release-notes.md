@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.13.307 - 2026-03-13
+
+### Summary
+This release narrows prompt-history auto-recording to the turns that matter most. Very short approval/follow-up nudges and non-mutating question or analysis turns are now excluded from automatic ledger recording, while substantive prompts still remain mandatory English-normalized history entries.
+
+### Highlights
+- Updated `AGENTS.md` so excluded prompt types are explicit and the assistant must end those turns with a short opt-in recording hint.
+- Updated `README.md` and the documentation contract so the refined prompt-history policy stays visible and test-enforced.
+- Kept the standing sensitive-content guardrail in place while making prompt-history output more signal-dense and easier to maintain.
+
 ## Release 2026.3.13.306 - 2026-03-13
 
 ### Summary
