@@ -1102,6 +1102,7 @@ $anyDeskExe = Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates
     'C:\Program Files (x86)\AnyDesk\AnyDesk.exe'
 )
 $codexAppExe = Resolve-AppPackageExecutablePath -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0') -ExecutableName 'Codex.exe'
+$teamsAppId = Resolve-StoreAppId -NameFragment 'teams' -PackageNameHints @('MSTeams', 'MicrosoftTeams', 'teams')
 $codexAppId = Resolve-StoreAppId -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0')
 
 $hostStartupProfile = @(Convert-Base64JsonToObjectArray -Base64Text $hostStartupProfileJsonBase64)
@@ -1161,10 +1162,10 @@ $supportedSpecs = [ordered]@{
     'teams' = [pscustomobject]@{
         Name = 'Teams'
         OwnedNames = @('Teams')
-        TargetPath = if (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { $teamsExe } else { $cmdExe }
-        Arguments = if (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { 'msteams:system-initiated' } else { '/c start "" ms-teams.exe msteams:system-initiated' }
-        WorkingDirectory = if (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { Split-Path -Path $teamsExe -Parent } else { 'C:\Users' }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$teamsExe)) { '' } else { "$teamsExe,0" }
+        TargetPath = if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) { $explorerExe } elseif (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { $teamsExe } else { $cmdExe }
+        Arguments = if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) { ("shell:AppsFolder\" + $teamsAppId) } elseif (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { 'msteams:system-initiated' } else { '/c start "" ms-teams.exe msteams:system-initiated' }
+        WorkingDirectory = if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) { 'C:\Windows' } elseif (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { Split-Path -Path $teamsExe -Parent } else { 'C:\Users' }
+        IconLocation = if (-not [string]::IsNullOrWhiteSpace([string]$teamsExe)) { "$teamsExe,0" } else { "$explorerExe,0" }
     }
     'itunes-helper' = [pscustomobject]@{
         Name = 'iTunesHelper'

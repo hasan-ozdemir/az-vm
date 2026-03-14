@@ -3,6 +3,32 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.14.311] - 2026-03-14
+
+### Added
+- Added `modules/core/tasks/azvm-store-install-state.psm1` as a shared one-shot Store-install helper module for Windows vm-update tasks, including centralized PATH refresh, portable `winget` resolution, explicit Store install-state persistence, and stale RunOnce cleanup helpers.
+- Added `tests/retro-log-audit.ps1` so the repo can deterministically rescan the historical `az-vm-log-*.txt` transcript set for known noisy or degraded patterns during future maintenance passes.
+
+### Changed
+- Reworked the Store-backed Windows install tasks (`117`, `121`, `126`, `131`) so they now use one explicit one-shot install-state contract instead of leaving any next-boot or next-sign-in repair work behind.
+- Updated `10001-configure-apps-startup.ps1` so Teams startup now uses the same packaged-app launch contract as the healthy Store shortcut surface, preferring `explorer.exe shell:AppsFolder\<AUMID>` over brittle executable guesses.
+- Updated `10002-create-shortcuts-public-desktop.ps1` so Store-backed shortcut generation can trust the recorded install-state launch contract when a later resolver cannot rediscover the same app-id or executable path immediately, which keeps shortcut eligibility aligned with the install task outcome.
+- Updated `10099-capture-snapshot-health.ps1` so the late health report now reads back the shared Store install-state ledger, reports the current Store-install classification for the affected apps, and inventories the richer Docker/Teams/iCloud/shortcut state after the retro-log hardening pass.
+- Updated the SSH vm-update runner so final stage summaries now distinguish task-level signal warnings from outright failures and no longer hide in-task warning signals behind a misleading all-green summary.
+- Implemented Linux app-state replay support in the shared plugin manager for the supported file-copy contract, replacing the old placeholder warning that Linux replay was not implemented.
+
+### Fixed
+- Eliminated the remaining `refreshenv.cmd` / `wmic` transcript noise in the touched SSH task flows by centralizing PATH refresh through the shared Store helper and protocol-side benign-output normalization.
+- Fixed Python install verification so `103-install-python-system.ps1` now pins a real Python executable path and avoids Windows Store alias noise during verification.
+- Fixed the iCloud health contract so install-state, shortcut eligibility, and health reporting now use a tighter launch-ready predicate and a consistent recorded launch contract instead of treating package registration alone as success.
+- Fixed `10005-copy-settings-user.ps1` so every emitted skip condition now contributes to the same skip-evidence ledger, which keeps the summary consistent with the detailed skip lines.
+- Fixed local JAWS autostart verification so `1005-verify-autostart-jaws.ps1` now performs a bounded repair-and-reverify pass before deciding whether a warning is still necessary.
+- Fixed Windows Store banner normalization so the repeated benign Microsoft Store seizure warning no longer pollutes SSH task transcripts.
+
+### Tests
+- Revalidated the non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, `tests\\pre-commit-release-doc-check.ps1`, and `tests\\retro-log-audit.ps1`.
+- Revalidated the touched live Windows tasks in isolation on `rg-bizyum-ate1-g2 / bizyum` with `exec --update-task=103`, `114`, `117`, `118`, `121`, `126`, `131`, `10001`, `10002`, `10005`, `10099`, plus local-only `1004` and `1005`, confirming the one-shot Store-install path, Teams startup, iCloud shortcut recovery, Docker readiness, and JAWS autostart repair.
+
 ## [2026.3.14.310] - 2026-03-14
 
 ### Added

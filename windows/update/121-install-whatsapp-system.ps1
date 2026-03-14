@@ -1,42 +1,45 @@
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-whatsapp-system"
 
+Import-Module 'C:\Windows\Temp\az-vm-store-install-state.psm1' -Force -DisableNameChecking
+
 $taskConfig = [ordered]@{
+    TaskName = '121-install-whatsapp-system'
+    PackageId = '9NKSQGP7F2NH'
+    LegacyRunOnceName = 'AzVmInstallWhatsApp'
     WingetInstallTimeoutSeconds = 60
     LogTailLineCount = 20
 }
 
-function Refresh-SessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`""
+function Resolve-WhatsAppAppId {
+    if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        return ''
     }
 
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace($userPath)) {
-        $env:Path = $machinePath
+    $startApps = @(Get-StartApps | Where-Object {
+        $nameText = [string]$_.Name
+        $appIdText = [string]$_.AppID
+        if ([string]::IsNullOrWhiteSpace([string]$nameText) -and [string]::IsNullOrWhiteSpace([string]$appIdText)) {
+            return $false
+        }
+
+        return (
+            $nameText.ToLowerInvariant().Contains('whatsapp') -or
+            $appIdText.ToLowerInvariant().Contains('whatsapp')
+        )
+    })
+
+    foreach ($entry in @($startApps)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
+            return [string]$entry.AppID
+        }
     }
-    else {
-        $env:Path = "$machinePath;$userPath"
-    }
+
+    return ''
 }
 
-function Resolve-WingetExe {
-    $portableCandidate = "C:\ProgramData\az-vm\tools\winget-x64\winget.exe"
-    if (Test-Path -LiteralPath $portableCandidate) {
-        return [string]$portableCandidate
-    }
-
-    $cmd = Get-Command winget -ErrorAction SilentlyContinue
-    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
-        return [string]$cmd.Source
-    }
-
-    return ""
-}
-
-function Test-WhatsAppInstalledFast {
+function Resolve-WhatsAppExecutable {
     $packages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
         $pkgName = [string]$_.Name
         $pkgFamily = [string]$_.PackageFamilyName
@@ -48,56 +51,83 @@ function Test-WhatsAppInstalledFast {
         $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
         return ($pkgNameLower.Contains('whatsapp') -or $pkgFamilyLower.Contains('whatsapp'))
     })
+
+    foreach ($package in @($packages)) {
+        $installLocation = [string]$package.InstallLocation
+        if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+            continue
+        }
+
+        foreach ($candidate in @(
+            (Join-Path $installLocation 'WhatsApp.Root.exe'),
+            (Join-Path $installLocation 'app\WhatsApp.exe'),
+            (Join-Path $installLocation 'WhatsApp.exe')
+        )) {
+            if (Test-Path -LiteralPath $candidate) {
+                return [string]$candidate
+            }
+        }
+    }
+
+    return ''
+}
+
+function Get-WhatsAppInstallState {
+    param([string]$WingetExe)
+
+    $resolvedExe = Resolve-WhatsAppExecutable
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedExe)) {
+        return [pscustomobject]@{
+            Healthy = $true
+            LaunchKind = 'executable'
+            LaunchTarget = [string]$resolvedExe
+            DetectionSource = 'executable'
+        }
+    }
+
+    $appId = Resolve-WhatsAppAppId
+    if (-not [string]::IsNullOrWhiteSpace([string]$appId)) {
+        return [pscustomobject]@{
+            Healthy = $true
+            LaunchKind = 'app-id'
+            LaunchTarget = [string]$appId
+            DetectionSource = 'app-id'
+        }
+    }
+
+    $packages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
+        ([string]$_.Name).ToLowerInvariant().Contains('whatsapp') -or
+        ([string]$_.PackageFamilyName).ToLowerInvariant().Contains('whatsapp')
+    })
     if (@($packages).Count -gt 0) {
-        return $true
+        return [pscustomobject]@{
+            Healthy = $false
+            LaunchKind = 'package-only'
+            LaunchTarget = [string]$packages[0].PackageFamilyName
+            DetectionSource = 'package'
+        }
     }
 
-    $startApps = @()
-    if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
-        $startApps = @(Get-StartApps | Where-Object { ([string]$_.Name).ToLowerInvariant().Contains("whatsapp") })
-    }
-    if (@($startApps).Count -gt 0) {
-        return $true
-    }
-
-    return $false
-}
-
-function Test-WhatsAppInstalled {
-    if (Test-WhatsAppInstalledFast) {
-        return $true
+    if (-not [string]::IsNullOrWhiteSpace([string]$WingetExe)) {
+        Write-Host 'Running: winget list whatsapp'
+        $listOutput = & $WingetExe list whatsapp
+        $listText = [string]($listOutput | Out-String)
+        if (-not [string]::IsNullOrWhiteSpace([string]$listText) -and $listText.ToLowerInvariant().Contains('whatsapp')) {
+            return [pscustomobject]@{
+                Healthy = $false
+                LaunchKind = 'listed-only'
+                LaunchTarget = 'winget-list'
+                DetectionSource = 'winget'
+            }
+        }
     }
 
-    Write-Host "Running: winget list whatsapp"
-    $listOutput = & $wingetExe list whatsapp
-    $listText = [string]($listOutput | Out-String)
-    if (-not [string]::IsNullOrWhiteSpace($listText) -and $listText.ToLowerInvariant().Contains("whatsapp")) {
-        return $true
+    return [pscustomobject]@{
+        Healthy = $false
+        LaunchKind = ''
+        LaunchTarget = ''
+        DetectionSource = 'none'
     }
-
-    return $false
-}
-
-function Register-WhatsAppDeferredInstall {
-    param([string]$WingetPath)
-
-    $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-    if (-not (Test-Path -LiteralPath $runOncePath)) {
-        New-Item -Path $runOncePath -Force | Out-Null
-    }
-
-    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"' -f $WingetPath)
-    Set-ItemProperty -Path $runOncePath -Name "AzVmInstallWhatsApp" -Value $commandValue -Type String
-}
-
-function Test-WhatsAppDeferredInstallRegistered {
-    $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
-    if (-not (Test-Path -LiteralPath $runOncePath)) {
-        return $false
-    }
-
-    $property = Get-ItemProperty -Path $runOncePath -Name "AzVmInstallWhatsApp" -ErrorAction SilentlyContinue
-    return ($null -ne $property -and -not [string]::IsNullOrWhiteSpace([string]$property.AzVmInstallWhatsApp))
 }
 
 function Get-LogTailText {
@@ -165,29 +195,32 @@ function Invoke-ProcessWithTimeout {
     }
 }
 
-Refresh-SessionPath
-$wingetExe = Resolve-WingetExe
+Invoke-AzVmRefreshSessionPath
+$wingetExe = Resolve-AzVmWingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
-    throw "winget command is not available."
+    throw 'winget command is not available.'
 }
 
 Write-Host "Resolved winget executable: $wingetExe"
-if (Test-WhatsAppInstalledFast) {
-    Write-Host "install-whatsapp-system-completed"
-    Write-Host "Update task completed: install-whatsapp-system"
+$existingState = Get-WhatsAppInstallState -WingetExe $wingetExe
+if ([bool]$existingState.Healthy) {
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State installed -Summary ('WhatsApp is launch-ready via {0}.' -f [string]$existingState.DetectionSource) -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName ([string]$taskConfig.TaskName) -StateRecord $stateRecord
+    Write-Host 'install-whatsapp-system-completed'
+    Write-Host 'Update task completed: install-whatsapp-system'
     return
 }
 
-if (Test-WhatsAppDeferredInstallRegistered) {
-    Write-Host "install-whatsapp-system-deferred-already-registered"
-    Write-Host "Update task completed: install-whatsapp-system"
-    return
+if (Test-AzVmRunOnceEntryPresent -Name ([string]$taskConfig.LegacyRunOnceName)) {
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    Write-Host 'store-install-cleanup => task=121-install-whatsapp-system; removed-stale-run-once=True'
 }
 
-Write-Host "Running: winget install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
+Write-Host 'Running: winget install --id 9NKSQGP7F2NH --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity'
 $installResult = Invoke-ProcessWithTimeout `
     -FilePath $wingetExe `
-    -ArgumentList @('install', '--id', '9NKSQGP7F2NH', '--source', 'msstore', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+    -ArgumentList @('install', '--id', ([string]$taskConfig.PackageId), '--source', 'msstore', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
     -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
     -Label 'winget-install-whatsapp-system'
 $installExit = [int]$installResult.ExitCode
@@ -203,33 +236,32 @@ if (-not [string]::IsNullOrWhiteSpace([string]$installText)) {
     Write-Host $installText.TrimEnd()
 }
 
-if (Test-WhatsAppInstalled) {
-    Write-Host "install-whatsapp-system-completed"
-    Write-Host "Update task completed: install-whatsapp-system"
+Invoke-AzVmRefreshSessionPath
+$postInstallState = Get-WhatsAppInstallState -WingetExe $wingetExe
+if ([bool]$postInstallState.Healthy) {
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State installed -Summary ('WhatsApp is launch-ready via {0}.' -f [string]$postInstallState.DetectionSource) -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName ([string]$taskConfig.TaskName) -StateRecord $stateRecord
+    Write-Host 'install-whatsapp-system-completed'
+    Write-Host 'Update task completed: install-whatsapp-system'
     return
 }
 
-$canDefer = (
-    [bool]$installResult.TimedOut -or
-    ($installText -match '(?i)0x80070520|logon session|microsoft store|msstore|interactive')
-)
+$canDefer = Test-AzVmStoreInstallNeedsInteractiveCompletion -MessageText $installText -TimedOut ([bool]$installResult.TimedOut)
 if ($canDefer) {
-    Register-WhatsAppDeferredInstall -WingetPath $wingetExe
-    if ([bool]$installResult.TimedOut) {
-        Write-Warning "WhatsApp install exceeded the bounded noninteractive wait. A RunOnce install was registered for the next interactive sign-in."
-        Write-Host "install-whatsapp-system-deferred-timeout"
-    }
-    else {
-        Write-Warning "WhatsApp install could not complete in the current noninteractive session. A RunOnce install was registered for the next interactive sign-in."
-    }
-    Write-Host "install-whatsapp-system-deferred"
-    Write-Host "Update task completed: install-whatsapp-system"
-    return
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    $summary = if ([bool]$installResult.TimedOut) { 'WhatsApp install exceeded the bounded noninteractive wait and no next-boot follow-up was scheduled.' } else { 'WhatsApp install requires an interactive Store-capable session and no next-boot follow-up was scheduled.' }
+    $stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State degraded -Summary $summary -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName ([string]$taskConfig.TaskName) -StateRecord $stateRecord
+    throw 'WhatsApp install requires an interactive Store-capable session and cannot be deferred to a later boot.'
 }
 
 if ($installExit -ne 0 -and $installExit -ne -1978335189) {
+    $stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State degraded -Summary ("WhatsApp install failed with exit code {0}." -f $installExit) -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName ([string]$taskConfig.TaskName) -StateRecord $stateRecord
     throw ("winget install whatsapp failed with exit code {0}. stdoutLog={1}; stderrLog={2}" -f $installExit, [string]$installResult.StdoutLog, [string]$installResult.StderrLog)
 }
 
-Write-Host "install-whatsapp-system-completed"
-Write-Host "Update task completed: install-whatsapp-system"
+$stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State degraded -Summary ('WhatsApp is present but not yet launch-ready via a stable executable or AppID ({0}).' -f [string]$postInstallState.DetectionSource) -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
+Write-AzVmStoreInstallStateStatusLine -TaskName ([string]$taskConfig.TaskName) -StateRecord $stateRecord
+throw 'WhatsApp install could not be verified.'

@@ -1,20 +1,42 @@
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-python-system"
 
-function Refresh-SessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`""
+Import-Module 'C:\Windows\Temp\az-vm-store-install-state.psm1' -Force -DisableNameChecking
+
+function Resolve-PythonCommandPath {
+    foreach ($candidatePath in @(
+        'C:\Python312\python.exe',
+        'C:\Python312\Scripts\python.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidatePath) {
+            return [string]$candidatePath
+        }
     }
 
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace($userPath)) {
-        $env:Path = $machinePath
+    foreach ($commandName in @('python', 'py')) {
+        $command = Get-Command $commandName -ErrorAction SilentlyContinue
+        if ($null -eq $command -or [string]::IsNullOrWhiteSpace([string]$command.Source)) {
+            continue
+        }
+
+        $resolvedPath = [string]$command.Source
+        if (-not [System.IO.Path]::IsPathRooted($resolvedPath)) {
+            continue
+        }
+
+        if (-not (Test-Path -LiteralPath $resolvedPath)) {
+            continue
+        }
+
+        if ($resolvedPath.ToLowerInvariant().Contains('\microsoft\windowsapps\')) {
+            continue
+        }
+
+        return [string]$resolvedPath
     }
-    else {
-        $env:Path = "$machinePath;$userPath"
-    }
+
+    return ''
 }
 
 $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
@@ -22,9 +44,10 @@ if (-not (Test-Path -LiteralPath $chocoExe)) {
     throw "choco was not found."
 }
 
-Refresh-SessionPath
+$pythonCommandPath = ''
+Invoke-AzVmRefreshSessionPath
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+if ([string]::IsNullOrWhiteSpace([string](Resolve-PythonCommandPath))) {
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $entries = @()
     if (-not [string]::IsNullOrWhiteSpace($machinePath)) {
@@ -36,12 +59,14 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
         }
     }
     [Environment]::SetEnvironmentVariable("Path", ($entries -join ';'), "Machine")
-    Refresh-SessionPath
+    Invoke-AzVmRefreshSessionPath
 }
 
-if (Get-Command python -ErrorAction SilentlyContinue) {
+$pythonCommandPath = Resolve-PythonCommandPath
+if (-not [string]::IsNullOrWhiteSpace([string]$pythonCommandPath)) {
     Write-Host "Existing Python installation is already healthy. Skipping choco install."
-    python --version
+    Write-Host ("python-command-path => {0}" -f [string]$pythonCommandPath)
+    & $pythonCommandPath --version
     Write-Host "Update task completed: install-python-system"
     return
 }
@@ -51,11 +76,13 @@ if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 2) {
     throw "choco install python312 failed with exit code $LASTEXITCODE."
 }
 
-Refresh-SessionPath
+Invoke-AzVmRefreshSessionPath
 
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw "python command was not found after installation."
+$pythonCommandPath = Resolve-PythonCommandPath
+if ([string]::IsNullOrWhiteSpace([string]$pythonCommandPath)) {
+    throw "python executable was not found after installation."
 }
 
-python --version
+Write-Host ("python-command-path => {0}" -f [string]$pythonCommandPath)
+& $pythonCommandPath --version
 Write-Host "Update task completed: install-python-system"

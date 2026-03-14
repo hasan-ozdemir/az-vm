@@ -236,6 +236,7 @@ function Stop-LoggedOnUserSessions {
             Write-Detail ("copy-settings-user-session-logoff: {0} => {1}" -f $UserName, $sessionId)
         }
         catch {
+            Add-CopySkipEvidence -Reason 'session-logoff-failed' -Label $UserName -Path ([string]$sessionId)
             Write-Detail ("copy-settings-user-session-logoff-skip: {0} => {1}" -f $sessionId, $_.Exception.Message)
         }
     }
@@ -391,6 +392,7 @@ function Copy-RegistryBranchWithRegExe {
     )
 
     if (-not (Test-Path -LiteralPath $SourcePath)) {
+        Add-CopySkipEvidence -Reason 'missing-registry-source' -Label $Label -Path $SourcePath
         Write-Detail ("copy-settings-user-registry-skip: {0}" -f $Label)
         return
     }
@@ -442,6 +444,7 @@ function Copy-RegistryBranch {
     }
 
     if (Test-RegistryRelativePathExcluded -RelativePath $RelativePath -ExcludedPrefixes $ExcludedPrefixes) {
+        Add-CopySkipEvidence -Reason 'excluded-registry-branch' -Label $RelativePath -Path $SourcePath
         Write-Detail ("copy-settings-user-registry-skip: {0}" -f $RelativePath)
         return
     }
@@ -472,6 +475,7 @@ function Copy-RegistryBranch {
                 Set-AzVmRegistryValue -Path $TargetPath -Name $valueName -Value $valueData -Kind $valueKind
             }
             catch {
+                Add-CopySkipEvidence -Reason 'registry-value-skip' -Label $valueName -Path ("{0}\{1}" -f $SourcePath, $valueName)
                 Write-Detail ("copy-settings-user-registry-value-skip: {0}\{1} => {2}" -f $SourcePath, $valueName, $_.Exception.Message)
             }
         }
@@ -979,14 +983,15 @@ function Assert-TaskManagerSettingsCopied {
 
     $sourceSettingsPath = Join-Path $SourceProfilePath 'AppData\Local\Microsoft\Windows\TaskManager\settings.json'
     $settingsPath = Join-Path $ProfilePath 'AppData\Local\Microsoft\Windows\TaskManager\settings.json'
-    if (-not (Test-Path -LiteralPath $sourceSettingsPath)) {
-        if (Test-Path -LiteralPath $settingsPath) {
-            throw ("Task Manager settings were copied unexpectedly for {0}: source is absent but target exists." -f $Label)
-        }
+        if (-not (Test-Path -LiteralPath $sourceSettingsPath)) {
+            if (Test-Path -LiteralPath $settingsPath) {
+                throw ("Task Manager settings were copied unexpectedly for {0}: source is absent but target exists." -f $Label)
+            }
 
-        Write-Detail ("copy-settings-user-task-manager-skip: source store missing => {0}" -f $Label)
-        return
-    }
+            Add-CopySkipEvidence -Reason 'missing-task-manager-source' -Label $Label -Path $sourceSettingsPath
+            Write-Detail ("copy-settings-user-task-manager-skip: source store missing => {0}" -f $Label)
+            return
+        }
 
     if (-not (Test-Path -LiteralPath $settingsPath)) {
         throw ("Task Manager settings were not copied for {0}: {1}" -f $Label, $settingsPath)
@@ -1098,9 +1103,11 @@ function Get-ProfileCopySpecs {
         (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'copilot.cmd'))
     )
     if ([string]::Equals([string]$Label, 'default-profile', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-CopySkipEvidence -Reason 'npm-copy-skip-default-profile' -Label $Label -Path (Join-Path $SourceProfilePath 'AppData\Roaming\npm')
         Write-Detail 'copy-settings-user-file-skip: default-profile roaming npm'
     }
     elseif ($targetNpmReady) {
+        Add-CopySkipEvidence -Reason 'npm-already-synchronized' -Label $Label -Path $targetNpmRoot
         Write-Detail ("copy-settings-user-file-skip: {0} roaming npm already-synchronized" -f $Label)
     }
     else {
@@ -1193,6 +1200,7 @@ function Invoke-ClassesHiveRegCopy {
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
+        Add-CopySkipEvidence -Reason 'missing-classes-hive' -Label $Label -Path $HiveFilePath
         Write-Detail ("copy-settings-user-classes-skip: {0}" -f $Label)
         return
     }
@@ -1210,6 +1218,7 @@ function Invoke-ClassesHiveRegCopy {
         )) {
             $sourceRegPath = "HKEY_CURRENT_USER\Software\Classes\{0}" -f $branch
             if (-not (Test-RegExeBranchExists -Path $sourceRegPath)) {
+                Add-CopySkipEvidence -Reason 'missing-classes-registry-branch' -Label ("{0}:classes:{1}" -f $Label, $branch) -Path $sourceRegPath
                 Write-Detail ("copy-settings-user-registry-skip: {0}:classes:{1}" -f $Label, $branch)
                 continue
             }
@@ -1268,6 +1277,7 @@ function Invoke-MainHiveRegCopy {
         )) {
             $sourceRegPath = "HKEY_CURRENT_USER\{0}" -f $branch
             if (-not (Test-RegExeBranchExists -Path $sourceRegPath)) {
+                Add-CopySkipEvidence -Reason 'missing-main-registry-branch' -Label ("{0}:{1}" -f $Label, $branch) -Path $sourceRegPath
                 Write-Detail ("copy-settings-user-registry-skip: {0}:{1}" -f $Label, $branch)
                 continue
             }

@@ -43,7 +43,7 @@ function Get-AzVmStartupMirrorAppCatalog {
             Key = 'teams'
             DisplayName = 'Teams'
             MatchNames = @('Teams')
-            MatchCommandFragments = @('ms-teams.exe', 'msteams:system-initiated')
+            MatchCommandFragments = @('ms-teams.exe', 'msteams:system-initiated', 'shell:AppsFolder\\MSTeams_', 'MSTeams_8wekyb3d8bbwe!')
         },
         [pscustomobject]@{
             Key = 'itunes-helper'

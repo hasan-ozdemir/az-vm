@@ -275,6 +275,185 @@ Write-Host 'app-state-replay-completed'
 "@
 }
 
+function Get-AzVmTaskAppStateLinuxGuestScript {
+    param(
+        [string]$TaskName,
+        [string]$RemoteZipPath,
+        [string]$ManagerUser,
+        [string]$AssistantUser
+    )
+
+    $template = @'
+set -euo pipefail
+zip_path='__REMOTE_ZIP_PATH__'
+task_name='__TASK_NAME__'
+manager_user='__MANAGER_USER__'
+assistant_user='__ASSISTANT_USER__'
+scratch_root="$(mktemp -d /tmp/az-vm-app-state.XXXXXX)"
+cleanup() {
+  rm -rf "$scratch_root"
+  rm -f "$zip_path"
+}
+trap cleanup EXIT
+python_bin=''
+if command -v python3 >/dev/null 2>&1; then
+  python_bin="$(command -v python3)"
+elif command -v python >/dev/null 2>&1; then
+  python_bin="$(command -v python)"
+else
+  echo 'WARNING: app-state-linux-skip => python interpreter was not found.'
+  exit 3
+fi
+"$python_bin" - "$zip_path" "$scratch_root" "$task_name" "$manager_user" "$assistant_user" <<'PY'
+import json
+import os
+import shutil
+import sys
+import zipfile
+
+zip_path, scratch_root, task_name, manager_user, assistant_user = sys.argv[1:6]
+
+def warn(message: str) -> None:
+    print(f"WARNING: {message}")
+
+def ensure_dir(path: str) -> None:
+    if path:
+        os.makedirs(path, exist_ok=True)
+
+def copy_file(source_path: str, destination_path: str) -> bool:
+    try:
+        ensure_dir(os.path.dirname(destination_path))
+        shutil.copy2(source_path, destination_path)
+        return True
+    except Exception as exc:
+        warn(f"app-state-file-copy-skip => source={source_path}; destination={destination_path}; reason={exc}")
+        return False
+
+def copy_directory_contents(source_path: str, destination_path: str) -> bool:
+    ensure_dir(destination_path)
+    copied_any = False
+    for child_name in sorted(os.listdir(source_path)):
+        source_child = os.path.join(source_path, child_name)
+        destination_child = os.path.join(destination_path, child_name)
+        try:
+            if os.path.isdir(source_child) and not os.path.islink(source_child):
+                shutil.copytree(source_child, destination_child, dirs_exist_ok=True)
+            else:
+                ensure_dir(os.path.dirname(destination_child))
+                shutil.copy2(source_child, destination_child)
+            copied_any = True
+        except Exception as exc:
+            warn(f"app-state-directory-copy-skip => source={source_child}; destination={destination_path}; reason={exc}")
+    return copied_any
+
+with zipfile.ZipFile(zip_path) as archive:
+    archive.extractall(scratch_root)
+
+manifest_path = os.path.join(scratch_root, 'app-state.manifest.json')
+if not os.path.exists(manifest_path):
+    raise RuntimeError(f"App-state manifest was not found in expanded payload: {manifest_path}")
+
+with open(manifest_path, 'r', encoding='utf-8') as handle:
+    manifest = json.load(handle)
+
+if str(manifest.get('taskName', '')).strip().lower() != task_name.strip().lower():
+    raise RuntimeError(f"App-state manifest taskName '{manifest.get('taskName', '')}' does not match task '{task_name}'.")
+
+profile_targets = []
+seen_targets = set()
+for label, user_name, profile_path in (
+    ('manager', manager_user, f"/home/{manager_user}" if manager_user else ''),
+    ('assistant', assistant_user, f"/home/{assistant_user}" if assistant_user else ''),
+    ('default', 'default', '/etc/skel'),
+):
+    if not profile_path or not os.path.isdir(profile_path):
+        continue
+    normalized_path = os.path.normpath(profile_path)
+    if normalized_path in seen_targets:
+        continue
+    profile_targets.append((label, user_name, normalized_path))
+    seen_targets.add(normalized_path)
+
+machine_registry_imports = 0
+user_registry_imports = 0
+machine_directory_copies = 0
+machine_file_copies = 0
+profile_directory_copies = 0
+profile_file_copies = 0
+
+for entry in manifest.get('machineDirectories', []):
+    source_path = os.path.join(scratch_root, str(entry.get('sourcePath', '')))
+    destination_path = str(entry.get('destinationPath', '')).strip()
+    if not os.path.isdir(source_path) or not destination_path:
+        warn(f"app-state-machine-directory-skip => {source_path}")
+        continue
+    if copy_directory_contents(source_path, destination_path):
+        machine_directory_copies += 1
+
+for entry in manifest.get('machineFiles', []):
+    source_path = os.path.join(scratch_root, str(entry.get('sourcePath', '')))
+    destination_path = str(entry.get('destinationPath', '')).strip()
+    if not os.path.isfile(source_path) or not destination_path:
+        warn(f"app-state-machine-file-skip => {source_path}")
+        continue
+    if copy_file(source_path, destination_path):
+        machine_file_copies += 1
+
+for entry in manifest.get('profileDirectories', []):
+    source_path = os.path.join(scratch_root, str(entry.get('sourcePath', '')))
+    relative_destination_path = str(entry.get('relativeDestinationPath', '')).strip()
+    if not os.path.isdir(source_path) or not relative_destination_path:
+        warn(f"app-state-profile-directory-skip => {source_path}")
+        continue
+    for _, _, profile_root in profile_targets:
+        destination_path = os.path.join(profile_root, relative_destination_path)
+        if copy_directory_contents(source_path, destination_path):
+            profile_directory_copies += 1
+
+for entry in manifest.get('profileFiles', []):
+    source_path = os.path.join(scratch_root, str(entry.get('sourcePath', '')))
+    relative_destination_path = str(entry.get('relativeDestinationPath', '')).strip()
+    if not os.path.isfile(source_path) or not relative_destination_path:
+        warn(f"app-state-profile-file-skip => {source_path}")
+        continue
+    for _, _, profile_root in profile_targets:
+        destination_path = os.path.join(profile_root, relative_destination_path)
+        if copy_file(source_path, destination_path):
+            profile_file_copies += 1
+
+for entry in manifest.get('registryImports', []):
+    source_path = os.path.join(scratch_root, str(entry.get('sourcePath', '')))
+    if not os.path.exists(source_path):
+        warn(f"app-state-registry-skip => {source_path}")
+        continue
+    warn(f"app-state-registry-skip => {source_path} => registry replay is ignored on linux")
+
+print(
+    'app-state-summary => task={0}; machine-registry={1}; user-registry={2}; machine-directories={3}; machine-files={4}; profile-directories={5}; profile-files={6}'.format(
+        task_name,
+        machine_registry_imports,
+        user_registry_imports,
+        machine_directory_copies,
+        machine_file_copies,
+        profile_directory_copies,
+        profile_file_copies,
+    )
+)
+print('app-state-replay-completed')
+PY
+'@
+
+    $bashTaskName = [string]$TaskName.Replace("'", "'""'""'")
+    $bashRemoteZipPath = [string]$RemoteZipPath.Replace("'", "'""'""'")
+    $bashManagerUser = [string]$ManagerUser.Replace("'", "'""'""'")
+    $bashAssistantUser = [string]$AssistantUser.Replace("'", "'""'""'")
+    return ($template.
+        Replace('__TASK_NAME__', $bashTaskName).
+        Replace('__REMOTE_ZIP_PATH__', $bashRemoteZipPath).
+        Replace('__MANAGER_USER__', $bashManagerUser).
+        Replace('__ASSISTANT_USER__', $bashAssistantUser))
+}
+
 function Invoke-AzVmTaskAppStatePostProcess {
     param(
         [ValidateSet('windows','linux')]
@@ -310,22 +489,24 @@ function Invoke-AzVmTaskAppStatePostProcess {
         Write-Warning ("App-state warning: {0} => {1}" -f [string]$taskName, [string]$pluginInfo.Message)
         return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = [string]$pluginInfo.Message }
     }
-    if ($Platform -ne 'windows') {
-        Write-Warning ("App-state warning: {0} => linux replay is not implemented yet; plugin was skipped." -f [string]$taskName)
-        return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = 'linux replay is not implemented yet' }
-    }
-
-    $guestHelperPath = [string]$pluginInfo.GuestHelperPath
-    if ([string]::IsNullOrWhiteSpace([string]$guestHelperPath) -or -not (Test-Path -LiteralPath $guestHelperPath)) {
-        Write-Warning ("App-state warning: {0} => guest helper was not found: {1}" -f [string]$taskName, [string]$guestHelperPath)
-        return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = 'guest helper missing' }
-    }
 
     $remoteZipPath = Get-AzVmTaskAppStateRemoteZipPath -TaskName $taskName
     try {
-        Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath 'C:/Windows/Temp/az-vm-app-state-guest.psm1' -ConnectTimeoutSeconds $ConnectTimeoutSeconds
         Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath ([string]$pluginInfo.ZipPath) -RemotePath $remoteZipPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
-        $scriptText = Get-AzVmTaskAppStateGuestScript -TaskName $taskName -RemoteZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
+        $scriptText = ''
+        if ($Platform -eq 'windows') {
+            $guestHelperPath = [string]$pluginInfo.GuestHelperPath
+            if ([string]::IsNullOrWhiteSpace([string]$guestHelperPath) -or -not (Test-Path -LiteralPath $guestHelperPath)) {
+                Write-Warning ("App-state warning: {0} => guest helper was not found: {1}" -f [string]$taskName, [string]$guestHelperPath)
+                return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = 'guest helper missing' }
+            }
+
+            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath 'C:/Windows/Temp/az-vm-app-state-guest.psm1' -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+            $scriptText = Get-AzVmTaskAppStateGuestScript -TaskName $taskName -RemoteZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
+        }
+        else {
+            $scriptText = Get-AzVmTaskAppStateLinuxGuestScript -TaskName $taskName -RemoteZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
+        }
         $scriptTimeout = $TimeoutSeconds
         if ($scriptTimeout -lt 60) { $scriptTimeout = 60 }
         if ($scriptTimeout -gt 600) { $scriptTimeout = 600 }

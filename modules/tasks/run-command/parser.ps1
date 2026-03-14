@@ -15,7 +15,8 @@ function Test-AzVmBenignRunCommandStdErr {
     $normalized = $normalized -replace "`n", " "
 
     $benignPatterns = @(
-        "(?i)'wmic'\s+is\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command"
+        "(?i)'wmic'\s+is\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command",
+        '(?i)^Seizure Warning:\s*https://aka\.ms/microsoft-store-seizure-warning'
     )
 
     foreach ($pattern in $benignPatterns) {

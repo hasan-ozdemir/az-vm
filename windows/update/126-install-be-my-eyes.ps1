@@ -1,3 +1,4 @@
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-be-my-eyes"
 
@@ -6,10 +7,11 @@ $taskConfig = [ordered]@{
     ManagerUser = '__VM_ADMIN_USER__'
     ManagerPassword = '__VM_ADMIN_PASS__'
     HelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
+    StoreHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
     PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
     StoreProductId = '9MSW46LTDWGF'
     InteractiveTaskSuffix = 'interactive-install'
-    DeferredRunOnceName = 'AzVmInstallBeMyEyes'
+    LegacyRunOnceName = 'AzVmInstallBeMyEyes'
     WaitTimeoutSeconds = 240
     StoreSessionErrorRegex = '(?i)0x80070520|logon session|microsoft store|msstore'
 }
@@ -23,82 +25,98 @@ $storeProductId = [string]$taskConfig.StoreProductId
 if (-not (Test-Path -LiteralPath $helperPath)) {
     throw ("Interactive session helper was not found: {0}" -f $helperPath)
 }
+if (-not (Test-Path -LiteralPath ([string]$taskConfig.StoreHelperPath))) {
+    throw ("Store install state helper was not found: {0}" -f [string]$taskConfig.StoreHelperPath)
+}
 
 . $helperPath
+Import-Module ([string]$taskConfig.StoreHelperPath) -Force -DisableNameChecking
 
-function Refresh-SessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
+function Resolve-BeMyEyesAppId {
+    if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        return ''
     }
 
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
-        $env:Path = $machinePath
-    }
-    else {
-        $env:Path = "$machinePath;$userPath"
-    }
-}
+    $startApps = @(Get-StartApps | Where-Object {
+        $nameText = [string]$_.Name
+        $appIdText = [string]$_.AppID
+        if ([string]::IsNullOrWhiteSpace([string]$nameText) -and [string]::IsNullOrWhiteSpace([string]$appIdText)) {
+            return $false
+        }
 
-function Resolve-WingetExe {
-    $portableCandidate = [string]$taskConfig.PortableWingetPath
-    if (Test-Path -LiteralPath $portableCandidate) {
-        return [string]$portableCandidate
-    }
-
-    $cmd = Get-Command winget -ErrorAction SilentlyContinue
-    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
-        return [string]$cmd.Source
-    }
-
-    return ""
-}
-
-function Test-BeMyEyesInstalled {
-    $startApps = @()
-    if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
-        $startApps = @(Get-StartApps | Where-Object { ([string]$_.Name).ToLowerInvariant().Contains("be my eyes") })
-    }
-    if (@($startApps).Count -gt 0) {
-        return $true
-    }
-
-    $packages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
-        ([string]$_.Name).ToLowerInvariant().Contains("bemyeyes") -or
-        ([string]$_.Name).ToLowerInvariant().Contains("be my eyes") -or
-        ([string]$_.PackageFamilyName).ToLowerInvariant().Contains("bemyeyes")
+        return (
+            $nameText.ToLowerInvariant().Contains('be my eyes') -or
+            $appIdText.ToLowerInvariant().Contains('bemyeyes')
+        )
     })
+
+    foreach ($entry in @($startApps)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
+            return [string]$entry.AppID
+        }
+    }
+
+    return ''
+}
+
+function Get-BeMyEyesPackages {
+    return @(
+        Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
+            ([string]$_.Name).ToLowerInvariant().Contains('bemyeyes') -or
+            ([string]$_.Name).ToLowerInvariant().Contains('be my eyes') -or
+            ([string]$_.PackageFamilyName).ToLowerInvariant().Contains('bemyeyes')
+        }
+    )
+}
+
+function Get-BeMyEyesInstallState {
+    $appId = Resolve-BeMyEyesAppId
+    if (-not [string]::IsNullOrWhiteSpace([string]$appId)) {
+        return [pscustomobject]@{
+            Healthy = $true
+            LaunchKind = 'app-id'
+            LaunchTarget = [string]$appId
+            DetectionSource = 'app-id'
+        }
+    }
+
+    $packages = @(Get-BeMyEyesPackages)
     if (@($packages).Count -gt 0) {
-        return $true
+        return [pscustomobject]@{
+            Healthy = $false
+            LaunchKind = 'package-only'
+            LaunchTarget = [string]$packages[0].PackageFamilyName
+            DetectionSource = 'package'
+        }
     }
 
-    return $false
-}
-
-function Register-BeMyEyesDeferredInstall {
-    param([string]$WingetPath)
-
-    $runOncePath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce'
-    if (-not (Test-Path -LiteralPath $runOncePath)) {
-        New-Item -Path $runOncePath -Force | Out-Null
+    return [pscustomobject]@{
+        Healthy = $false
+        LaunchKind = ''
+        LaunchTarget = ''
+        DetectionSource = 'none'
     }
-
-    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& ''{0}'' install --id {1} --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"' -f $WingetPath, $storeProductId)
-    Set-ItemProperty -Path $runOncePath -Name ([string]$taskConfig.DeferredRunOnceName) -Value $commandValue -Type String
 }
 
-Refresh-SessionPath
-if (Test-BeMyEyesInstalled) {
-    Write-Host "install-be-my-eyes-completed"
-    Write-Host "Update task completed: install-be-my-eyes"
+Invoke-AzVmRefreshSessionPath
+$existingState = Get-BeMyEyesInstallState
+if ([bool]$existingState.Healthy) {
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State installed -Summary ('Be My Eyes is launch-ready via {0}.' -f [string]$existingState.DetectionSource) -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+    Write-Host 'install-be-my-eyes-completed'
+    Write-Host 'Update task completed: install-be-my-eyes'
     return
 }
 
-$wingetExe = Resolve-WingetExe
+$wingetExe = Resolve-AzVmWingetExe -PortableCandidate ([string]$taskConfig.PortableWingetPath)
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
-    throw "winget command is not available."
+    throw 'winget command is not available.'
+}
+
+if (Test-AzVmRunOnceEntryPresent -Name ([string]$taskConfig.LegacyRunOnceName)) {
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    Write-Host 'store-install-cleanup => task=126-install-be-my-eyes; removed-stale-run-once=True'
 }
 
 $workerTaskName = "{0}-{1}" -f $taskName, ([string]$taskConfig.InteractiveTaskSuffix)
@@ -106,61 +124,47 @@ $paths = Get-AzVmInteractivePaths -TaskName $workerTaskName
 $workerScript = @'
 $ErrorActionPreference = "Stop"
 $helperPath = "__HELPER_PATH__"
+$storeHelperPath = "__STORE_HELPER_PATH__"
 $resultPath = "__RESULT_PATH__"
 $taskName = "__TASK_NAME__"
 $storeProductId = "__STORE_PRODUCT_ID__"
 
 . $helperPath
+Import-Module $storeHelperPath -Force -DisableNameChecking
 
-function Refresh-SessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
+function Resolve-BeMyEyesAppId {
+    if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        return ''
     }
 
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
-        $env:Path = $machinePath
-    }
-    else {
-        $env:Path = "$machinePath;$userPath"
-    }
-}
+    $startApps = @(Get-StartApps | Where-Object {
+        $nameText = [string]$_.Name
+        $appIdText = [string]$_.AppID
+        if ([string]::IsNullOrWhiteSpace([string]$nameText) -and [string]::IsNullOrWhiteSpace([string]$appIdText)) {
+            return $false
+        }
 
-function Resolve-WingetExe {
-    $portableCandidate = "__PORTABLE_WINGET_PATH__"
-    if (Test-Path -LiteralPath $portableCandidate) {
-        return [string]$portableCandidate
-    }
+        return (
+            $nameText.ToLowerInvariant().Contains('be my eyes') -or
+            $appIdText.ToLowerInvariant().Contains('bemyeyes')
+        )
+    })
 
-    $cmd = Get-Command winget -ErrorAction SilentlyContinue
-    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
-        return [string]$cmd.Source
+    foreach ($entry in @($startApps)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
+            return [string]$entry.AppID
+        }
     }
 
-    return ""
+    return ''
 }
 
 function Test-BeMyEyesInstalled {
-    $startApps = @()
-    if (Get-Command Get-StartApps -ErrorAction SilentlyContinue) {
-        $startApps = @(Get-StartApps | Where-Object { ([string]$_.Name).ToLowerInvariant().Contains("be my eyes") })
-    }
-    if (@($startApps).Count -gt 0) {
-        return $true
-    }
-
-    $packages = @(Get-AppxPackage -ErrorAction SilentlyContinue | Where-Object {
-        ([string]$_.Name).ToLowerInvariant().Contains("bemyeyes") -or
-        ([string]$_.Name).ToLowerInvariant().Contains("be my eyes") -or
-        ([string]$_.PackageFamilyName).ToLowerInvariant().Contains("bemyeyes")
-    })
-    return (@($packages).Count -gt 0)
+    return (-not [string]::IsNullOrWhiteSpace([string](Resolve-BeMyEyesAppId)))
 }
 
-Refresh-SessionPath
-$wingetExe = Resolve-WingetExe
+Invoke-AzVmRefreshSessionPath
+$wingetExe = Resolve-AzVmWingetExe -PortableCandidate "__PORTABLE_WINGET_PATH__"
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'winget command is not available.'
     exit 1
@@ -177,28 +181,25 @@ if (-not (Test-BeMyEyesInstalled)) {
 }
 
 if (-not (Test-BeMyEyesInstalled)) {
-    $listText = [string]((& $wingetExe list --id $storeProductId --source msstore | Out-String))
-    if ([string]::IsNullOrWhiteSpace([string]$listText) -or -not $listText.ToLowerInvariant().Contains('be my eyes')) {
-        Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Be My Eyes install could not be verified after interactive winget install.'
-        exit 1
-    }
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Be My Eyes install could not be verified after interactive winget install.'
+    exit 1
 }
 
 Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Be My Eyes is installed.'
 '@
 
 $workerScript = $workerScript.Replace('__HELPER_PATH__', $helperPath)
+$workerScript = $workerScript.Replace('__STORE_HELPER_PATH__', [string]$taskConfig.StoreHelperPath)
 $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
 $workerScript = $workerScript.Replace('__TASK_NAME__', $workerTaskName)
 $workerScript = $workerScript.Replace('__STORE_PRODUCT_ID__', $storeProductId)
 $workerScript = $workerScript.Replace('__PORTABLE_WINGET_PATH__', [string]$taskConfig.PortableWingetPath)
 
 if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
-    Register-BeMyEyesDeferredInstall -WingetPath $wingetExe
-    Write-Warning "Be My Eyes install requires an interactive desktop session. A RunOnce install was registered for the next interactive sign-in."
-    Write-Host "install-be-my-eyes-deferred"
-    Write-Host "Update task completed: install-be-my-eyes"
-    return
+    Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Be My Eyes install requires an interactive desktop session and no next-boot follow-up was scheduled.' -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+    throw 'Be My Eyes install requires an interactive desktop session and cannot be deferred to a later boot.'
 }
 
 try {
@@ -211,29 +212,40 @@ try {
         -RunAsMode 'interactiveToken'
 }
 catch {
-    Refresh-SessionPath
-    if (Test-BeMyEyesInstalled) {
-        Write-Host "install-be-my-eyes-completed"
-        Write-Host "Update task completed: install-be-my-eyes"
+    Invoke-AzVmRefreshSessionPath
+    $catchState = Get-BeMyEyesInstallState
+    if ([bool]$catchState.Healthy) {
+        Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+        $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State installed -Summary ('Be My Eyes is launch-ready via {0}.' -f [string]$catchState.DetectionSource) -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$catchState.LaunchKind) -LaunchTarget ([string]$catchState.LaunchTarget)
+        Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+        Write-Host 'install-be-my-eyes-completed'
+        Write-Host 'Update task completed: install-be-my-eyes'
         return
     }
 
     $interactiveError = [string]$_.Exception.Message
     if ($interactiveError -match ([string]$taskConfig.StoreSessionErrorRegex)) {
-        Register-BeMyEyesDeferredInstall -WingetPath $wingetExe
-        Write-Warning "Be My Eyes install could not complete in the current session. A RunOnce install was registered for the next interactive sign-in."
-        Write-Host "install-be-my-eyes-deferred"
-        Write-Host "Update task completed: install-be-my-eyes"
-        return
+        Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+        $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Be My Eyes install requires an interactive Store-capable session and no next-boot follow-up was scheduled.' -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$catchState.LaunchKind) -LaunchTarget ([string]$catchState.LaunchTarget)
+        Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+        throw 'Be My Eyes install requires an interactive Store-capable session and cannot be deferred to a later boot.'
     }
 
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ('Be My Eyes interactive install failed: {0}' -f $interactiveError) -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$catchState.LaunchKind) -LaunchTarget ([string]$catchState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
     throw
 }
 
-Refresh-SessionPath
-if (-not (Test-BeMyEyesInstalled)) {
-    throw "Be My Eyes install could not be verified."
+Invoke-AzVmRefreshSessionPath
+$finalState = Get-BeMyEyesInstallState
+if (-not [bool]$finalState.Healthy) {
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ('Be My Eyes is present but not yet launch-ready via a stable AppID ({0}).' -f [string]$finalState.DetectionSource) -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$finalState.LaunchKind) -LaunchTarget ([string]$finalState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+    throw 'Be My Eyes install could not be verified.'
 }
 
-Write-Host "install-be-my-eyes-completed"
-Write-Host "Update task completed: install-be-my-eyes"
+Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
+$stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State installed -Summary ('Be My Eyes is launch-ready via {0}.' -f [string]$finalState.DetectionSource) -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$finalState.LaunchKind) -LaunchTarget ([string]$finalState.LaunchTarget)
+Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+Write-Host 'install-be-my-eyes-completed'
+Write-Host 'Update task completed: install-be-my-eyes'

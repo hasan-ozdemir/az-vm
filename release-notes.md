@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.14.311 - 2026-03-14
+
+### Summary
+This release closes the retro-log hardening pass without reintroducing any next-boot follow-up behavior. The affected Windows vm-update tasks now stay strictly one-shot, Store-backed installs write an explicit launch-ready or degraded state instead of leaving RunOnce-style continuation work behind, the SSH stage summary reports warning signals more honestly, Linux app-state replay now covers the supported file-copy contract, and the late Windows health snapshot reads back the same Store-install state ledger that the install and shortcut tasks now use.
+
+### Highlights
+- Added a shared Store install-state helper module so the touched Windows Store-backed tasks now share one centralized contract for PATH refresh, `winget` discovery, stale RunOnce cleanup, and launch-ready state persistence.
+- Added `tests/retro-log-audit.ps1` so the historical `az-vm-log-*.txt` corpus can be rescanned deterministically for the noisy or degraded patterns that drove this hardening pass.
+- Updated the touched Store-backed install tasks so they now fail or degrade explicitly when an interactive Store-capable session is missing, instead of scheduling any next-boot or next-sign-in continuation work.
+- Updated Teams startup so the managed startup surface now prefers the packaged `AppsFolder` launch contract, matching the healthy Store shortcut model.
+- Fixed Python verification, copy-settings skip accounting, JAWS autostart self-heal, and benign transcript noise filtering in the SSH task pipeline.
+- Revalidated the changes with isolated live task runs on `rg-bizyum-ate1-g2 / bizyum`, including the touched builtin tasks plus the local-only JAWS autostart tasks, ending with healthy Docker, Ollama, Teams startup, refreshed public shortcuts, and zero managed shortcut or stage-summary failures.
+
 ## Release 2026.3.14.310 - 2026-03-14
 
 ### Summary

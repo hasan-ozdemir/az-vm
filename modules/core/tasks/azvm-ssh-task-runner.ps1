@@ -1,5 +1,26 @@
 # Shared SSH task stage runner.
 
+function Get-AzVmTaskOutputWarningSignalCount {
+    param(
+        [AllowNull()]
+        [string]$MessageText
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$MessageText)) {
+        return 0
+    }
+
+    $count = 0
+    foreach ($lineRaw in @([string]$MessageText -split "`r?`n")) {
+        $line = [string]$lineRaw
+        if ($line -match '^(?i)\s*WARNING:\s+') {
+            $count++
+        }
+    }
+
+    return [int]$count
+}
+
 # Handles Invoke-AzVmSshTaskBlocks.
 function Invoke-AzVmSshTaskBlocks {
     param(
@@ -47,11 +68,13 @@ function Invoke-AzVmSshTaskBlocks {
     $usedOneShotFallback = $false
     $totalSuccess = 0
     $totalWarnings = 0
+    $signalWarningCount = 0
     $totalErrors = 0
     $rebootCount = 0
     $successfulTasks = @()
     $failedTasks = @()
     $rebootRequestedTasks = @()
+    $signalWarningTasks = @()
 
     function Restore-AzVmTaskSession {
         param(
@@ -276,6 +299,15 @@ function Invoke-AzVmSshTaskBlocks {
                 $successfulTasks += $taskName
                 Write-Host ("Task completed: {0} ({1:N1}s) - success" -f $taskName, $taskElapsedSeconds)
 
+                $taskSignalWarnings = 0
+                if ($taskResult.PSObject.Properties.Match('Output').Count -gt 0) {
+                    $taskSignalWarnings = Get-AzVmTaskOutputWarningSignalCount -MessageText ([string]$taskResult.Output)
+                }
+                if ($taskSignalWarnings -gt 0) {
+                    $signalWarningCount += [int]$taskSignalWarnings
+                    $signalWarningTasks += ("{0} => task-output:{1}" -f [string]$taskName, [int]$taskSignalWarnings)
+                }
+
                 $appStateResult = Invoke-AzVmTaskAppStatePostProcess `
                     -Platform $Platform `
                     -RepoRoot $RepoRoot `
@@ -291,6 +323,10 @@ function Invoke-AzVmSshTaskBlocks {
                     -TimeoutSeconds $taskTimeoutSeconds `
                     -ManagerUser ([string]$SshUser) `
                     -AssistantUser ([string]$AssistantUser)
+                if ($null -ne $appStateResult -and $appStateResult.PSObject.Properties.Match('Warning').Count -gt 0 -and [bool]$appStateResult.Warning) {
+                    $signalWarningCount++
+                    $signalWarningTasks += ("{0} => app-state" -f [string]$taskName)
+                }
             }
             else {
                 $failedTasks += $taskName
@@ -322,10 +358,17 @@ function Invoke-AzVmSshTaskBlocks {
 
         $uniqueSuccessfulTasks = @($successfulTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
         $uniqueFailedTasks = @($failedTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
+        $uniqueSignalWarningTasks = @($signalWarningTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
-        Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, error={3}, reboot={4}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $totalErrors, $rebootCount)
+        Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, signal-warning={3}, error={4}, reboot={5}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $signalWarningCount, $totalErrors, $rebootCount)
         if ($usedOneShotFallback) {
             Write-Host 'VM update transport summary: one-shot SSH fallback was used for one or more tasks.' -ForegroundColor Yellow
+        }
+        if (@($uniqueSignalWarningTasks).Count -gt 0) {
+            Write-Host 'Signal warning tasks:' -ForegroundColor Yellow
+            foreach ($signalWarningTask in @($uniqueSignalWarningTasks)) {
+                Write-Host ("- {0}" -f [string]$signalWarningTask) -ForegroundColor Yellow
+            }
         }
         if (@($uniqueFailedTasks).Count -gt 0) {
             Write-Host 'Failed tasks:' -ForegroundColor Yellow
@@ -364,6 +407,8 @@ function Invoke-AzVmSshTaskBlocks {
             FailedCount = @($uniqueFailedTasks).Count
             FailedTasks = @($uniqueFailedTasks)
             WarningCount = $totalWarnings
+            SignalWarningCount = [int]$signalWarningCount
+            SignalWarningTasks = @($uniqueSignalWarningTasks)
             ErrorCount = $totalErrors
             RebootCount = $rebootCount
             RebootRequired = ($rebootCount -gt 0)

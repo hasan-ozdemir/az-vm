@@ -82,7 +82,9 @@ function Test-AzVmTaskOutputNoiseLine {
         $value.StartsWith("AZ_VM_TASK_BEGIN:", [System.StringComparison]::OrdinalIgnoreCase) -or
         $value.StartsWith("AZ_VM_TASK_END:", [System.StringComparison]::OrdinalIgnoreCase) -or
         $value.StartsWith("Update task started:", [System.StringComparison]::OrdinalIgnoreCase) -or
-        $value.StartsWith("Update task completed:", [System.StringComparison]::OrdinalIgnoreCase)
+        $value.StartsWith("Update task completed:", [System.StringComparison]::OrdinalIgnoreCase) -or
+        ($value -match "(?i)'wmic'\s+is\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command") -or
+        ($value -match '(?i)^Seizure Warning:\s*https://aka\.ms/microsoft-store-seizure-warning')
     )
 }
 

@@ -3631,7 +3631,7 @@ Invoke-Test -Name "Startup mirror profile resolution" -Action {
     $entries = @(
         [pscustomobject]@{ Name = 'Docker Desktop'; Command = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
         [pscustomobject]@{ Name = 'Ollama.lnk'; Command = 'C:\Users\operator\AppData\Local\Programs\Ollama\ollama app.exe'; EntryType = 'StartupFolder'; Scope = 'CurrentUser'; Enabled = $true },
-        [pscustomobject]@{ Name = 'Teams'; Command = '"C:\Users\operator\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" msteams:system-initiated'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
+        [pscustomobject]@{ Name = 'Teams'; Command = 'C:\Windows\explorer.exe shell:AppsFolder\MSTeams_8wekyb3d8bbwe!MSTeams'; EntryType = 'StartupFolder'; Scope = 'CurrentUser'; Enabled = $true },
         [pscustomobject]@{ Name = 'iTunesHelper'; Command = '"C:\Program Files\iTunes\iTunesHelper.exe"'; EntryType = 'Run'; Scope = 'LocalMachine'; Enabled = $true },
         [pscustomobject]@{ Name = 'OneDrive'; Command = '"C:\Program Files\Microsoft OneDrive\OneDrive.exe" /background'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
         [pscustomobject]@{ Name = 'Microsoft Lists'; Command = '"C:\Program Files\WindowsApps\Microsoft.Lists\Lists.exe"'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
@@ -4047,11 +4047,12 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
-    Assert-True -Condition ($taskScript -like '*docker-step-deferred: interactive-sign-in-registered*') -Message 'Docker Desktop task must explicitly defer engine readiness to interactive sign-in instead of retrying long noninteractive daemon probes.'
+    Assert-True -Condition ($taskScript -like '*docker-step-cleanup: removed-stale-run-once*') -Message 'Docker Desktop task must remove stale deferred RunOnce remnants before verifying the one-shot flow.'
+    Assert-True -Condition (($taskScript.IndexOf('Register-DockerDesktopDeferredStart', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Docker Desktop task must not schedule deferred next-sign-in repair work.'
     Assert-True -Condition (-not ($taskScript -like '*Wait-DockerDaemonReady*')) -Message 'Docker Desktop task must not keep the old daemon probe retry loop.'
     Assert-True -Condition ($taskScript -like '*docker desktop status*') -Message 'Docker Desktop task must include a bounded docker desktop status probe.'
     Assert-True -Condition ($taskScript -like '*docker info*') -Message 'Docker Desktop task must include a bounded docker info probe.'
-    Assert-True -Condition ($taskScript -like '*docker-step-warning: docker info is not healthy yet*') -Message 'Docker Desktop task must downgrade non-ready engine checks to a structured warning.'
+    Assert-True -Condition ($taskScript -like '*no deferred boot-time repair behind*') -Message 'Docker Desktop task must report non-ready engine state without leaving next-boot code behind.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
 }
 
@@ -4075,12 +4076,14 @@ Invoke-Test -Name "Windows VLC task verifies the executable after bounded winget
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'VLC task must clear non-fatal native exit codes before completing.'
 }
 
-Invoke-Test -Name "Windows WhatsApp task defers cleanly when Store install cannot complete inline" -Action {
+Invoke-Test -Name "Windows WhatsApp task keeps a one-shot Store state contract" -Action {
     $taskPath = Join-Path $RepoRoot 'windows\update\121-install-whatsapp-system.ps1'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
-    Assert-True -Condition ($taskScript -like '*AzVmInstallWhatsApp*') -Message 'WhatsApp task must keep the deferred RunOnce registration contract.'
+    Assert-True -Condition ($taskScript -like '*az-vm-store-install-state.psm1*') -Message 'WhatsApp task must import the shared Store install state helper.'
     Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'WhatsApp task must bound the winget install wait time.'
-    Assert-True -Condition ($taskScript -like '*install-whatsapp-system-deferred-timeout*') -Message 'WhatsApp task must mark the bounded timeout deferral path explicitly.'
+    Assert-True -Condition ($taskScript -like '*no next-boot follow-up was scheduled*') -Message 'WhatsApp task must classify incomplete Store installs without scheduling a later boot follow-up.'
+    Assert-True -Condition ($taskScript -like '*cannot be deferred to a later boot*') -Message 'WhatsApp task must fail explicitly instead of leaving deferred RunOnce work behind.'
+    Assert-True -Condition ($taskScript -like '*Write-AzVmStoreInstallState*') -Message 'WhatsApp task must persist explicit store install state records.'
     Assert-True -Condition ($taskScript -like '*winget install --id 9NKSQGP7F2NH --source msstore*') -Message 'WhatsApp task must keep the Store package install contract.'
 }
 
@@ -4187,6 +4190,9 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-ExplicitExcludedTargetCleanup*') -Message "Copy user settings task must keep a narrow cleanup pass for excluded target leftovers on reruns."
     Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune:*') -Message "Copy user settings task must log stale excluded target pruning on reruns."
     Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune-skip:*') -Message "Copy user settings task must treat locked excluded target leftovers as bounded skips instead of hard failures."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Add-CopySkipEvidence -Reason ''session-logoff-failed''*') -Message "Copy user settings task must count session logoff skips in the summary evidence ledger."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Add-CopySkipEvidence -Reason ''npm-already-synchronized''*') -Message "Copy user settings task must count npm skip decisions in the summary evidence ledger."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Add-CopySkipEvidence -Reason ''missing-main-registry-branch''*') -Message "Copy user settings task must count missing registry branches in the summary evidence ledger."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
@@ -4334,6 +4340,7 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition ($runtimeManifestText -like '*modules/core/tasks/azvm-app-state-plugin.ps1*') -Message 'Runtime manifest must load the shared app-state plugin helper module.'
     Assert-True -Condition ($runnerText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Windows update SSH runner must invoke the shared app-state post-process after each task.'
     Assert-True -Condition ($runnerText -like '*Invoke-AzVmSshTaskScript*') -Message 'Windows update SSH runner must use the shared SSH task execution wrapper.'
+    Assert-True -Condition ($runnerText -like '*signal-warning=*') -Message 'Windows update SSH runner must surface task-emitted warning signals in the stage summary.'
     Assert-True -Condition ($runnerText -like '*Wait-AzVmProvisioningReadyOrRepair*') -Message 'Windows update SSH runner must guard against persistent Updating provisioning states before task execution.'
     Assert-True -Condition ($connectionRuntimeText -like '*Wait-AzVmProvisioningReadyOrRepair*') -Message 'Connection runtime must repair persistent Updating provisioning states before launching SSH or RDP commands.'
     Assert-True -Condition (($runnerText.IndexOf('-AssistantUser', [System.StringComparison]::Ordinal) -ge 0) -and ($runnerText.IndexOf('[string]$AssistantUser', [System.StringComparison]::Ordinal) -ge 0)) -Message 'Windows update SSH runner must pass the assistant user through to app-state replay.'
@@ -4344,6 +4351,7 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition (-not ($localExportTaskText -like '*app-state-plugin-local-common.psm1*')) -Message 'Local app-state export tasks must not import the retired local helper path.'
     Assert-True -Condition ($gitignoreText -like '*windows/update/app-states/***') -Message '.gitignore must ignore Windows app-state plugin payloads.'
     Assert-True -Condition ($gitignoreText -like '*linux/update/app-states/***') -Message '.gitignore must ignore Linux app-state plugin payloads.'
+    Assert-True -Condition (-not ($runnerText -like '*linux replay is not implemented yet*')) -Message 'Shared app-state runtime must not keep the old Linux replay unsupported warning.'
 
     foreach ($removedPath in @(
         'windows\update\133-restore-managed-app-state.ps1',
@@ -4608,6 +4616,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://getir.com',
         'Resolve-AppPackageExecutablePath',
         'Resolve-StoreAppId',
+        'Add-StoreManagedShortcutSpec',
+        'Read-AzVmStoreInstallState',
         'ms-windows-store://pdp/?ProductId=9MSW46LTDWGF',
         'Resolve-EmbeddedShortcutCommandPath',
         'public-shortcut-skip:',
@@ -4691,6 +4701,15 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition ($healthTaskScript -like '*start-in =>*') -Message 'Health snapshot must read back shortcut working directories.'
     Assert-True -Condition ($healthTaskScript -like '*show =>*') -Message 'Health snapshot must read back shortcut show commands.'
     Assert-True -Condition ($healthTaskScript -like '*run-as-admin =>*') -Message 'Health snapshot must read back shortcut admin flags.'
+    foreach ($fragment in @(
+        'STORE INSTALL STATE:',
+        '117-install-codex-app',
+        '121-install-whatsapp-system',
+        '126-install-be-my-eyes',
+        '131-install-icloud-system'
+    )) {
+        Assert-True -Condition ($healthTaskScript -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include Store install state fragment '{0}'." -f [string]$fragment)
+    }
     Assert-True -Condition ($healthTaskScript -like '*unmanaged-public-shortcut-count=*') -Message 'Health snapshot must inventory unmanaged Public Desktop shortcuts.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-ShortcutReadback -Label 'unmanaged-public-shortcut'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must read back unmanaged Public Desktop shortcut details.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Where-Object { $managedShortcutNames -contains [System.IO.Path]::GetFileNameWithoutExtension([string]$_.Name) }', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep the old exact-name-only Public Desktop cleanup logic.'
@@ -4747,20 +4766,25 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
     }
 }
 
+Invoke-Test -Name "Retro log audit helper and Store install state module exist" -Action {
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'tests\retro-log-audit.ps1')) -Message 'Retro log audit helper must exist.'
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1')) -Message 'Shared Store install state helper must exist.'
+}
+
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
     $installTaskMap = [ordered]@{
         '115-install-npm-packages-global.ps1' = @('@github/copilot@latest', '@openai/codex@latest', '@google/gemini-cli@latest')
         '125-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
-        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'install-be-my-eyes-deferred', 'AzVmInstallBeMyEyes')
+        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd' )
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
         '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'install-icloud-system-deferred', 'AzVmInstallICloud')
+        '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '132-install-vs2022community.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-completed')
         '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
-        '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe')
+        '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {
@@ -5037,11 +5061,10 @@ Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {
 
     $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context)[0]
     $assetCopies = @($resolvedTask.AssetCopies)
-    Assert-True -Condition ($assetCopies.Count -eq 1) -Message "Be My Eyes task must publish exactly one helper asset."
-    Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "Be My Eyes helper remote path mismatch."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*az-vm-store-install-state.psm1*') -Message "Be My Eyes task must import the shared Store helper asset."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "Be My Eyes task must call the interactive helper."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Test-AzVmUserInteractiveDesktopReady*') -Message "Be My Eyes task must check for an interactive desktop before running the Store install."
-    Assert-True -Condition ([string]$resolvedTask.Script -like '*install-be-my-eyes-deferred*') -Message "Be My Eyes task must fall back to a deferred install when no interactive desktop is available."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*cannot be deferred to a later boot*') -Message "Be My Eyes task must fail explicitly instead of scheduling a deferred install."
 }
 
 Invoke-Test -Name "iCloud task publishes interactive helper asset" -Action {
@@ -5069,11 +5092,10 @@ Invoke-Test -Name "iCloud task publishes interactive helper asset" -Action {
 
     $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context)[0]
     $assetCopies = @($resolvedTask.AssetCopies)
-    Assert-True -Condition ($assetCopies.Count -eq 1) -Message "iCloud task must publish exactly one helper asset."
-    Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "iCloud helper remote path mismatch."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*az-vm-store-install-state.psm1*') -Message "iCloud task must import the shared Store helper asset."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "iCloud task must call the interactive helper."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Test-AzVmUserInteractiveDesktopReady*') -Message "iCloud task must check for an interactive desktop before running the Store install."
-    Assert-True -Condition ([string]$resolvedTask.Script -like '*install-icloud-system-deferred*') -Message "iCloud task must fall back to a deferred install when no interactive desktop is available."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*cannot be deferred to a later boot*') -Message "iCloud task must fail explicitly instead of scheduling a deferred install."
 }
 
 Write-Host ""

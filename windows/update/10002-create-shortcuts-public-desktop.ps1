@@ -1,3 +1,4 @@
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: create-shortcuts-public-desktop"
 
@@ -18,6 +19,11 @@ $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
+$storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
+
+if (Test-Path -LiteralPath $storeHelperPath) {
+    Import-Module $storeHelperPath -Force -DisableNameChecking
+}
 
 function Test-InvalidCompanyName {
     param([string]$Value)
@@ -426,12 +432,65 @@ function Resolve-StoreAppId {
         [string[]]$PackageNameHints = @()
     )
 
-    $startAppsAppId = Resolve-StartAppId -NameFragment $NameFragment -PackageNameHints $PackageNameHints
-    if (-not [string]::IsNullOrWhiteSpace([string]$startAppsAppId)) {
-        return $startAppsAppId
+    $packageAppId = Resolve-AppxAppIdFromPackage -NameFragment $NameFragment -PackageNameHints $PackageNameHints
+    if (-not [string]::IsNullOrWhiteSpace([string]$packageAppId)) {
+        return $packageAppId
     }
 
-    return (Resolve-AppxAppIdFromPackage -NameFragment $NameFragment -PackageNameHints $PackageNameHints)
+    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    $normalizedNameFragment = [string]$NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+        $normalizedNameFragment = $normalizedNameFragment.Trim().ToLowerInvariant()
+    }
+    $normalizedHints = @(
+        @($PackageNameHints) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
+    $matchingFamilies = @(
+        $allPackages | Where-Object {
+            $pkgNameLower = ([string]$_.Name).ToLowerInvariant()
+            $pkgFamilyLower = ([string]$_.PackageFamilyName).ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+                if ($pkgNameLower.Contains($normalizedNameFragment) -or $pkgFamilyLower.Contains($normalizedNameFragment)) {
+                    return $true
+                }
+            }
+
+            foreach ($hint in @($normalizedHints)) {
+                if ($pkgNameLower.Contains($hint) -or $pkgFamilyLower.Contains($hint)) {
+                    return $true
+                }
+            }
+
+            return $false
+        } |
+            ForEach-Object { [string]$_.PackageFamilyName } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+
+    if (@($matchingFamilies).Count -gt 0 -and (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        $startApps = @(Get-StartApps | Where-Object {
+            $appIdText = [string]$_.AppID
+            foreach ($family in @($matchingFamilies)) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$appIdText) -and
+                    $appIdText.StartsWith(($family + '!'), [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $true
+                }
+            }
+
+            return $false
+        })
+
+        foreach ($entry in @($startApps)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
+                return [string]$entry.AppID
+            }
+        }
+    }
+
+    return (Resolve-StartAppId -NameFragment $NameFragment -PackageNameHints $PackageNameHints)
 }
 
 function Resolve-AppPackageExecutablePath {
@@ -956,6 +1015,70 @@ function New-StoreAppShortcutSpec {
         -CleanupAliases $CleanupAliases)
 }
 
+function Read-StoreTaskStateRecord {
+    param([string]$TaskName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$TaskName) -or -not (Get-Command Read-AzVmStoreInstallState -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    return (Read-AzVmStoreInstallState -TaskName $TaskName)
+}
+
+function Add-StoreManagedShortcutSpec {
+    param(
+        [System.Collections.Generic.List[object]]$List,
+        [string]$ShortcutName,
+        [string]$TaskName,
+        [string]$AppId,
+        [string]$ExecutablePath = '',
+        [string[]]$CleanupAliases = @()
+    )
+
+    $stateRecord = Read-StoreTaskStateRecord -TaskName $TaskName
+    if ($null -ne $stateRecord -and -not [string]::Equals([string]$stateRecord.state, 'installed', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $summary = if ($stateRecord.PSObject.Properties.Match('summary').Count -gt 0) { [string]$stateRecord.summary } else { 'state record indicates the app is not launch-ready.' }
+        Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
+        return
+    }
+
+    if ($null -ne $stateRecord) {
+        $stateLaunchKind = if ($stateRecord.PSObject.Properties.Match('launchKind').Count -gt 0) { [string]$stateRecord.launchKind } else { '' }
+        $stateLaunchTarget = if ($stateRecord.PSObject.Properties.Match('launchTarget').Count -gt 0) { [string]$stateRecord.launchTarget } else { '' }
+
+        if ([string]::IsNullOrWhiteSpace([string]$AppId) -and
+            [string]::Equals($stateLaunchKind, 'app-id', [System.StringComparison]::OrdinalIgnoreCase) -and
+            -not [string]::IsNullOrWhiteSpace([string]$stateLaunchTarget)) {
+            $AppId = [string]$stateLaunchTarget
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$ExecutablePath) -and
+            [string]::Equals($stateLaunchKind, 'executable', [System.StringComparison]::OrdinalIgnoreCase) -and
+            -not [string]::IsNullOrWhiteSpace([string]$stateLaunchTarget) -and
+            (Test-Path -LiteralPath $stateLaunchTarget)) {
+            $ExecutablePath = [string]$stateLaunchTarget
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$AppId)) {
+        Add-Spec -List $List -Spec (New-StoreAppShortcutSpec -Name $ShortcutName -AppId $AppId -CleanupAliases $CleanupAliases)
+        return
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$ExecutablePath) -and (Test-Path -LiteralPath $ExecutablePath)) {
+        Add-Spec -List $List -Spec (New-ShortcutSpec -Name $ShortcutName -TargetPath $ExecutablePath -ValidationKind 'app' -CleanupAliases $CleanupAliases)
+        return
+    }
+
+    if ($null -ne $stateRecord) {
+        $summary = if ($stateRecord.PSObject.Properties.Match('summary').Count -gt 0) { [string]$stateRecord.summary } else { 'launch target could not be resolved.' }
+        Write-Warning ("public-shortcut-skip: {0} => store state=installed but launch target is unresolved; {1}" -f [string]$ShortcutName, $summary)
+        return
+    }
+
+    Write-Warning ("public-shortcut-skip: {0} => store app id or executable could not be resolved." -f [string]$ShortcutName)
+}
+
 function Get-NormalizedShortcutNameKey {
     param([string]$Value)
 
@@ -1377,22 +1500,22 @@ $quickAccessWebShortcuts = @(
 
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a1ChatGPT Web" -Url "https://chatgpt.com" -ProfileKind 'business' -Variant 'remote')
 if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "a2CodexApp" -AppId $codexAppId)
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a2CodexApp' -TaskName '117-install-codex-app' -AppId $codexAppId -ExecutablePath $codexAppExe
 }
 elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a2CodexApp" -TargetPath $codexAppExe -ValidationKind "app")
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a2CodexApp' -TaskName '117-install-codex-app' -AppId '' -ExecutablePath $codexAppExe
 }
 if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "a3Be My Eyes" -AppId $beMyEyesAppId)
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a3Be My Eyes' -TaskName '126-install-be-my-eyes' -AppId $beMyEyesAppId
 }
 else {
-    Write-Warning "public-shortcut-skip: a3Be My Eyes => installed package app id was not resolved."
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a3Be My Eyes' -TaskName '126-install-be-my-eyes' -AppId ''
 }
 if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppBusinessAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "a4WhatsApp Business" -AppId $whatsAppBusinessAppId)
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a4WhatsApp Business' -TaskName '121-install-whatsapp-system' -AppId $whatsAppBusinessAppId -ExecutablePath $whatsAppBusinessTarget
 }
 else {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a4WhatsApp Business" -TargetPath $whatsAppBusinessTarget -AllowMissingTargetPath $true -ValidationKind "app")
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a4WhatsApp Business' -TaskName '121-install-whatsapp-system' -AppId '' -ExecutablePath $whatsAppBusinessTarget
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a5WhatsApp Personal" -Url "https://web.whatsapp.com" -ProfileKind 'personal' -Variant 'remote')
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("AnyDesk") -CleanupMatchTargetOnly $true)
@@ -1421,10 +1544,10 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -Targ
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "d4ICloud" -AppId $iCloudAppId)
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'd4ICloud' -TaskName '131-install-icloud-system' -AppId $iCloudAppId -ExecutablePath $iCloudExe
 }
 else {
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d4ICloud" -TargetPath $iCloudExe -AllowMissingTargetPath $true -ValidationKind "app")
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'd4ICloud' -TaskName '131-install-icloud-system' -AppId '' -ExecutablePath $iCloudExe
 }
 $mailShortcutArguments = if (-not [string]::IsNullOrWhiteSpace([string]$outlookExe)) {
     ('/c start "" "{0}" /select "outlook:\\{1}\\Inbox"' -f $outlookExe, $employeeEmailAddress)

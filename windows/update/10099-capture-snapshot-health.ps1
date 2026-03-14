@@ -1,3 +1,4 @@
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: capture-snapshot-health"
 
@@ -15,6 +16,11 @@ $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
+$storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
+
+if (Test-Path -LiteralPath $storeHelperPath) {
+    Import-Module $storeHelperPath -Force -DisableNameChecking
+}
 
 function Invoke-CommandWithTimeout {
     param(
@@ -457,6 +463,54 @@ function Write-PackagedAppInventory {
         $startApps = @(Get-StartApps)
     }
 
+    function Resolve-PackagedAppId {
+        param(
+            [psobject]$Package,
+            [object[]]$StartApps
+        )
+
+        if ($null -eq $Package) {
+            return ''
+        }
+
+        $installLocation = [string]$Package.InstallLocation
+        if (-not [string]::IsNullOrWhiteSpace([string]$installLocation) -and (Test-Path -LiteralPath $installLocation)) {
+            $manifestPath = Join-Path $installLocation 'AppxManifest.xml'
+            if (Test-Path -LiteralPath $manifestPath) {
+                try {
+                    [xml]$manifestXml = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop
+                    $appNodes = @($manifestXml.SelectNodes("//*[local-name()='Application']"))
+                    foreach ($appNode in @($appNodes)) {
+                        $applicationId = [string]$appNode.GetAttribute('Id')
+                        if ([string]::IsNullOrWhiteSpace([string]$applicationId)) {
+                            continue
+                        }
+
+                        return ("{0}!{1}" -f [string]$Package.PackageFamilyName, $applicationId)
+                    }
+                }
+                catch {
+                }
+            }
+        }
+
+        $packageFamily = [string]$Package.PackageFamilyName
+        if (-not [string]::IsNullOrWhiteSpace([string]$packageFamily)) {
+            foreach ($entry in @($StartApps)) {
+                $appIdText = [string]$entry.AppID
+                if ([string]::IsNullOrWhiteSpace([string]$appIdText)) {
+                    continue
+                }
+
+                if ($appIdText.StartsWith(($packageFamily + '!'), [System.StringComparison]::OrdinalIgnoreCase)) {
+                    return $appIdText
+                }
+            }
+        }
+
+        return ''
+    }
+
     foreach ($definition in @($appDefinitions)) {
         $normalizedHints = @($definition.PackageHints | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | ForEach-Object { $_.ToLowerInvariant() })
         $matchingPackage = @(
@@ -475,13 +529,7 @@ function Write-PackagedAppInventory {
             } | Select-Object -First 1
         )[0]
 
-        $appId = @(
-            $startApps | Where-Object {
-                $nameText = [string]$_.Name
-                if ([string]::IsNullOrWhiteSpace([string]$nameText)) { return $false }
-                return $nameText.ToLowerInvariant().Contains(([string]$definition.NameFragment).ToLowerInvariant())
-            } | Select-Object -ExpandProperty AppID -First 1
-        )[0]
+        $appId = Resolve-PackagedAppId -Package $matchingPackage -StartApps $startApps
 
         $packageName = ''
         $packageFamily = ''
@@ -501,8 +549,14 @@ function Write-PackagedAppInventory {
 }
 
 function Get-OllamaApiVersion {
+    param([int]$TimeoutSeconds = 4)
+
+    if ($TimeoutSeconds -lt 1) {
+        $TimeoutSeconds = 1
+    }
+
     try {
-        $response = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec 4 -ErrorAction Stop
+        $response = Invoke-RestMethod -Method Get -Uri 'http://127.0.0.1:11434/api/version' -TimeoutSec $TimeoutSeconds -ErrorAction Stop
         if ($null -ne $response -and -not [string]::IsNullOrWhiteSpace([string]$response.version)) {
             return [string]$response.version
         }
@@ -511,6 +565,29 @@ function Get-OllamaApiVersion {
     }
 
     return ''
+}
+
+function Write-StoreInstallStateReadback {
+    param(
+        [string]$TaskName,
+        [string]$Label
+    )
+
+    if (-not (Get-Command Read-AzVmStoreInstallState -ErrorAction SilentlyContinue)) {
+        Write-Host ("store-install-state => task={0}; state=helper-unavailable" -f [string]$TaskName)
+        return
+    }
+
+    $stateRecord = Read-AzVmStoreInstallState -TaskName $TaskName
+    if ($null -eq $stateRecord) {
+        Write-Host ("store-install-state => task={0}; label={1}; state=none" -f [string]$TaskName, [string]$Label)
+        return
+    }
+
+    $summary = if ($stateRecord.PSObject.Properties.Match('summary').Count -gt 0) { [string]$stateRecord.summary } else { '' }
+    $launchKind = if ($stateRecord.PSObject.Properties.Match('launchKind').Count -gt 0) { [string]$stateRecord.launchKind } else { '' }
+    $launchTarget = if ($stateRecord.PSObject.Properties.Match('launchTarget').Count -gt 0) { [string]$stateRecord.launchTarget } else { '' }
+    Write-Host ("store-install-state => task={0}; label={1}; state={2}; launch-kind={3}; launch-target={4}; summary={5}" -f [string]$TaskName, [string]$Label, [string]$stateRecord.state, $launchKind, $launchTarget, $summary)
 }
 
 function Write-CopyExclusionEvidence {
@@ -1387,6 +1464,12 @@ finally {
         Dismount-RegistryHive -MountName ([string]$managerContext.MountName)
     }
 }
+
+Write-Host "STORE INSTALL STATE:"
+Write-StoreInstallStateReadback -TaskName '117-install-codex-app' -Label 'Codex App'
+Write-StoreInstallStateReadback -TaskName '121-install-whatsapp-system' -Label 'WhatsApp'
+Write-StoreInstallStateReadback -TaskName '126-install-be-my-eyes' -Label 'Be My Eyes'
+Write-StoreInstallStateReadback -TaskName '131-install-icloud-system' -Label 'iCloud'
 
 Write-Host "DOCKER DESKTOP HEALTH:"
 $dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"

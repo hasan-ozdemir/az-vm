@@ -358,24 +358,31 @@ function Test-DockerDesktopProcessRunning {
     return (@($processes).Count -gt 0)
 }
 
-function Register-DockerDesktopDeferredStart {
-    param([string]$DockerDesktopExe)
-
+function Remove-DockerDesktopDeferredStart {
     $runOncePath = "HKLM:\Software\Microsoft\Windows\CurrentVersion\RunOnce"
     if (-not (Test-Path -LiteralPath $runOncePath)) {
-        New-Item -Path $runOncePath -Force | Out-Null
+        return $false
     }
 
-    $commandValue = ('powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Process -FilePath ''{0}'' -ArgumentList ''--minimized'' -WindowStyle Hidden"' -f $DockerDesktopExe)
-    Set-ItemProperty -Path $runOncePath -Name "AzVmStartDockerDesktop" -Value $commandValue -Type String
-
-    $actualValue = [string](Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction Stop).AzVmStartDockerDesktop
-    if (-not [string]::Equals($actualValue, $commandValue, [System.StringComparison]::Ordinal)) {
-        throw "Docker Desktop deferred-start RunOnce validation failed."
+    $existingValue = [string](Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue).AzVmStartDockerDesktop
+    if ([string]::IsNullOrWhiteSpace([string]$existingValue)) {
+        return $false
     }
+
+    Remove-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue
+    $remainingValue = [string](Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue).AzVmStartDockerDesktop
+    if (-not [string]::IsNullOrWhiteSpace([string]$remainingValue)) {
+        throw 'Docker Desktop stale RunOnce entry cleanup failed.'
+    }
+
+    return $true
 }
 
 Refresh-SessionPath
+
+if (Remove-DockerDesktopDeferredStart) {
+    Write-Host 'docker-step-cleanup: removed-stale-run-once'
+}
 
 $wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace($wingetExe)) {
@@ -449,8 +456,7 @@ else {
 
 $dockerDesktopLaunchState = Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
 if ($null -ne $dockerDesktopLaunchState -and [bool]$dockerDesktopLaunchState.StartedNow) {
-    Register-DockerDesktopDeferredStart -DockerDesktopExe $dockerDesktopExe
-    Write-Host "docker-step-deferred: interactive-sign-in-registered"
+    Write-Host "docker-step-ok: desktop-launch-requested"
 }
 
 Ensure-DockerServicesStarted
@@ -468,7 +474,7 @@ if ($dockerDesktopStatusResult.Success -and $dockerDesktopStatusResult.ExitCode 
     Write-Host "docker-step-ok: docker-desktop-status"
 }
 else {
-    Write-Warning ("docker-step-warning: docker desktop status is not healthy yet (exit={0}). Interactive sign-in or first-run initialization may still be required." -f [int]$dockerDesktopStatusResult.ExitCode)
+    Write-Warning ("docker-step-warning: docker desktop status is not healthy yet (exit={0}). No next-boot follow-up was scheduled; a later explicit rerun may still be required." -f [int]$dockerDesktopStatusResult.ExitCode)
 }
 
 $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds ([int]$taskConfig.DockerInfoTimeoutSeconds)
@@ -476,7 +482,7 @@ if ($dockerInfoResult.Success -and $dockerInfoResult.ExitCode -eq 0) {
     Write-Host "docker-step-ok: docker-engine-ready"
 }
 else {
-    Write-Warning ("docker-step-warning: docker info is not healthy yet (exit={0}). The Docker client is installed, but engine readiness still depends on interactive Desktop initialization." -f [int]$dockerInfoResult.ExitCode)
+    Write-Warning ("docker-step-warning: docker info is not healthy yet (exit={0}). The Docker client is installed, but this task leaves no deferred boot-time repair behind." -f [int]$dockerInfoResult.ExitCode)
 }
 
 $global:LASTEXITCODE = 0
