@@ -1138,6 +1138,18 @@ Invoke-Test -Name "Post-deploy feature enablement verifies desired flags even on
             & $Action
             return [pscustomobject]@{ Label = $Label }
         }
+        function Wait-AzVmProvisioningSucceeded {
+            param([string]$ResourceGroup, [string]$VmName, [int]$MaxAttempts, [int]$DelaySeconds)
+            return [pscustomobject]@{
+                Ready = $true
+                Snapshot = [pscustomobject]@{
+                    ProvisioningStateCode = 'ProvisioningState/succeeded'
+                    ProvisioningStateDisplay = 'Provisioning succeeded'
+                    PowerStateCode = 'PowerState/running'
+                    PowerStateDisplay = 'VM running'
+                }
+            }
+        }
         function Get-AzVmHibernationSupportInfo {
             param([string]$Location, [string]$VmSize)
             return [pscustomobject]@{
@@ -1171,10 +1183,6 @@ Invoke-Test -Name "Post-deploy feature enablement verifies desired flags even on
             $line = @($args) -join ' '
             $script:FeatureEnablementAzCalls += ,$line
 
-            if ($line -match [regex]::Escape('get-instance-view')) {
-                $global:LASTEXITCODE = 0
-                return '{"provisioningCode":"ProvisioningState/succeeded","provisioningDisplay":"Provisioning succeeded","powerCode":"PowerState/running","powerDisplay":"VM running"}'
-            }
             if ($line -match [regex]::Escape('securityProfile.securityType')) {
                 $global:LASTEXITCODE = 0
                 return '{"securityType":"Standard","secureBoot":true,"vTpm":true}'
@@ -1214,7 +1222,6 @@ Invoke-Test -Name "Post-deploy feature enablement verifies desired flags even on
         Assert-True -Condition ([bool]$result.NestedAttempted) -Message 'Feature enablement must still evaluate nested virtualization on existing VMs.'
         Assert-True -Condition ([bool]$result.NestedEnabled) -Message 'Feature enablement must verify nested virtualization.'
         Assert-True -Condition ([bool]$script:FeatureEnablementGuestValidationCalled) -Message 'Feature enablement must validate nested virtualization through guest checks.'
-        Assert-True -Condition ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('instanceView.statuses[?starts_with(code,''ProvisioningState/'')]')) -Message 'Feature enablement must read provisioning state from instanceView.statuses in get-instance-view output.'
         Assert-True -Condition ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('--enable-hibernation true')) -Message 'Feature enablement must call the Azure hibernation update.'
         Assert-True -Condition (-not ((@($script:FeatureEnablementAzCalls) -join "`n") -match [regex]::Escape('additionalCapabilities.nestedVirtualization'))) -Message 'Feature enablement must not call the removed Azure nested virtualization property path.'
         Assert-True -Condition ((@($script:FeatureEnablementAzCalls) | Where-Object { $_ -like '*vm deallocate*' }).Count -eq 1) -Message 'Feature enablement should deallocate the VM once before applying feature updates.'
@@ -1223,6 +1230,7 @@ Invoke-Test -Name "Post-deploy feature enablement verifies desired flags even on
     finally {
         foreach ($functionName in @(
             'Invoke-TrackedAction',
+            'Wait-AzVmProvisioningSucceeded',
             'Get-AzVmHibernationSupportInfo',
             'Get-AzVmNestedVirtualizationSupportInfo',
             'Get-AzVmNestedVirtualizationGuestValidation',
@@ -1287,6 +1295,18 @@ Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualizati
             & $Action
             return [pscustomobject]@{ Label = $Label }
         }
+        function Wait-AzVmProvisioningSucceeded {
+            param([string]$ResourceGroup, [string]$VmName, [int]$MaxAttempts, [int]$DelaySeconds)
+            return [pscustomobject]@{
+                Ready = $true
+                Snapshot = [pscustomobject]@{
+                    ProvisioningStateCode = 'ProvisioningState/succeeded'
+                    ProvisioningStateDisplay = 'Provisioning succeeded'
+                    PowerStateCode = 'PowerState/running'
+                    PowerStateDisplay = 'VM running'
+                }
+            }
+        }
         function Get-AzVmHibernationSupportInfo {
             param([string]$Location, [string]$VmSize)
             return [pscustomobject]@{
@@ -1318,10 +1338,6 @@ Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualizati
         function az {
             $line = @($args) -join ' '
             $script:FeatureEnablementFailureAzCalls += ,$line
-            if ($line -match [regex]::Escape('get-instance-view')) {
-                $global:LASTEXITCODE = 0
-                return '{"provisioningCode":"ProvisioningState/succeeded","provisioningDisplay":"Provisioning succeeded","powerCode":"PowerState/running","powerDisplay":"VM running"}'
-            }
             if ($line -match [regex]::Escape('securityProfile.securityType')) {
                 $global:LASTEXITCODE = 0
                 return '{"securityType":"Standard","secureBoot":true,"vTpm":true}'
@@ -1358,11 +1374,11 @@ Invoke-Test -Name "Post-deploy feature enablement fails when nested virtualizati
         }
 
         Assert-True -Condition $threw -Message 'Feature enablement must fail when nested virtualization stays unverified.'
-        Assert-True -Condition ((@($script:FeatureEnablementFailureAzCalls) -join "`n") -match [regex]::Escape('instanceView.statuses[?starts_with(code,''ProvisioningState/'')]')) -Message 'Feature enablement failure path must still read provisioning state from instanceView.statuses.'
     }
     finally {
         foreach ($functionName in @(
             'Invoke-TrackedAction',
+            'Wait-AzVmProvisioningSucceeded',
             'Get-AzVmHibernationSupportInfo',
             'Get-AzVmNestedVirtualizationSupportInfo',
             'Get-AzVmNestedVirtualizationGuestValidation',
@@ -2967,6 +2983,112 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
     }
 }
 
+Invoke-Test -Name "Lifecycle provisioning repair redeploys when Updating persists" -Action {
+    $script:LifecycleRepairSnapshots = @(
+        [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+            NormalizedState = 'started'
+            PowerStateCode = 'PowerState/running'
+            PowerStateDisplay = 'VM running'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/updating'
+            ProvisioningStateDisplay = 'Updating'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+        },
+        [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+            NormalizedState = 'started'
+            PowerStateCode = 'PowerState/running'
+            PowerStateDisplay = 'VM running'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/updating'
+            ProvisioningStateDisplay = 'Updating'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+        },
+        [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+            NormalizedState = 'started'
+            PowerStateCode = 'PowerState/running'
+            PowerStateDisplay = 'VM running'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/succeeded'
+            ProvisioningStateDisplay = 'Provisioning succeeded'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+        }
+    )
+    $script:LifecycleRepairSnapshotIndex = 0
+    $script:LifecycleRepairAzCalls = @()
+    $originalFunctionDefinitions = @{}
+
+    foreach ($functionName in @(
+        'Get-AzVmVmLifecycleSnapshot',
+        'Invoke-TrackedAction',
+        'Assert-LastExitCode',
+        'az'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function Get-AzVmVmLifecycleSnapshot {
+        param([string]$ResourceGroup, [string]$VmName)
+        $index = [int]$script:LifecycleRepairSnapshotIndex
+        if ($index -ge @($script:LifecycleRepairSnapshots).Count) {
+            $index = @($script:LifecycleRepairSnapshots).Count - 1
+        }
+
+        $snapshot = $script:LifecycleRepairSnapshots[$index]
+        $script:LifecycleRepairSnapshotIndex = $script:LifecycleRepairSnapshotIndex + 1
+        return $snapshot
+    }
+    function Invoke-TrackedAction {
+        param([string]$Label, [scriptblock]$Action)
+        & $Action
+        return [pscustomobject]@{ Label = $Label }
+    }
+    function Assert-LastExitCode { param([string]$Context) }
+    function az {
+        $script:LifecycleRepairAzCalls += ,(@($args) -join ' ')
+        $global:LASTEXITCODE = 0
+        return ''
+    }
+    function Start-Sleep { param([int]$Seconds) }
+
+    try {
+        $result = Wait-AzVmProvisioningReadyOrRepair -ResourceGroup 'rg-samplevm-ate1-g1' -VmName 'samplevm' -MaxAttempts 3 -DelaySeconds 1 -UpdatingAttemptsBeforeRedeploy 2
+        Assert-True -Condition ([bool]$result.Ready) -Message 'Lifecycle provisioning repair must return ready after successful redeploy recovery.'
+        Assert-True -Condition ((@($script:LifecycleRepairAzCalls) | Where-Object { $_ -like 'vm redeploy*' }).Count -eq 1) -Message 'Lifecycle provisioning repair must trigger one Azure VM redeploy when Updating persists.'
+        Assert-True -Condition ([int]$result.RedeployCount -eq 1) -Message 'Lifecycle provisioning repair must report the redeploy count.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmVmLifecycleSnapshot',
+            'Invoke-TrackedAction',
+            'Assert-LastExitCode',
+            'az'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+        Remove-Item Function:\Start-Sleep -ErrorAction SilentlyContinue
+        Remove-Variable -Name LifecycleRepairSnapshots -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name LifecycleRepairSnapshotIndex -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name LifecycleRepairAzCalls -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Show report redacts password-bearing config values and prints nested state" -Action {
     $script:ShowReportCapturedHostLines = @()
     try {
@@ -3577,7 +3699,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '116-install-ollama-system' = 480
         '117-install-codex-app' = 120
         '118-install-teams-system' = 60
-        '119-install-onedrive-system' = 5
+        '119-install-onedrive-system' = 60
         '120-install-google-drive' = 103
         '121-install-whatsapp-system' = 90
         '122-install-anydesk-system' = 120
@@ -3590,7 +3712,6 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '129-configure-unlocker-io' = 23
         '131-install-icloud-system' = 120
         '132-install-vs2022community' = 7200
-        '133-restore-managed-app-state' = 180
         '10001-configure-apps-startup' = 45
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
@@ -4091,92 +4212,145 @@ Assert-True -Condition ($advancedScriptBody -notlike '*VolumeControl*') -Message
 Assert-True -Condition (-not $resolvedAdvancedTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Advanced settings task must not publish reboot-resume metadata."
 }
 
-Invoke-Test -Name "Windows managed app-state restore task publishes full tracked inventory" -Action {
-    $updateDir = Join-Path $RepoRoot 'windows\update'
-    $taskPath = Join-Path $updateDir '133-restore-managed-app-state.ps1'
-    $manifestPath = Join-Path $updateDir 'app-state\managed-app-state-manifest.json'
-    $modulePath = Join-Path $updateDir 'app-state\managed-app-state-common.psm1'
+Invoke-Test -Name "Vm-update app-state plugin contract resolves only stage-local app-state zip paths" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-app-state-plugin-test-" + [Guid]::NewGuid().ToString("N"))
+    $updateDir = Join-Path $tempRoot 'windows\update'
+    $localDir = Join-Path $updateDir 'local'
+    $appStatesDir = Join-Path $updateDir 'app-states'
+    New-Item -Path $localDir -ItemType Directory -Force | Out-Null
+    New-Item -Path $appStatesDir -ItemType Directory -Force | Out-Null
 
-    Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Managed app-state restore task file was not found."
-    Assert-True -Condition (Test-Path -LiteralPath $manifestPath) -Message "Managed app-state manifest file was not found."
-    Assert-True -Condition (Test-Path -LiteralPath $modulePath) -Message "Managed app-state helper module was not found."
+    function New-TestAppStateZip {
+        param(
+            [string]$DestinationPath,
+            [string]$TaskName,
+            [string]$ManifestTaskName = ''
+        )
 
-    $context = [ordered]@{
-        VM_ADMIN_USER = 'manager'
-        VM_ADMIN_PASS = '<runtime-secret>'
-        ASSISTANT_USER = 'assistant'
-        ASSISTANT_PASS = '<runtime-secret>'
-        COMPANY_NAME = 'exampleorg'
-        EMPLOYEE_EMAIL_ADDRESS = 'employee_email_address'
-        EMPLOYEE_FULL_NAME = 'Example Worker'
-        SSH_PORT = '22'
-        RDP_PORT = '3389'
-        RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
-        VM_NAME = 'samplevm'
-        AZ_LOCATION = 'austriaeast'
-        VM_SIZE = 'Standard_D4as_v5'
-        VM_IMAGE = 'MicrosoftWindowsDesktop:windows-11:win11-24h2-pro:latest'
-        VM_DISK_NAME = 'disk-samplevm-ate1-n7'
-        VM_DISK_SIZE = '127'
-        VM_STORAGE_SKU = 'Premium_LRS'
+        $scratchDir = Join-Path $tempRoot ("plugin-" + [Guid]::NewGuid().ToString("N"))
+        New-Item -Path $scratchDir -ItemType Directory -Force | Out-Null
+        try {
+            if ([string]::IsNullOrWhiteSpace([string]$ManifestTaskName)) {
+                $ManifestTaskName = [string]$TaskName
+            }
+            $manifest = [ordered]@{
+                version = 1
+                taskName = [string]$ManifestTaskName
+                machineFiles = @()
+                machineDirectories = @()
+                profileFiles = @()
+                profileDirectories = @()
+                registryImports = @()
+            }
+            Set-Content -LiteralPath (Join-Path $scratchDir 'app-state.manifest.json') -Value ($manifest | ConvertTo-Json -Depth 6) -Encoding UTF8
+            if (Test-Path -LiteralPath $DestinationPath) {
+                Remove-Item -LiteralPath $DestinationPath -Force -ErrorAction SilentlyContinue
+            }
+            Compress-Archive -LiteralPath (Join-Path $scratchDir 'app-state.manifest.json') -DestinationPath $DestinationPath -Force
+        }
+        finally {
+            Remove-Item -LiteralPath $scratchDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
 
-    $templates = @(
-        [pscustomobject]@{
-            Name = '133-restore-managed-app-state'
-            Script = [string](Get-Content -LiteralPath $taskPath -Raw)
-            RelativePath = '133-restore-managed-app-state.ps1'
-            DirectoryPath = $updateDir
-            TimeoutSeconds = 180
-            AssetSpecs = @(
-                [pscustomobject]@{
-                    LocalPath = 'app-state/managed-app-state-common.psm1'
-                    RemotePath = 'C:/Windows/Temp/az-vm-managed-app-state-common.psm1'
-                },
-                [pscustomobject]@{
-                    LocalPath = 'app-state/managed-app-state-manifest.json'
-                    RemotePath = 'C:/Windows/Temp/az-vm-managed-app-state-manifest.json'
-                }
-            )
+    try {
+        Set-Content -LiteralPath (Join-Path $updateDir '114-install-docker-desktop.ps1') -Value 'Write-Host "tracked"' -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $localDir '1002-configure-settings-jaws.ps1') -Value @'
+# az-vm-task-meta: {"priority":1002,"timeout":120,"enabled":true}
+Write-Host "local"
+'@ -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $updateDir 'vm-update-task-catalog.json') -Value @'
+{
+  "defaults": {
+    "priority": 1000,
+    "timeout": 180
+  },
+  "tasks": [
+    {
+      "name": "114-install-docker-desktop",
+      "taskType": "normal",
+      "priority": 114,
+      "enabled": true,
+      "timeout": 600
+    }
+  ]
+}
+'@ -Encoding UTF8
+
+        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $updateDir -Platform windows -Stage update
+        $trackedTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '114-install-docker-desktop' })[0]
+        $localTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '1002-configure-settings-jaws' })[0]
+
+        $expectedTrackedPluginDir = Join-Path $appStatesDir '114-install-docker-desktop'
+        $expectedLocalPluginDir = Join-Path $appStatesDir '1002-configure-settings-jaws'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $trackedTask) -eq $appStatesDir) -Message 'Tracked vm-update tasks must resolve the shared stage-local app-states root.'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $localTask) -eq $appStatesDir) -Message 'Local-only vm-update tasks must resolve the shared stage-local app-states root.'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $trackedTask) -eq $expectedTrackedPluginDir) -Message 'Tracked task plugin directory mismatch.'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $localTask) -eq $expectedLocalPluginDir) -Message 'Local-only task plugin directory mismatch.'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStateZipPath -TaskBlock $trackedTask) -eq (Join-Path $expectedTrackedPluginDir 'app-state.zip')) -Message 'Tracked task plugin zip path mismatch.'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStateZipPath -TaskBlock $localTask) -eq (Join-Path $expectedLocalPluginDir 'app-state.zip')) -Message 'Local-only task plugin zip path mismatch.'
+
+        New-Item -Path (Join-Path $localDir 'legacy-side-assets') -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $localDir 'legacy-side-assets\app-state.zip') -Value 'legacy' -Encoding UTF8
+        $missingPluginInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $localTask
+        Assert-True -Condition ([string]$missingPluginInfo.Status -eq 'missing-plugin') -Message 'Task app-state resolution must not read zip payloads from local/ helper directories.'
+
+        New-Item -Path $expectedTrackedPluginDir -ItemType Directory -Force | Out-Null
+        $missingZipInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $trackedTask
+        Assert-True -Condition ([string]$missingZipInfo.Status -eq 'missing-zip') -Message 'Existing app-state plugin folders without app-state.zip must report missing-zip.'
+
+        New-TestAppStateZip -DestinationPath (Join-Path $expectedTrackedPluginDir 'app-state.zip') -TaskName '114-install-docker-desktop' -ManifestTaskName 'wrong-task-name'
+        $invalidZipInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $trackedTask
+        Assert-True -Condition ([string]$invalidZipInfo.Status -eq 'invalid') -Message 'Task app-state plugin zips with mismatched taskName must be rejected.'
+
+        New-Item -Path $expectedLocalPluginDir -ItemType Directory -Force | Out-Null
+        New-TestAppStateZip -DestinationPath (Join-Path $expectedLocalPluginDir 'app-state.zip') -TaskName '1002-configure-settings-jaws'
+        $readyInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $localTask
+        Assert-True -Condition ([string]$readyInfo.Status -eq 'ready') -Message 'Valid per-task app-state zip plugins must resolve as ready.'
+        Assert-True -Condition ($null -ne $readyInfo.Manifest) -Message 'Ready app-state zip plugins must publish their parsed manifest.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
-    )
+    }
+}
 
-    $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context)[0]
-    $assetCopies = @($resolvedTask.AssetCopies)
-    $taskBody = [string]$resolvedTask.Script
-    $manifestText = [string](Get-Content -LiteralPath $manifestPath -Raw)
-    $moduleText = [string](Get-Content -LiteralPath $modulePath -Raw)
-    $combinedText = $taskBody + $manifestText + $moduleText
+Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore surfaces" -Action {
+    $runtimeManifestPath = Join-Path $RepoRoot 'modules\azvm-runtime-manifest.ps1'
+    $runtimeManifestText = [string](Get-Content -LiteralPath $runtimeManifestPath -Raw)
+    $runnerPath = Join-Path $RepoRoot 'modules\core\tasks\azvm-ssh-task-runner.ps1'
+    $runnerText = [string](Get-Content -LiteralPath $runnerPath -Raw)
+    $connectionRuntimePath = Join-Path $RepoRoot 'modules\ui\connection\azvm-connection-runtime.ps1'
+    $connectionRuntimeText = [string](Get-Content -LiteralPath $connectionRuntimePath -Raw)
+    $sessionHelpersPath = Join-Path $RepoRoot 'modules\tasks\ssh\session.ps1'
+    $sessionHelpersText = [string](Get-Content -LiteralPath $sessionHelpersPath -Raw)
+    $localExportModulePath = Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-plugin-local-export.psm1'
+    $localExportModuleText = [string](Get-Content -LiteralPath $localExportModulePath -Raw)
+    $localExportTaskPath = Join-Path $RepoRoot 'windows\update\local\disabled\1090-export-local-app-state-snapshot.ps1'
+    $localExportTaskText = [string](Get-Content -LiteralPath $localExportTaskPath -Raw)
+    $gitignoreText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot '.gitignore') -Raw)
 
-    Assert-True -Condition ($assetCopies.Count -eq 2) -Message "Managed app-state task must publish exactly two helper assets."
-    Assert-True -Condition ([string]$assetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-managed-app-state-common.psm1') -Message "Managed app-state helper remote path mismatch."
-    Assert-True -Condition ([string]$assetCopies[1].RemotePath -eq 'C:/Windows/Temp/az-vm-managed-app-state-manifest.json') -Message "Managed app-state manifest remote path mismatch."
+    Assert-True -Condition ($runtimeManifestText -like '*modules/core/tasks/azvm-app-state-plugin.ps1*') -Message 'Runtime manifest must load the shared app-state plugin helper module.'
+    Assert-True -Condition ($runnerText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Windows update SSH runner must invoke the shared app-state post-process after each task.'
+    Assert-True -Condition ($runnerText -like '*Invoke-AzVmSshTaskScript*') -Message 'Windows update SSH runner must use the shared SSH task execution wrapper.'
+    Assert-True -Condition ($runnerText -like '*Wait-AzVmProvisioningReadyOrRepair*') -Message 'Windows update SSH runner must guard against persistent Updating provisioning states before task execution.'
+    Assert-True -Condition ($connectionRuntimeText -like '*Wait-AzVmProvisioningReadyOrRepair*') -Message 'Connection runtime must repair persistent Updating provisioning states before launching SSH or RDP commands.'
+    Assert-True -Condition (($runnerText.IndexOf('-AssistantUser', [System.StringComparison]::Ordinal) -ge 0) -and ($runnerText.IndexOf('[string]$AssistantUser', [System.StringComparison]::Ordinal) -ge 0)) -Message 'Windows update SSH runner must pass the assistant user through to app-state replay.'
+    Assert-True -Condition ($sessionHelpersText -like '*function Invoke-AzVmOneShotSshTask*') -Message 'SSH session helpers must provide a one-shot task fallback helper.'
+    Assert-True -Condition ($sessionHelpersText -like '*function Invoke-AzVmSshTaskScript*') -Message 'SSH session helpers must provide a shared task-execution wrapper.'
+    Assert-True -Condition ($localExportModuleText -like '*Join-Path $repoRoot ''windows\update''*') -Message 'Local app-state export helpers must resolve the shared windows/update app-states root from modules/.'
+    Assert-True -Condition ($localExportTaskText -like '*modules\core\tasks\azvm-app-state-plugin-local-export.psm1*') -Message 'Local app-state export tasks must import the shared module from modules/.'
+    Assert-True -Condition (-not ($localExportTaskText -like '*app-state-plugin-local-common.psm1*')) -Message 'Local app-state export tasks must not import the retired local helper path.'
+    Assert-True -Condition ($gitignoreText -like '*windows/update/app-states/***') -Message '.gitignore must ignore Windows app-state plugin payloads.'
+    Assert-True -Condition ($gitignoreText -like '*linux/update/app-states/***') -Message '.gitignore must ignore Linux app-state plugin payloads.'
 
-    foreach ($fragment in @(
-        'Invoke-ManagedAppStateRestore',
-        'managed-app-state-summary =>',
-        'restore-managed-app-state-completed',
-        'managed-app-state-plan =>',
-        'tracked-safe-baseline',
-        'local-overlay-only',
-        '"id": "google-chrome"',
-        '"id": "microsoft-edge"',
-        '"id": "vscode"',
-        '"id": "docker-desktop"',
-        '"id": "ollama"',
-        '"id": "codex-app"',
-        '"id": "icloud"',
-        '"id": "vs2022community"',
-        '{publicChromeRoot}',
-        '{publicEdgeRoot}',
-        '{businessProfileDirectory}',
-        '{personalProfileDirectory}',
-        'Convert-ToManagedAppStateLowerText',
-        'Get-ManagedAppStateProfileTargets',
-        'Ensure-ManagedAppStateDirectory',
-        'Ensure-ManagedAppStateFile'
+    foreach ($removedPath in @(
+        'windows\update\133-restore-managed-app-state.ps1',
+        'windows\update\app-state\managed-app-state-common.psm1',
+        'windows\update\app-state\managed-app-state-manifest.json'
     )) {
-        Assert-True -Condition ($combinedText.IndexOf([string]$fragment, [System.StringComparison]::Ordinal) -ge 0) -Message ("Managed app-state restore layer must include fragment '{0}'." -f [string]$fragment)
+        Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot $removedPath))) -Message ("Legacy app-state restore surface must be removed: {0}" -f $removedPath)
     }
 }
 
@@ -4660,7 +4834,9 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
         'OpenSSH service is missing. Running service installer before sshd_config changes.',
         'Start-Service -Name sshd',
         'Restart-Service -Name sshd -Force',
-        'listener did not bind to the configured port in time'
+        'listener did not bind to the configured port in time',
+        'Subsystem sftp C:/Windows/System32/OpenSSH/sftp-server.exe',
+        'Set-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name "DefaultShell" -Value "C:\Windows\System32\cmd.exe"'
     )) {
         Assert-True -Condition ($configTaskText -like ('*' + [string]$fragment + '*')) -Message ("OpenSSH configure task must include fragment '{0}'." -f [string]$fragment)
     }

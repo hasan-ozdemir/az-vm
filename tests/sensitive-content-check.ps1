@@ -109,6 +109,9 @@ function Assert-NoSensitiveMatchesInRepoFiles {
     $patterns = @(Get-SensitiveContentPatterns)
     $findings = @()
     foreach ($path in @(Get-TrackedAuditPaths -RepositoryRoot $RepositoryRoot)) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            continue
+        }
         $lines = @(Get-Content -LiteralPath $path -ErrorAction Stop)
         $findings += @(Get-TextFindings -Label $path -Lines $lines -Patterns $patterns)
     }

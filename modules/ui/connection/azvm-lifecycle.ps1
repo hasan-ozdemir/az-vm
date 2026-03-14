@@ -169,3 +169,106 @@ function Format-AzVmVmLifecycleSummaryText {
 
     return ("lifecycle={0}; power={1}; hibernation={2}; provisioning={3}; hibernationEnabled={4}" -f [string]$Snapshot.NormalizedState, $powerStateText, $hibernationStateText, $provisioningStateText, $hibernationEnabledText)
 }
+
+# Handles Test-AzVmVmProvisioningSucceeded.
+function Test-AzVmVmProvisioningSucceeded {
+    param(
+        [psobject]$Snapshot
+    )
+
+    if ($null -eq $Snapshot) {
+        return $false
+    }
+
+    if ([string]::Equals([string]$Snapshot.ProvisioningStateCode, 'ProvisioningState/succeeded', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    return [string]::Equals([string]$Snapshot.ProvisioningStateDisplay, 'Provisioning succeeded', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+# Handles Test-AzVmVmProvisioningUpdating.
+function Test-AzVmVmProvisioningUpdating {
+    param(
+        [psobject]$Snapshot
+    )
+
+    if ($null -eq $Snapshot) {
+        return $false
+    }
+
+    if ([string]::Equals([string]$Snapshot.ProvisioningStateCode, 'ProvisioningState/updating', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+
+    return [string]::Equals([string]$Snapshot.ProvisioningStateDisplay, 'Updating', [System.StringComparison]::OrdinalIgnoreCase)
+}
+
+# Handles Wait-AzVmProvisioningReadyOrRepair.
+function Wait-AzVmProvisioningReadyOrRepair {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [int]$MaxAttempts = 18,
+        [int]$DelaySeconds = 10,
+        [int]$UpdatingAttemptsBeforeRedeploy = 6,
+        [int]$MaxRedeployCount = 1
+    )
+
+    if ($MaxAttempts -lt 1) { $MaxAttempts = 1 }
+    if ($MaxAttempts -gt 120) { $MaxAttempts = 120 }
+    if ($DelaySeconds -lt 1) { $DelaySeconds = 1 }
+    if ($UpdatingAttemptsBeforeRedeploy -lt 1) { $UpdatingAttemptsBeforeRedeploy = 1 }
+    if ($UpdatingAttemptsBeforeRedeploy -gt $MaxAttempts) { $UpdatingAttemptsBeforeRedeploy = $MaxAttempts }
+    if ($MaxRedeployCount -lt 0) { $MaxRedeployCount = 0 }
+    if ($MaxRedeployCount -gt 3) { $MaxRedeployCount = 3 }
+
+    $lastSnapshot = $null
+    $updatingAttemptCount = 0
+    $redeployCount = 0
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        $lastSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $ResourceGroup -VmName $VmName
+        if (Test-AzVmVmProvisioningSucceeded -Snapshot $lastSnapshot) {
+            return [pscustomobject]@{
+                Ready = $true
+                Snapshot = $lastSnapshot
+                RedeployCount = $redeployCount
+            }
+        }
+
+        if (Test-AzVmVmProvisioningUpdating -Snapshot $lastSnapshot) {
+            $updatingAttemptCount++
+        }
+        else {
+            $updatingAttemptCount = 0
+        }
+
+        if (($updatingAttemptCount -ge $UpdatingAttemptsBeforeRedeploy) -and ($redeployCount -lt $MaxRedeployCount)) {
+            Write-Host ("VM provisioning is still 'Updating' for '{0}' in group '{1}'. Triggering Azure redeploy repair..." -f $VmName, $ResourceGroup) -ForegroundColor Yellow
+            Invoke-TrackedAction -Label ("az vm redeploy -g {0} -n {1}" -f $ResourceGroup, $VmName) -Action {
+                az vm redeploy -g $ResourceGroup -n $VmName -o none --only-show-errors
+                Assert-LastExitCode "az vm redeploy"
+            } | Out-Null
+            $redeployCount++
+            $updatingAttemptCount = 0
+
+            if ($attempt -lt $MaxAttempts) {
+                Start-Sleep -Seconds $DelaySeconds
+            }
+
+            continue
+        }
+
+        if ($attempt -lt $MaxAttempts) {
+            Write-Host ("VM provisioning is not ready yet for '{0}' in group '{1}'. {2}. Retrying in {3}s (attempt {4}/{5})..." -f $VmName, $ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $lastSnapshot), $DelaySeconds, $attempt, $MaxAttempts) -ForegroundColor Yellow
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+
+    return [pscustomobject]@{
+        Ready = $false
+        Snapshot = $lastSnapshot
+        RedeployCount = $redeployCount
+    }
+}

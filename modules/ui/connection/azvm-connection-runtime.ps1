@@ -180,7 +180,17 @@ function Initialize-AzVmConnectionCommandContext {
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $configMap -OperationName $OperationName
-    $lifecycleSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup ([string]$target.ResourceGroup) -VmName ([string]$target.VmName)
+    $lifecycleWaitResult = Wait-AzVmProvisioningReadyOrRepair -ResourceGroup ([string]$target.ResourceGroup) -VmName ([string]$target.VmName)
+    if (-not [bool]$lifecycleWaitResult.Ready) {
+        $failedSnapshot = $lifecycleWaitResult.Snapshot
+        Throw-FriendlyError `
+            -Detail ("The {0} command cannot continue because VM '{1}' in resource group '{2}' did not return to provisioning succeeded. {3}" -f $OperationName, [string]$target.VmName, [string]$target.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $failedSnapshot)) `
+            -Code 66 `
+            -Summary ("{0} requires a healthy VM provisioning state." -f ([string]$OperationName).ToUpperInvariant()) `
+            -Hint "Wait for provisioning to recover, or inspect Azure activity logs if the automatic redeploy repair did not resolve the issue."
+    }
+
+    $lifecycleSnapshot = $lifecycleWaitResult.Snapshot
     Assert-AzVmConnectionVmRunning -OperationName $OperationName -Snapshot $lifecycleSnapshot
     $vmSshPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_SSH_PORT' -DefaultValue (Get-AzVmDefaultSshPortText) -Label 'SSH'
     $vmRdpPort = Resolve-AzVmConnectionPortText -ConfigMap $configMap -Key 'VM_RDP_PORT' -DefaultValue (Get-AzVmDefaultRdpPortText) -Label 'RDP'

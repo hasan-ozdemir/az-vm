@@ -67,7 +67,7 @@ if ($content.Count -eq 0) {
         "PermitEmptyPasswords no",
         "AllowTcpForwarding yes",
         "GatewayPorts no",
-        "Subsystem sftp sftp-server.exe"
+        "Subsystem sftp C:/Windows/System32/OpenSSH/sftp-server.exe"
     )
 }
 
@@ -93,11 +93,11 @@ Set-OrAdd -Key "PubkeyAuthentication" -Value "no"
 Set-OrAdd -Key "PermitEmptyPasswords" -Value "no"
 Set-OrAdd -Key "AllowTcpForwarding" -Value "yes"
 Set-OrAdd -Key "GatewayPorts" -Value "yes"
-Set-OrAdd -Key "Subsystem sftp" -Value "sftp-server.exe"
+Set-OrAdd -Key "Subsystem sftp" -Value "C:/Windows/System32/OpenSSH/sftp-server.exe"
 Set-Content -Path $sshdConfig -Value $content -Encoding ascii
 
 New-Item -Path "HKLM:\SOFTWARE\OpenSSH" -Force
-Set-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name "DefaultShell" -Value "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+Set-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name "DefaultShell" -Value "C:\Windows\System32\cmd.exe"
 
 $sshdService = Get-OpenSshService
 Set-Service -Name sshd -StartupType Automatic

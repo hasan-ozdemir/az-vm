@@ -184,3 +184,237 @@ function Stop-AzVmPersistentSshSession {
         }
     }
 }
+
+# Handles Test-AzVmPersistentSshSessionUsable.
+function Test-AzVmPersistentSshSessionUsable {
+    param(
+        [psobject]$Session
+    )
+
+    if ($null -eq $Session -or $null -eq $Session.Process) {
+        return $false
+    }
+
+    try {
+        return (-not $Session.Process.HasExited)
+    }
+    catch {
+        return $false
+    }
+}
+
+# Handles Invoke-AzVmOneShotSshTask.
+function Invoke-AzVmOneShotSshTask {
+    param(
+        [string]$PySshPythonPath,
+        [string]$PySshClientPath,
+        [string]$HostName,
+        [string]$UserName,
+        [string]$Password,
+        [string]$Port,
+        [ValidateSet('powershell','bash')]
+        [string]$Shell = 'powershell',
+        [string]$TaskName,
+        [string]$TaskScript,
+        [int]$TimeoutSeconds = 1800,
+        [switch]$SkipRemoteCleanup
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$PySshClientPath) -or -not (Test-Path -LiteralPath $PySshClientPath)) {
+        throw "One-shot SSH task execution could not start because pyssh client path is invalid."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$PySshPythonPath) -or -not (Test-Path -LiteralPath $PySshPythonPath)) {
+        throw "One-shot SSH task execution could not start because pyssh python executable is invalid."
+    }
+    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }
+    if ($TimeoutSeconds -gt 7200) { $TimeoutSeconds = 7200 }
+
+    $safeTaskName = ([string]$TaskName -replace '[^A-Za-z0-9\-]', '-').Trim('-')
+    if ([string]::IsNullOrWhiteSpace([string]$safeTaskName)) {
+        $safeTaskName = 'task'
+    }
+
+    $scriptPayload = [string]$TaskScript
+    if (-not [string]::IsNullOrEmpty([string]$scriptPayload) -and -not $scriptPayload.EndsWith("`n")) {
+        $scriptPayload += "`n"
+    }
+
+    if ($Shell -eq 'powershell' -and $scriptPayload.Length -le 7000) {
+        $encodedBytes = [System.Text.Encoding]::Unicode.GetBytes($scriptPayload)
+        $encodedCommand = [System.Convert]::ToBase64String($encodedBytes)
+        $result = Invoke-AzVmProcessWithRetry `
+            -FilePath $PySshPythonPath `
+            -Arguments @(
+                $PySshClientPath,
+                'exec',
+                '--host', [string]$HostName,
+                '--port', [string]$Port,
+                '--user', [string]$UserName,
+                '--password', [string]$Password,
+                '--timeout', [string]$TimeoutSeconds,
+                '--command', ('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {0}' -f [string]$encodedCommand)
+            ) `
+            -Label ("pyssh one-shot task -> {0}" -f [string]$TaskName) `
+            -MaxAttempts 1 `
+            -AllowFailure
+
+        return [pscustomobject]@{
+            ExitCode = [int]$result.ExitCode
+            Output = [string]$result.Output
+            DurationSeconds = 0.0
+            ExecutionMode = 'one-shot'
+        }
+    }
+
+    $extension = if ($Shell -eq 'bash') { 'sh' } else { 'ps1' }
+    $localTempPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-task-{0}-{1}.{2}' -f $safeTaskName, ([guid]::NewGuid().ToString('N')), $extension)
+    $remoteScriptPath = if ($Shell -eq 'bash') {
+        '/tmp/az-vm-task-{0}.sh' -f ([guid]::NewGuid().ToString('N'))
+    }
+    else {
+        'C:/Windows/Temp/az-vm-task-{0}.ps1' -f ([guid]::NewGuid().ToString('N'))
+    }
+
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($localTempPath, $scriptPayload, $utf8NoBom)
+
+    try {
+        Copy-AzVmAssetToVm `
+            -PySshPythonPath $PySshPythonPath `
+            -PySshClientPath $PySshClientPath `
+            -HostName $HostName `
+            -UserName $UserName `
+            -Password $Password `
+            -Port $Port `
+            -LocalPath $localTempPath `
+            -RemotePath $remoteScriptPath `
+            -ConnectTimeoutSeconds $TimeoutSeconds
+
+        $commandText = if ($Shell -eq 'bash') {
+            'bash "{0}"' -f [string]$remoteScriptPath
+        }
+        else {
+            'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{0}"' -f [string]$remoteScriptPath
+        }
+
+        $result = Invoke-AzVmProcessWithRetry `
+            -FilePath $PySshPythonPath `
+            -Arguments @(
+                $PySshClientPath,
+                'exec',
+                '--host', [string]$HostName,
+                '--port', [string]$Port,
+                '--user', [string]$UserName,
+                '--password', [string]$Password,
+                '--timeout', [string]$TimeoutSeconds,
+                '--command', [string]$commandText
+            ) `
+            -Label ("pyssh one-shot task -> {0}" -f [string]$TaskName) `
+            -MaxAttempts 1 `
+            -AllowFailure
+
+        return [pscustomobject]@{
+            ExitCode = [int]$result.ExitCode
+            Output = [string]$result.Output
+            DurationSeconds = 0.0
+            ExecutionMode = 'one-shot'
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $localTempPath) {
+            Remove-Item -LiteralPath $localTempPath -Force -ErrorAction SilentlyContinue
+        }
+
+        if (-not $SkipRemoteCleanup) {
+            try {
+                $cleanupCommand = if ($Shell -eq 'bash') {
+                    'bash -lc "rm -f ''{0}''"' -f [string]$remoteScriptPath
+                }
+                else {
+                    'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "Remove-Item -LiteralPath ''{0}'' -Force -ErrorAction SilentlyContinue"' -f [string]$remoteScriptPath
+                }
+
+                Invoke-AzVmProcessWithRetry `
+                    -FilePath $PySshPythonPath `
+                    -Arguments @(
+                        $PySshClientPath,
+                        'exec',
+                        '--host', [string]$HostName,
+                        '--port', [string]$Port,
+                        '--user', [string]$UserName,
+                        '--password', [string]$Password,
+                        '--timeout', '30',
+                        '--command', [string]$cleanupCommand
+                    ) `
+                    -Label ("pyssh cleanup task -> {0}" -f [string]$TaskName) `
+                    -MaxAttempts 1 `
+                    -AllowFailure | Out-Null
+            }
+            catch { }
+        }
+    }
+}
+
+# Handles Invoke-AzVmSshTaskScript.
+function Invoke-AzVmSshTaskScript {
+    param(
+        [psobject]$Session,
+        [string]$PySshPythonPath,
+        [string]$PySshClientPath,
+        [string]$HostName,
+        [string]$UserName,
+        [string]$Password,
+        [string]$Port,
+        [ValidateSet('powershell','bash')]
+        [string]$Shell = 'powershell',
+        [string]$TaskName,
+        [string]$TaskScript,
+        [int]$TimeoutSeconds = 1800,
+        [switch]$SkipRemoteCleanup
+    )
+
+    if (Test-AzVmPersistentSshSessionUsable -Session $Session) {
+        return (Invoke-AzVmPersistentSshTask -Session $Session -TaskName $TaskName -TaskScript $TaskScript -TimeoutSeconds $TimeoutSeconds)
+    }
+
+    return (Invoke-AzVmOneShotSshTask `
+        -PySshPythonPath $PySshPythonPath `
+        -PySshClientPath $PySshClientPath `
+        -HostName $HostName `
+        -UserName $UserName `
+        -Password $Password `
+        -Port $Port `
+        -Shell $Shell `
+        -TaskName $TaskName `
+        -TaskScript $TaskScript `
+        -TimeoutSeconds $TimeoutSeconds `
+        -SkipRemoteCleanup:$SkipRemoteCleanup)
+}
+
+# Handles Test-AzVmSshTransportFallbackSignal.
+function Test-AzVmSshTransportFallbackSignal {
+    param(
+        [AllowNull()]
+        [string]$Text
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Text)) {
+        return $false
+    }
+
+    $value = [string]$Text
+    foreach ($pattern in @(
+        'Starting the CLR failed with HRESULT',
+        'Thread failed to start',
+        'System.Management.Automation.RemoteException',
+        'EOF during negotiation',
+        'AZ_VM_SESSION_TASK_ERROR:',
+        'AZ_VM_SESSION_ERROR:'
+    )) {
+        if ($value.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
+            return $true
+        }
+    }
+
+    return $false
+}

@@ -278,45 +278,7 @@ function Wait-AzVmProvisioningSucceeded {
         [int]$DelaySeconds = 10
     )
 
-    $lastSnapshot = $null
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        $snapshotJson = az vm get-instance-view -g $ResourceGroup -n $VmName --query "{provisioningState:provisioningState,provisioningCode:instanceView.statuses[?starts_with(code,'ProvisioningState/')].code | [0],provisioningDisplay:instanceView.statuses[?starts_with(code,'ProvisioningState/')].displayStatus | [0],powerCode:instanceView.statuses[?starts_with(code,'PowerState/')].code | [0],powerDisplay:instanceView.statuses[?starts_with(code,'PowerState/')].displayStatus | [0]}" -o json --only-show-errors 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$snapshotJson)) {
-            $lastSnapshot = ConvertFrom-JsonCompat -InputObject $snapshotJson
-            $provisioningState = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningState
-            $provisioningCode = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningCode
-            $provisioningDisplay = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningDisplay
-            if ([string]::Equals([string]$provisioningState, 'Succeeded', [System.StringComparison]::OrdinalIgnoreCase) -or
-                [string]::Equals([string]$provisioningCode, 'ProvisioningState/succeeded', [System.StringComparison]::OrdinalIgnoreCase) -or
-                [string]::Equals([string]$provisioningDisplay, 'Provisioning succeeded', [System.StringComparison]::OrdinalIgnoreCase)) {
-                return [pscustomobject]@{
-                    Ready = $true
-                    Snapshot = $lastSnapshot
-                }
-            }
-        }
-
-        if ($attempt -lt $MaxAttempts) {
-            $statusText = if ($null -ne $lastSnapshot) {
-                $provisioningSummary = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningDisplay
-                if ([string]::IsNullOrWhiteSpace([string]$provisioningSummary)) {
-                    $provisioningSummary = Get-AzVmSafeTrimmedText -Value $lastSnapshot.provisioningState
-                }
-                ("provisioning={0}; power={1}" -f $provisioningSummary, (Get-AzVmSafeTrimmedText -Value $lastSnapshot.powerDisplay))
-            }
-            else {
-                'instance view not ready'
-            }
-
-            Write-Host ("VM provisioning is not ready yet for '{0}' in group '{1}'. {2}. Retrying in {3}s (attempt {4}/{5})..." -f $VmName, $ResourceGroup, $statusText, $DelaySeconds, $attempt, $MaxAttempts) -ForegroundColor Yellow
-            Start-Sleep -Seconds $DelaySeconds
-        }
-    }
-
-    return [pscustomobject]@{
-        Ready = $false
-        Snapshot = $lastSnapshot
-    }
+    return (Wait-AzVmProvisioningReadyOrRepair -ResourceGroup $ResourceGroup -VmName $VmName -MaxAttempts $MaxAttempts -DelaySeconds $DelaySeconds)
 }
 
 # Handles Invoke-AzVmPostDeployFeatureEnablement.

@@ -74,6 +74,7 @@ function Invoke-AzVmExecCommand {
             -SshUser ([string]$context.VmUser) `
             -SshPassword ([string]$context.VmPass) `
             -SshPort ([string]$context.SshPort) `
+            -AssistantUser ([string]$context.VmAssistantUser) `
             -ResourceGroup ([string]$context.ResourceGroup) `
             -VmName ([string]$context.VmName) `
             -TaskBlocks @($selectedTask) `

@@ -10,6 +10,7 @@ function Invoke-AzVmSshTaskBlocks {
         [string]$SshUser,
         [string]$SshPassword,
         [string]$SshPort,
+        [string]$AssistantUser = '',
         [string]$ResourceGroup = '',
         [string]$VmName = '',
         [object[]]$TaskBlocks,
@@ -42,6 +43,8 @@ function Invoke-AzVmSshTaskBlocks {
 
     $shell = if ($Platform -eq 'windows') { 'powershell' } else { 'bash' }
     $session = $null
+    $persistentSessionEnabled = $true
+    $usedOneShotFallback = $false
     $totalSuccess = 0
     $totalWarnings = 0
     $totalErrors = 0
@@ -61,6 +64,13 @@ function Invoke-AzVmSshTaskBlocks {
         }
 
         Write-Warning ("Attempting persistent SSH session recovery: {0}" -f [string]$Reason)
+        if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+            $repairResult = Wait-AzVmProvisioningReadyOrRepair -ResourceGroup $ResourceGroup -VmName $VmName
+            if (-not [bool]$repairResult.Ready) {
+                throw ("VM '{0}' in resource group '{1}' did not recover from provisioning issues while restoring the SSH session. {2}" -f [string]$VmName, [string]$ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $repairResult.Snapshot))
+            }
+        }
+
         $sshReachable = Wait-AzVmTcpPortReachable `
             -HostName $SshHost `
             -Port ([int]$SshPort) `
@@ -88,8 +98,22 @@ function Invoke-AzVmSshTaskBlocks {
         Write-Host 'VM update stage mode: tasks run one-by-one over a persistent SSH session.'
         Write-Host ("Task outcome policy: {0}" -f $TaskOutcomeMode)
         Write-Host ("SSH timeouts: task={0}s, connect={1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
+        if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+            $provisioningRepairResult = Wait-AzVmProvisioningReadyOrRepair -ResourceGroup $ResourceGroup -VmName $VmName
+            if (-not [bool]$provisioningRepairResult.Ready) {
+                throw ("VM '{0}' in resource group '{1}' is not ready for SSH task execution. {2}" -f [string]$VmName, [string]$ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $provisioningRepairResult.Snapshot))
+            }
+        }
 
-        $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+        try {
+            $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+        }
+        catch {
+            $persistentSessionEnabled = $false
+            $usedOneShotFallback = $true
+            $session = $null
+            Write-Warning ("Persistent SSH session bootstrap failed. Falling back to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+        }
 
         foreach ($task in @($TaskBlocks)) {
             $taskName = [string]$task.Name
@@ -101,8 +125,16 @@ function Invoke-AzVmSshTaskBlocks {
 
             Write-Host ("Task started: {0} (max {1}s)" -f $taskName, $taskTimeoutSeconds)
 
-            if ($null -eq $session -or $null -eq $session.Process -or $session.Process.HasExited) {
-                $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("pre-task bootstrap for '{0}'" -f $taskName)
+            if ($persistentSessionEnabled -and -not (Test-AzVmPersistentSshSessionUsable -Session $session)) {
+                try {
+                    $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("pre-task bootstrap for '{0}'" -f $taskName)
+                }
+                catch {
+                    $persistentSessionEnabled = $false
+                    $usedOneShotFallback = $true
+                    $session = $null
+                    Write-Warning ("Persistent SSH session recovery failed. Falling back to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+                }
             }
 
             $assetCopies = @()
@@ -133,14 +165,72 @@ function Invoke-AzVmSshTaskBlocks {
             for ($attempt = 1; $attempt -le $SshMaxRetries; $attempt++) {
                 $taskInvocationError = $null
                 try {
-                    $taskResult = Invoke-AzVmPersistentSshTask -Session $session -TaskName $taskName -TaskScript $taskScript -TimeoutSeconds $taskTimeoutSeconds
+                    $taskResult = Invoke-AzVmSshTaskScript `
+                        -Session $(if ($persistentSessionEnabled) { $session } else { $null }) `
+                        -PySshPythonPath ([string]$pySsh.PythonPath) `
+                        -PySshClientPath ([string]$pySsh.ClientPath) `
+                        -HostName $SshHost `
+                        -UserName $SshUser `
+                        -Password $SshPassword `
+                        -Port $SshPort `
+                        -Shell $shell `
+                        -TaskName $taskName `
+                        -TaskScript $taskScript `
+                        -TimeoutSeconds $taskTimeoutSeconds
                     break
                 }
                 catch {
                     $taskInvocationError = $_
                     if ($attempt -lt $SshMaxRetries) {
-                        Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
-                        $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("retry {0}/{1} for task '{2}'" -f $attempt, $SshMaxRetries, $taskName)
+                        if ($persistentSessionEnabled) {
+                            Write-Warning ("Persistent SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
+                            try {
+                                $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("retry {0}/{1} for task '{2}'" -f $attempt, $SshMaxRetries, $taskName)
+                            }
+                            catch {
+                                $persistentSessionEnabled = $false
+                                $usedOneShotFallback = $true
+                                $session = $null
+                                Write-Warning ("Persistent SSH session recovery failed. Falling back to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+                            }
+                        }
+                        else {
+                            Write-Warning ("One-shot SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
+                        }
+                    }
+                }
+            }
+
+            if ($null -eq $taskInvocationError -and $persistentSessionEnabled -and $null -ne $taskResult) {
+                $taskOutputText = ''
+                if ($taskResult.PSObject.Properties.Match('Output').Count -gt 0) {
+                    $taskOutputText = [string]$taskResult.Output
+                }
+
+                if (([int]$taskResult.ExitCode -ne 0) -and (Test-AzVmSshTransportFallbackSignal -Text $taskOutputText)) {
+                    Write-Warning ("Persistent SSH shell reported a known bootstrap failure for '{0}'. Retrying once via one-shot SSH execution." -f $taskName)
+                    if ($null -ne $session) {
+                        Stop-AzVmPersistentSshSession -Session $session
+                    }
+                    $persistentSessionEnabled = $false
+                    $usedOneShotFallback = $true
+                    $session = $null
+                    try {
+                        $taskResult = Invoke-AzVmSshTaskScript `
+                            -Session $null `
+                            -PySshPythonPath ([string]$pySsh.PythonPath) `
+                            -PySshClientPath ([string]$pySsh.ClientPath) `
+                            -HostName $SshHost `
+                            -UserName $SshUser `
+                            -Password $SshPassword `
+                            -Port $SshPort `
+                            -Shell $shell `
+                            -TaskName $taskName `
+                            -TaskScript $taskScript `
+                            -TimeoutSeconds $taskTimeoutSeconds
+                    }
+                    catch {
+                        $taskInvocationError = $_
                     }
                 }
             }
@@ -158,27 +248,49 @@ function Invoke-AzVmSshTaskBlocks {
                 $failedTasks += $taskName
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
-                    Write-Warning ("Task warning: {0} failed in persistent session => {1}" -f $taskName, $taskInvocationError.Exception.Message)
+                    $transportModeLabel = if ($persistentSessionEnabled) { 'persistent session' } else { 'one-shot ssh' }
+                    Write-Warning ("Task warning: {0} failed in {1} => {2}" -f $taskName, $transportModeLabel, $taskInvocationError.Exception.Message)
                     Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
-                    try {
-                        $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("post-warning recovery after task '{0}'" -f $taskName)
-                    }
-                    catch {
-                        $session = $null
-                        Write-Warning ("Persistent SSH session recovery is still unavailable after task '{0}': {1}" -f $taskName, $_.Exception.Message)
+                    if ($persistentSessionEnabled) {
+                        try {
+                            $session = Restore-AzVmTaskSession -ExistingSession $session -Reason ("post-warning recovery after task '{0}'" -f $taskName)
+                        }
+                        catch {
+                            $persistentSessionEnabled = $false
+                            $usedOneShotFallback = $true
+                            $session = $null
+                            Write-Warning ("Persistent SSH session recovery is still unavailable after task '{0}'. Falling back to one-shot SSH execution: {1}" -f $taskName, $_.Exception.Message)
+                        }
                     }
                     continue
                 }
 
                 $totalErrors++
                 Write-Host ("Task failed: {0}" -f $taskName) -ForegroundColor Red
-                throw ("VM update task failed in persistent session: {0} => {1}" -f $taskName, $taskInvocationError.Exception.Message)
+                $transportModeLabel = if ($persistentSessionEnabled) { 'persistent session' } else { 'one-shot ssh' }
+                throw ("VM update task failed in {0}: {1} => {2}" -f $transportModeLabel, $taskName, $taskInvocationError.Exception.Message)
             }
 
             if ([int]$taskResult.ExitCode -eq 0) {
                 $totalSuccess++
                 $successfulTasks += $taskName
                 Write-Host ("Task completed: {0} ({1:N1}s) - success" -f $taskName, $taskElapsedSeconds)
+
+                $appStateResult = Invoke-AzVmTaskAppStatePostProcess `
+                    -Platform $Platform `
+                    -RepoRoot $RepoRoot `
+                    -TaskBlock $task `
+                    -Session $session `
+                    -PySshPythonPath ([string]$pySsh.PythonPath) `
+                    -PySshClientPath ([string]$pySsh.ClientPath) `
+                    -HostName $SshHost `
+                    -UserName $SshUser `
+                    -Password $SshPassword `
+                    -Port $SshPort `
+                    -ConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                    -TimeoutSeconds $taskTimeoutSeconds `
+                    -ManagerUser ([string]$SshUser) `
+                    -AssistantUser ([string]$AssistantUser)
             }
             else {
                 $failedTasks += $taskName
@@ -212,6 +324,9 @@ function Invoke-AzVmSshTaskBlocks {
         $uniqueFailedTasks = @($failedTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
         Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, error={3}, reboot={4}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $totalErrors, $rebootCount)
+        if ($usedOneShotFallback) {
+            Write-Host 'VM update transport summary: one-shot SSH fallback was used for one or more tasks.' -ForegroundColor Yellow
+        }
         if (@($uniqueFailedTasks).Count -gt 0) {
             Write-Host 'Failed tasks:' -ForegroundColor Yellow
             foreach ($failedTaskName in @($uniqueFailedTasks)) {

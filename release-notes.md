@@ -2,17 +2,20 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## Release 2026.3.13.309 - 2026-03-13
+## Release 2026.3.14.310 - 2026-03-14
 
 ### Summary
-This release hardens the Windows app-install and personalization surface around isolated live evidence. Store-backed public desktop shortcuts now normalize through `AppsFolder` launches, tracked safe app-state baselines can be replayed from a dedicated managed restore task, Docker and WSL prerequisite signals are surfaced more explicitly, and the local-only WSL overlay path now keeps only the `docker-desktop` distro state instead of replaying unrelated WSL distributions.
+This release replaces the old Windows app-state replay surface with a more extensible plugin model. Vm-update tasks now look only for `.../update/app-states/<task-name>/app-state.zip`, replay that payload when it exists, and continue cleanly when it does not. The shared post-process now serves builtin and local-only tasks alike, connection and direct-task flows can repair a VM that remains stuck in provisioning state `Updating` through one bounded `az vm redeploy`, Store-backed public desktop shortcuts still normalize through `AppsFolder` launches, and the local WSL payload still keeps only the `docker-desktop` distro state.
 
 ### Highlights
-- Added the tracked managed app-state restore layer and task `133-restore-managed-app-state.ps1`, giving repo-installed Windows apps a safer replay path than broad profile mirroring.
+- Added a shared vm-update app-state plugin manager and guest replay helper so builtin and local-only update tasks can both consume one exact per-task app-state zip contract without a dedicated restore task.
+- Standardized the only valid app-state source path to `.../update/app-states/<task-name>/app-state.zip` and removed the old tracked restore task plus the old local overlay replay path.
+- Moved the local app-state export helper into `modules/core/tasks/` so builtin and local-only update tasks now share one orchestration layer for save/restore helpers and post-task replay.
 - Added `docs/windows-store-migration-audit.md` so the repo now documents which Windows apps are already Store-backed, which Store migrations are credible but still approval-gated, and which installers should stay on their current source.
 - Updated the Windows public desktop shortcut contract so Store-backed apps such as Codex, Teams, WhatsApp, and Be My Eyes prefer `explorer.exe` with `shell:AppsFolder\<AUMID>`, while `a11MS Edge` stays on the requested direct `msedge.exe` launch contract and Google Drive now refreshes to the newest versioned executable path.
 - Hardened the WSL/Docker path with explicit feature-state health evidence and narrowed the local-only WSL overlay replay so only `docker-desktop` remains in the exported and replayed distro state.
-- Revalidated the change set with isolated live task runs on the active Windows VM, including the refreshed shortcut normalization, the managed state replay task, and the filtered local overlay replay.
+- Added one bounded redeploy repair path when Azure leaves the VM stuck in provisioning state `Updating`, and hardened task execution so persistent SSH session drops can fall back to one-shot execution without skipping per-task app-state replay.
+- Revalidated the change set with isolated live task runs on the active Windows VM across the full builtin and local-only vm-update task set, including the refreshed shortcut normalization, the per-task app-state post-process hook, the SSH transport fallback path, and the filtered WSL payload behavior.
 
 ## Release 2026.3.13.308 - 2026-03-13
 

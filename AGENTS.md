@@ -102,6 +102,10 @@ Use these sources in this order when maintaining the repo:
 - Intentionally local-only tasks live under `local/`, are discovered from disk at runtime, and use script metadata only.
 - Intentionally local-only disabled tasks live under `local/disabled/` and remain disabled by location.
 - Root `disabled/` remains for tracked disabled tasks.
+- The only allowed vm-update app-state source is the stage-local plugin zip `.../update/app-states/<task-name>/app-state.zip`.
+- Builtin catalog vm-update tasks and local-only vm-update tasks must use the same post-process app-state contract and the same exact plugin path rule.
+- Stage-local `app-states/` roots are untracked and git-ignored; missing task plugins must log a skip and continue instead of failing the stage.
+- `local/`, task-side helper folders, and any legacy overlay paths must not be used as alternate app-state storage locations.
 - Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets` for intentionally local-only tasks that stay out of source control.
 - When both a task catalog entry and script metadata exist, the catalog entry wins for `priority`, `enabled`, and `timeout`.
 - Task priority is catalog-driven for tracked tasks and metadata-driven first for intentionally local-only tasks.
@@ -117,6 +121,7 @@ Use these sources in this order when maintaining the repo:
 - Validate before mutating Azure resources.
 - Prefer fast, filtered Azure checks over broad slow listings.
 - If Azure does not support a requested operation safely, fail before mutation with the explicit platform reason and list the supported alternatives.
+- When lifecycle or connection flows find a VM stuck in provisioning state `Updating`, use one explicit bounded `az vm redeploy` repair attempt before failing the operation.
 - Fail gracefully with:
   - a short reason
   - a precise corrective hint

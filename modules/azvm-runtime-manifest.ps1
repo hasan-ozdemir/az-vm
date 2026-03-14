@@ -4,6 +4,7 @@
     'modules/core/platform/azvm-platform-defaults.ps1'
     'modules/core/config/azvm-config-resolution.ps1'
     'modules/core/tasks/azvm-task-catalog.ps1'
+    'modules/core/tasks/azvm-app-state-plugin.ps1'
     'modules/core/host/azvm-startup-mirror.ps1'
     'modules/core/tasks/azvm-task-materialization.ps1'
     'modules/core/tasks/azvm-ssh-task-runner.ps1'

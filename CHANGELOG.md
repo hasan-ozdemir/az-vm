@@ -3,24 +3,30 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.13.309] - 2026-03-13
+## [2026.3.14.310] - 2026-03-14
 
 ### Added
-- Added a tracked Windows managed app-state restore layer under `windows/update/app-state/` plus the new tracked task `133-restore-managed-app-state.ps1`, so tracked safe baselines for repo-installed apps can be replayed after installs without relying on broad fragile profile copies.
+- Added a shared vm-update app-state plugin manager under `modules/core/tasks/` that now resolves per-task app-state payloads only from stage-local `app-states/<task-name>/app-state.zip`, validates the embedded manifest, stages the zip to the guest, and replays it as a non-blocking post-process after builtin and local-only vm-update tasks.
 - Added `docs/windows-store-migration-audit.md` to capture the current Windows installer-source matrix, explicitly separating Store-backed apps, approval-gated `winget + msstore` migration candidates, and apps that should stay on their current installer source.
 
 ### Changed
+- Replaced the old tracked restore-task plus local overlay layout with one strict app-state contract: builtin and local vm-update tasks now share the same git-ignored stage-local plugin root, `.../update/app-states/<task-name>/app-state.zip`, and no other app-state source path is considered valid.
+- Reorganized the local Windows app-state disk layout around per-task zip plugins, migrated the current ignored payloads into `windows/update/app-states/`, removed the old `app-state-overlays` restore path, and retired the dedicated local overlay replay task.
+- Moved the local app-state export helper into `modules/core/tasks/` so builtin and local-only vm-update tasks now share one repo-level app-state orchestration path instead of mixing stage-local helper locations with the shared post-process.
 - Reworked `10002-create-shortcuts-public-desktop.ps1` so Store-backed public desktop shortcuts now prefer `explorer.exe` plus `shell:AppsFolder\<AUMID>` launch contracts, while `a11MS Edge` stays a direct `msedge.exe` shortcut with the repo-managed shared argument profile rooted at `C:\Users\Public\AppData\Local\Microsoft\msedge\userdata`.
 - Hardened shortcut reconciliation so same-name legacy `.lnk` files are no longer treated as healthy by name alone; normalization now rechecks target and argument contracts, which allowed Codex, WhatsApp Business, Edge, and Google Drive shortcuts to self-heal on the live VM.
 - Hardened `113-install-wsl2-system.ps1` and `10099-capture-snapshot-health.ps1` so the repo now logs explicit WSL feature-state evidence, surfaces Docker Desktop prerequisite readiness, and verifies the refreshed Edge shortcut contract in the live health snapshot.
-- Refreshed the README business/outcome story and documentation set so the current docs now mention Store-aware shortcuts, tracked safe replay, optional local-only overlays, Docker/WSL readiness hardening, and the dedicated Store migration audit document.
+- Refreshed the README business/outcome story and documentation set so the current docs now mention Store-aware shortcuts, per-task git-ignored app-state zip plugins, Docker/WSL readiness hardening, and the dedicated Store migration audit document.
 
 ### Fixed
 - Narrowed the local-only WSL save/restore payload so only the `docker-desktop` distro registry state is exported and replayed; non-Docker WSL distro entries are now excluded from the payload and purged during local overlay replay before the filtered Lxss state is imported.
+- Hardened the SSH task transport so persistent-session task execution now falls back to one-shot execution when bootstrap or mid-task CLR/session failures occur, while still applying the same per-task app-state post-process contract afterward.
+- Added a bounded lifecycle repair path for VMs that stay in provisioning state `Updating`: connection/runtime flows now trigger one explicit `az vm redeploy` repair attempt before failing.
+- Relaxed guest-side app-state replay so locked or in-use payload files are logged as copy skips instead of breaking the whole replay, which keeps live app-state deployment non-blocking for actively running desktop apps.
 
 ### Tests
 - Revalidated the tracked non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
-- Revalidated the live isolated Windows task set on the active VM with `exec --update-task=113`, `114`, `116`, `10002`, `10006`, `10099`, plus the local-only task chain `1001`, `1002`, `1004`, `1005`, and `1006`.
+- Revalidated the full live isolated Windows vm-update task set on the active VM with per-task `exec --update-task=...` runs across builtin and local-only tasks after the shared post-task app-state plugin hook, SSH transport fallback, and provisioning-repair path were wired into the runtime.
 
 ## [2026.3.13.308] - 2026-03-13
 

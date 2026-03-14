@@ -142,7 +142,7 @@
       "taskType": "normal",
       "priority": 119,
       "enabled": true,
-      "timeout": 5
+      "timeout": 60
     },
     {
       "name": "120-install-google-drive",
@@ -227,13 +227,6 @@
       "priority": 132,
       "enabled": true,
       "timeout": 7200
-    },
-    {
-      "name": "133-restore-managed-app-state",
-      "taskType": "normal",
-      "priority": 133,
-      "enabled": true,
-      "timeout": 180
     },
     {
       "name": "10001-configure-apps-startup",
