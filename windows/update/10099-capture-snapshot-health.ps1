@@ -1,4 +1,4 @@
-# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"},{"local":"../../modules/core/tasks/azvm-shortcut-launcher.psm1","remote":"C:/Windows/Temp/az-vm-shortcut-launcher.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: capture-snapshot-health"
 
@@ -17,9 +17,13 @@ $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
+$launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
 
 if (Test-Path -LiteralPath $storeHelperPath) {
     Import-Module $storeHelperPath -Force -DisableNameChecking
+}
+if (Test-Path -LiteralPath $launcherHelperPath) {
+    Import-Module $launcherHelperPath -Force -DisableNameChecking
 }
 
 function Invoke-CommandWithTimeout {
@@ -413,9 +417,24 @@ function Get-ShortcutHealth {
     $details = Get-ShortcutDetails -ShortcutPath $ShortcutPath
     $targetPath = [string]$details.TargetPath
     $arguments = [string]$details.Arguments
+    $resolvedInvocation = if (Get-Command Get-AzVmShortcutResolvedInvocation -ErrorAction SilentlyContinue) {
+        Get-AzVmShortcutResolvedInvocation -TargetPath $targetPath -Arguments $arguments -WorkingDirectory ([string]$details.WorkingDirectory)
+    }
+    else {
+        [pscustomobject]@{
+            UsesManagedLauncher = $false
+            LauncherPath = ''
+            TargetPath = [string]$targetPath
+            Arguments = [string]$arguments
+            WorkingDirectory = [string]$details.WorkingDirectory
+        }
+    }
     $targetExists = -not [string]::IsNullOrWhiteSpace([string]$targetPath) -and (Test-Path -LiteralPath $targetPath)
     $embeddedTargetPath = ''
-    if ([System.IO.Path]::GetFileName($targetPath) -in @('cmd.exe', 'powershell.exe', 'pwsh.exe')) {
+    if ([bool]$resolvedInvocation.UsesManagedLauncher) {
+        $embeddedTargetPath = [Environment]::ExpandEnvironmentVariables([string]$resolvedInvocation.TargetPath)
+    }
+    elseif ([System.IO.Path]::GetFileName($targetPath) -in @('cmd.exe', 'powershell.exe', 'pwsh.exe')) {
         $embeddedTargetPath = Resolve-EmbeddedShortcutCommandPath -Arguments $arguments
     }
 
@@ -437,6 +456,7 @@ function Get-ShortcutHealth {
 
     return [pscustomobject]@{
         Details = $details
+        ResolvedInvocation = $resolvedInvocation
         TargetExists = [bool]$targetExists
         EmbeddedTargetPath = [string]$embeddedTargetPath
         EmbeddedTargetExists = if ([string]::IsNullOrWhiteSpace([string]$embeddedTargetPath)) { $false } else { (Test-Path -LiteralPath $embeddedTargetPath) }
@@ -651,6 +671,13 @@ function Get-ShortcutTargetHealth {
 
     $targetPath = if ($null -ne $Shortcut -and $Shortcut.PSObject.Properties.Match('TargetPath').Count -gt 0) { [string]$Shortcut.TargetPath } else { '' }
     $arguments = if ($null -ne $Shortcut -and $Shortcut.PSObject.Properties.Match('Arguments').Count -gt 0) { [string]$Shortcut.Arguments } else { '' }
+    $workingDirectory = if ($null -ne $Shortcut -and $Shortcut.PSObject.Properties.Match('WorkingDirectory').Count -gt 0) { [string]$Shortcut.WorkingDirectory } else { '' }
+    $resolvedInvocation = if (Get-Command Get-AzVmShortcutResolvedInvocation -ErrorAction SilentlyContinue) {
+        Get-AzVmShortcutResolvedInvocation -TargetPath $targetPath -Arguments $arguments -WorkingDirectory $workingDirectory
+    }
+    else {
+        $null
+    }
 
     if ([string]::IsNullOrWhiteSpace([string]$targetPath)) {
         return 'orphan-target'
@@ -659,6 +686,18 @@ function Get-ShortcutTargetHealth {
     if ([string]::Equals([System.IO.Path]::GetFileName([string]$targetPath), 'explorer.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
         [string]$arguments -like 'shell:AppsFolder\*') {
         return 'appsfolder'
+    }
+
+    if ($null -ne $resolvedInvocation -and [bool]$resolvedInvocation.UsesManagedLauncher) {
+        if (-not (Test-Path -LiteralPath ([string]$resolvedInvocation.LauncherPath))) {
+            return 'wrapper-missing-launcher'
+        }
+        $resolvedTargetPath = [Environment]::ExpandEnvironmentVariables([string]$resolvedInvocation.TargetPath)
+        if ([string]::IsNullOrWhiteSpace([string]$resolvedTargetPath) -or -not (Test-Path -LiteralPath $resolvedTargetPath)) {
+            return 'wrapper-missing-command'
+        }
+
+        return 'file+launcher'
     }
 
     if (Test-Path -LiteralPath $targetPath) {
@@ -962,9 +1001,20 @@ function Write-ShortcutReadback {
 
     $shortcut = Get-ShortcutDetails -ShortcutPath $ShortcutPath
     $targetHealth = Get-ShortcutTargetHealth -Shortcut $shortcut
+    $resolvedInvocation = if (Get-Command Get-AzVmShortcutResolvedInvocation -ErrorAction SilentlyContinue) {
+        Get-AzVmShortcutResolvedInvocation -TargetPath ([string]$shortcut.TargetPath) -Arguments ([string]$shortcut.Arguments) -WorkingDirectory ([string]$shortcut.WorkingDirectory)
+    }
+    else {
+        $null
+    }
     Write-Host ("{0} => {1}" -f $Label, $ShortcutPath)
     Write-Host (" target => {0}" -f [string]$shortcut.TargetPath)
     Write-Host (" args => {0}" -f [string]$shortcut.Arguments)
+    if ($null -ne $resolvedInvocation -and [bool]$resolvedInvocation.UsesManagedLauncher) {
+        Write-Host (" launcher => {0}" -f [string]$resolvedInvocation.LauncherPath)
+        Write-Host (" effective-target => {0}" -f [string]$resolvedInvocation.TargetPath)
+        Write-Host (" effective-args => {0}" -f [string]$resolvedInvocation.Arguments)
+    }
     Write-Host (" hotkey => {0}" -f [string]$shortcut.Hotkey)
     Write-Host (" start-in => {0}" -f [string]$shortcut.WorkingDirectory)
     Write-Host (" show => {0}" -f [int]$shortcut.WindowStyle)
@@ -1382,11 +1432,17 @@ Write-Host "MS EDGE SHORTCUT CONTRACT:"
 if (Test-Path -LiteralPath $edgeShortcutPath) {
     $edgeShortcutHealth = Get-ShortcutHealth -ShortcutPath $edgeShortcutPath
     $edgeShortcutDetails = $edgeShortcutHealth.Details
-    $edgeArgsMatch = [string]::Equals(([string]$edgeShortcutDetails.Arguments).Trim(), ([string]$expectedEdgeBusinessArgs).Trim(), [System.StringComparison]::OrdinalIgnoreCase)
-    Write-Host ("edge-shortcut-target => {0}" -f [string]$edgeShortcutDetails.TargetPath)
-    Write-Host ("edge-shortcut-args => {0}" -f [string]$edgeShortcutDetails.Arguments)
+    $edgeResolvedInvocation = if ($null -ne $edgeShortcutHealth -and $edgeShortcutHealth.PSObject.Properties.Match('ResolvedInvocation').Count -gt 0) { $edgeShortcutHealth.ResolvedInvocation } else { $null }
+    $edgeEffectiveTarget = if ($null -ne $edgeResolvedInvocation -and -not [string]::IsNullOrWhiteSpace([string]$edgeResolvedInvocation.TargetPath)) { [string]$edgeResolvedInvocation.TargetPath } else { [string]$edgeShortcutDetails.TargetPath }
+    $edgeEffectiveArgs = if ($null -ne $edgeResolvedInvocation) { [string]$edgeResolvedInvocation.Arguments } else { [string]$edgeShortcutDetails.Arguments }
+    $edgeArgsMatch = [string]::Equals(([string]$edgeEffectiveArgs).Trim(), ([string]$expectedEdgeBusinessArgs).Trim(), [System.StringComparison]::OrdinalIgnoreCase)
+    Write-Host ("edge-shortcut-target => {0}" -f $edgeEffectiveTarget)
+    Write-Host ("edge-shortcut-args => {0}" -f $edgeEffectiveArgs)
     Write-Host ("edge-shortcut-expected-args => {0}" -f [string]$expectedEdgeBusinessArgs)
     Write-Host ("edge-shortcut-user-data-root => {0}" -f $publicEdgeUserDataDir)
+    if ($null -ne $edgeResolvedInvocation -and [bool]$edgeResolvedInvocation.UsesManagedLauncher) {
+        Write-Host ("edge-shortcut-launcher => {0}" -f [string]$edgeResolvedInvocation.LauncherPath)
+    }
     Write-Host ("edge-shortcut-args-match => {0}" -f [bool]$edgeArgsMatch)
 }
 else {

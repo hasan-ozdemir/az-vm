@@ -4261,8 +4261,8 @@ Invoke-Test -Name "Vm-update app-state plugin contract resolves only stage-local
 
     try {
         Set-Content -LiteralPath (Join-Path $updateDir '114-install-docker-desktop.ps1') -Value 'Write-Host "tracked"' -Encoding UTF8
-        Set-Content -LiteralPath (Join-Path $localDir '1002-configure-settings-jaws.ps1') -Value @'
-# az-vm-task-meta: {"priority":1002,"timeout":120,"enabled":true}
+        Set-Content -LiteralPath (Join-Path $localDir '1001-install-configure-jaws.ps1') -Value @'
+# az-vm-task-meta: {"priority":1001,"timeout":780,"enabled":true}
 Write-Host "local"
 '@ -Encoding UTF8
         Set-Content -LiteralPath (Join-Path $updateDir 'vm-update-task-catalog.json') -Value @'
@@ -4285,10 +4285,10 @@ Write-Host "local"
 
         $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $updateDir -Platform windows -Stage update
         $trackedTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '114-install-docker-desktop' })[0]
-        $localTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '1002-configure-settings-jaws' })[0]
+        $localTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '1001-install-configure-jaws' })[0]
 
         $expectedTrackedPluginDir = Join-Path $appStatesDir '114-install-docker-desktop'
-        $expectedLocalPluginDir = Join-Path $appStatesDir '1002-configure-settings-jaws'
+        $expectedLocalPluginDir = Join-Path $appStatesDir '1001-install-configure-jaws'
         Assert-True -Condition ([string](Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $trackedTask) -eq $appStatesDir) -Message 'Tracked vm-update tasks must resolve the shared stage-local app-states root.'
         Assert-True -Condition ([string](Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $localTask) -eq $appStatesDir) -Message 'Local-only vm-update tasks must resolve the shared stage-local app-states root.'
         Assert-True -Condition ([string](Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $trackedTask) -eq $expectedTrackedPluginDir) -Message 'Tracked task plugin directory mismatch.'
@@ -4310,7 +4310,7 @@ Write-Host "local"
         Assert-True -Condition ([string]$invalidZipInfo.Status -eq 'invalid') -Message 'Task app-state plugin zips with mismatched taskName must be rejected.'
 
         New-Item -Path $expectedLocalPluginDir -ItemType Directory -Force | Out-Null
-        New-TestAppStateZip -DestinationPath (Join-Path $expectedLocalPluginDir 'app-state.zip') -TaskName '1002-configure-settings-jaws'
+        New-TestAppStateZip -DestinationPath (Join-Path $expectedLocalPluginDir 'app-state.zip') -TaskName '1001-install-configure-jaws'
         $readyInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $localTask
         Assert-True -Condition ([string]$readyInfo.Status -eq 'ready') -Message 'Valid per-task app-state zip plugins must resolve as ready.'
         Assert-True -Condition ($null -ne $readyInfo.Manifest) -Message 'Ready app-state zip plugins must publish their parsed manifest.'
@@ -4558,6 +4558,11 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind',
         'New-StoreAppShortcutSpec',
         'New-ChromeShortcutSpec',
+        'ConvertTo-ManagedShortcutLauncherSpec',
+        'Get-AzVmShortcutLauncherFilePath',
+        'Get-AzVmShortcutLauncherInvocationArguments',
+        'shortcut-launcher-enabled:',
+        'az-vm-shortcut-launcher.psm1',
         'Get-NormalizedShortcutNameKey',
         'Get-ShortcutUrlFromArguments',
         'Test-ShortcutDetailsMatchManagedSpec',
@@ -4701,6 +4706,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition ($healthTaskScript -like '*start-in =>*') -Message 'Health snapshot must read back shortcut working directories.'
     Assert-True -Condition ($healthTaskScript -like '*show =>*') -Message 'Health snapshot must read back shortcut show commands.'
     Assert-True -Condition ($healthTaskScript -like '*run-as-admin =>*') -Message 'Health snapshot must read back shortcut admin flags.'
+    Assert-True -Condition ($healthTaskScript -like '*effective-target =>*') -Message 'Health snapshot must read back managed launcher effective targets.'
+    Assert-True -Condition ($healthTaskScript -like '*effective-args =>*') -Message 'Health snapshot must read back managed launcher effective arguments.'
     foreach ($fragment in @(
         'STORE INSTALL STATE:',
         '117-install-codex-app',
@@ -4734,6 +4741,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
     Assert-True -Condition (($healthTaskScript.IndexOf('MS EDGE SHORTCUT CONTRACT:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the dedicated MS Edge shortcut contract.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-launcher =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge launcher path when a managed launcher is used.'
     Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-args-match =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge shortcut argument match state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-user-data-root =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge shared user-data root.'
 }
@@ -4766,9 +4774,9 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
     }
 }
 
-Invoke-Test -Name "Retro log audit helper and Store install state module exist" -Action {
-    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'tests\retro-log-audit.ps1')) -Message 'Retro log audit helper must exist.'
+Invoke-Test -Name "Store install state and shortcut launcher helper modules exist" -Action {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1')) -Message 'Shared Store install state helper must exist.'
+    Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1')) -Message 'Shared shortcut launcher helper must exist.'
 }
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {

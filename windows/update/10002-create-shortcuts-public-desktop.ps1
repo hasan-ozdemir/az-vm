@@ -1,4 +1,4 @@
-# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"}]}
+# az-vm-task-meta: {"assets":[{"local":"../../modules/core/tasks/azvm-store-install-state.psm1","remote":"C:/Windows/Temp/az-vm-store-install-state.psm1"},{"local":"../../modules/core/tasks/azvm-shortcut-launcher.psm1","remote":"C:/Windows/Temp/az-vm-shortcut-launcher.psm1"}]}
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: create-shortcuts-public-desktop"
 
@@ -20,9 +20,13 @@ $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
+$launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
 
 if (Test-Path -LiteralPath $storeHelperPath) {
     Import-Module $storeHelperPath -Force -DisableNameChecking
+}
+if (Test-Path -LiteralPath $launcherHelperPath) {
+    Import-Module $launcherHelperPath -Force -DisableNameChecking
 }
 
 function Test-InvalidCompanyName {
@@ -778,6 +782,9 @@ function New-ShortcutSpec {
         TargetPath = [string]$TargetPath
         Arguments = [string]$Arguments
         WorkingDirectory = [string]$WorkingDirectory
+        EffectiveTargetPath = [string]$TargetPath
+        EffectiveArguments = [string]$Arguments
+        EffectiveWorkingDirectory = [string]$WorkingDirectory
         IconLocation = [string]$IconLocation
         Hotkey = [string]$Hotkey
         ShowCmd = [int]$ShowCmd
@@ -789,7 +796,98 @@ function New-ShortcutSpec {
         CleanupAliases = @($CleanupAliases | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
         CleanupMatchTargetOnly = [bool]$CleanupMatchTargetOnly
         CleanupAliasMatchByNameOnly = [bool]$CleanupAliasMatchByNameOnly
+        UsesManagedLauncher = $false
+        LauncherPath = ''
     }
+}
+
+function Get-ShortcutEffectiveTargetPath {
+    param([pscustomobject]$Spec)
+
+    if ($null -eq $Spec) {
+        return ''
+    }
+
+    if ($Spec.PSObject.Properties.Match('EffectiveTargetPath').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$Spec.EffectiveTargetPath)) {
+        return [string]$Spec.EffectiveTargetPath
+    }
+
+    return [string]$Spec.TargetPath
+}
+
+function Get-ShortcutEffectiveArguments {
+    param([pscustomobject]$Spec)
+
+    if ($null -eq $Spec) {
+        return ''
+    }
+
+    if ($Spec.PSObject.Properties.Match('EffectiveArguments').Count -gt 0) {
+        return [string]$Spec.EffectiveArguments
+    }
+
+    return [string]$Spec.Arguments
+}
+
+function Get-ShortcutEffectiveWorkingDirectory {
+    param([pscustomobject]$Spec)
+
+    if ($null -eq $Spec) {
+        return ''
+    }
+
+    if ($Spec.PSObject.Properties.Match('EffectiveWorkingDirectory').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$Spec.EffectiveWorkingDirectory)) {
+        return [string]$Spec.EffectiveWorkingDirectory
+    }
+
+    return [string]$Spec.WorkingDirectory
+}
+
+function ConvertTo-ManagedShortcutLauncherSpec {
+    param([pscustomobject]$Spec)
+
+    if ($null -eq $Spec) {
+        return $null
+    }
+
+    if (-not (Get-Command Test-AzVmShortcutNeedsManagedLauncher -ErrorAction SilentlyContinue)) {
+        return $Spec
+    }
+
+    $effectiveTargetPath = Get-ShortcutEffectiveTargetPath -Spec $Spec
+    $effectiveArguments = Get-ShortcutEffectiveArguments -Spec $Spec
+    $effectiveWorkingDirectory = Get-ShortcutEffectiveWorkingDirectory -Spec $Spec
+
+    if (-not (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $effectiveTargetPath -Arguments $effectiveArguments -Threshold 259)) {
+        return $Spec
+    }
+
+    $launcherPath = Get-AzVmShortcutLauncherFilePath -ShortcutName ([string]$Spec.Name) -Subdirectory 'public-desktop'
+    $wrappedSpec = [pscustomobject]@{
+        Name = [string]$Spec.Name
+        TargetPath = [string]$cmdExe
+        Arguments = (Get-AzVmShortcutLauncherInvocationArguments -LauncherPath $launcherPath)
+        WorkingDirectory = [string](Split-Path -Path $launcherPath -Parent)
+        EffectiveTargetPath = [string]$effectiveTargetPath
+        EffectiveArguments = [string]$effectiveArguments
+        EffectiveWorkingDirectory = [string]$effectiveWorkingDirectory
+        IconLocation = [string]$Spec.IconLocation
+        Hotkey = [string]$Spec.Hotkey
+        ShowCmd = [int]$Spec.ShowCmd
+        RunAsAdmin = [bool]$Spec.RunAsAdmin
+        AllowMissingTargetPath = [bool]$Spec.AllowMissingTargetPath
+        ValidationKind = [string]$Spec.ValidationKind
+        ProfileKind = [string]$Spec.ProfileKind
+        DestinationUrl = [string]$Spec.DestinationUrl
+        CleanupAliases = @($Spec.CleanupAliases)
+        CleanupMatchTargetOnly = [bool]$Spec.CleanupMatchTargetOnly
+        CleanupAliasMatchByNameOnly = [bool]$Spec.CleanupAliasMatchByNameOnly
+        UsesManagedLauncher = $true
+        LauncherPath = [string]$launcherPath
+    }
+
+    Write-Host ("shortcut-launcher-enabled: {0} => {1}" -f [string]$Spec.Name, [string]$launcherPath)
+    return $wrappedSpec
 }
 
 function New-ShortcutFromSpec {
@@ -812,6 +910,19 @@ function New-ShortcutFromSpec {
     }
     if (-not [bool]$Spec.AllowMissingTargetPath -and -not (Test-Path -LiteralPath $targetPath)) {
         throw ("Shortcut target was not found for '{0}': {1}" -f $name, $targetPath)
+    }
+
+    if ($Spec.PSObject.Properties.Match('UsesManagedLauncher').Count -gt 0 -and [bool]$Spec.UsesManagedLauncher) {
+        $launcherPath = [string]$Spec.LauncherPath
+        if ([string]::IsNullOrWhiteSpace([string]$launcherPath)) {
+            throw ("Managed launcher path is empty for '{0}'." -f $name)
+        }
+
+        Write-AzVmShortcutLauncherFile `
+            -LauncherPath $launcherPath `
+            -TargetPath (Get-ShortcutEffectiveTargetPath -Spec $Spec) `
+            -Arguments (Get-ShortcutEffectiveArguments -Spec $Spec) `
+            -WorkingDirectory (Get-ShortcutEffectiveWorkingDirectory -Spec $Spec) | Out-Null
     }
 
     Ensure-Directory -Path $OutputDirectory
@@ -920,7 +1031,7 @@ function Test-ShortcutSpecEligible {
         return $false
     }
 
-    $targetPath = [string]$Spec.TargetPath
+    $targetPath = Get-ShortcutEffectiveTargetPath -Spec $Spec
     if ([string]::IsNullOrWhiteSpace([string]$targetPath)) {
         return $false
     }
@@ -931,15 +1042,16 @@ function Test-ShortcutSpecEligible {
         return $false
     }
 
-    if (($validationKind -eq 'store-appid') -and [string]::IsNullOrWhiteSpace([string]$Spec.Arguments)) {
+    $effectiveArguments = Get-ShortcutEffectiveArguments -Spec $Spec
+    if (($validationKind -eq 'store-appid') -and [string]::IsNullOrWhiteSpace([string]$effectiveArguments)) {
         return $false
     }
 
     $targetLeaf = [System.IO.Path]::GetFileName([string]$targetPath)
     if (($targetLeaf -in @('cmd.exe','powershell.exe','pwsh.exe')) -and ($validationKind -in @('console','app'))) {
-        $embeddedCommandPath = Resolve-EmbeddedShortcutCommandPath -Arguments ([string]$Spec.Arguments)
+        $embeddedCommandPath = Resolve-EmbeddedShortcutCommandPath -Arguments ([string]$effectiveArguments)
         if ([string]::IsNullOrWhiteSpace([string]$embeddedCommandPath)) {
-            $normalizedArguments = ([string]$Spec.Arguments).Trim()
+            $normalizedArguments = ([string]$effectiveArguments).Trim()
             if (
                 ($validationKind -eq 'console') -and
                 [string]::Equals([string]$targetLeaf, 'cmd.exe', [System.StringComparison]::OrdinalIgnoreCase) -and
@@ -967,6 +1079,8 @@ function Add-Spec {
     if ($null -eq $List -or $null -eq $Spec) {
         return
     }
+
+    $Spec = ConvertTo-ManagedShortcutLauncherSpec -Spec $Spec
 
     if (-not (Test-ShortcutSpecEligible -Spec $Spec)) {
         Write-Warning ("public-shortcut-skip: {0} => target or embedded command could not be resolved." -f [string]$Spec.Name)
@@ -1136,10 +1250,22 @@ function Test-ShortcutDetailsMatchManagedSpec {
     }
 
     $existingNameKey = Get-NormalizedShortcutNameKey -Value $ShortcutBaseName
-    $existingTargetPath = Get-NormalizedShortcutPath -Value ([string]$Details.TargetPath)
-    $managedTargetPath = Get-NormalizedShortcutPath -Value ([string]$Spec.TargetPath)
-    $existingArguments = [string]$Details.Arguments
-    $managedArguments = [string]$Spec.Arguments
+    $actualInvocation = if (Get-Command Get-AzVmShortcutResolvedInvocation -ErrorAction SilentlyContinue) {
+        Get-AzVmShortcutResolvedInvocation -TargetPath ([string]$Details.TargetPath) -Arguments ([string]$Details.Arguments) -WorkingDirectory ([string]$Details.WorkingDirectory)
+    }
+    else {
+        [pscustomobject]@{
+            UsesManagedLauncher = $false
+            LauncherPath = ''
+            TargetPath = [string]$Details.TargetPath
+            Arguments = [string]$Details.Arguments
+            WorkingDirectory = [string]$Details.WorkingDirectory
+        }
+    }
+    $existingTargetPath = Get-NormalizedShortcutPath -Value ([string]$actualInvocation.TargetPath)
+    $managedTargetPath = Get-NormalizedShortcutPath -Value (Get-ShortcutEffectiveTargetPath -Spec $Spec)
+    $existingArguments = [string]$actualInvocation.Arguments
+    $managedArguments = Get-ShortcutEffectiveArguments -Spec $Spec
     $normalizedExistingUrl = Get-NormalizedShortcutUrl -Value (Get-ShortcutUrlFromArguments -Arguments $existingArguments)
     $normalizedManagedUrl = Get-NormalizedShortcutUrl -Value ([string]$Spec.DestinationUrl)
 
@@ -1751,6 +1877,7 @@ $managedUserDesktopRoots = @(
     "C:\Users\Default\Desktop"
 )
 $stagingRoot = ''
+$publicDesktopLauncherRoot = if (Get-Command Get-AzVmShortcutLauncherRoot -ErrorAction SilentlyContinue) { Get-AzVmShortcutLauncherRoot -Subdirectory 'public-desktop' } else { '' }
 $publicDesktopAlreadyNormalized = Test-PublicDesktopAlreadyNormalized -PublicDesktopPath $publicDesktop -Specs $shortcutSpecs -OwnedShortcutNames $ownedManagedShortcutNames
 
 try {
@@ -1760,6 +1887,9 @@ try {
     else {
         $stagingRoot = Join-Path $env:TEMP ("az-vm-public-desktop-" + [guid]::NewGuid().ToString("N"))
         Ensure-Directory -Path $stagingRoot
+        if (-not [string]::IsNullOrWhiteSpace([string]$publicDesktopLauncherRoot) -and (Test-Path -LiteralPath $publicDesktopLauncherRoot)) {
+            Remove-Item -LiteralPath $publicDesktopLauncherRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
 
         foreach ($shortcutSpec in $shortcutSpecs) {
             try {

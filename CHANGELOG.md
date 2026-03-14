@@ -3,6 +3,28 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.14.312] - 2026-03-14
+
+### Added
+- Added `modules/core/tasks/azvm-shortcut-launcher.psm1` so Windows public desktop shortcut creation and health readback can share one managed short-launcher contract for overlong shortcut invocations.
+- Added `tools/scripts/retro-log-audit.ps1` as an on-demand maintenance helper that can rescan local `az-vm-log-*.txt` transcripts without being part of the default quality gate.
+
+### Changed
+- Reworked `10002-create-shortcuts-public-desktop.ps1` so Chrome- and Edge-style shortcuts that would exceed the 259-character limit now rewrite themselves through managed short launchers under `C:\ProgramData\az-vm\shortcut-launchers\public-desktop` while keeping the same effective target, URL, profile, and argument contract.
+- Updated `10099-capture-snapshot-health.ps1` so wrapper-backed shortcuts now read back their launcher path plus their effective target and arguments, and `a11MS Edge` keeps its argument contract even when the shortcut is launcher-backed.
+- Consolidated the ignored local JAWS update flow into one self-contained task, `1001-install-configure-jaws.ps1`, backed by the renamed helper module `1001-install-configure-jaws-common.psm1` and the matching `app-states/1001-install-configure-jaws/app-state.zip` plugin path.
+- Removed the automatic retro-log-audit reference from the default non-live gate and retired the old `tests/retro-log-audit.ps1` location.
+
+### Fixed
+- Fixed long browser-style Public Desktop shortcuts so they no longer fail because of overlong literal shortcut command lines.
+- Fixed the local JAWS save/restore naming contract so the merged single local task and its export helper now point to the same per-task app-state plugin name.
+- Cleaned the current untracked `az-vm-log-*.txt` transcript set from the repo working tree while keeping the existing `.gitignore` protection in place.
+
+### Tests
+- Revalidated the non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+- Revalidated the manual retro-audit helper with `tools\\scripts\\retro-log-audit.ps1` after the working-tree transcript cleanup.
+- Revalidated the touched live Windows tasks in isolation on `rg-bizyum-ate1-g2 / bizyum` with `exec --update-task=1001`, `10002`, and `10099`, confirming the merged local JAWS task, the short-launcher-backed Public Desktop shortcuts, and the refreshed shortcut health report.
+
 ## [2026.3.14.311] - 2026-03-14
 
 ### Added

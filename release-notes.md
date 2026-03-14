@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.14.312 - 2026-03-14
+
+### Summary
+This release tightens the Windows desktop-finish path around three operational edges: overlong Public Desktop shortcut invocations, fragmented local JAWS execution, and transcript housekeeping. Overlong Chrome and Edge shortcut commands now collapse into managed short launchers without changing the effective browser/profile/URL behavior, the local JAWS workflow now runs as one self-contained local vm-update task instead of five loosely chained tasks, and the retro log audit helper moves into `tools/scripts/` as a manual maintenance tool while the current local transcript files are cleaned from the repo working tree.
+
+### Highlights
+- Added a shared managed shortcut launcher helper so Public Desktop shortcut creation and late health validation now use the same short-launcher contract.
+- Merged the local JAWS install, settings, shortcut, autostart, and verify-repair flow into one local task, `1001-install-configure-jaws.ps1`, with one matching app-state plugin name.
+- Moved `retro-log-audit.ps1` to `tools/scripts/` and removed it from the default non-live gate so it stays available for targeted maintenance runs without being auto-triggered.
+- Cleaned the current untracked `az-vm-log-*.txt` files from the repo root while keeping `.gitignore` coverage in place.
+
 ## Release 2026.3.14.311 - 2026-03-14
 
 ### Summary
