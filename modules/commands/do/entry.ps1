@@ -26,6 +26,7 @@ function Invoke-AzVmDoCommand {
 
     $resourceGroup = [string]$target.ResourceGroup
     $vmName = [string]$target.VmName
+    $initialNormalizedState = [string]$snapshot.NormalizedState
     $desiredState = ''
     $completionMessage = ''
     $finalSnapshot = $null
@@ -104,6 +105,38 @@ function Invoke-AzVmDoCommand {
                 -AzArguments @('vm','reapply','-g',$resourceGroup,'-n',$vmName,'-o','none','--only-show-errors') `
                 -AzContext 'az vm reapply'
             $finalSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $resourceGroup -VmName $vmName
+        }
+        'redeploy' {
+            $completionMessage = ("Do completed: VM '{0}' in resource group '{1}' was redeployed. Current status:" -f $vmName, $resourceGroup)
+            Invoke-AzVmDoAzureAction `
+                -ActionName $action `
+                -ResourceGroup $resourceGroup `
+                -VmName $vmName `
+                -AzArguments @('vm','redeploy','-g',$resourceGroup,'-n',$vmName,'-o','none','--only-show-errors') `
+                -AzContext 'az vm redeploy'
+
+            $provisioningWaitResult = Wait-AzVmProvisioningSucceeded -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 30 -DelaySeconds 10
+            if (-not [bool]$provisioningWaitResult.Ready) {
+                Throw-FriendlyError `
+                    -Detail ("VM '{0}' in resource group '{1}' did not return to provisioning succeeded after Azure redeploy." -f $vmName, $resourceGroup) `
+                    -Code 66 `
+                    -Summary "VM redeploy completed in Azure but provisioning did not recover." `
+                    -Hint "Check the VM provisioning state in Azure, run '--vm-action=status', then retry when the VM is healthy."
+            }
+
+            $finalSnapshot = $provisioningWaitResult.Snapshot
+            if ([string]$initialNormalizedState -in @('started','stopped')) {
+                $stateAfterRedeploy = Wait-AzVmDoLifecycleState -ResourceGroup $resourceGroup -VmName $vmName -DesiredState $initialNormalizedState -MaxAttempts 24 -DelaySeconds 10
+                if ($null -eq $stateAfterRedeploy) {
+                    Throw-FriendlyError `
+                        -Detail ("VM '{0}' in resource group '{1}' did not return to '{2}' after Azure redeploy." -f $vmName, $resourceGroup, $initialNormalizedState) `
+                        -Code 66 `
+                        -Summary "VM redeploy finished but the original lifecycle state did not recover." `
+                        -Hint "Run '--vm-action=status' to inspect the live state, then start or stop the VM explicitly if Azure left it in a different state."
+                }
+
+                $finalSnapshot = $stateAfterRedeploy
+            }
         }
         default {
             throw ("Unsupported do action '{0}'." -f $action)

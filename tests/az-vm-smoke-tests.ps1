@@ -2000,6 +2000,7 @@ Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate-deallocate' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'hibernate-stop' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'reapply' }
+    Assert-AzVmCommandOptions -CommandName 'do' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'redeploy' }
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
 
@@ -2040,16 +2041,18 @@ Invoke-Test -Name "Do command rejects retired or unknown power actions" -Action 
     }
 }
 
-Invoke-Test -Name "Do help and README document reapply" -Action {
+Invoke-Test -Name "Do help and README document reapply and redeploy" -Action {
     $helpText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\cli\azvm-help.ps1') -Raw)
     $readmeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'README.md') -Raw)
 
-    Assert-True -Condition ($helpText -match [regex]::Escape('--vm-action=<status|start|restart|stop|deallocate|hibernate-deallocate|hibernate-stop|reapply>')) -Message 'CLI help must list the explicit hibernate actions in the do action contract.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('--vm-action=<status|start|restart|stop|deallocate|hibernate-deallocate|hibernate-stop|reapply|redeploy>')) -Message 'CLI help must list the explicit hibernate actions in the do action contract.'
     Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=reapply --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a reapply example.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=redeploy --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a redeploy example.'
     Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-stop --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a hibernate-stop example.'
     Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-deallocate --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a hibernate-deallocate example.'
-    Assert-True -Condition ($readmeText -match [regex]::Escape('Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate')) -Message 'README must mention the explicit hibernate actions in the lifecycle command summary.'
+    Assert-True -Condition ($readmeText -match [regex]::Escape('Gives operators lifecycle commands for status, start, restart, reapply, redeploy, stop, deallocate, hibernate-stop, hibernate-deallocate')) -Message 'README must mention the explicit hibernate actions in the lifecycle command summary.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a reapply usage example.'
+    Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=redeploy --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a redeploy usage example.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-stop usage example.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-deallocate usage example.'
 }
@@ -2622,6 +2625,7 @@ Invoke-Test -Name "Do action eligibility contract" -Action {
     Assert-AzVmDoActionAllowed -ActionName 'hibernate-deallocate' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
     Assert-AzVmDoActionAllowed -ActionName 'hibernate-stop' -Snapshot (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
     Assert-AzVmDoActionAllowed -ActionName 'reapply' -Snapshot (New-TestDoSnapshot -NormalizedState 'other' -PowerStateDisplay 'VM starting' -ProvisioningStateCode 'ProvisioningState/updating' -ProvisioningStateDisplay 'Updating')
+    Assert-AzVmDoActionAllowed -ActionName 'redeploy' -Snapshot (New-TestDoSnapshot -NormalizedState 'other' -PowerStateDisplay 'VM starting' -ProvisioningStateCode 'ProvisioningState/updating' -ProvisioningStateDisplay 'Updating')
 
     $invalidCases = @(
         @{ Action = 'start'; Snapshot = (New-TestDoSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running') },
@@ -2676,6 +2680,10 @@ Invoke-Test -Name "Do interactive action selection" -Action {
         function Read-Host { param([string]$Prompt) return '8' }
         $reapplyAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
         Assert-True -Condition ([string]$reapplyAction -eq 'reapply') -Message "Interactive do action selection must expose reapply."
+
+        function Read-Host { param([string]$Prompt) return '9' }
+        $redeployAction = Read-AzVmDoActionInteractive -Snapshot $snapshot
+        Assert-True -Condition ([string]$redeployAction -eq 'redeploy') -Message "Interactive do action selection must expose redeploy."
     }
     finally {
         Remove-Item Function:\global:Read-Host -ErrorAction SilentlyContinue
@@ -3591,6 +3599,155 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
         }
         Remove-Variable -Name TaskRunInvocation -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Do redeploy action calls Azure redeploy and waits for recovery" -Action {
+    $script:DoRedeployInvocation = $null
+    $script:DoRedeployProvisioningWait = $null
+    $script:DoRedeployLifecycleWait = $null
+    $script:DoRedeployReportedSnapshot = $null
+    $originalFunctionDefinitions = @{}
+
+    foreach ($functionName in @(
+        'Resolve-AzVmManagedVmTarget',
+        'Get-AzVmVmLifecycleSnapshot',
+        'Invoke-AzVmDoAzureAction',
+        'Wait-AzVmProvisioningSucceeded',
+        'Wait-AzVmDoLifecycleState',
+        'Write-AzVmDoStatusReport'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function Resolve-AzVmManagedVmTarget {
+        param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+        return [pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        }
+    }
+    function Get-AzVmVmLifecycleSnapshot {
+        param([string]$ResourceGroup, [string]$VmName)
+        return [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            OsType = 'Windows'
+            Location = 'austriaeast'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/updating'
+            ProvisioningStateDisplay = 'Updating'
+            PowerStateCode = 'PowerState/running'
+            PowerStateDisplay = 'VM running'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+            NormalizedState = 'started'
+        }
+    }
+    function Invoke-AzVmDoAzureAction {
+        param(
+            [string]$ActionName,
+            [string]$ResourceGroup,
+            [string]$VmName,
+            [string[]]$AzArguments,
+            [string]$AzContext
+        )
+
+        $script:DoRedeployInvocation = [pscustomobject]@{
+            ActionName = $ActionName
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            AzArguments = @($AzArguments)
+            AzContext = $AzContext
+        }
+    }
+    function Wait-AzVmProvisioningSucceeded {
+        param([string]$ResourceGroup, [string]$VmName, [int]$MaxAttempts, [int]$DelaySeconds)
+        $script:DoRedeployProvisioningWait = [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            MaxAttempts = $MaxAttempts
+            DelaySeconds = $DelaySeconds
+        }
+        return [pscustomobject]@{
+            Ready = $true
+            Snapshot = [pscustomobject]@{
+                ResourceGroup = $ResourceGroup
+                VmName = $VmName
+                OsType = 'Windows'
+                Location = 'austriaeast'
+                HibernationEnabled = $true
+                ProvisioningStateCode = 'ProvisioningState/succeeded'
+                ProvisioningStateDisplay = 'Provisioning succeeded'
+                PowerStateCode = 'PowerState/running'
+                PowerStateDisplay = 'VM running'
+                HibernationStateCode = ''
+                HibernationStateDisplay = ''
+                NormalizedState = 'started'
+            }
+        }
+    }
+    function Wait-AzVmDoLifecycleState {
+        param([string]$ResourceGroup, [string]$VmName, [string]$DesiredState, [int]$MaxAttempts, [int]$DelaySeconds)
+        $script:DoRedeployLifecycleWait = [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            DesiredState = $DesiredState
+            MaxAttempts = $MaxAttempts
+            DelaySeconds = $DelaySeconds
+        }
+        return [pscustomobject]@{
+            ResourceGroup = $ResourceGroup
+            VmName = $VmName
+            OsType = 'Windows'
+            Location = 'austriaeast'
+            HibernationEnabled = $true
+            ProvisioningStateCode = 'ProvisioningState/succeeded'
+            ProvisioningStateDisplay = 'Provisioning succeeded'
+            PowerStateCode = 'PowerState/running'
+            PowerStateDisplay = 'VM running'
+            HibernationStateCode = ''
+            HibernationStateDisplay = ''
+            NormalizedState = $DesiredState
+        }
+    }
+    function Write-AzVmDoStatusReport {
+        param([psobject]$Snapshot)
+        $script:DoRedeployReportedSnapshot = $Snapshot
+    }
+
+    try {
+        Invoke-AzVmDoCommand -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'vm-action' = 'redeploy' }
+
+        Assert-True -Condition ($null -ne $script:DoRedeployInvocation) -Message 'Redeploy must invoke the Azure action wrapper.'
+        Assert-True -Condition ([string]$script:DoRedeployInvocation.ActionName -eq 'redeploy') -Message 'Redeploy must pass the redeploy action name to the Azure wrapper.'
+        Assert-True -Condition ([string]$script:DoRedeployInvocation.AzContext -eq 'az vm redeploy') -Message 'Redeploy must use the az vm redeploy context label.'
+        Assert-True -Condition ((@($script:DoRedeployInvocation.AzArguments) -join ' ') -eq 'vm redeploy -g rg-samplevm-ate1-g1 -n samplevm -o none --only-show-errors') -Message 'Redeploy must call az vm redeploy with the resolved target.'
+        Assert-True -Condition ($null -ne $script:DoRedeployProvisioningWait) -Message 'Redeploy must wait for provisioning recovery.'
+        Assert-True -Condition ($null -ne $script:DoRedeployLifecycleWait) -Message 'Redeploy must wait for the original lifecycle state when it was deterministic before the action.'
+        Assert-True -Condition ([string]$script:DoRedeployLifecycleWait.DesiredState -eq 'started') -Message 'Redeploy must restore the original started lifecycle state.'
+        Assert-True -Condition ($null -ne $script:DoRedeployReportedSnapshot) -Message 'Redeploy must print the refreshed VM status.'
+        Assert-True -Condition ([string]$script:DoRedeployReportedSnapshot.ProvisioningStateCode -eq 'ProvisioningState/succeeded') -Message 'Redeploy must report the post-recovery lifecycle snapshot.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmLifecycleSnapshot',
+            'Invoke-AzVmDoAzureAction',
+            'Wait-AzVmProvisioningSucceeded',
+            'Wait-AzVmDoLifecycleState',
+            'Write-AzVmDoStatusReport'
+        )) {
+            Remove-Item ("Function:\\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\\{0}" -f $functionName) -ErrorAction SilentlyContinue
+
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
     }
 }
 

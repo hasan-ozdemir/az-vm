@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.317] - 2026-03-15
+
+### Added
+- Added `do --vm-action=redeploy` as an explicit Azure host-repair action that operators can invoke directly against an existing managed VM instead of relying only on the automatic redeploy repair paths inside update and lifecycle recovery helpers.
+
+### Changed
+- Expanded the `do` lifecycle contract across runtime, help text, README, and smoke coverage so `redeploy` now sits beside `reapply`, `hibernate-stop`, and `hibernate-deallocate` as a first-class operator action.
+
+### Fixed
+- Fixed the `do` command so a manual redeploy now waits for provisioning recovery and then restores the original started/stopped lifecycle state when Azure reports it deterministically after `az vm redeploy`.
+
+### Tests
+- Revalidated the new lifecycle action with isolated smoke coverage in `tests\\az-vm-smoke-tests.ps1`, plus the standard documentation and release-doc contract checks.
+
 ## [2026.3.15.316] - 2026-03-15
 
 ### Changed

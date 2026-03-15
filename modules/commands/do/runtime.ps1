@@ -2,7 +2,7 @@
 
 # Handles Get-AzVmDoActionNames.
 function Get-AzVmDoActionNames {
-    return @('status','start','restart','stop','deallocate','hibernate-deallocate','hibernate-stop','reapply')
+    return @('status','start','restart','stop','deallocate','hibernate-deallocate','hibernate-stop','reapply','redeploy')
 }
 
 # Handles Get-AzVmDoActionHintText.
@@ -242,6 +242,7 @@ function Get-AzVmDoAllowedSourceStates {
         'hibernate-deallocate' { return @('started') }
         'hibernate-stop' { return @('started') }
         'reapply' { return @() }
+        'redeploy' { return @() }
         default { return @() }
     }
 }
@@ -265,7 +266,7 @@ function Assert-AzVmDoActionAllowed {
         $provisioningSucceeded = $true
     }
 
-    if (($ActionName -ne 'reapply') -and -not $provisioningSucceeded) {
+    if (($ActionName -notin @('reapply','redeploy')) -and -not $provisioningSucceeded) {
         Throw-FriendlyError `
             -Detail ("Requested action '{0}' cannot continue for VM '{1}' in resource group '{2}' because provisioning is not ready. {3}" -f $ActionName, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
             -Code 66 `
@@ -472,7 +473,8 @@ function Read-AzVmDoActionInteractive {
         [pscustomobject]@{ Number = 5; Action = 'deallocate'; Label = 'deallocate' },
         [pscustomobject]@{ Number = 6; Action = 'hibernate-deallocate'; Label = 'hibernate-deallocate (Azure)' },
         [pscustomobject]@{ Number = 7; Action = 'hibernate-stop'; Label = 'hibernate-stop (guest via SSH)' },
-        [pscustomobject]@{ Number = 8; Action = 'reapply'; Label = 'reapply (Azure repair)' }
+        [pscustomobject]@{ Number = 8; Action = 'reapply'; Label = 'reapply (Azure repair)' },
+        [pscustomobject]@{ Number = 9; Action = 'redeploy'; Label = 'redeploy (Azure host repair)' }
     )
 
     foreach ($choice in @($choices)) {

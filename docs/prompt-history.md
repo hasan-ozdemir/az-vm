@@ -5223,3 +5223,17 @@ Implement the plan.
 Cut the persisted configuration contract over to a selected-only model and aligned the runtime, docs, and tests around it. `.env.example` now exposes `SELECTED_VM_OS`, `SELECTED_VM_NAME`, `SELECTED_RESOURCE_GROUP`, the selected company and employee identity keys, `SELECTED_AZURE_SUBSCRIPTION_ID`, `SELECTED_AZURE_REGION`, `AZURE_COMMAND_TIMEOUT_SECONDS`, and `VM_PRICE_COUNT_HOURS` as the committed configuration surface, while the old persisted active-selection and resource-output keys were retired from the committed contract.
 
 In the runtime, I added alias resolution so the internal orchestration fields still see the canonical values they need, but those values now come from `SELECTED_*` inputs. `create --auto` now validates and resolves platform, VM name, Azure region, and VM size from CLI overrides first and then from `.env` selected values plus the platform defaults, so unattended auto-create can run from `.env` alone when the selected contract is complete. I also updated configure, update, move, set, delete, list, and the shared managed-target helpers so persistence and target resolution now read and write the selected `.env` keys instead of the old output-key set, then refreshed AGENTS, README, help output, smoke coverage, documentation-contract checks, and sensitive-content placeholders to match the new contract. Finally, I revalidated the change set with smoke, documentation-contract, PowerShell compatibility, code-quality, bash-syntax, and pre-commit release-doc checks.
+
+### 2026-03-15 22:55 TRT
+
+**User Prompt**
+
+````text
+Please add this command option too, test it in isolation, and commit it: `az-vm do --vm-action=redeploy --vm-name=<example-vm-name>`.
+````
+
+**Assistant Summary**
+
+Added `do --vm-action=redeploy` as a new first-class lifecycle repair action. I updated the `do` runtime so the new action calls `az vm redeploy`, waits for provisioning recovery, and then restores the original started or stopped lifecycle state when Azure reports that state deterministically after the redeploy. I also updated the interactive lifecycle picker, help text, README command matrix and usage examples, changelog, release notes, and smoke assertions so the new action sits beside `reapply`, `hibernate-stop`, and `hibernate-deallocate` across the full operator surface.
+
+I revalidated the change in isolation through non-live smoke coverage instead of triggering a live Azure redeploy against the current VM. The isolated tests now verify that `redeploy` is accepted by the parser, exposed in the interactive `do` action menu, documented in help and README, and routed through the Azure wrapper with `az vm redeploy` while waiting for provisioning recovery and reporting the final lifecycle snapshot.

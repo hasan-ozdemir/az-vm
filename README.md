@@ -234,7 +234,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | Accessibility and remote support | AnyDesk, Windscribe, NVDA, Be My Eyes, startup flows, autologon manager, advanced Windows settings, public desktop shortcuts | Minimal by design | Assisted-operation scenarios are easier to reproduce and support. | Broader usability and faster support response. |
 | Desktop and personalization | Startup configuration, grouped public desktop shortcuts, Store-backed `AppsFolder` launches where supported, Windows UX tuning, advanced settings, per-task git-ignored app-state zip replay, and safe user preference copy | Extensible through the same task model rather than a rich built-in desktop catalog | People connect to a machine that already feels curated and less drift-prone. | Less post-build manual cleanup and faster user adoption. |
 | Health and observability | Snapshot-health capture, show/report output, direct task reruns, redeploy-ready update flow | Snapshot-health capture, show/report output, direct task reruns | Troubleshooting narrows quickly to the failing area. | Less wasted time during support and maintenance. |
-| Lifecycle changes | Create fresh, explicit rebuild by `delete` plus `create`, update, reapply, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, explicit rebuild by `delete` plus `create`, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
+| Lifecycle changes | Create fresh, explicit rebuild by `delete` plus `create`, update, reapply, redeploy, hibernation, move, VM-size resize, managed OS disk expand, explicit shrink guidance | Create fresh, explicit rebuild by `delete` plus `create`, update, move, VM-size resize, managed OS disk expand, explicit shrink guidance | The same toolkit still works after day one. | Operations do not regress to ad hoc portal work. |
 
 ## Who az-vm Is For
 
@@ -249,7 +249,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 ### What It Does
 - Provisions Azure infrastructure for one managed Windows or Linux VM from one orchestrator.
 - Applies deterministic guest initialization and guest update task catalogs.
-- Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate, move, resize, connect, inspect, and delete flows.
+- Gives operators lifecycle commands for status, start, restart, reapply, redeploy, stop, deallocate, hibernate-stop, hibernate-deallocate, move, resize, connect, inspect, and delete flows.
 - Keeps command wording, configuration behavior, and execution semantics as parallel as possible across Windows and Linux.
 
 ### Problems It Solves
@@ -292,7 +292,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `update` | Maintain one existing managed resource group and VM | Azure-mutating | Ongoing maintenance, guest-task refresh, redeploy-backed repair | Updated existing VM |
 | `list` | Print managed inventory by type | Azure-read-only | Inventory, targeting, quick visibility | Managed group/resource listings |
 | `show` | Print a full managed report | Azure-read-only | Health review, support handoff, release verification | Inventory and config dump |
-| `do` | Apply lifecycle or repair actions | Azure-mutating or read-only for `status` | Power-state control, reapply, hibernation flow | Target VM lifecycle action |
+| `do` | Apply lifecycle or repair actions | Azure-mutating or read-only for `status` | Power-state control, reapply, redeploy, hibernation flow | Target VM lifecycle action |
 | `task` | List discovered task inventory, run one task, or save/restore task app-state | Local/read-only for `--list`; Azure-touching for `--run-*` and app-state maintenance | Understand task order, rerun one task, or refresh one task payload | Visible task catalog or one isolated task/app-state action |
 | `connect` | Launch or test SSH/RDP access | Azure-touching, local-client action | Linux or Windows SSH access, or Windows desktop access | Direct client launch or connection test |
 | `exec` | Open direct remote shell path or run one remote command | Azure-touching and guest-touching | Interactive shell work or one-shot remote command execution | One direct shell or command result |
@@ -356,6 +356,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` | `--vm-action=status` | Reads lifecycle state | Preflight and release checks | Fastest safety check before mutation. |
 | `.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>` | lifecycle action | Starts the VM | Connection prep | Use before `connect --ssh` or `connect --rdp`. |
 | `.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>` | `reapply` | Calls Azure reapply | Repair path | Good when provisioning succeeded but the instance needs Azure-side repair. |
+| `.\az-vm.cmd do --vm-action=redeploy --group=<resource-group> --vm-name=<vm-name>` | `redeploy` | Calls Azure redeploy and waits for recovery | Host-level repair path | Good when the VM needs Azure-side host repair or provisioning recovery. |
 | `.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>` | `hibernate-stop` | Guest-triggered hibernation through SSH | Preserve guest state without Azure deallocation path | Requires the VM to be running first. |
 | `.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>` | `hibernate-deallocate` | Azure hibernation-through-deallocation path | Platform-backed hibernation path | Use when the VM is configured for hibernation. |
 
@@ -517,6 +518,7 @@ Practical outcomes:
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd do --vm-action=redeploy --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=stop --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>
@@ -590,7 +592,7 @@ Purpose: apply one VM lifecycle action or print the current VM lifecycle state.
 
 Behavior notes:
 - use `status` before mutating changes
-- `reapply` is available for Azure-side repair on an existing VM
+- `reapply` and `redeploy` are available for Azure-side repair on an existing VM
 - `hibernate-stop` and `hibernate-deallocate` remain explicit, separate operator paths
 
 ### `task`

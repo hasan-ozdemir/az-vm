@@ -70,7 +70,7 @@ function Show-AzVmCommandHelpOverview {
         '  az-vm exec --group <resource-group> --vm-name <vm-name>'
         '  az-vm connect --ssh --vm-name <vm-name> --test'
         '  az-vm connect --rdp --vm-name <vm-name> --user assistant'
-        '  az-vm do --vm-action=reapply --group <resource-group> --vm-name <vm-name>'
+        '  az-vm do --vm-action=redeploy --group <resource-group> --vm-name <vm-name>'
         '  az-vm delete --target group --group <resource-group> --yes'
     )
 }
@@ -215,13 +215,14 @@ function Show-AzVmCommandHelpDetailed {
                 'Command: do'
                 'Description: apply one VM lifecycle action or print the current VM lifecycle state.'
                 'Usage:'
-                '  az-vm do [--group <resource-group>] [--vm-name <vm-name>] [--vm-action=<status|start|restart|stop|deallocate|hibernate-deallocate|hibernate-stop|reapply>] [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm do [--group <resource-group>] [--vm-name <vm-name>] [--vm-action=<status|start|restart|stop|deallocate|hibernate-deallocate|hibernate-stop|reapply|redeploy>] [--subscription-id <subscription-id>] [--perf]'
                 'Examples:'
                 '  az-vm do --vm-action=status --vm-name <vm-name>'
                 '  az-vm do --vm-action=reapply --group <resource-group> --vm-name <vm-name>'
+                '  az-vm do --vm-action=redeploy --group <resource-group> --vm-name <vm-name>'
                 '  az-vm do --vm-action=hibernate-stop --group <resource-group> --vm-name <vm-name>'
                 '  az-vm do --vm-action=hibernate-deallocate --group <resource-group> --vm-name <vm-name>'
-                "Notes: hibernate-stop uses SSH to run 'shutdown /h /f' inside a running VM and waits until the guest is no longer running without Azure deallocation. hibernate-deallocate uses Azure's deallocation-based hibernate path. Reapply calls 'az vm reapply' and then prints refreshed VM status; unlike the power actions, it remains available when provisioning is not currently succeeded."
+                "Notes: hibernate-stop uses SSH to run 'shutdown /h /f' inside a running VM and waits until the guest is no longer running without Azure deallocation. hibernate-deallocate uses Azure's deallocation-based hibernate path. Reapply calls 'az vm reapply' and then prints refreshed VM status; unlike the power actions, it remains available when provisioning is not currently succeeded. Redeploy calls 'az vm redeploy', waits for provisioning recovery, and restores the original started/stopped lifecycle state when Azure reports it deterministically."
             )
             return
         }

@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.317 - 2026-03-15
+
+### Summary
+This release adds one more explicit lifecycle repair path to `az-vm do`: `--vm-action=redeploy`. Operators can now request a direct Azure host redeploy from the same lifecycle command that already handles status, power-state changes, reapply, and hibernation flows, while the runtime waits for provisioning recovery and then restores the original started/stopped lifecycle state when Azure reports it deterministically.
+
+### Highlights
+- Added `do --vm-action=redeploy` to the public lifecycle contract, help surface, README command matrix, and smoke validation.
+- Reused the same tracked Azure-action wrapper as the rest of the `do` command so manual redeploy stays visible, audited, and consistent with the existing lifecycle UX.
+- Added isolated smoke coverage that verifies the redeploy action calls `az vm redeploy`, waits for provisioning recovery, restores the original lifecycle state, and prints the refreshed VM status.
+
 ## Release 2026.3.15.316 - 2026-03-15
 
 ### Summary
