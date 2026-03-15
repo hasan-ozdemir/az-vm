@@ -69,12 +69,20 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
 
     $defaultExcludeNames = Get-AzVmDefaultAppStateExcludeNames
     $defaultExcludeFilePatterns = Get-AzVmDefaultAppStateExcludeFilePatterns
+    $browserExcludeNames = @(
+        @($defaultExcludeNames) +
+        @('optimization_guide_model_store', 'OnDeviceHeadSuggestModel', 'BrowserMetrics', 'GrShaderCache', 'GraphiteDawnCache', 'DawnWebGPUCache', 'ShaderCache', 'Service Worker', 'History', 'History-journal', 'Visited Links', 'Visited Links-journal', 'Top Sites', 'Top Sites-journal', 'SmartScreen', 'EdgeCoupons')
+    ) | Select-Object -Unique
+    $browserExcludeFilePatterns = @(
+        @($defaultExcludeFilePatterns) +
+        @('*.pma', '*.journal', '*.ldb-wal', '*.sqlite-wal')
+    ) | Select-Object -Unique
 
     $script:AzVmTaskAppStateCaptureSpecRegistry = @{
         '02-check-install-chrome' = (New-AzVmAppStateCaptureSpec `
             -TaskName '02-check-install-chrome' `
             -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Google\Chrome\User Data' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns)
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Google\Chrome\User Data' -ExcludeNames $browserExcludeNames -ExcludeFilePatterns $browserExcludeFilePatterns)
             ) `
             -UserRegistryKeys @(
                 (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Google\Chrome')
@@ -123,8 +131,8 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
                 (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\Signatures'),
                 (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\QuickStyles'),
                 (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\UProof'),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\Office' -ExcludeNames @('OfficeFileCache', 'Licensing')),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Office' -ExcludeNames @('OfficeFileCache', 'Licensing', 'Spw') -ExcludeFilePatterns @('*.ost', '*.pst', '*.nst'))
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\Office' -ExcludeNames @('OfficeFileCache', 'Licensing', 'SolutionPackages', 'OTele', 'Telemetry')),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Office' -ExcludeNames @('OfficeFileCache', 'Licensing', 'Spw', 'SolutionPackages', 'OTele', 'Telemetry', 'webview2', 'EBWebView', 'BrowserMetrics') -ExcludeFilePatterns @('*.ost', '*.pst', '*.nst'))
             ) `
             -UserRegistryKeys @(
                 (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\Office\Common'),
@@ -134,8 +142,8 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
                 (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\Office\16.0\PowerPoint'),
                 (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\Office\16.0\OneNote')
             ))
-        '105-install-azure-cli' = (New-AzVmAppStateCaptureSpec -TaskName '105-install-azure-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path '.azure')))
-        '106-install-gh-cli' = (New-AzVmAppStateCaptureSpec -TaskName '106-install-gh-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\GitHub CLI'), (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\GitHub CLI')))
+        '105-install-azure-cli' = (New-AzVmAppStateCaptureSpec -TaskName '105-install-azure-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path '.azure' -ExcludeNames @('logs', '.azure', 'telemetry') -ExcludeFilePatterns @('*.log'))))
+        '106-install-gh-cli' = (New-AzVmAppStateCaptureSpec -TaskName '106-install-gh-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\GitHub CLI')))
         '110-install-vscode-system' = (New-AzVmAppStateCaptureSpec `
             -TaskName '110-install-vscode-system' `
             -ProfileDirectories @(
@@ -147,10 +155,10 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
         '111-install-edge-browser' = (New-AzVmAppStateCaptureSpec `
             -TaskName '111-install-edge-browser' `
             -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Edge\User Data' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns)
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Edge\User Data' -ExcludeNames $browserExcludeNames -ExcludeFilePatterns $browserExcludeFilePatterns)
             ) `
             -UserRegistryKeys @((New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\Edge')))
-        '112-install-azd-cli' = (New-AzVmAppStateCaptureSpec -TaskName '112-install-azd-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path '.azd')))
+        '112-install-azd-cli' = (New-AzVmAppStateCaptureSpec -TaskName '112-install-azd-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path '.azd' -ExcludeNames @('bin', 'telemetry', '.azd'))))
         '113-install-wsl2-system' = (New-AzVmAppStateCaptureSpec `
             -TaskName '113-install-wsl2-system' `
             -ProfileFiles @((New-AzVmAppStatePathCaptureRule -Path '.wslconfig')) `
@@ -159,9 +167,9 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
             -TaskName '114-install-docker-desktop' `
             -MachineDirectories @((New-AzVmAppStatePathCaptureRule -Path 'C:\ProgramData\DockerDesktop')) `
             -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path '.docker' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Docker' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Docker Desktop' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns)
+                (New-AzVmAppStatePathCaptureRule -Path '.docker' -ExcludeNames (@($defaultExcludeNames) + @('bin')) -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Docker' -ExcludeNames (@($defaultExcludeNames) + @('DawnGraphiteCache', 'DawnWebGPUCache', 'Network', 'Partitions', 'Service Worker', 'Shared Dictionary')) -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Docker Desktop' -ExcludeNames (@($defaultExcludeNames) + @('DawnGraphiteCache', 'DawnWebGPUCache', 'Network', 'Partitions', 'Service Worker', 'Shared Dictionary')) -ExcludeFilePatterns $defaultExcludeFilePatterns)
             ) `
             -UserRegistryKeys @(
                 (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Docker Desktop'),
@@ -170,8 +178,8 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
         '115-install-npm-packages-global' = (New-AzVmAppStateCaptureSpec `
             -TaskName '115-install-npm-packages-global' `
             -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path '.codex' -ExcludeNames @() -ExcludeFilePatterns @()),
-                (New-AzVmAppStatePathCaptureRule -Path '.gemini'),
+                (New-AzVmAppStatePathCaptureRule -Path '.codex' -ExcludeNames @('vendor_imports', '.git', 'Cache', 'Code Cache', 'Logs', 'tmp') -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path '.gemini' -ExcludeNames @('tmp', 'bin', 'Cache', 'Code Cache', 'Logs') -ExcludeFilePatterns $defaultExcludeFilePatterns),
                 (New-AzVmAppStatePathCaptureRule -Path '.config\github-copilot'),
                 (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\GitHub Copilot')
             ) `
@@ -182,10 +190,10 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
             -TaskName '116-install-ollama-system' `
             -MachineDirectories @((New-AzVmAppStatePathCaptureRule -Path 'C:\ProgramData\Ollama')) `
             -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path '.ollama' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Ollama' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path '.ollama' -ExcludeNames (@($defaultExcludeNames) + @('models')) -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Ollama' -ExcludeNames (@($defaultExcludeNames) + @('updates_v2')) -ExcludeFilePatterns $defaultExcludeFilePatterns),
                 (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Ollama' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\ollama app.exe' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns)
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\ollama app.exe' -ExcludeNames (@($defaultExcludeNames) + @('EBWebView')) -ExcludeFilePatterns $defaultExcludeFilePatterns)
             ))
         '117-install-codex-app' = (New-AzVmAppStateCaptureSpec `
             -TaskName '117-install-codex-app' `
@@ -274,9 +282,9 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
         '132-install-vs2022community' = (New-AzVmAppStateCaptureSpec `
             -TaskName '132-install-vs2022community' `
             -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\VisualStudio' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\VisualStudio' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns),
-                (New-AzVmAppStatePathCaptureRule -Path '.vs' -ExcludeNames $defaultExcludeNames -ExcludeFilePatterns $defaultExcludeFilePatterns)
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Roaming\Microsoft\VisualStudio' -ExcludeNames (@($defaultExcludeNames) + @('Packages', 'ImageLibrary', 'ImageLibrary.cache', 'Search', 'SettingsLogs', 'ComponentModelCache', 'vshub')) -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\VisualStudio' -ExcludeNames (@($defaultExcludeNames) + @('Packages', 'ImageLibrary', 'ImageLibrary.cache', 'Search', 'SettingsLogs', 'ComponentModelCache', 'vshub')) -ExcludeFilePatterns $defaultExcludeFilePatterns),
+                (New-AzVmAppStatePathCaptureRule -Path '.vs' -ExcludeNames (@($defaultExcludeNames) + @('Packages', 'ImageLibrary', 'ImageLibrary.cache', 'Search', 'SettingsLogs', 'ComponentModelCache', 'vshub')) -ExcludeFilePatterns $defaultExcludeFilePatterns)
             ) `
             -UserRegistryKeys @(
                 (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\VisualStudio'),

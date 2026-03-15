@@ -364,7 +364,6 @@ seen_targets = set()
 for label, user_name, profile_path in (
     ('manager', manager_user, f"/home/{manager_user}" if manager_user else ''),
     ('assistant', assistant_user, f"/home/{assistant_user}" if assistant_user else ''),
-    ('default', 'default', '/etc/skel'),
 ):
     if not profile_path or not os.path.isdir(profile_path):
         continue
@@ -373,6 +372,15 @@ for label, user_name, profile_path in (
         continue
     profile_targets.append((label, user_name, normalized_path))
     seen_targets.add(normalized_path)
+
+def select_profile_targets(entry):
+    target_profiles = [str(item).strip().lower() for item in entry.get('targetProfiles', []) if str(item).strip()]
+    if not target_profiles:
+        return profile_targets
+    return [
+        row for row in profile_targets
+        if row[0].strip().lower() in target_profiles or (row[1] and row[1].strip().lower() in target_profiles)
+    ]
 
 machine_registry_imports = 0
 user_registry_imports = 0
@@ -405,7 +413,7 @@ for entry in manifest.get('profileDirectories', []):
     if not os.path.isdir(source_path) or not relative_destination_path:
         warn(f"app-state-profile-directory-skip => {source_path}")
         continue
-    for _, _, profile_root in profile_targets:
+    for _, _, profile_root in select_profile_targets(entry):
         destination_path = os.path.join(profile_root, relative_destination_path)
         if copy_directory_contents(source_path, destination_path):
             profile_directory_copies += 1
@@ -416,7 +424,7 @@ for entry in manifest.get('profileFiles', []):
     if not os.path.isfile(source_path) or not relative_destination_path:
         warn(f"app-state-profile-file-skip => {source_path}")
         continue
-    for _, _, profile_root in profile_targets:
+    for _, _, profile_root in select_profile_targets(entry):
         destination_path = os.path.join(profile_root, relative_destination_path)
         if copy_file(source_path, destination_path):
             profile_file_copies += 1

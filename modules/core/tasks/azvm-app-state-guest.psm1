@@ -68,14 +68,12 @@ function Get-AzVmAppStateProfileTargets {
 
     $rows = New-Object 'System.Collections.Generic.List[object]'
     $seen = @{}
-    $reserved = @('all users', 'default', 'default user', 'public')
     $managerProfileLeaf = Convert-AzVmAppStateUserNameToProfileLeaf -Value $ManagerUser
     $assistantProfileLeaf = Convert-AzVmAppStateUserNameToProfileLeaf -Value $AssistantUser
 
     foreach ($row in @(
         @{ Label = 'manager'; UserName = [string]$managerProfileLeaf; Path = ('C:\Users\{0}' -f [string]$managerProfileLeaf) },
-        @{ Label = 'assistant'; UserName = [string]$assistantProfileLeaf; Path = ('C:\Users\{0}' -f [string]$assistantProfileLeaf) },
-        @{ Label = 'default'; UserName = 'default'; Path = 'C:\Users\Default' }
+        @{ Label = 'assistant'; UserName = [string]$assistantProfileLeaf; Path = ('C:\Users\{0}' -f [string]$assistantProfileLeaf) }
     )) {
         $profilePath = [string]$row.Path
         if ([string]::IsNullOrWhiteSpace([string]$profilePath) -or -not (Test-Path -LiteralPath $profilePath)) {
@@ -91,33 +89,6 @@ function Get-AzVmAppStateProfileTargets {
             Label = [string]$row.Label
             UserName = [string]$row.UserName
             ProfilePath = [string]$profilePath
-        }) | Out-Null
-        $seen[$normalizedPath] = $true
-    }
-
-    foreach ($directory in @(Get-ChildItem -LiteralPath 'C:\Users' -Directory -ErrorAction SilentlyContinue | Sort-Object Name)) {
-        if ($null -eq $directory) {
-            continue
-        }
-
-        $name = [string]$directory.Name
-        if ([string]::IsNullOrWhiteSpace([string]$name)) {
-            continue
-        }
-
-        if ($reserved -contains $name.Trim().ToLowerInvariant()) {
-            continue
-        }
-
-        $normalizedPath = ([string]$directory.FullName).TrimEnd('\').ToLowerInvariant()
-        if ($seen.ContainsKey($normalizedPath)) {
-            continue
-        }
-
-        $rows.Add([pscustomobject]@{
-            Label = ('user:{0}' -f $name)
-            UserName = [string]$name
-            ProfilePath = [string]$directory.FullName
         }) | Out-Null
         $seen[$normalizedPath] = $true
     }

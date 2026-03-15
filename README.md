@@ -601,6 +601,7 @@ Behavior notes:
 - `--run-vm-init` routes one init task through Azure run-command
 - `--run-vm-update` routes one update task through the SSH task runner
 - `--save-app-state` and `--restore-app-state` read or write `.../<stage>/app-states/<task-name>/app-state.zip`
+- task-owned app-state payloads target only the managed `manager` and `assistant` OS profiles; missing zips skip cleanly, and broad generated caches, installers, models, and telemetry payloads are pruned from the managed capture contract
 - useful before isolated reruns or when checking timeout and enable-state behavior
 
 ### `exec`
@@ -853,6 +854,7 @@ Each task directory has a catalog JSON file that owns execution priority, enable
 - Rerun the failing task with `task --run-vm-init` or `task --run-vm-update`.
 - Check task catalog timeout and enabled state.
 - Vm-update app-state replay is post-task and plug-in based. If `.../update/app-states/<task-name>/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
+- Managed app-state save and restore target only the `manager` and `assistant` OS profiles. Large generated payloads such as installers, models, telemetry trees, and low-value caches are intentionally pruned so the zips stay operator-owned and reusable instead of drifting into machine-image snapshots.
 - Use `VM_TASK_OUTCOME_MODE=strict` when you want the stage to stop at the first failure.
 
 ### Connection Failures

@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.315] - 2026-03-15
+
+### Added
+- Added `tools\scripts\app-state-audit.ps1` as a manual helper that scans the stage-local `app-state.zip` payloads, reports remaining foreign profile targets, and lists the heaviest entries so payload cleanup can stay evidence-based instead of guess-driven.
+
+### Changed
+- Narrowed the shared app-state capture and replay contract so managed save/restore now targets only the `manager` and `assistant` OS profiles on both Windows and Linux, with no `default` profile and no arbitrary local-user enumeration.
+- Tightened the tracked Windows app-state capture specs so the managed save path now prunes heavyweight generated content such as browser model stores and cache trees, installer/update payloads, telemetry trees, embedded WebView runtime caches, offline Office bundles, and other low-value runtime artifacts while preserving durable settings and registry state.
+- Refined the stage-local ignored app-state payloads in place so the current `windows\update\app-states\*\app-state.zip` set now follows the same pruned contract, removes legacy foreign-profile targets, and keeps only the managed `manager` / `assistant` OS-user targets.
+
+### Fixed
+- Fixed legacy app-state plan merging so foreign user-target rules can no longer re-enter the managed capture plan after cleanup.
+- Fixed the current ignored payload set so the Ollama task no longer carries `.ollama\models` or installer-update payloads, the azd task no longer carries `bin` or `telemetry`, and the heaviest browser, Docker Desktop, Office, GitHub CLI, and Visual Studio payload drifts are reduced to the settings-first baseline.
+- Fixed the manual app-state audit helper so it stays an on-demand report and no longer emits raw object output unless `-PassThru` is requested explicitly.
+
+### Tests
+- Revalidated the shared app-state cleanup with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+- Re-ran the manual payload inspection with `tools\\scripts\\app-state-audit.ps1` after the zip cleanup to confirm that the managed payload set no longer contains foreign profile targets.
+
 ## [2026.3.15.314] - 2026-03-15
 
 ### Added

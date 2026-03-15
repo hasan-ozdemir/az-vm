@@ -27,6 +27,46 @@ function Convert-AzVmAppStateRegistryPathToCanonicalRootLocal {
     return [string]$trimmed
 }
 
+function Get-AzVmAllowedAppStateProfileLabels {
+    return @('manager', 'assistant')
+}
+
+function Get-AzVmAllowedAppStateTargetProfiles {
+    param([string[]]$TargetProfiles = @())
+
+    if (@($TargetProfiles).Count -lt 1) {
+        return @()
+    }
+
+    $allowedLabels = @(
+        Get-AzVmAllowedAppStateProfileLabels |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
+    $resolved = New-Object 'System.Collections.Generic.List[string]'
+    $seen = @{}
+    foreach ($rawProfile in @($TargetProfiles)) {
+        $value = if ($null -eq $rawProfile) { '' } else { [string]$rawProfile }
+        if ([string]::IsNullOrWhiteSpace([string]$value)) {
+            continue
+        }
+
+        $normalizedValue = $value.Trim().ToLowerInvariant()
+        if (@($allowedLabels) -notcontains $normalizedValue) {
+            continue
+        }
+        if ($seen.ContainsKey($normalizedValue)) {
+            continue
+        }
+
+        $resolved.Add($normalizedValue) | Out-Null
+        $seen[$normalizedValue] = $true
+    }
+
+    return @($resolved.ToArray())
+}
+
 function Get-AzVmTaskAppStateSpecCollectionValue {
     param(
         [AllowNull()]$Spec,
@@ -134,7 +174,8 @@ function Convert-AzVmLegacyManifestToCaptureSpec {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.relativeDestinationPath)) { continue }
             $targetProfiles = @()
             if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
-                $targetProfiles = @($entry.targetProfiles | ForEach-Object { [string]$_ })
+                $targetProfiles = @(Get-AzVmAllowedAppStateTargetProfiles -TargetProfiles @($entry.targetProfiles | ForEach-Object { [string]$_ }))
+                if (@($targetProfiles).Count -lt 1) { continue }
             }
             $profileDirectories.Add((New-AzVmAppStatePathCaptureRule -Path ([string]$entry.relativeDestinationPath) -TargetProfiles $targetProfiles)) | Out-Null
         }
@@ -142,7 +183,8 @@ function Convert-AzVmLegacyManifestToCaptureSpec {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.relativeDestinationPath)) { continue }
             $targetProfiles = @()
             if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
-                $targetProfiles = @($entry.targetProfiles | ForEach-Object { [string]$_ })
+                $targetProfiles = @(Get-AzVmAllowedAppStateTargetProfiles -TargetProfiles @($entry.targetProfiles | ForEach-Object { [string]$_ }))
+                if (@($targetProfiles).Count -lt 1) { continue }
             }
             $profileFiles.Add((New-AzVmAppStatePathCaptureRule -Path ([string]$entry.relativeDestinationPath) -TargetProfiles $targetProfiles)) | Out-Null
         }
@@ -156,7 +198,10 @@ function Convert-AzVmLegacyManifestToCaptureSpec {
             }
             $targetProfiles = @()
             if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
-                $targetProfiles = @($entry.targetProfiles | ForEach-Object { [string]$_ })
+                $targetProfiles = @(Get-AzVmAllowedAppStateTargetProfiles -TargetProfiles @($entry.targetProfiles | ForEach-Object { [string]$_ }))
+                if (-not [string]::Equals([string]$entry.scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase) -and @($targetProfiles).Count -lt 1) {
+                    continue
+                }
             }
             $distributionAllowList = @()
             if ($entry.PSObject.Properties.Match('distributionAllowList').Count -gt 0) {
@@ -228,6 +273,13 @@ function Merge-AzVmTaskAppStateCaptureSpec {
                 $ruleKey = $rulePath.Trim().ToLowerInvariant()
                 $ruleTargetProfiles = @(Get-AzVmTaskAppStateRuleValue -Rule $rule -PropertyName 'targetProfiles')
                 if (@($ruleTargetProfiles).Count -gt 0) {
+                    if (@('profileDirectories','profileFiles','userRegistryKeys') -contains [string]$collectionName) {
+                        $ruleTargetProfiles = @(Get-AzVmAllowedAppStateTargetProfiles -TargetProfiles @($ruleTargetProfiles | ForEach-Object { [string]$_ }))
+                        if (@($ruleTargetProfiles).Count -lt 1) {
+                            continue
+                        }
+                    }
+
                     $profilesKey = (@($ruleTargetProfiles | ForEach-Object { [string]$_ } | Sort-Object) -join ',').ToLowerInvariant()
                     if (-not [string]::IsNullOrWhiteSpace([string]$profilesKey)) {
                         $ruleKey = ('{0}|profiles={1}' -f $ruleKey, $profilesKey)
@@ -463,34 +515,21 @@ def profile_map():
     for label, user_name, profile_path in (
         ('manager', manager_user, f"/home/{manager_user}" if manager_user else ''),
         ('assistant', assistant_user, f"/home/{assistant_user}" if assistant_user else ''),
-        ('default', 'default', '/etc/skel'),
     ):
         if profile_path and os.path.isdir(profile_path):
             mapping[label] = os.path.normpath(profile_path)
             if user_name:
                 mapping[user_name.lower()] = os.path.normpath(profile_path)
-    for entry in glob.glob('/home/*'):
-        if not os.path.isdir(entry):
-            continue
-        user_name = os.path.basename(entry)
-        mapping.setdefault(f'user:{user_name}', os.path.normpath(entry))
-        mapping.setdefault(user_name.lower(), os.path.normpath(entry))
     return mapping
 
 def resolve_profiles(target_profiles, all_profiles):
     if not target_profiles:
         seen = set()
         ordered = []
-        for key in ('manager', 'assistant', 'default'):
+        for key in ('manager', 'assistant'):
             path = all_profiles.get(key, '')
             if path and path not in seen:
                 ordered.append((key, path))
-                seen.add(path)
-        for label, path in sorted(all_profiles.items()):
-            if ':' not in label:
-                continue
-            if path and path not in seen:
-                ordered.append((label, path))
                 seen.add(path)
         return ordered
     ordered = []

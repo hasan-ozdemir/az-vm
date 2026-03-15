@@ -4959,6 +4959,30 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
     }
 }
 
+Invoke-Test -Name "App-state runtime and capture specs stay manager-assistant-only and prune heavyweight payloads" -Action {
+    $guestHelperText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-guest.psm1') -Raw)
+    $captureHelperText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-capture.ps1') -Raw)
+    $captureSpecsText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-capture-specs.ps1') -Raw)
+    $auditScriptPath = Join-Path $RepoRoot 'tools\scripts\app-state-audit.ps1'
+    $auditScriptText = [string](Get-Content -LiteralPath $auditScriptPath -Raw)
+
+    Assert-True -Condition (-not ($guestHelperText -like '*C:\Users\Default*')) -Message 'Windows app-state guest helpers must not target the default profile.'
+    Assert-True -Condition (-not ($guestHelperText -like '*Get-ChildItem -LiteralPath ''C:\Users'' -Directory*')) -Message 'Windows app-state guest helpers must not enumerate arbitrary local user profiles.'
+    Assert-True -Condition (-not ($captureHelperText -like '*''/etc/skel''*')) -Message 'Linux app-state capture must not target /etc/skel as a default replay profile.'
+    Assert-True -Condition (-not ($captureHelperText -like '*glob.glob(''/home/*'')*')) -Message 'Linux app-state capture must not enumerate arbitrary /home/* users for replay targeting.'
+    Assert-True -Condition ($captureHelperText -like '*Get-AzVmAllowedAppStateProfileLabels*') -Message 'Shared app-state capture must keep one explicit allowlist for replayable profile targets.'
+    Assert-True -Condition ($captureSpecsText -like '*optimization_guide_model_store*') -Message 'Browser app-state capture specs must exclude Chrome and Edge model-store payloads.'
+    Assert-True -Condition ($captureSpecsText -like '*DawnWebGPUCache*') -Message 'Browser app-state capture specs must exclude low-value WebGPU cache payloads.'
+    Assert-True -Condition ($captureSpecsText -like '*SolutionPackages*') -Message 'Office app-state capture specs must exclude generated offline solution packages.'
+    Assert-True -Condition ($captureSpecsText -like '*updates_v2*') -Message 'Ollama app-state capture specs must exclude installer update payloads.'
+    Assert-True -Condition ($captureSpecsText -like '*EBWebView*') -Message 'App-state capture specs must exclude embedded WebView runtime payloads where they are not durable settings.'
+    Assert-True -Condition ($captureSpecsText -like '*''112-install-azd-cli''*') -Message 'App-state capture specs must keep explicit azd coverage.'
+    Assert-True -Condition ($captureSpecsText -like '*telemetry*') -Message 'azd and Azure CLI app-state capture specs must exclude telemetry payloads.'
+    Assert-True -Condition (-not ($captureSpecsText -like '*AppData\Local\GitHub CLI*')) -Message 'GitHub CLI app-state capture specs must not keep the heavy local cache tree.'
+    Assert-True -Condition (Test-Path -LiteralPath $auditScriptPath) -Message 'The manual app-state audit helper must exist under tools/scripts.'
+    Assert-True -Condition ($auditScriptText -like '*foreign-targets*') -Message 'The manual app-state audit helper must report foreign profile targets when present.'
+}
+
 Invoke-Test -Name "Task command surface supports save and restore app-state maintenance" -Action {
     $taskContractText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\contract.ps1') -Raw)
     $taskRuntimeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\runtime.ps1') -Raw)

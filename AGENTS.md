@@ -111,6 +111,8 @@ Use these sources in this order when maintaining the repo:
 - Builtin catalog vm-update tasks and local-only vm-update tasks must use the same post-process app-state contract and the same exact plugin path rule.
 - Stage-local `app-states/` roots are untracked and git-ignored; missing task plugins must log a skip and continue instead of failing the stage.
 - `local/`, task-side helper folders, and any legacy overlay paths must not be used as alternate app-state storage locations.
+- Managed app-state save and restore must target only the `manager` and `assistant` OS profiles. Do not capture or replay `default` or arbitrary local user profiles.
+- App-state capture is settings-first. Exclude generated installers, models, telemetry trees, caches, and other low-value runtime artifacts unless a task explicitly proves they are durable required state.
 - Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets` for intentionally local-only tasks that stay out of source control.
 - When both a task catalog entry and script metadata exist, the catalog entry wins for `priority`, `enabled`, and `timeout`.
 - Task priority is catalog-driven for tracked tasks and metadata-driven first for intentionally local-only tasks.

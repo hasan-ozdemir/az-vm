@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.315 - 2026-03-15
+
+### Summary
+This release narrows the managed app-state system from a broad machine snapshot into a stricter settings-first contract. Managed save and restore now target only the `manager` and `assistant` OS profiles, the shared capture/replay runtime no longer enumerates `default` or arbitrary local users, and the tracked Windows capture specs now prune generated browser caches, installer/update payloads, telemetry trees, embedded WebView runtime content, and other low-value artifacts before they can bloat new payloads. The same pass also sanitizes the current ignored `windows/update/app-states/*/app-state.zip` payload set so the existing operator-owned zips match the new contract instead of carrying older foreign-profile drift forward.
+
+### Highlights
+- Added `tools\\scripts\\app-state-audit.ps1` as a manual payload-inspection helper that reports zip sizes, foreign profile targets, and the heaviest entries inside each stage-local app-state payload.
+- Locked the shared app-state runtime to the managed `manager` and `assistant` OS-user targets across Windows and Linux, removing the old `default` and arbitrary-local-profile replay/capture behavior.
+- Tightened the tracked Windows app-state capture specs so Chrome, Edge, Azure CLI, azd, Docker Desktop, GitHub CLI, Ollama, Office settings, npm-managed CLI state, and Visual Studio now exclude the biggest generated caches, model stores, telemetry folders, installer binaries, and other low-value artifacts.
+- Rewrote the current ignored app-state payloads in place so the managed zip set no longer carries foreign profile targets and so the heaviest payloads are cut down to a reusable settings baseline.
+
 ## Release 2026.3.15.314 - 2026-03-15
 
 ### Summary
