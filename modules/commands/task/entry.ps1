@@ -93,6 +93,51 @@ function Invoke-AzVmTaskCommand {
     $taskTimeoutSeconds = Get-AzVmTaskTimeoutSeconds -TaskBlock $taskBlock -DefaultTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds)
     $appStateTimeoutSeconds = [Math]::Max([int]$taskTimeoutSeconds, 900)
 
+    if ([string]::Equals($mode, 'restore-app-state', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$taskSelection.Stage, 'init', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $pluginInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $taskBlock
+        if ($pluginInfo.Status -eq 'missing-plugin') {
+            Throw-FriendlyError `
+                -Detail ("App-state plugin folder was not found for task '{0}'." -f [string]$taskBlock.Name) `
+                -Code 61 `
+                -Summary "Task app-state restore input is missing." `
+                -Hint ("Save state first with 'az-vm task --save-app-state --vm-{0}-task={1}'." -f [string]$taskSelection.Stage, [string]$taskBlock.TaskNumber)
+        }
+        if ($pluginInfo.Status -eq 'missing-zip') {
+            Throw-FriendlyError `
+                -Detail ("app-state.zip was not found for task '{0}'." -f [string]$taskBlock.Name) `
+                -Code 61 `
+                -Summary "Task app-state restore input is missing." `
+                -Hint ("Save state first with 'az-vm task --save-app-state --vm-{0}-task={1}'." -f [string]$taskSelection.Stage, [string]$taskBlock.TaskNumber)
+        }
+        if ($pluginInfo.Status -eq 'invalid') {
+            Throw-FriendlyError `
+                -Detail ("Task app-state payload for '{0}' is invalid: {1}" -f [string]$taskBlock.Name, [string]$pluginInfo.Message) `
+                -Code 61 `
+                -Summary "Task app-state restore input is invalid." `
+                -Hint "Fix or re-save the task app-state payload, then retry the restore."
+        }
+
+        $restoreResult = Invoke-AzVmTaskAppStatePostProcess `
+            -Platform $platform `
+            -Transport 'run-command' `
+            -RepoRoot (Get-AzVmRepoRoot) `
+            -TaskBlock $taskBlock `
+            -ResourceGroup ([string]$context.ResourceGroup) `
+            -VmName ([string]$context.VmName) `
+            -RunCommandId ([string]$runtime.PlatformDefaults.RunCommandId) `
+            -TimeoutSeconds ([int]$appStateTimeoutSeconds) `
+            -ManagerUser ([string]$context.VmUser) `
+            -AssistantUser ([string]$context.VmAssistantUser)
+        Write-Host ("Task completed: restore app-state for '{0}'." -f [string]$taskBlock.Name) -ForegroundColor Green
+        return [pscustomobject]@{
+            Mode = 'restore-app-state'
+            Stage = [string]$taskSelection.Stage
+            Task = $taskBlock
+            Result = $restoreResult
+        }
+    }
+
     $vmRuntimeDetails = Get-AzVmVmDetails -Context $context
     $sshHost = [string]$vmRuntimeDetails.VmFqdn
     if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {

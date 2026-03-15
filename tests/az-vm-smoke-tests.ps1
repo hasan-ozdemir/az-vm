@@ -492,6 +492,17 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     Assert-True -Condition ($parsedResizeDiskSize.Options.ContainsKey('expand')) -Message "Resize --expand option was not captured."
 }
 
+Invoke-Test -Name "CLI entrypoint prints the unconditional welcome banner" -Action {
+    $entryText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'az-vm.ps1') -Raw)
+
+    Assert-True -Condition ($entryText -like '*function Get-AzVmCliVersionInfo*') -Message 'CLI entrypoint must resolve the displayed CLI version info.'
+    Assert-True -Condition ($entryText -like '*function Write-AzVmCliBanner*') -Message 'CLI entrypoint must define the welcome banner writer.'
+    Assert-True -Condition ($entryText -like '*AZ-VM CLI V{0}*') -Message 'CLI entrypoint banner must print the AZ-VM CLI version header.'
+    Assert-True -Condition ($entryText -like '*Provision, update, connect, and maintain managed Windows or Linux Azure VMs from one deterministic CLI.*') -Message 'CLI entrypoint banner must print the first descriptive line.'
+    Assert-True -Condition ($entryText -like '*Run lifecycle actions, isolated tasks, app-state save/restore, and SSH or RDP access through one repo-driven workflow.*') -Message 'CLI entrypoint banner must print the second descriptive line.'
+    Assert-True -Condition ($entryText -match '(?s)if \(\$MyInvocation\.InvocationName -eq ''\.''\) \{\s*return\s*\}\s*Write-AzVmCliBanner\s*try \{') -Message 'CLI entrypoint must print the banner before parsing or dispatching any command.'
+}
+
 Invoke-Test -Name "Task catalog fallback defaults" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-catalog-test-" + [Guid]::NewGuid().ToString("N"))
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
@@ -3563,7 +3574,11 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
                 [object[]]$TaskBlocks,
                 [string]$CombinedShell,
                 [string]$TaskOutcomeMode,
-                [string]$PerfTaskCategory
+                [string]$PerfTaskCategory,
+                [string]$Platform,
+                [string]$RepoRoot,
+                [string]$ManagerUser,
+                [string]$AssistantUser
             )
 
             $script:TaskRunInvocation = [pscustomobject]@{
@@ -3573,6 +3588,10 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
                 CombinedShell = $CombinedShell
                 TaskOutcomeMode = $TaskOutcomeMode
                 PerfTaskCategory = $PerfTaskCategory
+                Platform = $Platform
+                RepoRoot = $RepoRoot
+                ManagerUser = $ManagerUser
+                AssistantUser = $AssistantUser
                 TaskName = [string]@($TaskBlocks)[0].Name
             }
             return [pscustomobject]@{ SuccessCount = 1; FailedCount = 0; WarningCount = 0; ErrorCount = 0 }
@@ -3586,6 +3605,9 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
         Assert-True -Condition ([string]$script:TaskRunInvocation.CommandId -eq 'RunPowerShellScript') -Message 'Task run-vm-init must preserve platform run-command id.'
         Assert-True -Condition ([string]$script:TaskRunInvocation.TaskName -eq '01-ensure-users-local') -Message 'Task run-vm-init must preserve selected task.'
         Assert-True -Condition ([string]$script:TaskRunInvocation.PerfTaskCategory -eq 'task-run') -Message 'Task run-vm-init must use the task-run perf category.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.Platform -eq 'windows') -Message 'Task run-vm-init must pass platform through to the run-command runner.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.ManagerUser -eq 'manager') -Message 'Task run-vm-init must pass manager user through to shared init app-state replay.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.AssistantUser -eq 'assistant') -Message 'Task run-vm-init must pass assistant user through to shared init app-state replay.'
         Assert-True -Condition ([string]$result.Stage -eq 'init') -Message 'Task run-vm-init must report init stage result.'
     }
     finally {
@@ -4737,6 +4759,8 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     $runtimeManifestText = [string](Get-Content -LiteralPath $runtimeManifestPath -Raw)
     $runnerPath = Join-Path $RepoRoot 'modules\core\tasks\azvm-ssh-task-runner.ps1'
     $runnerText = [string](Get-Content -LiteralPath $runnerPath -Raw)
+    $runCommandRunnerPath = Join-Path $RepoRoot 'modules\tasks\run-command\runner.ps1'
+    $runCommandRunnerText = [string](Get-Content -LiteralPath $runCommandRunnerPath -Raw)
     $connectionRuntimePath = Join-Path $RepoRoot 'modules\ui\connection\azvm-connection-runtime.ps1'
     $connectionRuntimeText = [string](Get-Content -LiteralPath $connectionRuntimePath -Raw)
     $sessionHelpersPath = Join-Path $RepoRoot 'modules\tasks\ssh\session.ps1'
@@ -4749,6 +4773,8 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
 
     Assert-True -Condition ($runtimeManifestText -like '*modules/core/tasks/azvm-app-state-plugin.ps1*') -Message 'Runtime manifest must load the shared app-state plugin helper module.'
     Assert-True -Condition ($runnerText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Windows update SSH runner must invoke the shared app-state post-process after each task.'
+    Assert-True -Condition ($runCommandRunnerText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'VM init run-command runner must invoke the shared app-state post-process after each task.'
+    Assert-True -Condition ($runCommandRunnerText -like '*-Transport ''run-command''*') -Message 'VM init run-command runner must use the shared run-command app-state transport.'
     Assert-True -Condition ($runnerText -like '*Invoke-AzVmSshTaskScript*') -Message 'Windows update SSH runner must use the shared SSH task execution wrapper.'
     Assert-True -Condition ($runnerText -like '*signal-warning=*') -Message 'Windows update SSH runner must surface task-emitted warning signals in the stage summary.'
     Assert-True -Condition ($runnerText -like '*Wait-AzVmProvisioningReadyOrRepair*') -Message 'Windows update SSH runner must guard against persistent Updating provisioning states before task execution.'
@@ -5228,6 +5254,7 @@ Invoke-Test -Name "Task command surface supports save and restore app-state main
     Assert-True -Condition ($taskRuntimeText -like '*restore-app-state*') -Message 'Task runtime must recognize restore-app-state mode.'
     Assert-True -Condition ($taskEntryText -like '*Save-AzVmTaskAppStateFromVm*') -Message 'Task entry must call the live app-state save path.'
     Assert-True -Condition ($taskEntryText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Task entry must call the shared app-state restore path.'
+    Assert-True -Condition ($taskEntryText -like '*-Transport ''run-command''*') -Message 'Task entry must route vm-init app-state restore through the shared run-command transport.'
     Assert-True -Condition ($taskHelpText -like '*task --save-app-state --vm-update-task=115*') -Message 'Help must document task save-app-state examples.'
     Assert-True -Condition ($taskHelpText -like '*task --restore-app-state --vm-update-task=115*') -Message 'Help must document task restore-app-state examples.'
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\parameters\init-task.ps1'))) -Message 'Task command must not keep the retired init-task parameter binding.'

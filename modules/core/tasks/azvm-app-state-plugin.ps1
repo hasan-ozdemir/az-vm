@@ -249,6 +249,182 @@ function Get-AzVmTaskAppStateRemoteZipPath {
     return ('C:/Windows/Temp/az-vm-app-state-{0}.zip' -f $safeName)
 }
 
+function Get-AzVmTaskAppStateRemoteGuestHelperPath {
+    param(
+        [ValidateSet('windows','linux')]
+        [string]$Platform
+    )
+
+    if ([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return '/tmp/az-vm-app-state-guest.psm1'
+    }
+
+    return 'C:/Windows/Temp/az-vm-app-state-guest.psm1'
+}
+
+function ConvertTo-AzVmTaskAppStateBase64Chunks {
+    param(
+        [Parameter(Mandatory = $true)]
+        [byte[]]$Bytes,
+        [int]$ChunkLength = 12000
+    )
+
+    if ($ChunkLength -lt 1024) {
+        $ChunkLength = 1024
+    }
+
+    $base64 = [System.Convert]::ToBase64String($Bytes)
+    if ([string]::IsNullOrEmpty([string]$base64)) {
+        return @('')
+    }
+
+    $chunks = New-Object System.Collections.Generic.List[string]
+    for ($offset = 0; $offset -lt $base64.Length; $offset += $ChunkLength) {
+        $length = [Math]::Min($ChunkLength, ($base64.Length - $offset))
+        $chunks.Add($base64.Substring($offset, $length))
+    }
+
+    return @($chunks.ToArray())
+}
+
+function Get-AzVmTaskAppStateWindowsRunCommandQuote {
+    param([string]$Value)
+
+    return ([string]$Value).Replace("'", "''")
+}
+
+function Get-AzVmTaskAppStateBashQuote {
+    param([string]$Value)
+
+    return ([string]$Value).Replace("'", "'""'""'")
+}
+
+function Invoke-AzVmTaskAppStateRunCommandScript {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroup,
+        [Parameter(Mandatory = $true)]
+        [string]$VmName,
+        [Parameter(Mandatory = $true)]
+        [string]$CommandId,
+        [Parameter(Mandatory = $true)]
+        [string]$TaskName,
+        [Parameter(Mandatory = $true)]
+        [string]$ScriptText,
+        [string]$ContextLabel = 'az vm run-command invoke (app-state)'
+    )
+
+    $scriptArgs = Get-AzVmRunCommandScriptArgs -ScriptText $ScriptText -CommandId $CommandId
+    $azArgs = @(
+        'vm', 'run-command', 'invoke',
+        '--resource-group', $ResourceGroup,
+        '--name', $VmName,
+        '--command-id', $CommandId,
+        '--scripts'
+    )
+    $azArgs += $scriptArgs
+    $azArgs += @('-o', 'json')
+
+    $rawJson = Invoke-TrackedAction -Label $ContextLabel -Action {
+        $invokeResult = az @azArgs
+        Assert-LastExitCode $ContextLabel
+        $invokeResult
+    }
+
+    $messageText = Get-AzVmRunCommandResultMessage -TaskName $TaskName -RawJson $rawJson -ModeLabel 'app-state'
+    return [pscustomobject]@{
+        RawJson = [string]$rawJson
+        MessageText = [string]$messageText
+    }
+}
+
+function Invoke-AzVmTaskAppStateRunCommandUpload {
+    param(
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroup,
+        [Parameter(Mandatory = $true)]
+        [string]$VmName,
+        [Parameter(Mandatory = $true)]
+        [string]$CommandId,
+        [Parameter(Mandatory = $true)]
+        [string]$TaskName,
+        [Parameter(Mandatory = $true)]
+        [byte[]]$ContentBytes,
+        [Parameter(Mandatory = $true)]
+        [string]$RemotePath,
+        [string]$PayloadLabel = 'payload'
+    )
+
+    $remoteBase64Path = '{0}.b64' -f [string]$RemotePath
+    $chunks = @(ConvertTo-AzVmTaskAppStateBase64Chunks -Bytes $ContentBytes)
+    if (@($chunks).Count -eq 0) {
+        $chunks = @('')
+    }
+
+    if ($Platform -eq 'windows') {
+        $remotePathSafe = Get-AzVmTaskAppStateWindowsRunCommandQuote -Value $RemotePath
+        $remoteBase64PathSafe = Get-AzVmTaskAppStateWindowsRunCommandQuote -Value $remoteBase64Path
+        $initializeScript = @"
+`$destinationPath = '$remoteBase64PathSafe'
+`$parentPath = Split-Path -Parent `$destinationPath
+if (-not [string]::IsNullOrWhiteSpace([string]`$parentPath)) {
+    New-Item -ItemType Directory -Path `$parentPath -Force | Out-Null
+}
+[System.IO.File]::WriteAllText(`$destinationPath, '', [System.Text.Encoding]::ASCII)
+Write-Host 'app-state-upload-init-completed'
+"@
+        [void](Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $CommandId -TaskName $TaskName -ScriptText $initializeScript -ContextLabel ("az vm run-command invoke (app-state-{0}-init)" -f [string]$PayloadLabel))
+
+        $chunkIndex = 0
+        foreach ($chunk in @($chunks)) {
+            $chunkIndex++
+            $chunkSafe = Get-AzVmTaskAppStateWindowsRunCommandQuote -Value ([string]$chunk)
+            $appendScript = "[System.IO.File]::AppendAllText('{0}', '{1}', [System.Text.Encoding]::ASCII)`nWrite-Host 'app-state-upload-chunk-completed'" -f $remoteBase64PathSafe, $chunkSafe
+            [void](Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $CommandId -TaskName $TaskName -ScriptText $appendScript -ContextLabel ("az vm run-command invoke (app-state-{0}-chunk-{1})" -f [string]$PayloadLabel, [int]$chunkIndex))
+        }
+
+        $decodeScript = @"
+`$base64Path = '$remoteBase64PathSafe'
+`$outputPath = '$remotePathSafe'
+`$base64Text = [System.IO.File]::ReadAllText(`$base64Path, [System.Text.Encoding]::ASCII)
+`$bytes = [System.Convert]::FromBase64String(`$base64Text)
+[System.IO.File]::WriteAllBytes(`$outputPath, `$bytes)
+Remove-Item -LiteralPath `$base64Path -Force -ErrorAction SilentlyContinue
+Write-Host 'app-state-upload-decode-completed'
+"@
+        [void](Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $CommandId -TaskName $TaskName -ScriptText $decodeScript -ContextLabel ("az vm run-command invoke (app-state-{0}-decode)" -f [string]$PayloadLabel))
+        return
+    }
+
+    $remotePathSafe = Get-AzVmTaskAppStateBashQuote -Value $RemotePath
+    $remoteBase64PathSafe = Get-AzVmTaskAppStateBashQuote -Value $remoteBase64Path
+    $initializeScript = @"
+set -euo pipefail
+mkdir -p "$(dirname '$remoteBase64PathSafe')"
+: > '$remoteBase64PathSafe'
+echo 'app-state-upload-init-completed'
+"@
+    [void](Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $CommandId -TaskName $TaskName -ScriptText $initializeScript -ContextLabel ("az vm run-command invoke (app-state-{0}-init)" -f [string]$PayloadLabel))
+
+    $chunkIndex = 0
+    foreach ($chunk in @($chunks)) {
+        $chunkIndex++
+        $chunkSafe = Get-AzVmTaskAppStateBashQuote -Value ([string]$chunk)
+        $appendScript = "printf '%s' '{0}' >> '{1}'`necho 'app-state-upload-chunk-completed'" -f $chunkSafe, $remoteBase64PathSafe
+        [void](Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $CommandId -TaskName $TaskName -ScriptText $appendScript -ContextLabel ("az vm run-command invoke (app-state-{0}-chunk-{1})" -f [string]$PayloadLabel, [int]$chunkIndex))
+    }
+
+    $decodeScript = @"
+set -euo pipefail
+base64 -d '$remoteBase64PathSafe' > '$remotePathSafe'
+rm -f '$remoteBase64PathSafe'
+echo 'app-state-upload-decode-completed'
+"@
+    [void](Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $CommandId -TaskName $TaskName -ScriptText $decodeScript -ContextLabel ("az vm run-command invoke (app-state-{0}-decode)" -f [string]$PayloadLabel))
+}
+
 function Get-AzVmTaskAppStateGuestScript {
     param(
         [string]$TaskName,
@@ -466,6 +642,8 @@ function Invoke-AzVmTaskAppStatePostProcess {
     param(
         [ValidateSet('windows','linux')]
         [string]$Platform,
+        [ValidateSet('ssh','run-command')]
+        [string]$Transport = 'ssh',
         [string]$RepoRoot,
         [psobject]$TaskBlock,
         [psobject]$Session,
@@ -478,7 +656,10 @@ function Invoke-AzVmTaskAppStatePostProcess {
         [int]$ConnectTimeoutSeconds = 30,
         [int]$TimeoutSeconds = 180,
         [string]$ManagerUser = '',
-        [string]$AssistantUser = ''
+        [string]$AssistantUser = '',
+        [string]$ResourceGroup = '',
+        [string]$VmName = '',
+        [string]$RunCommandId = ''
     )
 
     $pluginInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $TaskBlock
@@ -499,8 +680,18 @@ function Invoke-AzVmTaskAppStatePostProcess {
     }
 
     $remoteZipPath = Get-AzVmTaskAppStateRemoteZipPath -TaskName $taskName
+    $remoteGuestHelperPath = Get-AzVmTaskAppStateRemoteGuestHelperPath -Platform $Platform
     try {
-        Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath ([string]$pluginInfo.ZipPath) -RemotePath $remoteZipPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+        if ([string]::Equals([string]$Transport, 'run-command', [System.StringComparison]::OrdinalIgnoreCase)) {
+            if ([string]::IsNullOrWhiteSpace([string]$ResourceGroup) -or [string]::IsNullOrWhiteSpace([string]$VmName) -or [string]::IsNullOrWhiteSpace([string]$RunCommandId)) {
+                throw 'Run-command app-state replay requires resource group, VM name, and run-command id.'
+            }
+
+            Invoke-AzVmTaskAppStateRunCommandUpload -Platform $Platform -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $RunCommandId -TaskName $taskName -ContentBytes ([System.IO.File]::ReadAllBytes([string]$pluginInfo.ZipPath)) -RemotePath $remoteZipPath -PayloadLabel 'zip'
+        }
+        else {
+            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath ([string]$pluginInfo.ZipPath) -RemotePath $remoteZipPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+        }
         $scriptText = ''
         if ($Platform -eq 'windows') {
             $guestHelperPath = [string]$pluginInfo.GuestHelperPath
@@ -509,7 +700,13 @@ function Invoke-AzVmTaskAppStatePostProcess {
                 return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = 'guest helper missing' }
             }
 
-            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath 'C:/Windows/Temp/az-vm-app-state-guest.psm1' -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+            if ([string]::Equals([string]$Transport, 'run-command', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $guestHelperBytes = [System.Text.Encoding]::UTF8.GetBytes([string](Get-Content -LiteralPath $guestHelperPath -Raw))
+                Invoke-AzVmTaskAppStateRunCommandUpload -Platform $Platform -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $RunCommandId -TaskName $taskName -ContentBytes $guestHelperBytes -RemotePath $remoteGuestHelperPath -PayloadLabel 'guest-helper'
+            }
+            else {
+                Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath $remoteGuestHelperPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+            }
             $scriptText = Get-AzVmTaskAppStateGuestScript -TaskName $taskName -RemoteZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
         }
         else {
@@ -518,27 +715,35 @@ function Invoke-AzVmTaskAppStatePostProcess {
         $scriptTimeout = $TimeoutSeconds
         if ($scriptTimeout -lt 60) { $scriptTimeout = 60 }
         if ($scriptTimeout -gt 600) { $scriptTimeout = 600 }
-        $result = Invoke-AzVmSshTaskScript `
-            -Session $Session `
-            -PySshPythonPath $PySshPythonPath `
-            -PySshClientPath $PySshClientPath `
-            -HostName $HostName `
-            -UserName $UserName `
-            -Password $Password `
-            -Port $Port `
-            -Shell $taskShell `
-            -TaskName ("{0} (app-state)" -f $taskName) `
-            -TaskScript $scriptText `
-            -TimeoutSeconds $scriptTimeout `
-            -SkipRemoteCleanup
-        if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
-            $exitCode = if ($null -ne $result -and $result.PSObject.Properties.Match('ExitCode').Count -gt 0) { [int]$result.ExitCode } else { -1 }
-            Write-Warning ("App-state warning: {0} => replay exited with code {1}" -f [string]$taskName, $exitCode)
-            return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = ("replay exited with code {0}" -f $exitCode) }
+        if ([string]::Equals([string]$Transport, 'run-command', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $runCommandReplay = Invoke-AzVmTaskAppStateRunCommandScript -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $RunCommandId -TaskName ("{0} (app-state)" -f $taskName) -ScriptText $scriptText -ContextLabel ("az vm run-command invoke ({0} app-state)" -f [string]$taskName)
+            if (-not [string]::IsNullOrWhiteSpace([string]$runCommandReplay.MessageText)) {
+                Write-Host ([string]$runCommandReplay.MessageText)
+            }
         }
+        else {
+            $result = Invoke-AzVmSshTaskScript `
+                -Session $Session `
+                -PySshPythonPath $PySshPythonPath `
+                -PySshClientPath $PySshClientPath `
+                -HostName $HostName `
+                -UserName $UserName `
+                -Password $Password `
+                -Port $Port `
+                -Shell $taskShell `
+                -TaskName ("{0} (app-state)" -f $taskName) `
+                -TaskScript $scriptText `
+                -TimeoutSeconds $scriptTimeout `
+                -SkipRemoteCleanup
+            if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
+                $exitCode = if ($null -ne $result -and $result.PSObject.Properties.Match('ExitCode').Count -gt 0) { [int]$result.ExitCode } else { -1 }
+                Write-Warning ("App-state warning: {0} => replay exited with code {1}" -f [string]$taskName, $exitCode)
+                return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = ("replay exited with code {0}" -f $exitCode) }
+            }
 
-        if ($result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
-            Write-Host ([string]$result.Output)
+            if ($result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
+                Write-Host ([string]$result.Output)
+            }
         }
         Write-Host ("App-state deployed: {0}" -f [string]$taskName)
         return [pscustomobject]@{ Status = 'deployed'; Warning = $false; Message = 'deployed' }

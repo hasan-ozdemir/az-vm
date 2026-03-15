@@ -2,8 +2,8 @@
 Script Filename: az-vm.ps1
 Script Description:
 - Unified Azure VM provisioning flow for Windows and Linux.
-- OS selection: --windows or --linux (or VM_OS_TYPE from .env).
-- Init tasks run once on first VM creation via Azure Run Command task-batch.
+- OS selection: --windows or --linux (or SELECTED_VM_OS from .env).
+- Init tasks run once on first VM creation via Azure Run Command, one task at a time.
 - Update tasks run via persistent pyssh task-by-task.
 #>
 
@@ -40,6 +40,27 @@ $env:PYTHONDONTWRITEBYTECODE = '1'
 $script:DefaultErrorSummary = 'An unexpected error occurred.'
 $script:DefaultErrorHint = 'Review the error line and check script parameters and Azure connectivity.'
 
+function Get-AzVmCliVersionInfo {
+    $releaseNotesPath = Join-Path $PSScriptRoot 'release-notes.md'
+    if (Test-Path -LiteralPath $releaseNotesPath) {
+        $releaseNotesText = [string](Get-Content -LiteralPath $releaseNotesPath -Raw)
+        $match = [regex]::Match($releaseNotesText, '(?m)^## Release (\d{4}\.\d{1,2}\.\d{1,2}\.\d+)\s+-\s+\d{4}-\d{2}-\d{2}$')
+        if ($match.Success) {
+            return [string]$match.Groups[1].Value
+        }
+    }
+
+    return '0.0.0'
+}
+
+function Write-AzVmCliBanner {
+    $versionInfo = Get-AzVmCliVersionInfo
+    Write-Host ("AZ-VM CLI V{0}" -f [string]$versionInfo) -ForegroundColor Cyan
+    Write-Host 'Provision, update, connect, and maintain managed Windows or Linux Azure VMs from one deterministic CLI.' -ForegroundColor DarkCyan
+    Write-Host 'Run lifecycle actions, isolated tasks, app-state save/restore, and SSH or RDP access through one repo-driven workflow.' -ForegroundColor DarkCyan
+    Write-Host ''
+}
+
 # Load modular function files in deterministic order from the leaf-file manifest.
 $moduleManifestPath = Join-Path $PSScriptRoot 'modules/azvm-runtime-manifest.ps1'
 if (-not (Test-Path -LiteralPath $moduleManifestPath)) {
@@ -63,6 +84,8 @@ foreach ($moduleFile in @($moduleFiles)) {
 if ($MyInvocation.InvocationName -eq '.') {
     return
 }
+
+Write-AzVmCliBanner
 
 try {
     $parsedCli = Parse-AzVmCliArguments -CommandToken $Command -RawArgs $CliArgs

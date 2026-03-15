@@ -292,7 +292,7 @@ function Invoke-AzVmMain {
                         }
                         else {
                             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-                            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell -TaskOutcomeMode $taskOutcomeMode | Out-Null
+                            Invoke-VmRunCommandBlocks -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks $initTaskBlocks -CombinedShell $combinedShell -TaskOutcomeMode $taskOutcomeMode -Platform $platform -RepoRoot (Get-AzVmRepoRoot) -ManagerUser ([string]$step1Context.VmUser) -AssistantUser ([string]$step1Context.VmAssistantUser) | Out-Null
                             Write-Host 'Waiting 20 seconds for SSH service to settle after init...'
                             Start-Sleep -Seconds 20
                         }

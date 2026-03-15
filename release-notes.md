@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.318 - 2026-03-15
+
+### Summary
+This release unifies task-scoped app-state restore behavior across vm-init, vm-update, and the direct `task --restore-app-state` surface. Vm-init now runs one task at a time over Azure Run Command so it can invoke the same shared post-task app-state restore helper after each init task when a matching plugin zip exists, while direct vm-init restore uses that same shared helper through a run-command transport instead of depending on SSH readiness. The same pass also adds a small unconditional banner to the CLI entrypoint so every `az-vm` invocation starts with version and feature context before command parsing begins.
+
+### Highlights
+- Reworked the vm-init runner from one combined Run Command batch into one-task-at-a-time execution so init-stage post-task app-state replay can use the same shared helper contract as vm-update.
+- Expanded the shared app-state restore helper with a run-command transport and routed `task --restore-app-state --vm-init-task ...` through it, giving init restore and init post-task replay the same plugin resolver and replay core that update restore already uses over SSH.
+- Added an unconditional `AZ-VM CLI V<version>` welcome banner with a two-line feature summary that prints before valid, invalid, parameterized, and parameterless invocations alike.
+
 ## Release 2026.3.15.317 - 2026-03-15
 
 ### Summary

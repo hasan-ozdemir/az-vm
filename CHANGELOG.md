@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.318] - 2026-03-15
+
+### Added
+- Added an unconditional CLI welcome banner at the `az-vm.ps1` entrypoint so every invocation now starts with `AZ-VM CLI V<version>` plus a two-line feature summary before parsing or dispatching the command.
+
+### Changed
+- Reworked the Azure Run Command init task runner so vm-init tasks now execute one-by-one instead of as one combined batch, which lets the runtime apply the same post-task app-state restore contract after each init task when a matching stage-local plugin zip exists.
+- Expanded the shared app-state restore helper with a run-command transport so init-stage post-task replay and `task --restore-app-state --vm-init-task ...` now reuse the same plugin resolver and guest replay path that update-stage restore already used over SSH.
+- Updated AGENTS and README so the documented task/app-state contract now covers both vm-init and vm-update post-task replay instead of describing the plugin behavior as update-only.
+
+### Fixed
+- Fixed task-scoped init restore consistency so `task --restore-app-state` for vm-init no longer depends on SSH readiness and instead routes through the shared run-command transport, matching the new vm-init post-task replay behavior.
+
+### Tests
+- Revalidated the new init restore and banner behavior with `tests\\az-vm-smoke-tests.ps1` and `tests\\documentation-contract-check.ps1` before the full non-live validation sweep.
+
 ## [2026.3.15.317] - 2026-03-15
 
 ### Added

@@ -108,8 +108,8 @@ Use these sources in this order when maintaining the repo:
 - Intentionally local-only tasks live under `local/`, are discovered from disk at runtime, and use script metadata only.
 - Intentionally local-only disabled tasks live under `local/disabled/` and remain disabled by location.
 - Root `disabled/` remains for tracked disabled tasks.
-- The only allowed vm-update app-state source is the stage-local plugin zip `.../update/app-states/<task-name>/app-state.zip`.
-- Builtin catalog vm-update tasks and local-only vm-update tasks must use the same post-process app-state contract and the same exact plugin path rule.
+- The only allowed task app-state source is the stage-local plugin zip `.../<stage>/app-states/<task-name>/app-state.zip`.
+- Builtin catalog and local-only init/update tasks must use the same post-process app-state contract and the same exact plugin path rule.
 - Stage-local `app-states/` roots are untracked and git-ignored; missing task plugins must log a skip and continue instead of failing the stage.
 - `local/`, task-side helper folders, and any legacy overlay paths must not be used as alternate app-state storage locations.
 - Managed app-state save and restore must target only the `manager` and `assistant` OS profiles. Do not capture or replay `default` or arbitrary local user profiles.

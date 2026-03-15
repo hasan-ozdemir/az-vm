@@ -603,6 +603,7 @@ Behavior notes:
 - `--run-vm-init` routes one init task through Azure run-command
 - `--run-vm-update` routes one update task through the SSH task runner
 - `--save-app-state` and `--restore-app-state` read or write `.../<stage>/app-states/<task-name>/app-state.zip`
+- init and update restore flows both reuse the same shared per-task app-state post-process; init routes it through Azure Run Command and update routes it through SSH
 - task-owned app-state payloads target only the managed `manager` and `assistant` OS profiles; missing zips skip cleanly, and broad generated caches, installers, models, and telemetry payloads are pruned from the managed capture contract
 - useful before isolated reruns or when checking timeout and enable-state behavior
 
@@ -776,9 +777,9 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 `create` and `update` can run the full chain or a selected window of steps by using `--step-from`, `--step-to`, or `--step`.
 
 ### Init Tasks Versus Update Tasks
-- `vm-init` is Azure Run Command driven and is used for early guest bootstrap.
+- `vm-init` is Azure Run Command driven and is used for early guest bootstrap, one task at a time.
 - `vm-update` is pyssh driven and is used for richer task-by-task update flows after the VM is reachable.
-- Both stages use catalog JSON files as the source of truth for ordering, timeout, and enable/disable state.
+- Both stages use catalog JSON files as the source of truth for ordering, timeout, and enable/disable state, and both now invoke the same per-task app-state restore helper as a post-task step when a matching plugin zip exists.
 - The natural execution order for both stages is: builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks.
 
 ### Interactive Versus Auto Mode
@@ -858,7 +859,7 @@ Each task directory has a catalog JSON file that owns execution priority, enable
 ### Task Failures
 - Rerun the failing task with `task --run-vm-init` or `task --run-vm-update`.
 - Check task catalog timeout and enabled state.
-- Vm-update app-state replay is post-task and plug-in based. If `.../update/app-states/<task-name>/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
+- Vm-init and vm-update app-state replay are post-task and plug-in based. If `.../<stage>/app-states/<task-name>/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
 - Managed app-state save and restore target only the `manager` and `assistant` OS profiles. Large generated payloads such as installers, models, telemetry trees, and low-value caches are intentionally pruned so the zips stay operator-owned and reusable instead of drifting into machine-image snapshots.
 - Use `VM_TASK_OUTCOME_MODE=strict` when you want the stage to stop at the first failure.
 

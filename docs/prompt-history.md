@@ -5237,3 +5237,22 @@ Please add this command option too, test it in isolation, and commit it: `az-vm 
 Added `do --vm-action=redeploy` as a new first-class lifecycle repair action. I updated the `do` runtime so the new action calls `az vm redeploy`, waits for provisioning recovery, and then restores the original started or stopped lifecycle state when Azure reports that state deterministically after the redeploy. I also updated the interactive lifecycle picker, help text, README command matrix and usage examples, changelog, release notes, and smoke assertions so the new action sits beside `reapply`, `hibernate-stop`, and `hibernate-deallocate` across the full operator surface.
 
 I revalidated the change in isolation through non-live smoke coverage instead of triggering a live Azure redeploy against the current VM. The isolated tests now verify that `redeploy` is accepted by the parser, exposed in the interactive `do` action menu, documented in help and README, and routed through the Azure wrapper with `az vm redeploy` while waiting for provisioning recovery and reporting the final lifecycle snapshot.
+
+### 2026-03-15 19:34 TRT
+
+**User Prompt**
+
+````text
+Question: 1. Does `--restore-app-state` run as a post-task step after every vm-init and vm-update task? 2. Is the restore flow executed there the same code used by `task --restore-app-state`? If not, make the whole system work that way.
+
+After the current task is complete, update the UI too: every `az-vm` invocation must print a welcome message:
+AZ-VM CLI V{version info}
+{two-line description with all popular features}
+This greeting must appear in all cases, including valid commands, invalid commands, parameterized invocations, and parameterless invocations.
+````
+
+**Assistant Summary**
+
+Verified that vm-update already used the shared app-state restore helper after each task and that `task --restore-app-state` already reused that same helper, but vm-init still differed: it ran init tasks through Azure Run Command without the shared post-task restore path. I refactored the init runner so vm-init now executes one task at a time over Azure Run Command and invokes the same shared task app-state restore helper after each successful init task when a matching stage-local plugin zip exists. I also routed `task --restore-app-state --vm-init-task ...` through that same shared helper by adding a run-command transport to the app-state restore runtime, so init post-task replay and direct vm-init restore now share the same plugin resolution and replay core instead of splitting between unrelated paths.
+
+In the same change, I added an unconditional CLI welcome banner at `az-vm.ps1`. Every invocation now starts with `AZ-VM CLI V<version>` and a two-line feature summary before command parsing and dispatch, so the same banner appears for valid commands, invalid commands, parameterized runs, and parameterless runs alike. I updated README, AGENTS, changelog, release notes, and smoke coverage to match the new behavior, and revalidated the change set with the non-live validation chain.
