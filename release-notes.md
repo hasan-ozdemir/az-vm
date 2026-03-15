@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.320 - 2026-03-16
+
+### Summary
+This release is a documentation-and-tests alignment pass for the current selected-only configuration surface. The maintained docs and contract checks now describe the public runtime with `SELECTED_*` config names, `{SELECTED_VM_NAME}` managed-resource templates, `__SELECTED_*__` task placeholders, `AZURE_COMMAND_TIMEOUT_SECONDS`, the `180` second Sysinternals init timeout, and the current Windows public-desktop shortcut validation wording.
+
+### Highlights
+- Updated `README.md` to describe the current template and task-placeholder contract, including `{SELECTED_VM_NAME}` and `__SELECTED_*__`.
+- Updated the smoke suite so create override assertions, `.env.example` template checks, task token replacement checks, and the Sysinternals init timeout all match the selected-only contract.
+- Updated the documentation-contract gate to keep the README wording aligned with the current Windows shortcut validation messages and selected-name placeholder model.
+
 ## Release 2026.3.15.319 - 2026-03-15
 
 ### Summary

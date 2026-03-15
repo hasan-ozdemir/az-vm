@@ -695,6 +695,8 @@ Catalog JSON files are the source of truth for task ordering, enable state, and 
 ### Direct Task Execution With `task`
 Direct `task --run-vm-init` and `task --run-vm-update` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
 
+Current task template replacement uses the public selected-value placeholders: `__SELECTED_VM_NAME__`, `__SELECTED_AZURE_REGION__`, `__SELECTED_RESOURCE_GROUP__`, `__SELECTED_COMPANY_NAME__`, `__SELECTED_COMPANY_WEB_ADDRESS__`, `__SELECTED_COMPANY_EMAIL_ADDRESS__`, `__SELECTED_EMPLOYEE_EMAIL_ADDRESS__`, and `__SELECTED_EMPLOYEE_FULL_NAME__`.
+
 ## Configuration Guide
 
 ### Runtime Precedence
@@ -730,6 +732,7 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 ### Platform-Specific Settings
 - `WIN_` keys are for Windows-only settings such as Windows image and disk-size defaults.
 - `LIN_` keys are for Linux-only settings such as Linux image and disk-size defaults.
+- The committed managed-resource templates in `.env.example` use `{SELECTED_VM_NAME}` as the naming placeholder, for example `rg-{SELECTED_VM_NAME}-{REGION_CODE}-g{N}`.
 - Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.
 - Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.
 
@@ -861,6 +864,7 @@ Each task directory has a catalog JSON file that owns execution priority, enable
 - Check task catalog timeout and enabled state.
 - Vm-init and vm-update app-state replay are post-task and plug-in based. If `.../<stage>/app-states/<task-name>/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
 - Managed app-state save and restore target only the `manager` and `assistant` OS profiles. Large generated payloads such as installers, models, telemetry trees, and low-value caches are intentionally pruned so the zips stay operator-owned and reusable instead of drifting into machine-image snapshots.
+- Windows public desktop shortcut validation names the exact missing `.env` keys, for example `SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow.` and `SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow.`
 - Use `VM_TASK_OUTCOME_MODE=strict` when you want the stage to stop at the first failure.
 
 ### Connection Failures

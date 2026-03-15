@@ -3,6 +3,14 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.320] - 2026-03-16
+
+### Changed
+- Aligned the maintained README, smoke suite, and documentation-contract checks with the selected-only config contract by documenting `SELECTED_*` public names, `{SELECTED_VM_NAME}` managed-resource templates, `__SELECTED_*__` task placeholders, `AZURE_COMMAND_TIMEOUT_SECONDS`, and the current Windows shortcut validation wording.
+
+### Tests
+- Updated smoke assertions for create override keys, `.env.example` naming templates, task token replacement, and the Windows `vm-init` `108-install-sysinternals-suite` timeout so the non-live contract checks match the current selected-only runtime surface.
+
 ## [2026.3.15.319] - 2026-03-15
 
 ### Changed

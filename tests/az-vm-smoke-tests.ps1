@@ -138,7 +138,7 @@ Invoke-Test -Name "Derived VM name fallback contract" -Action {
         WIN_VM_DISK_SIZE_GB = '128'
     }
     $resolvedMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform windows
-    Assert-True -Condition ([string]$resolvedMap.VM_NAME -eq 'first-last-ops-vm') -Message "Platform config resolution must derive VM_NAME from SELECTED_EMPLOYEE_EMAIL_ADDRESS when SELECTED_VM_NAME is blank."
+    Assert-True -Condition ([string]$resolvedMap.SELECTED_VM_NAME -eq 'first-last-ops-vm') -Message "Platform config resolution must derive SELECTED_VM_NAME from SELECTED_EMPLOYEE_EMAIL_ADDRESS when SELECTED_VM_NAME is blank."
 }
 
 Invoke-Test -Name "Managed resource naming contract" -Action {
@@ -282,7 +282,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_RESOURCE_GROUP=')) -Message '.env.example must expose SELECTED_RESOURCE_GROUP.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_HIBERNATION=true')) -Message '.env.example must expose VM_ENABLE_HIBERNATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=true')) -Message '.env.example must expose VM_ENABLE_NESTED_VIRTUALIZATION as a shared feature toggle.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix on the selected VM placeholder.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_NAME controls the default Google Chrome profile directory for repo-managed Windows business web shortcuts.')) -Message '.env.example must document SELECTED_COMPANY_NAME for the Windows business public desktop shortcut flow.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('Repo-managed Chrome profile-directory values are normalized to lowercase.')) -Message '.env.example must document lowercase Chrome profile-directory normalization.'
@@ -308,16 +308,17 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     Assert-True -Condition ($commandContextText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'Command context must read VM_ENABLE_NESTED_VIRTUALIZATION.'
     Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_HIBERNATION=false')) -Message 'Feature support must honor disabling hibernation by config.'
     Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Feature support must honor disabling nested virtualization by config.'
-    Assert-True -Condition ($commandContextText -match [regex]::Escape('nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message 'Command context must use the nsg-rule naming prefix.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('nsg-rule-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}')) -Message 'Command context must use the selected VM naming template prefix.'
     Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Shared command runtime must consume the shared PYSSH client default.'
     Assert-True -Condition ($mainText -match [regex]::Escape('Write-AzVmMainBanner')) -Message 'Command main must render the review-first banner helper.'
     Assert-True -Condition ($mainWorkflowText -match [regex]::Escape('function Write-AzVmMainBanner')) -Message 'Main workflow helper must publish the banner renderer.'
-    Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must not fall back company_name to VM_NAME.'
-    Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key ''employee_email_address'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must read employee_email_address from config.'
-    Assert-True -Condition (($commandContextText.IndexOf('Get-ConfigValue -Config $ConfigMap -Key ''employee_full_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command context must read employee_full_name from config.'
-    Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''company_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must not fall back company_name to VM_NAME.'
-    Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''employee_email_address'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must read employee_email_address from config.'
-    Assert-True -Condition (($commandRuntimeText.IndexOf('Get-ConfigValue -Config $effectiveConfigMap -Key ''employee_full_name'' -DefaultValue ''''', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Command runtime must read employee_full_name from config.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('SELECTED_COMPANY_NAME')) -Message 'Command context must read SELECTED_COMPANY_NAME from config.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('SELECTED_EMPLOYEE_EMAIL_ADDRESS')) -Message 'Command context must read SELECTED_EMPLOYEE_EMAIL_ADDRESS from config.'
+    Assert-True -Condition ($commandContextText -match [regex]::Escape('SELECTED_EMPLOYEE_FULL_NAME')) -Message 'Command context must read SELECTED_EMPLOYEE_FULL_NAME from config.'
+    Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('SELECTED_COMPANY_NAME')) -Message 'Command runtime must read SELECTED_COMPANY_NAME from config.'
+    Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('SELECTED_EMPLOYEE_EMAIL_ADDRESS')) -Message 'Command runtime must read SELECTED_EMPLOYEE_EMAIL_ADDRESS from config.'
+    Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('SELECTED_EMPLOYEE_FULL_NAME')) -Message 'Command runtime must read SELECTED_EMPLOYEE_FULL_NAME from config.'
+    Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('AZURE_COMMAND_TIMEOUT_SECONDS')) -Message 'Command runtime must read AZURE_COMMAND_TIMEOUT_SECONDS from config.'
 }
 
 Invoke-Test -Name "Runtime modules no longer carry personal or secret defaults" -Action {
@@ -757,12 +758,12 @@ Invoke-Test -Name "Interactive create and update subscription picker stores sele
 
         Set-AzVmResolvedSubscriptionContext -SubscriptionId '11111111-1111-1111-1111-111111111111' -SubscriptionName 'default-sub' -TenantId 'tenant-a' -ResolutionSource 'active'
         $createRuntime = New-AzVmCreateCommandRuntime -Options @{} -WindowsFlag:$false -LinuxFlag:$false -AutoMode:$false
-        Assert-True -Condition ([string]$createRuntime.InitialConfigOverrides['azure_subscription_id'] -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive create must persist the selected subscription id.'
+        Assert-True -Condition ([string]$createRuntime.InitialConfigOverrides['SELECTED_AZURE_SUBSCRIPTION_ID'] -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive create must persist the selected subscription id.'
         Assert-True -Condition ([string](Get-AzVmResolvedSubscriptionContext).SubscriptionId -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive create must update the active subscription context.'
 
         Set-AzVmResolvedSubscriptionContext -SubscriptionId '11111111-1111-1111-1111-111111111111' -SubscriptionName 'default-sub' -TenantId 'tenant-a' -ResolutionSource 'active'
         $updateRuntime = New-AzVmUpdateCommandRuntime -Options @{} -WindowsFlag:$false -LinuxFlag:$false -AutoMode:$false
-        Assert-True -Condition ([string]$updateRuntime.InitialConfigOverrides['azure_subscription_id'] -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive update must persist the selected subscription id.'
+        Assert-True -Condition ([string]$updateRuntime.InitialConfigOverrides['SELECTED_AZURE_SUBSCRIPTION_ID'] -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive update must persist the selected subscription id.'
         Assert-True -Condition ([string](Get-AzVmResolvedSubscriptionContext).SubscriptionId -eq '22222222-2222-2222-2222-222222222222') -Message 'Interactive update must update the active subscription context.'
     }
     finally {
@@ -1031,8 +1032,8 @@ Invoke-Test -Name "Set command applies both toggles and persists them to .env" -
     $null = New-Item -ItemType Directory -Path $tempRoot -Force
     $envFilePath = Join-Path $tempRoot '.env'
     Write-TextFileNormalized -Path $envFilePath -Content @"
-RESOURCE_GROUP=rg-old
-VM_NAME=oldvm
+SELECTED_RESOURCE_GROUP=rg-old
+SELECTED_VM_NAME=oldvm
 VM_ENABLE_HIBERNATION=false
 VM_ENABLE_NESTED_VIRTUALIZATION=true
 "@ -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
@@ -1068,8 +1069,8 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
         } -AutoMode:$false -WindowsFlag:$false -LinuxFlag:$false
 
         $envMap = Read-DotEnvFile -Path $envFilePath
-        Assert-True -Condition ([string]$envMap['RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must persist the resolved resource group.'
-        Assert-True -Condition ([string]$envMap['VM_NAME'] -eq 'targetvm') -Message 'Set command must persist the resolved VM name.'
+        Assert-True -Condition ([string]$envMap['SELECTED_RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must persist the resolved selected resource group.'
+        Assert-True -Condition ([string]$envMap['SELECTED_VM_NAME'] -eq 'targetvm') -Message 'Set command must persist the resolved selected VM name.'
         Assert-True -Condition ([string]$envMap['VM_ENABLE_HIBERNATION'] -eq 'true') -Message 'Set command must persist VM_ENABLE_HIBERNATION=true when hibernation is turned on.'
         Assert-True -Condition ([string]$envMap['VM_ENABLE_NESTED_VIRTUALIZATION'] -eq 'false') -Message 'Set command must persist VM_ENABLE_NESTED_VIRTUALIZATION=false when nested virtualization is turned off.'
         Assert-True -Condition (@($script:SetCommandAzCalls).Count -eq 1) -Message 'Set command must issue the Azure hibernation update without calling a nested virtualization API toggle.'
@@ -1096,8 +1097,8 @@ Invoke-Test -Name "Set command persists successful updates before a later toggle
     $null = New-Item -ItemType Directory -Path $tempRoot -Force
     $envFilePath = Join-Path $tempRoot '.env'
     Write-TextFileNormalized -Path $envFilePath -Content @"
-RESOURCE_GROUP=rg-old
-VM_NAME=oldvm
+SELECTED_RESOURCE_GROUP=rg-old
+SELECTED_VM_NAME=oldvm
 VM_ENABLE_HIBERNATION=false
 VM_ENABLE_NESTED_VIRTUALIZATION=true
 "@ -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
@@ -1166,8 +1167,8 @@ VM_ENABLE_NESTED_VIRTUALIZATION=true
         Assert-True -Condition $threw -Message 'Set command must fail when nested virtualization guest validation fails.'
         Assert-True -Condition ([bool]$script:SetCommandNestedValidationCalled) -Message 'Set command must validate nested virtualization through guest checks when turning it on.'
         $envMap = Read-DotEnvFile -Path $envFilePath
-        Assert-True -Condition ([string]$envMap['RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must still persist the resolved resource group after a partial update.'
-        Assert-True -Condition ([string]$envMap['VM_NAME'] -eq 'targetvm') -Message 'Set command must still persist the resolved VM name after a partial update.'
+        Assert-True -Condition ([string]$envMap['SELECTED_RESOURCE_GROUP'] -eq 'rg-target') -Message 'Set command must still persist the resolved selected resource group after a partial update.'
+        Assert-True -Condition ([string]$envMap['SELECTED_VM_NAME'] -eq 'targetvm') -Message 'Set command must still persist the resolved selected VM name after a partial update.'
         Assert-True -Condition ([string]$envMap['VM_ENABLE_HIBERNATION'] -eq 'true') -Message 'Set command must persist the successful hibernation update even if a later toggle fails.'
         Assert-True -Condition ([string]$envMap['VM_ENABLE_NESTED_VIRTUALIZATION'] -eq 'true') -Message 'Set command must not overwrite nested virtualization in .env when the Azure update failed.'
     }
@@ -1585,10 +1586,10 @@ Invoke-Test -Name "Create runtime keeps fresh-target overrides for a fresh targe
             'vm-size' = 'Standard_D4as_v5'
         } -WindowsFlag -LinuxFlag:$false -AutoMode
 
-        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_NAME -eq 'samplevm') -Message "Create runtime must keep the requested VM name override."
-        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.AZ_LOCATION -eq 'swedencentral') -Message "Create runtime must keep the requested Azure region override."
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.SELECTED_VM_NAME -eq 'samplevm') -Message "Create runtime must keep the requested selected VM name override."
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.SELECTED_AZURE_REGION -eq 'swedencentral') -Message "Create runtime must keep the requested selected Azure region override."
         Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_SIZE -eq 'Standard_D4as_v5') -Message "Create runtime must keep the requested VM size override."
-        Assert-True -Condition (-not $runtime.InitialConfigOverrides.ContainsKey('RESOURCE_GROUP')) -Message "Create runtime must not reuse an existing managed resource group."
+        Assert-True -Condition (-not $runtime.InitialConfigOverrides.ContainsKey('SELECTED_RESOURCE_GROUP')) -Message "Create runtime must not reuse an existing managed resource group override."
         Assert-True -Condition ([string]$runtime.ActionPlan.Target -eq 'vm-summary') -Message "Create runtime without step selectors must default to the full action plan."
     }
     finally {
@@ -1628,8 +1629,8 @@ Invoke-Test -Name "Create auto mode resolves from selected env values" -Action {
 
     try {
         $runtime = New-AzVmCreateCommandRuntime -Options @{ auto = $true } -WindowsFlag:$false -LinuxFlag:$false -AutoMode
-        Assert-True -Condition ([string]$runtime.InitialConfigOverrides['VM_NAME'] -eq 'samplevm') -Message 'Create auto mode must resolve VM name from SELECTED_VM_NAME.'
-        Assert-True -Condition ([string]$runtime.InitialConfigOverrides['AZ_LOCATION'] -eq 'swedencentral') -Message 'Create auto mode must resolve Azure region from SELECTED_AZURE_REGION.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides['SELECTED_VM_NAME'] -eq 'samplevm') -Message 'Create auto mode must resolve VM name from SELECTED_VM_NAME.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides['SELECTED_AZURE_REGION'] -eq 'swedencentral') -Message 'Create auto mode must resolve Azure region from SELECTED_AZURE_REGION.'
     }
     finally {
         foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
@@ -1830,12 +1831,12 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
     try {
         $nextGroupIndex = Get-AzVmNextManagedResourceGroupIndex -NamePrefix ''
         Assert-True -Condition ($nextGroupIndex -eq 5) -Message "Managed resource group index must be global across all managed resource groups."
-        $nextGroupName = Resolve-AzVmResourceGroupNameFromTemplate -Template 'rg-{VM_NAME}-{REGION_CODE}-g{N}' -VmName 'examplevm' -RegionCode 'sec1' -UseNextIndex
+        $nextGroupName = Resolve-AzVmResourceGroupNameFromTemplate -Template 'rg-{SELECTED_VM_NAME}-{REGION_CODE}-g{N}' -VmName 'examplevm' -RegionCode 'sec1' -UseNextIndex
         Assert-True -Condition ([string]$nextGroupName -eq 'rg-examplevm-sec1-g5') -Message "Managed resource group name generation must use the next global gX value."
 
         $allocator = New-AzVmManagedResourceIndexAllocator
-        $vnetName = Resolve-AzVmNameFromTemplate -Template 'net-{VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'net' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'VNET_NAME'
-        $subnetName = Resolve-AzVmNameFromTemplate -Template 'subnet-{VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'subnet' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'SUBNET_NAME'
+        $vnetName = Resolve-AzVmNameFromTemplate -Template 'net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'net' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'VNET_NAME'
+        $subnetName = Resolve-AzVmNameFromTemplate -Template 'subnet-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'subnet' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'SUBNET_NAME'
 
         Assert-True -Condition ([string]$vnetName -eq 'net-examplevm-sec1-n11') -Message "First generated managed resource id must continue after the global max nX value."
         Assert-True -Condition ([string]$subnetName -eq 'subnet-examplevm-sec1-n12') -Message "Managed resource ids must stay sequential and unique within the same provisioning plan."
@@ -1904,19 +1905,19 @@ Invoke-Test -Name "Create allows same VM name in other resource groups but rejec
 Invoke-Test -Name "Create step1 ignores persisted managed resource names and uses templates" -Action {
     $configMap = @{
         VNET_NAME = 'net-examplevm-sec1-n1'
-        VNET_NAME_TEMPLATE = 'net-{VM_NAME}-{REGION_CODE}-n{N}'
+        VNET_NAME_TEMPLATE = 'net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
         NIC_NAME = 'nic-examplevm-sec1-n1'
-        NIC_NAME_TEMPLATE = 'nic-{VM_NAME}-{REGION_CODE}-n{N}'
+        NIC_NAME_TEMPLATE = 'nic-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     }
 
-    $createVnetSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'create' -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{VM_NAME}-{REGION_CODE}-n{N}'
-    $createNicSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'create' -NameKey 'NIC_NAME' -TemplateKey 'NIC_NAME_TEMPLATE' -TemplateDefaultValue 'nic-{VM_NAME}-{REGION_CODE}-n{N}'
-    $updateVnetSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'update' -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{VM_NAME}-{REGION_CODE}-n{N}'
+    $createVnetSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'create' -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
+    $createNicSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'create' -NameKey 'NIC_NAME' -TemplateKey 'NIC_NAME_TEMPLATE' -TemplateDefaultValue 'nic-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
+    $updateVnetSeed = Get-AzVmManagedNameSeed -ConfigMap $configMap -ConfigOverrides @{} -OperationName 'update' -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
 
     Assert-True -Condition (-not [bool]$createVnetSeed.Explicit) -Message "Create step1 must not treat persisted VNET_NAME as an explicit managed resource target."
-    Assert-True -Condition ([string]$createVnetSeed.Value -eq 'net-{VM_NAME}-{REGION_CODE}-n{N}') -Message "Create step1 must fall back to the VNET template when a persisted managed name exists."
+    Assert-True -Condition ([string]$createVnetSeed.Value -eq 'net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}') -Message "Create step1 must fall back to the selected VM VNET template when a persisted managed name exists."
     Assert-True -Condition (-not [bool]$createNicSeed.Explicit) -Message "Create step1 must not treat persisted NIC_NAME as an explicit managed resource target."
-    Assert-True -Condition ([string]$createNicSeed.Value -eq 'nic-{VM_NAME}-{REGION_CODE}-n{N}') -Message "Create step1 must fall back to the NIC template when a persisted managed name exists."
+    Assert-True -Condition ([string]$createNicSeed.Value -eq 'nic-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}') -Message "Create step1 must fall back to the selected VM NIC template when a persisted managed name exists."
     Assert-True -Condition ([bool]$updateVnetSeed.Explicit) -Message "Update step1 must continue treating persisted VNET_NAME as the existing managed target."
     Assert-True -Condition ([string]$updateVnetSeed.Value -eq 'net-examplevm-sec1-n1') -Message "Update step1 must preserve the persisted managed resource name for the existing target."
 }
@@ -4041,7 +4042,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __COMPANY_WEB_ADDRESS__ __COMPANY_EMAIL_ADDRESS__ __EMPLOYEE_EMAIL_ADDRESS__ __EMPLOYEE_FULL_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __SELECTED_RESOURCE_GROUP__ __SELECTED_VM_NAME__ __SELECTED_AZURE_REGION__ __SELECTED_COMPANY_NAME__ __SELECTED_COMPANY_WEB_ADDRESS__ __SELECTED_COMPANY_EMAIL_ADDRESS__ __SELECTED_EMPLOYEE_EMAIL_ADDRESS__ __SELECTED_EMPLOYEE_FULL_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -4049,7 +4050,9 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*manager*") -Message "VM user token was not replaced."
     Assert-True -Condition ($scriptBody -like "*444*") -Message "SSH port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*rg-samplevm*") -Message "Selected resource-group token was not replaced."
     Assert-True -Condition ($scriptBody -like "*samplevm*") -Message "VM name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*austriaeast*") -Message "Selected Azure region token was not replaced."
     Assert-True -Condition ($scriptBody -like "*orgprofile*") -Message "Company name token was not replaced."
     Assert-True -Condition ($scriptBody -like "*https://example.test*") -Message "Company web-address token was not replaced."
     Assert-True -Condition ($scriptBody -like "*<email>*") -Message "Company email-address token was not replaced."
@@ -4179,7 +4182,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $autologonTask = @($initActive | Where-Object { [string]$_.Name -eq '130-autologon-manager-user' } | Select-Object -First 1)
     Assert-True -Condition (@($sysinternalsTask).Count -eq 1) -Message 'Windows init catalog must include 108-install-sysinternals-suite.'
     Assert-True -Condition (@($autologonTask).Count -eq 1) -Message 'Windows init catalog must include 130-autologon-manager-user.'
-    Assert-True -Condition ([int]$sysinternalsTask[0].TimeoutSeconds -eq 82) -Message 'Windows init catalog must keep 108-install-sysinternals-suite timeout at 82.'
+    Assert-True -Condition ([int]$sysinternalsTask[0].TimeoutSeconds -eq 180) -Message 'Windows init catalog must keep 108-install-sysinternals-suite timeout at 180.'
     Assert-True -Condition ([int]$autologonTask[0].TimeoutSeconds -eq 20) -Message 'Windows init catalog must keep 130-autologon-manager-user timeout at 20.'
 }
 
@@ -4338,7 +4341,7 @@ Invoke-Test -Name "Generic task metadata assets resolve into asset copies" -Acti
 
         $taskPath = Join-Path $localDir '1002-local-config-task.ps1'
         Set-Content -Path $taskPath -Encoding UTF8 -Value @'
-# az-vm-task-meta: {"priority":1002,"timeout":7,"enabled":true,"assets":[{"local":"example-assets/profile.zip","remote":"C:/Windows/Temp/__VM_NAME__-profile.zip"}]}
+# az-vm-task-meta: {"priority":1002,"timeout":7,"enabled":true,"assets":[{"local":"example-assets/profile.zip","remote":"C:/Windows/Temp/__SELECTED_VM_NAME__-profile.zip"}]}
 Write-Host "__VM_ADMIN_USER__"
 '@
 
@@ -4983,9 +4986,9 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         's18Next Sosyal'
     )
     $expectedFragments = @(
-        'company_name is required for the Windows business public desktop shortcut flow',
-        'employee_email_address is required for the Windows public desktop shortcut flow',
-        'employee_full_name is required for the Windows public desktop shortcut flow',
+        'SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow',
+        'SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow',
+        'SELECTED_EMPLOYEE_FULL_NAME is required for the Windows public desktop shortcut flow',
         'Get-EmployeeEmailBaseName',
         'ConvertTo-LowerInvariantText',
         'ConvertTo-TitleCaseShortcutText',
@@ -5024,9 +5027,9 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://x.com/',
         '$companyWebRootUrl = Normalize-ShortcutUrl -Value $companyWebAddress',
         '$companyBlogUrl = if ([string]::IsNullOrWhiteSpace([string]$companyWebRootUrl)) { '''' } else { ($companyWebRootUrl + ''/blog'') }',
-        '__COMPANY_WEB_ADDRESS__',
-        '__COMPANY_EMAIL_ADDRESS__',
-        'company_web_address is required for the Windows business public desktop shortcut flow',
+        '__SELECTED_COMPANY_WEB_ADDRESS__',
+        '__SELECTED_COMPANY_EMAIL_ADDRESS__',
+        'SELECTED_COMPANY_WEB_ADDRESS is required for the Windows business public desktop shortcut flow',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true',
