@@ -16,18 +16,11 @@ function Get-AzVmStep1ContextPersistenceMap {
     $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_DISK_SIZE_GB"
 
     $persist = [ordered]@{
-        VM_OS_TYPE = [string]$Platform
-        azure_subscription_id = [string]$Context.AzureSubscriptionId
-        AZ_LOCATION = [string]$Context.AzLocation
-        RESOURCE_GROUP = [string]$Context.ResourceGroup
-        VNET_NAME = [string]$Context.VNET
-        SUBNET_NAME = [string]$Context.SUBNET
-        NSG_NAME = [string]$Context.NSG
-        NSG_RULE_NAME = [string]$Context.NsgRule
-        PUBLIC_IP_NAME = [string]$Context.IP
-        NIC_NAME = [string]$Context.NIC
-        VM_NAME = [string]$Context.VmName
-        VM_DISK_NAME = [string]$Context.VmDiskName
+        SELECTED_VM_OS = [string]$Platform
+        SELECTED_AZURE_SUBSCRIPTION_ID = [string]$Context.AzureSubscriptionId
+        SELECTED_AZURE_REGION = [string]$Context.AzLocation
+        SELECTED_RESOURCE_GROUP = [string]$Context.ResourceGroup
+        SELECTED_VM_NAME = [string]$Context.VmName
         VM_STORAGE_SKU = [string]$Context.VmStorageSku
         VM_SSH_PORT = [string]$Context.SshPort
         VM_RDP_PORT = [string]$Context.RdpPort
@@ -54,6 +47,8 @@ function Save-AzVmStep1ContextPersistenceMap {
 
         Set-DotEnvValue -Path $EnvFilePath -Key $name -Value ([string]$PersistMap[$name])
     }
+
+    Remove-DotEnvKeys -Path $EnvFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
 }
 
 function New-AzVmStep1ConfigDisplayMap {
@@ -146,7 +141,7 @@ function Invoke-AzVmInteractiveStep1Editor {
 
     if ([string]::Equals([string]$OperationName, 'create', [System.StringComparison]::OrdinalIgnoreCase)) {
         while ($true) {
-            $candidateVmName = Read-AzVmStep1OverrideValue -Label 'VM_NAME' -CurrentValue ([string]$Context.VmName)
+            $candidateVmName = Read-AzVmStep1OverrideValue -Label 'SELECTED_VM_NAME' -CurrentValue ([string]$Context.VmName)
             if (Test-AzVmVmNameFormat -VmName $candidateVmName) {
                 $ConfigOverrides['VM_NAME'] = [string]$candidateVmName
                 break
@@ -156,7 +151,7 @@ function Invoke-AzVmInteractiveStep1Editor {
         }
 
         while ($true) {
-            $candidateLocation = Read-AzVmStep1OverrideValue -Label 'AZ_LOCATION' -CurrentValue ([string]$Context.AzLocation)
+            $candidateLocation = Read-AzVmStep1OverrideValue -Label 'SELECTED_AZURE_REGION' -CurrentValue ([string]$Context.AzLocation)
             try {
                 Assert-LocationExists -Location $candidateLocation
                 $ConfigOverrides['AZ_LOCATION'] = ([string]$candidateLocation).Trim().ToLowerInvariant()
@@ -300,10 +295,10 @@ function Invoke-AzVmStep1Common {
         if ($AutoMode) {
             if ([string]::IsNullOrWhiteSpace([string]$vmNameDefaultResolved)) {
                 Throw-FriendlyError `
-                    -Detail "VM_NAME is required for this non-interactive command flow." `
+                    -Detail "SELECTED_VM_NAME is required for this non-interactive command flow." `
                     -Code 2 `
                     -Summary "VM name is required." `
-                    -Hint "Set VM_NAME in .env, or pass --vm-name where the command supports it."
+                    -Hint "Set SELECTED_VM_NAME in .env, or pass --vm-name where the command supports it."
             }
             $userInput = $vmNameDefaultResolved
         }
@@ -438,15 +433,15 @@ function Invoke-AzVmStep1Common {
             $ConfigOverrides["VM_SIZE"] = $vmSize
         }
 
-        Write-Host "Interactive selection -> AZ_LOCATION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
+        Write-Host "Interactive selection -> SELECTED_AZURE_REGION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
     }
 
     if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
         Throw-FriendlyError `
-            -Detail "AZ_LOCATION is empty. Region selection is required before resource group creation." `
+            -Detail "SELECTED_AZURE_REGION is empty. Region selection is required before resource group creation." `
             -Code 22 `
             -Summary "Azure region is required." `
-            -Hint "Set AZ_LOCATION in .env or select a region interactively."
+            -Hint "Set SELECTED_AZURE_REGION in .env or select a region interactively."
     }
 
     Assert-LocationExists -Location $azLocation
@@ -791,7 +786,7 @@ function Assert-AzVmVmNameConflictFree {
             -Detail "VM name is empty." `
             -Code 2 `
             -Summary "VM name validation failed." `
-            -Hint "Provide a valid VM_NAME before continuing."
+            -Hint "Provide a valid SELECTED_VM_NAME before continuing."
     }
 
     $vmMatchesJson = az resource list --resource-type "Microsoft.Compute/virtualMachines" --query "[?name=='$VmName'].{name:name,resourceGroup:resourceGroup,id:id}" -o json --only-show-errors
@@ -825,7 +820,7 @@ function Assert-AzVmVmNameConflictFree {
         -Detail ("VM name '{0}' already exists in target resource group '{1}'." -f [string]$VmName, [string]$TargetResourceGroup) `
         -Code 62 `
         -Summary "VM name already exists in the target resource group." `
-        -Hint "Choose another VM_NAME or choose a different fresh target resource group."
+        -Hint "Choose another SELECTED_VM_NAME or choose a different fresh target resource group."
 }
 
 # Handles Resolve-AzVmSecurityTypeValue.

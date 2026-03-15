@@ -131,7 +131,7 @@ function Initialize-AzVmTaskExecutionRuntimeContext {
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
     $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
 
-    $vmName = [string](Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_NAME' -Summary 'VM name is required.' -Hint 'Set VM_NAME in .env, or pass --vm-name where the command supports it.')
+    $vmName = [string](Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_NAME' -Summary 'VM name is required.' -Hint 'Set SELECTED_VM_NAME in .env, or pass --vm-name where the command supports it.')
 
     $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_LOCATION' -DefaultValue '')
     $regionCode = ''

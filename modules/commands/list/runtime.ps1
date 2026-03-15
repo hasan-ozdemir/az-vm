@@ -87,7 +87,7 @@ function Get-AzVmListSectionRows {
         [hashtable]$ConfigMap
     )
 
-    $activeGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $activeGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
     $rows = New-Object 'System.Collections.Generic.List[string]'
 
     switch ([string]$TypeName) {

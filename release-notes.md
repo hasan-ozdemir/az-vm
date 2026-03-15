@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.316 - 2026-03-15
+
+### Summary
+This release cuts the persisted configuration contract over to a selected-only model. `.env` now stores active targeting, operator identity, company metadata, subscription choice, and region choice exclusively through `SELECTED_*` keys, while the shared runtime still materializes the same internal canonical fields for orchestration. The same pass makes unattended `az-vm create --auto` runnable from `.env` alone when the selected values and platform defaults are complete, and it removes the older persisted output-key contract from configure/create/update/move/set writeback.
+
+### Highlights
+- Added `SELECTED_RESOURCE_GROUP` as the persisted existing-target selector so unattended update, configure, delete, set, move, task, exec, and connection flows can resolve the active managed VM target from `.env` without reviving the old output-key contract.
+- Reworked `.env.example`, README, AGENTS, help output, smoke coverage, and documentation contracts so the committed configuration model is now `SELECTED_*` plus the shared and platform-specific VM defaults.
+- Updated the create runtime so `az-vm create --auto` can resolve platform, VM name, Azure region, and VM size from `.env` `SELECTED_VM_OS`, `SELECTED_VM_NAME`, `SELECTED_AZURE_REGION`, and the matching `WIN_*` or `LIN_*` defaults without requiring explicit CLI `--vm-name`, `--vm-region`, `--vm-size`, or platform flags.
+- Updated the runtime persistence path so configure/create/update/move/set flows now remove the retired persisted keys after writing the selected contract, keeping `.env` aligned with the current committed model instead of accumulating both generations side by side.
+
 ## Release 2026.3.15.315 - 2026-03-15
 
 ### Summary

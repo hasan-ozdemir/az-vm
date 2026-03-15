@@ -932,27 +932,17 @@ function Invoke-AzVmChangeCommand {
     }
 
     if ($regionMoveApplied) {
-        Set-DotEnvValue -Path $envFilePath -Key 'AZ_LOCATION' -Value $targetRegion
-        Set-DotEnvValue -Path $envFilePath -Key 'RESOURCE_GROUP' -Value $activeResourceGroup
-        Set-DotEnvValue -Path $envFilePath -Key 'VM_NAME' -Value ([string]$context.VmName)
-        Set-DotEnvValue -Path $envFilePath -Key 'VM_DISK_NAME' -Value ([string]$context.VmDiskName)
-        Set-DotEnvValue -Path $envFilePath -Key 'VNET_NAME' -Value ([string]$context.VNET)
-        Set-DotEnvValue -Path $envFilePath -Key 'SUBNET_NAME' -Value ([string]$context.SUBNET)
-        Set-DotEnvValue -Path $envFilePath -Key 'NSG_NAME' -Value ([string]$context.NSG)
-        Set-DotEnvValue -Path $envFilePath -Key 'NSG_RULE_NAME' -Value ([string]$context.NsgRule)
-        Set-DotEnvValue -Path $envFilePath -Key 'PUBLIC_IP_NAME' -Value ([string]$context.IP)
-        Set-DotEnvValue -Path $envFilePath -Key 'NIC_NAME' -Value ([string]$context.NIC)
+        Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_AZURE_REGION' -Value $targetRegion
+        Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_RESOURCE_GROUP' -Value $activeResourceGroup
+        Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_VM_NAME' -Value ([string]$context.VmName)
+        Remove-DotEnvKeys -Path $envFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
 
+        $script:ConfigOverrides['SELECTED_AZURE_REGION'] = $targetRegion
+        $script:ConfigOverrides['SELECTED_RESOURCE_GROUP'] = $activeResourceGroup
+        $script:ConfigOverrides['SELECTED_VM_NAME'] = [string]$context.VmName
         $script:ConfigOverrides['AZ_LOCATION'] = $targetRegion
         $script:ConfigOverrides['RESOURCE_GROUP'] = $activeResourceGroup
         $script:ConfigOverrides['VM_NAME'] = [string]$context.VmName
-        $script:ConfigOverrides['VM_DISK_NAME'] = [string]$context.VmDiskName
-        $script:ConfigOverrides['VNET_NAME'] = [string]$context.VNET
-        $script:ConfigOverrides['SUBNET_NAME'] = [string]$context.SUBNET
-        $script:ConfigOverrides['NSG_NAME'] = [string]$context.NSG
-        $script:ConfigOverrides['NSG_RULE_NAME'] = [string]$context.NsgRule
-        $script:ConfigOverrides['PUBLIC_IP_NAME'] = [string]$context.IP
-        $script:ConfigOverrides['NIC_NAME'] = [string]$context.NIC
     }
 
     if ($sizeChangedAfterRegion) {

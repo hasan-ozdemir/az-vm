@@ -128,8 +128,8 @@ function Invoke-AzVmSetCommand {
     }
     finally {
         if ($persistMap.Count -gt 0) {
-            $persistMap['RESOURCE_GROUP'] = $resourceGroup
-            $persistMap['VM_NAME'] = $vmName
+            $persistMap['SELECTED_RESOURCE_GROUP'] = $resourceGroup
+            $persistMap['SELECTED_VM_NAME'] = $vmName
             $envChanges = @(Save-AzVmConfigToDotEnv -EnvFilePath $envFilePath -ConfigBefore $configBefore -PersistMap $persistMap)
         }
     }

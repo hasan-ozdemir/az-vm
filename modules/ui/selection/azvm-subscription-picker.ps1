@@ -137,8 +137,10 @@ function Set-AzVmResolvedSubscriptionContext {
 function Clear-AzVmResolvedSubscriptionContext {
     $script:AzVmActiveSubscriptionId = ''
     $script:AzVmResolvedSubscriptionContext = $null
-    if ($script:ConfigOverrides -and $script:ConfigOverrides.ContainsKey('azure_subscription_id')) {
-        $null = $script:ConfigOverrides.Remove('azure_subscription_id')
+    foreach ($key in @('azure_subscription_id','SELECTED_AZURE_SUBSCRIPTION_ID')) {
+        if ($script:ConfigOverrides -and $script:ConfigOverrides.ContainsKey($key)) {
+            $null = $script:ConfigOverrides.Remove($key)
+        }
     }
 }
 
@@ -148,8 +150,9 @@ function Save-AzVmSubscriptionIdToDotEnv {
         [string]$SubscriptionId
     )
 
-    $normalizedId = [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $SubscriptionId -OptionSource 'azure_subscription_id persistence')
-    Set-DotEnvValue -Path $EnvFilePath -Key 'azure_subscription_id' -Value $normalizedId
+    $normalizedId = [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $SubscriptionId -OptionSource 'SELECTED_AZURE_SUBSCRIPTION_ID persistence')
+    Set-DotEnvValue -Path $EnvFilePath -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Value $normalizedId
+    Remove-DotEnvKeys -Path $EnvFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
 }
 
 function Test-AzVmAzureTouchingCommand {
@@ -188,17 +191,7 @@ function Initialize-AzVmCommandSubscriptionState {
     $cliSubscriptionId = [string](Get-AzVmCliOptionText -Options $Options -Name 'subscription-id')
     $configSubscriptionId = ''
     if ($configMap) {
-        if ($configMap.ContainsKey('azure_subscription_id')) {
-            $configSubscriptionId = [string]$configMap['azure_subscription_id']
-        }
-        else {
-            foreach ($configKey in @($configMap.Keys)) {
-                if ([string]::Equals([string]$configKey, 'azure_subscription_id', [System.StringComparison]::OrdinalIgnoreCase)) {
-                    $configSubscriptionId = [string]$configMap[$configKey]
-                    break
-                }
-            }
-        }
+        $configSubscriptionId = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -DefaultValue '')
     }
 
     $resolutionSource = 'active'
@@ -208,7 +201,7 @@ function Initialize-AzVmCommandSubscriptionState {
         $resolutionSource = 'cli'
     }
     elseif (-not [string]::IsNullOrWhiteSpace([string]$configSubscriptionId)) {
-        $requestedSubscriptionId = [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $configSubscriptionId -OptionSource '.env azure_subscription_id')
+        $requestedSubscriptionId = [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $configSubscriptionId -OptionSource '.env SELECTED_AZURE_SUBSCRIPTION_ID')
         $resolutionSource = 'env'
     }
 
@@ -220,7 +213,7 @@ function Initialize-AzVmCommandSubscriptionState {
                 ("CLI subscription id '{0}' is not accessible through the current Azure CLI login." -f [string]$requestedSubscriptionId)
             }
             else {
-                (".env azure_subscription_id '{0}' is not accessible through the current Azure CLI login." -f [string]$requestedSubscriptionId)
+                (".env SELECTED_AZURE_SUBSCRIPTION_ID '{0}' is not accessible through the current Azure CLI login." -f [string]$requestedSubscriptionId)
             }
             Throw-FriendlyError `
                 -Detail $detailText `
@@ -247,6 +240,7 @@ function Initialize-AzVmCommandSubscriptionState {
         $script:ConfigOverrides = @{}
     }
     $script:ConfigOverrides['azure_subscription_id'] = [string]$selectedRow.id
+    $script:ConfigOverrides['SELECTED_AZURE_SUBSCRIPTION_ID'] = [string]$selectedRow.id
     return (Get-AzVmResolvedSubscriptionContext)
 }
 

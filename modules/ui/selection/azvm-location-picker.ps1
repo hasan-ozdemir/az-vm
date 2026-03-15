@@ -7,7 +7,7 @@ function Get-PriceHoursFromConfig {
         [int]$DefaultHours = 730
     )
 
-    $hoursText = Get-ConfigValue -Config $Config -Key "PRICE_HOURS" -DefaultValue "$DefaultHours"
+    $hoursText = Get-ConfigValue -Config $Config -Key "VM_PRICE_COUNT_HOURS" -DefaultValue "$DefaultHours"
     if ($hoursText -match '^\d+$') {
         $hours = [int]$hoursText
         if ($hours -gt 0) {

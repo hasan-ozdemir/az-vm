@@ -128,8 +128,8 @@ Invoke-Test -Name "Derived VM name fallback contract" -Action {
     Assert-True -Condition ([string]$derivedVmName -eq 'first-last-ops-vm') -Message "Derived VM name must sanitize the employee email local-part and append -vm."
 
     $configMap = @{
-        employee_email_address = $testEmployeeEmail
-        VM_NAME = ''
+        SELECTED_EMPLOYEE_EMAIL_ADDRESS = $testEmployeeEmail
+        SELECTED_VM_NAME = ''
         VM_IMAGE = ''
         VM_SIZE = ''
         VM_DISK_SIZE_GB = ''
@@ -138,7 +138,7 @@ Invoke-Test -Name "Derived VM name fallback contract" -Action {
         WIN_VM_DISK_SIZE_GB = '128'
     }
     $resolvedMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform windows
-    Assert-True -Condition ([string]$resolvedMap.VM_NAME -eq 'first-last-ops-vm') -Message "Platform config resolution must derive VM_NAME from employee_email_address when VM_NAME is blank."
+    Assert-True -Condition ([string]$resolvedMap.VM_NAME -eq 'first-last-ops-vm') -Message "Platform config resolution must derive VM_NAME from SELECTED_EMPLOYEE_EMAIL_ADDRESS when SELECTED_VM_NAME is blank."
 }
 
 Invoke-Test -Name "Managed resource naming contract" -Action {
@@ -255,11 +255,10 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Za-z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','VM_NAME','company_name','company_web_address','company_email_address','employee_email_address','employee_full_name','azure_subscription_id','AZ_LOCATION',
-        'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
+        'SELECTED_VM_OS','SELECTED_VM_NAME','SELECTED_RESOURCE_GROUP','SELECTED_COMPANY_NAME','SELECTED_COMPANY_WEB_ADDRESS','SELECTED_COMPANY_EMAIL_ADDRESS','SELECTED_EMPLOYEE_EMAIL_ADDRESS','SELECTED_EMPLOYEE_FULL_NAME','SELECTED_AZURE_SUBSCRIPTION_ID','SELECTED_AZURE_REGION',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
-        'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
-        'AZ_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
+        'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','VM_PRICE_COUNT_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
+        'AZURE_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
         'WIN_VM_IMAGE','WIN_VM_SIZE','WIN_VM_DISK_SIZE_GB','LIN_VM_IMAGE','LIN_VM_SIZE','LIN_VM_DISK_SIZE_GB',
         'WIN_VM_INIT_TASK_DIR','WIN_VM_UPDATE_TASK_DIR','LIN_VM_INIT_TASK_DIR','LIN_VM_UPDATE_TASK_DIR',
         'VM_TASK_OUTCOME_MODE','SSH_MAX_RETRIES','PYSSH_CLIENT_PATH','TCP_PORTS'
@@ -279,17 +278,20 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     $envExampleText = Get-Content -LiteralPath $envExamplePath -Raw
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ADMIN_PASS=<CHANGE_ME_STRONG_ADMIN_PASSWORD>')) -Message '.env.example must keep the admin password as a placeholder.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ASSISTANT_PASS=<CHANGE_ME_STRONG_ASSISTANT_PASSWORD>')) -Message '.env.example must keep the assistant password as a placeholder.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('If left blank, az-vm derives VM_NAME from employee_email_address local-part plus -vm.')) -Message '.env.example must document the default VM name derivation rule.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_* values are the committed active-selection contract.')) -Message '.env.example must document the selected-only contract.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_RESOURCE_GROUP=')) -Message '.env.example must expose SELECTED_RESOURCE_GROUP.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_HIBERNATION=true')) -Message '.env.example must expose VM_ENABLE_HIBERNATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=true')) -Message '.env.example must expose VM_ENABLE_NESTED_VIRTUALIZATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_name is required for Windows business public desktop shortcuts.')) -Message '.env.example must document company_name as required for the Windows business public desktop shortcut flow.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_NAME controls the default Google Chrome profile directory for repo-managed Windows business web shortcuts.')) -Message '.env.example must document SELECTED_COMPANY_NAME for the Windows business public desktop shortcut flow.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('Repo-managed Chrome profile-directory values are normalized to lowercase.')) -Message '.env.example must document lowercase Chrome profile-directory normalization.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_web_address=<https-url>')) -Message '.env.example must keep the committed company_web_address default.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_email_address=<email>')) -Message '.env.example must keep the committed company_email_address default.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('employee_email_address=<email>')) -Message '.env.example must keep the committed employee_email_address default.'
-    Assert-True -Condition ($envExampleText -match [regex]::Escape('employee_full_name=<person-name>')) -Message '.env.example must keep the committed employee_full_name default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_WEB_ADDRESS=<https-url>')) -Message '.env.example must keep the committed SELECTED_COMPANY_WEB_ADDRESS default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_EMAIL_ADDRESS=<email>')) -Message '.env.example must keep the committed SELECTED_COMPANY_EMAIL_ADDRESS default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_EMPLOYEE_EMAIL_ADDRESS=<email>')) -Message '.env.example must keep the committed SELECTED_EMPLOYEE_EMAIL_ADDRESS default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_EMPLOYEE_FULL_NAME=<person-name>')) -Message '.env.example must keep the committed SELECTED_EMPLOYEE_FULL_NAME default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_PRICE_COUNT_HOURS=730')) -Message '.env.example must expose VM_PRICE_COUNT_HOURS.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('AZURE_COMMAND_TIMEOUT_SECONDS=1800')) -Message '.env.example must expose AZURE_COMMAND_TIMEOUT_SECONDS.'
     Assert-True -Condition (-not ($envExampleText -match [regex]::Escape('<runtime-secret>'))) -Message '.env.example must not keep the old committed assistant password.'
 }
 
@@ -619,7 +621,7 @@ Invoke-Test -Name "Subscription resolver uses CLI then env then active precedenc
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-subscription-test-" + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path $tempRoot -Force
     $envFilePath = Join-Path $tempRoot '.env'
-    Write-TextFileNormalized -Path $envFilePath -Content "azure_subscription_id=33333333-3333-3333-3333-333333333333" -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
+    Write-TextFileNormalized -Path $envFilePath -Content "SELECTED_AZURE_SUBSCRIPTION_ID=33333333-3333-3333-3333-333333333333" -Encoding 'utf8NoBom' -LineEnding 'crlf' -EnsureTrailingNewline
 
     try {
         function Get-AzVmRepoRoot { return $tempRoot }
@@ -645,14 +647,14 @@ Invoke-Test -Name "Subscription resolver uses CLI then env then active precedenc
         Assert-True -Condition ([string]$cliContext.SubscriptionId -eq '11111111-1111-1111-1111-111111111111') -Message 'CLI subscription must win.'
         Assert-True -Condition ([string]$cliContext.ResolutionSource -eq 'cli') -Message 'CLI resolution source must be recorded.'
         $envAfterCli = Read-DotEnvFile -Path $envFilePath
-        Assert-True -Condition ([string]$envAfterCli['azure_subscription_id'] -eq '11111111-1111-1111-1111-111111111111') -Message 'CLI subscription must persist into .env.'
+        Assert-True -Condition ([string]$envAfterCli['SELECTED_AZURE_SUBSCRIPTION_ID'] -eq '11111111-1111-1111-1111-111111111111') -Message 'CLI subscription must persist into .env.'
 
-        Set-DotEnvValue -Path $envFilePath -Key 'azure_subscription_id' -Value '33333333-3333-3333-3333-333333333333'
+        Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Value '33333333-3333-3333-3333-333333333333'
         $envContext = Initialize-AzVmCommandSubscriptionState -CommandName 'show' -Options @{}
         Assert-True -Condition ([string]$envContext.SubscriptionId -eq '33333333-3333-3333-3333-333333333333') -Message '.env subscription must win when CLI is absent.'
         Assert-True -Condition ([string]$envContext.ResolutionSource -eq 'env') -Message '.env resolution source must be recorded.'
 
-        Set-DotEnvValue -Path $envFilePath -Key 'azure_subscription_id' -Value ''
+        Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Value ''
         $activeContext = Initialize-AzVmCommandSubscriptionState -CommandName 'show' -Options @{}
         Assert-True -Condition ([string]$activeContext.SubscriptionId -eq '44444444-4444-4444-4444-444444444444') -Message 'Active Azure CLI subscription must be the final fallback.'
         Assert-True -Condition ([string]$activeContext.ResolutionSource -eq 'active') -Message 'Active resolution source must be recorded.'
@@ -778,7 +780,7 @@ Invoke-Test -Name "List rejects invalid type filter" -Action {
     }
 }
 
-Invoke-Test -Name "Interactive create platform prompt ignores persisted VM_OS_TYPE when flags are missing" -Action {
+Invoke-Test -Name "Interactive create platform prompt ignores persisted SELECTED_VM_OS when flags are missing" -Action {
     function Read-Host {
         param([string]$Prompt)
         return ''
@@ -787,7 +789,7 @@ Invoke-Test -Name "Interactive create platform prompt ignores persisted VM_OS_TY
     try {
         $configOverrides = @{}
         $promptedPlatform = Resolve-AzVmPlatformSelection `
-            -ConfigMap @{ VM_OS_TYPE = 'linux' } `
+            -ConfigMap @{ SELECTED_VM_OS = 'linux' } `
             -EnvFilePath 'ignored.env' `
             -AutoMode:$false `
             -WindowsFlag:$false `
@@ -799,14 +801,14 @@ Invoke-Test -Name "Interactive create platform prompt ignores persisted VM_OS_TY
         Assert-True -Condition ([string]$configOverrides['VM_OS_TYPE'] -eq 'windows') -Message 'Interactive create platform prompt must persist the prompted platform into config overrides.'
 
         $envDrivenPlatform = Resolve-AzVmPlatformSelection `
-            -ConfigMap @{ VM_OS_TYPE = 'linux' } `
+            -ConfigMap @{ SELECTED_VM_OS = 'linux' } `
             -EnvFilePath 'ignored.env' `
             -AutoMode:$false `
             -WindowsFlag:$false `
             -LinuxFlag:$false `
             -ConfigOverrides @{} `
             -DeferEnvWrite
-        Assert-True -Condition ([string]$envDrivenPlatform -eq 'linux') -Message 'Platform selection without PromptWhenFlagsMissing must still honor .env VM_OS_TYPE.'
+        Assert-True -Condition ([string]$envDrivenPlatform -eq 'linux') -Message 'Platform selection without PromptWhenFlagsMissing must still honor .env SELECTED_VM_OS.'
     }
     finally {
         Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
@@ -1593,39 +1595,82 @@ Invoke-Test -Name "Create runtime keeps fresh-target overrides for a fresh targe
     }
 }
 
-Invoke-Test -Name "Create auto mode requires vm-name vm-region and vm-size" -Action {
-    $threw = $false
-    try {
-        New-AzVmCreateCommandRuntime -Options @{ auto = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral' } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
-    }
-    catch {
-        $threw = $true
-        Assert-True -Condition ([string]$_.Exception.Message -like '*requires --vm-size*') -Message "Create auto mode failure must explain the missing vm-size option."
+Invoke-Test -Name "Create auto mode resolves from selected env values" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
     }
 
-    Assert-True -Condition $threw -Message "Create auto mode must fail when one of the required options is missing."
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile {
+        param([string]$Path)
+        return @{
+            SELECTED_VM_OS = 'windows'
+            SELECTED_VM_NAME = 'samplevm'
+            SELECTED_AZURE_REGION = 'swedencentral'
+            WIN_VM_SIZE = 'Standard_D4as_v5'
+        }
+    }
+
+    try {
+        $runtime = New-AzVmCreateCommandRuntime -Options @{ auto = $true } -WindowsFlag:$false -LinuxFlag:$false -AutoMode
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides['VM_NAME'] -eq 'samplevm') -Message 'Create auto mode must resolve VM name from SELECTED_VM_NAME.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides['AZ_LOCATION'] -eq 'swedencentral') -Message 'Create auto mode must resolve Azure region from SELECTED_AZURE_REGION.'
+    }
+    finally {
+        foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
 }
 
-Invoke-Test -Name "Create and update auto mode require explicit platform flags" -Action {
-    $createThrew = $false
-    try {
-        New-AzVmCreateCommandRuntime -Options @{ auto = $true; 'vm-name' = 'samplevm'; 'vm-region' = 'swedencentral'; 'vm-size' = 'Standard_D4as_v5' } -WindowsFlag:$false -LinuxFlag:$false -AutoMode | Out-Null
+Invoke-Test -Name "Create auto mode fails when selected values are incomplete" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
     }
-    catch {
-        $createThrew = $true
-        Assert-True -Condition ([string]$_.Exception.Message -like '*requires an explicit platform flag*') -Message "Create auto mode failure must explain the missing platform flag."
-    }
-    Assert-True -Condition $createThrew -Message "Create auto mode must fail when the platform flag is missing."
 
-    $updateThrew = $false
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile {
+        param([string]$Path)
+        return @{
+            SELECTED_VM_OS = 'windows'
+            SELECTED_VM_NAME = 'samplevm'
+            SELECTED_AZURE_REGION = 'swedencentral'
+            WIN_VM_SIZE = ''
+        }
+    }
+
     try {
-        New-AzVmUpdateCommandRuntime -Options @{ auto = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' } -WindowsFlag:$false -LinuxFlag:$false -AutoMode | Out-Null
+        $threw = $false
+        try {
+            New-AzVmCreateCommandRuntime -Options @{ auto = $true } -WindowsFlag:$false -LinuxFlag:$false -AutoMode | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*SELECTED_VM_NAME or --vm-name*' -or [string]$_.Exception.Message -like '*WIN_VM_SIZE*') -Message 'Create auto mode failure must explain the missing resolved selection values.'
+        }
+        Assert-True -Condition $threw -Message 'Create auto mode must fail when the selected env values are incomplete.'
     }
-    catch {
-        $updateThrew = $true
-        Assert-True -Condition ([string]$_.Exception.Message -like '*requires an explicit platform flag*') -Message "Update auto mode failure must explain the missing platform flag."
+    finally {
+        foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
     }
-    Assert-True -Condition $updateThrew -Message "Update auto mode must fail when the platform flag is missing."
 }
 
 Invoke-Test -Name "Update runtime requires an existing managed VM before orchestration starts" -Action {
@@ -1694,17 +1739,45 @@ Invoke-Test -Name "Update runtime requires an existing managed VM before orchest
     }
 }
 
-Invoke-Test -Name "Update auto mode requires group and vm-name" -Action {
-    $threw = $false
-    try {
-        New-AzVmUpdateCommandRuntime -Options @{ auto = $true; group = 'rg-samplevm-ate1-g1' } -WindowsFlag -LinuxFlag:$false -AutoMode | Out-Null
-    }
-    catch {
-        $threw = $true
-        Assert-True -Condition ([string]$_.Exception.Message -like '*requires --vm-name*') -Message "Update auto mode failure must explain the missing vm-name option."
+Invoke-Test -Name "Update auto mode requires a resolvable selected resource group" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
     }
 
-    Assert-True -Condition $threw -Message "Update auto mode must fail when vm-name is missing."
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile {
+        param([string]$Path)
+        return @{
+            SELECTED_RESOURCE_GROUP = ''
+            SELECTED_VM_NAME = ''
+        }
+    }
+
+    try {
+        $threw = $false
+        try {
+            New-AzVmUpdateCommandRuntime -Options @{ auto = $true } -WindowsFlag:$false -LinuxFlag:$false -AutoMode | Out-Null
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like '*SELECTED_RESOURCE_GROUP*') -Message "Update auto mode failure must explain the missing selected resource group."
+        }
+
+        Assert-True -Condition $threw -Message "Update auto mode must fail when the selected resource group is missing."
+    }
+    finally {
+        foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
 }
 
 Invoke-Test -Name "Managed naming uses global gX and sequential global nX allocation" -Action {
@@ -1989,8 +2062,8 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
         'create always targets a fresh managed resource group and fresh managed resources',
         'asks for VM OS type first when --windows/--linux is omitted',
         'proposes the next global gX name plus globally unique nX resource ids',
-        'Auto mode requires an explicit platform plus --vm-name, --vm-region, and --vm-size',
-        'Auto mode requires an explicit platform plus --group and --vm-name',
+        'Auto mode runs from the fully resolved selection set',
+        'Auto mode runs from the resolved managed target',
         'select one existing managed VM target, read actual Azure state, and sync target-derived values into .env',
         'supports --type and --group for managed inventory output',
         'vm-summary always renders, even for partial step windows',
@@ -2001,8 +2074,8 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
 
     foreach ($fragment in @(
         '`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.',
-        'Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.',
-        'Auto `update` requires an explicit platform plus `--group` and `--vm-name`.',
+        'Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.',
+        'Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`',
         'Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.',
         'Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.',
         'if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection',

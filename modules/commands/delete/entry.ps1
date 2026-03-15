@@ -12,9 +12,9 @@ function Invoke-AzVmDeleteCommand {
     $repoRoot = Get-AzVmRepoRoot
     $envFilePath = Join-Path $repoRoot '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
-    $vmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
-    $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
-    $defaultVmName = [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '')
+    $vmName = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_VM_NAME' -DefaultValue '')
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
+    $defaultVmName = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_VM_NAME' -DefaultValue '')
     $defaultVmDiskName = [string](Get-ConfigValue -Config $configMap -Key 'VM_DISK_NAME' -DefaultValue '')
 
     $targetRaw = [string](Get-AzVmCliOptionText -Options $Options -Name 'target')
@@ -38,7 +38,7 @@ function Invoke-AzVmDeleteCommand {
                 -Detail "Resource group is required in auto mode when --group is not provided." `
                 -Code 66 `
                 -Summary "Delete command cannot resolve target resource group." `
-                -Hint "Provide --group=<name> or set RESOURCE_GROUP in .env."
+                -Hint "Provide --group=<name> or set SELECTED_RESOURCE_GROUP in .env."
         }
         $resourceGroup = $defaultResourceGroup.Trim()
     }
@@ -109,7 +109,7 @@ function Invoke-AzVmDeleteCommand {
                     -Detail ("Auto mode could not resolve a unique VM in resource group '{0}'." -f $resourceGroup) `
                     -Code 66 `
                     -Summary "Delete command needs an explicit VM in auto mode." `
-                    -Hint "Set VM_NAME in .env to the exact Azure VM name in the selected group."
+                    -Hint "Set SELECTED_VM_NAME in .env to the exact Azure VM name in the selected group."
             }
         }
     }

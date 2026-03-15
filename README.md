@@ -134,20 +134,20 @@ On the current Windows hero path, one successful `create` is designed to leave b
 ### First Configuration Pass
 1. Copy `.env.example` to `.env`.
 2. Set the minimum values:
-   - `VM_OS_TYPE`
-   - `VM_NAME` when you want to override the derived default; otherwise az-vm derives it from the `employee_email_address` local-part plus `-vm`
-   - `azure_subscription_id` when you want a repo-local default Azure subscription id for Azure-touching commands.
-   - `AZ_LOCATION`
+   - `SELECTED_VM_OS`
+   - `SELECTED_VM_NAME`
+   - `SELECTED_AZURE_REGION`
+   - `SELECTED_AZURE_SUBSCRIPTION_ID` when you want a repo-local default Azure subscription id for Azure-touching commands
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
    - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
    - platform-specific image and size keys as needed
-3. Set `company_name`, `company_web_address`, `company_email_address`, `employee_email_address`, and `employee_full_name` for Windows flows. Repo-managed public desktop web shortcuts require the company and employee identity inputs; business shortcuts use `company_name` plus `company_web_address`, personal shortcuts use the email local-part from `employee_email_address` as the Chrome `--profile-directory`, and future mail-facing shortcuts can reuse `company_email_address`. The task normalizes profile-directory sources to lowercase before writing the Chrome profile name.
+3. Set `SELECTED_COMPANY_NAME`, `SELECTED_COMPANY_WEB_ADDRESS`, `SELECTED_COMPANY_EMAIL_ADDRESS`, `SELECTED_EMPLOYEE_EMAIL_ADDRESS`, and `SELECTED_EMPLOYEE_FULL_NAME` for Windows flows. Repo-managed public desktop web shortcuts require the company and employee identity inputs; business shortcuts use `SELECTED_COMPANY_NAME` plus `SELECTED_COMPANY_WEB_ADDRESS`, personal shortcuts use the email local-part from `SELECTED_EMPLOYEE_EMAIL_ADDRESS` as the Chrome `--profile-directory`, and future mail-facing shortcuts can reuse `SELECTED_COMPANY_EMAIL_ADDRESS`. The task normalizes profile-directory sources to lowercase before writing the Chrome profile name.
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### Fastest Safe Path To Value
 If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated. On the current Windows path that includes Store-aware public desktop shortcuts, managed short-launcher wrapping for overlong Chrome/Edge-style shortcut invocations, per-task git-ignored app-state zip plugins resolved from `windows/update/app-states/<task-name>/app-state.zip`, and WSL2 plus Docker Desktop prerequisite hardening before developer-runtime health is considered ready:
 1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
-2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
+2. Run `.\az-vm.cmd create --auto -s <subscription-guid>`. When `.env` already contains a complete `SELECTED_*` target plus the matching platform image and size defaults, the command can provision end-to-end without repeating platform, VM name, region, or size on the CLI.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
 4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
 5. Run `.\az-vm.cmd connect --ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd connect --rdp --vm-name=<vm-name> --user=manager --test`.
@@ -162,7 +162,7 @@ Representative PoC / PoE outcomes from the current repo shape:
 ```powershell
 az login
 .\az-vm.cmd configure
-.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>
+.\az-vm.cmd create --auto -s <subscription-guid>
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 .\az-vm.cmd connect --rdp --vm-name=<vm-name>
 ```
@@ -280,7 +280,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `--perf` | Most public commands | Prints timing metrics for the current command | Useful during profiling, acceptance, and long-running change windows. |
 | `--windows` | `create`, `update`, `exec`, `resize` | Forces the Windows platform path or validates Windows expectation | Use this when the target platform must be explicit. |
 | `--linux` | `create`, `update`, `exec`, `resize` | Forces the Linux platform path or validates Linux expectation | Use this when the target platform must be explicit. |
-| `-s`, `--subscription-id=<subscription-guid>` | All Azure-touching commands plus `task --run-*` and `task --save/restore-app-state` | Targets Azure operations to one subscription and persists CLI-provided subscription intent locally | `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`. |
+| `-s`, `--subscription-id=<subscription-guid>` | All Azure-touching commands plus `task --run-*` and `task --save/restore-app-state` | Targets Azure operations to one subscription and persists CLI-provided subscription intent locally | `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `SELECTED_AZURE_SUBSCRIPTION_ID` into `.env`. |
 | `-h`, `--help` | All public commands | Prints quick help or command-specific help | `-h`, `--help` are equivalent operator aliases. |
 
 ### Command Matrix
@@ -318,9 +318,9 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd create` | interactive | Review-first fresh create flow | Manual first build | Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`. |
-| `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Windows build | Repeatable release or scripted setup | Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`. |
-| `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Linux build | Repeatable release or scripted setup | if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection |
-| `.\az-vm.cmd delete --target=group --group=<resource-group> --yes` then `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `delete`, `create` | Destructive rebuild of a managed target | Clean rebuild when intended | `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional. |
+| `.\az-vm.cmd create --auto` | `--auto` | Fresh unattended build from `.env` selections | Repeatable release or scripted setup | Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus platform VM defaults resolve platform, VM name, region, and size. |
+| `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Windows build with explicit CLI overrides | Override-driven release or scripted setup | CLI overrides still win over `.env` selections. |
+| `.\az-vm.cmd delete --target=group --group=<resource-group> --yes` then `.\az-vm.cmd create --auto` | `delete`, `create` | Destructive rebuild of a managed target | Clean rebuild when intended | `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional. |
 | `.\az-vm.cmd create --step=network --linux` | `--step` | Runs one top-level create step | Targeted orchestration testing | `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path. |
 | `.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf` | `--step-from`, `--step-to`, `--perf` | Runs a partial create window | Controlled reruns | `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages. |
 
@@ -329,9 +329,9 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd update` | interactive | Review-first maintenance flow on an existing target | Manual upkeep | interactive mode prompts for Azure subscription first when `--subscription-id` is omitted |
-| `.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>` | `--auto`, platform, `--group`, `--vm-name` | Unattended Windows update | Scheduled or controlled maintenance | Auto `update` requires an explicit platform plus `--group` and `--vm-name`. |
-| `.\az-vm.cmd update --auto --linux --group=<resource-group> --vm-name=<vm-name>` | same | Unattended Linux update | Scheduled or controlled maintenance | `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow. |
-| `.\az-vm.cmd update --step=vm-update --auto --windows --group=<resource-group> --vm-name=<vm-name>` | `--step` | Runs one update step | Isolated maintenance work | Useful for direct task-phase targeting. |
+| `.\az-vm.cmd update --auto` | `--auto` | Unattended update from the selected managed target | Scheduled or controlled maintenance | Auto `update` uses CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`, with single-VM auto-resolution allowed inside the selected group. |
+| `.\az-vm.cmd update --auto --group=<resource-group> --vm-name=<vm-name>` | `--auto`, `--group`, `--vm-name` | Unattended update with explicit target override | Controlled maintenance | `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow. |
+| `.\az-vm.cmd update --step=vm-update --auto --group=<resource-group> --vm-name=<vm-name>` | `--step` | Runs one update step | Isolated maintenance work | Useful for direct task-phase targeting. |
 | `.\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>` | `--step-to` | Runs an early partial update window | Controlled reruns | Same review-first step model as create. |
 
 #### `list`
@@ -340,7 +340,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd list` | none | Prints all managed inventory sections | Quick managed visibility | Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources. |
 | `.\az-vm.cmd list --type=group,vm` | `--type` | Narrows output to selected inventory types | Daily operator targeting | `list` gives a read-only managed inventory view across groups and resource types |
-| `.\az-vm.cmd list --type=nsg,nsg-rule --group=<resource-group>` | `--type`, `--group` | Group-filtered managed inventory | Resource-specific inspection | Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `azure_subscription_id` when it comes from the CLI |
+| `.\az-vm.cmd list --type=nsg,nsg-rule --group=<resource-group>` | `--type`, `--group` | Group-filtered managed inventory | Resource-specific inspection | Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `SELECTED_AZURE_SUBSCRIPTION_ID` when it comes from the CLI |
 
 #### `show`
 
@@ -432,24 +432,24 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 
 ### Create A Fresh Managed VM
 ```powershell
-.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
+.\az-vm.cmd create --auto
 .\az-vm.cmd create --step=network --linux
 .\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf
 .\az-vm.cmd delete --target=group --group=<resource-group> --yes
-.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>
+.\az-vm.cmd create --auto
 ```
 
 Practical outcomes:
 - the default path creates one fresh managed resource group and one fresh VM target
 - interactive mode proposes the next globally unique managed `gX` group id and globally unique managed `nX` resource ids
-- auto mode requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`
+- auto mode succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform VM defaults resolve platform, VM name, Azure region, and VM size
 - when a destructive rebuild is intentional, run `delete` first and then run `create`
 - the same step model works in interactive and auto mode
 
 ### Update An Existing Managed VM
 ```powershell
-.\az-vm.cmd update --auto --windows --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd update --step=vm-update --auto --windows --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd update --auto
+.\az-vm.cmd update --step=vm-update --auto --group=<resource-group> --vm-name=<vm-name>
 .\az-vm.cmd update --step-to=vm-init --auto --group=<resource-group> --vm-name=<vm-name>
 ```
 
@@ -535,11 +535,11 @@ Practical outcomes:
 - `--auto`: unattended mode for `create`, `update`, and `delete`
 - `--perf`: print timing metrics
 - `--windows`, `--linux`: explicit platform selection or platform expectation
-- `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`.
+- `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `SELECTED_AZURE_SUBSCRIPTION_ID` into `.env`.
 - `-h`, `--help`: print quick or command-specific help
 - Canonical target selectors are `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`; value-taking options accept both `--option=value` and `--option value`, plus short-form `-x=value` and `-x value` when a short alias exists.
 
-Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
+Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `SELECTED_AZURE_SUBSCRIPTION_ID` -> active Azure CLI subscription.
 
 ### `configure`
 Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.
@@ -556,7 +556,7 @@ Purpose: build one fresh managed resource group, one fresh managed VM, and then 
 Behavior notes:
 - `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
-- Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
+- Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
@@ -566,7 +566,7 @@ Purpose: maintain one existing managed resource group and one existing VM target
 
 Behavior notes:
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
-- Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
+- Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`, with single-VM auto-resolution allowed when the selected group contains exactly one VM.
 - best fit for day-two maintenance, guest-task refresh, and Azure redeploy-backed repair
 
 ### `list`
@@ -575,7 +575,7 @@ Purpose: print read-only managed inventory sections for az-vm-tagged resource gr
 Behavior notes:
 - supports `--type` and `--group` for managed inventory output
 - `list` gives a read-only managed inventory view across groups and resource types
-- Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `azure_subscription_id` when it comes from the CLI
+- Azure-read-only output; `--subscription-id` / `-s` only changes the subscription context and persists `SELECTED_AZURE_SUBSCRIPTION_ID` when it comes from the CLI
 
 ### `show`
 Purpose: print a full system and configuration dump for app resource groups and VMs.
@@ -706,13 +706,16 @@ This matters because:
 - `.env` remains local and untracked
 
 ### High-Value `.env` Keys
-- `VM_OS_TYPE`: default platform flavor when the command path needs one
-- `VM_NAME`: single naming seed; if left blank, az-vm derives it from the `employee_email_address` local-part plus `-vm`
-- `AZ_LOCATION`: target region default
-- `azure_subscription_id`: optional repo-local default Azure subscription id for Azure-touching commands.
+- `SELECTED_VM_OS`: persisted active platform selection
+- `SELECTED_VM_NAME`: persisted active VM naming seed for unattended and existing-target flows
+- `SELECTED_AZURE_REGION`: persisted active region selection
+- `SELECTED_RESOURCE_GROUP`: persisted active existing-target group selection
+- `SELECTED_AZURE_SUBSCRIPTION_ID`: optional repo-local default Azure subscription id for Azure-touching commands
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`: manager/admin identity
 - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`: assistant identity
-- `company_name`, `company_web_address`, `company_email_address`, `employee_email_address`, `employee_full_name`: Windows shortcut and UX identity inputs
+- `SELECTED_COMPANY_NAME`, `SELECTED_COMPANY_WEB_ADDRESS`, `SELECTED_COMPANY_EMAIL_ADDRESS`, `SELECTED_EMPLOYEE_EMAIL_ADDRESS`, `SELECTED_EMPLOYEE_FULL_NAME`: Windows shortcut and UX identity inputs
+- `VM_PRICE_COUNT_HOURS`: pricing window used by SKU-selection helpers
+- `AZURE_COMMAND_TIMEOUT_SECONDS`: shared Azure command timeout
 - `PYSSH_CLIENT_PATH`: default path should remain `tools/pyssh/ssh_client.py`
 
 ### Shared VM Feature Toggles
@@ -781,14 +784,14 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 - Interactive `create` and `update` always show the configuration screen first and the VM summary screen last.
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `--auto` is for unattended `create`, `update`, and `delete` flows.
-- Auto `create` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`.
-- Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
+- Auto `create` runs from the resolved CLI-or-`.env` selection set; when `.env` is complete, `create --auto` does not need repeated platform, VM name, region, or size flags.
+- Auto `update` resolves its managed target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`.
 - Auto mode prints the same review context, but it continues without waiting for checkpoint confirmation.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
 - Operator commands such as `show`, `do`, `connect`, and `exec` stay direct and do not require `--auto`.
 
 ### Naming And Managed Resource Rules
-- `VM_NAME` is the single naming seed.
+- `SELECTED_VM_NAME` is the persisted naming seed.
 - Managed names are template-driven and deterministic.
 - Managed resource group ids use a global `gX` suffix that increments across all managed groups, regardless of region.
 - Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.
@@ -901,8 +904,8 @@ GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` wor
 ### Live Release Acceptance
 Before calling the repo or the active profile release-ready for a live publish, run one end-to-end live acceptance cycle against the current `.env` target:
 - if the target group is safe to purge, prefer a full recreate by running `az-vm delete --target=group --group=<resource-group> --yes` before the live create
-- run a clean `az-vm create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> --perf` or `az-vm create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> --perf`
-- rerun `az-vm update --auto --windows --group=<resource-group> --vm-name=<vm-name> --perf` or `az-vm update --auto --linux --group=<resource-group> --vm-name=<vm-name> --perf` without changing the natural task order
+- run a clean `az-vm create --auto --perf` once the target `.env` `SELECTED_*` values and platform defaults are complete
+- rerun `az-vm update --auto --perf` without changing the natural task order
 - confirm `az-vm show` prints the expected inventory while password-bearing `.env` values stay redacted
 - confirm `az-vm do --vm-action=status --vm-name=<vm-name>` reports the VM as started
 - confirm `az-vm connect --ssh --vm-name=<vm-name> --user=manager --test`; for Windows also confirm `az-vm connect --rdp --vm-name=<vm-name> --user=manager --test`

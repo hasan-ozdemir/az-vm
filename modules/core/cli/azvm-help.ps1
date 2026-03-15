@@ -59,8 +59,8 @@ function Show-AzVmCommandHelpOverview {
         "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
         ''
         'Quick examples:'
-        '  az-vm create --auto --windows --vm-name <vm-name> --vm-region <azure-region> --vm-size <vm-sku>'
-        '  az-vm update --auto --windows --group <resource-group> --vm-name <vm-name>'
+        '  az-vm create --auto'
+        '  az-vm update --auto'
         '  az-vm task --list --vm-update'
         '  az-vm task --run-vm-init 01 --group <resource-group> --vm-name <vm-name>'
         '  az-vm task --run-vm-update 10002 --group <resource-group> --vm-name <vm-name>'
@@ -147,6 +147,7 @@ function Show-AzVmCommandHelpDetailed {
                 'Description: create one fresh managed resource group, one fresh managed VM, and then continue with vm-init/vm-update flow.'
                 'Usage:'
                 '  az-vm create [--windows|--linux] [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm create --auto [--subscription-id <subscription-id>] [--perf]'
                 '  az-vm create --auto --windows --vm-name <vm-name> --vm-region <azure-region> --vm-size <vm-sku> [--subscription-id <subscription-id>] [--perf]'
                 '  az-vm create --auto --linux --vm-name <vm-name> --vm-region <azure-region> --vm-size <vm-sku> [--subscription-id <subscription-id>] [--perf]'
                 '  az-vm create --step <step> [--subscription-id <subscription-id>]'
@@ -154,9 +155,10 @@ function Show-AzVmCommandHelpDetailed {
                 '  az-vm create --step-to <step> [--subscription-id <subscription-id>]'
                 'Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary'
                 'Examples:'
+                '  az-vm create --auto -s <subscription-guid>'
                 '  az-vm create --auto --windows --vm-name <vm-name> --vm-region <azure-region> --vm-size <vm-sku> -s <subscription-guid>'
                 '  az-vm create --step vm-update --linux'
-                'Notes: create always targets a fresh managed resource group and fresh managed resources. Interactive mode prompts for Azure subscription when --subscription-id is omitted, asks for VM OS type first when --windows/--linux is omitted, proposes the next global gX name plus globally unique nX resource ids, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode requires an explicit platform plus --vm-name, --vm-region, and --vm-size. vm-summary always renders, even for partial step windows. For a destructive rebuild, run delete first and then create again.'
+                'Notes: create always targets a fresh managed resource group and fresh managed resources. Interactive mode prompts for Azure subscription when --subscription-id is omitted, asks for VM OS type first when --windows/--linux is omitted, proposes the next global gX name plus globally unique nX resource ids, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode runs from the fully resolved selection set: CLI overrides win, otherwise .env SELECTED_* values plus the platform VM defaults must resolve platform, VM name, Azure region, and VM size. vm-summary always renders, even for partial step windows. For a destructive rebuild, run delete first and then create again.'
             )
             return
         }
@@ -166,16 +168,17 @@ function Show-AzVmCommandHelpDetailed {
                 'Description: re-run create-or-update operations against one existing managed VM in one existing managed resource group.'
                 'Usage:'
                 '  az-vm update [--windows|--linux] [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
-                '  az-vm update --auto --windows --group <resource-group> --vm-name <vm-name> [--subscription-id <subscription-id>] [--perf]'
-                '  az-vm update --auto --linux --group <resource-group> --vm-name <vm-name> [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm update --auto [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm update --auto --group <resource-group> --vm-name <vm-name> [--subscription-id <subscription-id>] [--perf]'
                 '  az-vm update --step <step> [--subscription-id <subscription-id>]'
                 '  az-vm update --step-from <step> [--subscription-id <subscription-id>]'
                 '  az-vm update --step-to <step> [--subscription-id <subscription-id>]'
                 'Steps: configure, group, network, vm-deploy, vm-init, vm-update, vm-summary'
                 'Examples:'
                 '  az-vm update --group <resource-group>'
-                '  az-vm update --auto --windows --group <resource-group> --vm-name <vm-name> -s <subscription-guid>'
-                'Notes: update requires an existing managed resource group and an existing managed VM. Interactive mode prompts for Azure subscription when --subscription-id is omitted, selects only managed existing targets, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode requires an explicit platform plus --group and --vm-name. Existing VMs are redeployed after Azure create-or-update.'
+                '  az-vm update --auto -s <subscription-guid>'
+                '  az-vm update --auto --group <resource-group> --vm-name <vm-name> -s <subscription-guid>'
+                'Notes: update requires an existing managed resource group and an existing managed VM. Interactive mode prompts for Azure subscription when --subscription-id is omitted, selects only managed existing targets, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode runs from the resolved managed target: CLI overrides win, otherwise .env SELECTED_RESOURCE_GROUP and SELECTED_VM_NAME are used, with single-VM auto-resolution still allowed when the selected group contains exactly one VM. Existing VMs are redeployed after Azure create-or-update.'
             )
             return
         }
@@ -329,7 +332,7 @@ function Show-AzVmCommandHelpDetailed {
                 'Examples:'
                 '  az-vm delete --target vm --group <resource-group> -s <subscription-guid>'
                 '  az-vm delete --target group --group <resource-group> --yes'
-                'Notes: delete is Azure-touching and writes CLI-provided --subscription-id into azure_subscription_id.'
+                'Notes: delete is Azure-touching and writes CLI-provided --subscription-id into SELECTED_AZURE_SUBSCRIPTION_ID.'
             )
             return
         }

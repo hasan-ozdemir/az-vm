@@ -3,6 +3,26 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.316] - 2026-03-15
+
+### Changed
+- Reworked the committed `.env` contract so the persisted active-selection surface is now `SELECTED_*` only, including the new `SELECTED_RESOURCE_GROUP` selector for existing-target flows and the renamed shared timeout/pricing keys `AZURE_COMMAND_TIMEOUT_SECONDS` and `VM_PRICE_COUNT_HOURS`.
+- Updated the shared runtime resolution model so CLI overrides still win, but the internal canonical runtime fields are now populated from `.env` `SELECTED_*` values instead of the retired persisted keys.
+- Reworked `create --auto` so it can resolve platform, VM name, Azure region, and VM size entirely from `.env` `SELECTED_*` values plus the platform-specific VM defaults, without requiring explicit CLI `--vm-name`, `--vm-region`, `--vm-size`, or platform flags.
+- Reworked configure, update, move, set, delete, list, and the shared managed-target helpers so persisted targeting now reads and writes only the selected `.env` keys instead of the old resource-output key set.
+
+### Fixed
+- Fixed platform selection resolution so `.env` `SELECTED_VM_OS` now drives unattended platform selection consistently in both direct resolution and prompted interactive flows.
+- Fixed auto-update validation and messaging so the unattended existing-target path now fails against the real selected-group contract and explains missing `SELECTED_RESOURCE_GROUP` state precisely.
+- Fixed `.env` writeback so retired persisted keys are removed after configure/create/update/move/set flows instead of lingering beside the selected-only contract.
+
+### Docs
+- Rewrote `.env.example`, README, AGENTS, help text, smoke/docs contract coverage, and sensitive-content placeholder assertions around the selected-only configuration contract.
+- Updated the operator guidance so unattended `create --auto` is now documented as a `.env`-driven flow when the selected values and platform defaults are complete.
+
+### Tests
+- Revalidated the full non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.15.315] - 2026-03-15
 
 ### Added

@@ -4,31 +4,26 @@ function Assert-AzVmUpdateAutoOptions {
     param(
         [hashtable]$Options,
         [switch]$WindowsFlag,
-        [switch]$LinuxFlag
+        [switch]$LinuxFlag,
+        [hashtable]$ConfigMap
     )
 
     if (-not (Get-AzVmCliOptionBool -Options $Options -Name 'auto' -DefaultValue $false)) {
         return
     }
 
-    if (-not $WindowsFlag -and -not $LinuxFlag) {
-        Throw-FriendlyError `
-            -Detail "Update auto mode requires an explicit platform flag." `
-            -Code 2 `
-            -Summary "Update auto mode requires platform selection." `
-            -Hint "Use --windows or --linux together with update --auto."
+    $validationConfig = if ($ConfigMap) { Resolve-AzVmRuntimeConfigAliases -ConfigMap $ConfigMap } else { @{} }
+    $effectiveGroup = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
+    if ([string]::IsNullOrWhiteSpace([string]$effectiveGroup)) {
+        $effectiveGroup = [string](Get-ConfigValue -Config $validationConfig -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
     }
 
-    foreach ($optionName in @('group', 'vm-name')) {
-        if (Test-AzVmCliOptionPresent -Options $Options -Name $optionName) {
-            continue
-        }
-
+    if ([string]::IsNullOrWhiteSpace([string]$effectiveGroup)) {
         Throw-FriendlyError `
-            -Detail ("Update auto mode requires --{0}." -f [string]$optionName) `
+            -Detail "Update auto mode could not resolve a managed resource group from CLI or .env SELECTED_RESOURCE_GROUP." `
             -Code 2 `
-            -Summary "Update auto mode is missing a required option." `
-            -Hint "Provide --group and --vm-name together with update --auto."
+            -Summary "Update auto mode cannot resolve target resource group." `
+            -Hint "Set SELECTED_RESOURCE_GROUP in .env, or pass --group."
     }
 }
 
@@ -59,11 +54,10 @@ function New-AzVmUpdateCommandRuntime {
         [switch]$AutoMode
     )
 
-    Assert-AzVmUpdateAutoOptions -Options $Options -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
-
     $actionPlan = Resolve-AzVmActionPlan -CommandName 'update' -Options $Options
     $envFilePath = Join-Path (Get-AzVmRepoRoot) '.env'
     $configMap = Read-DotEnvFile -Path $envFilePath
+    Assert-AzVmUpdateAutoOptions -Options $Options -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMap $configMap
     $cliSubscriptionId = [string](Get-AzVmCliOptionText -Options $Options -Name 'subscription-id')
 
     if (-not $AutoMode -and [string]::IsNullOrWhiteSpace([string]$cliSubscriptionId)) {
@@ -76,9 +70,9 @@ function New-AzVmUpdateCommandRuntime {
             -ResolutionSource 'interactive'
     }
 
-    $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
     $vmNameOverride = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
-    $vmName = if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) { $vmNameOverride.Trim() } else { [string](Get-ConfigValue -Config $configMap -Key 'VM_NAME' -DefaultValue '') }
+    $vmName = if (-not [string]::IsNullOrWhiteSpace([string]$vmNameOverride)) { $vmNameOverride.Trim() } else { [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_VM_NAME' -DefaultValue '') }
     $targetResourceGroup = Resolve-AzVmTargetResourceGroup -Options $Options -AutoMode:$AutoMode -DefaultResourceGroup $defaultResourceGroup -VmName $vmName -OperationName 'update'
     $resolvedVmName = [string](Resolve-AzVmTargetVmName -ResourceGroup $targetResourceGroup -DefaultVmName $vmName -AutoMode:$AutoMode -OperationName 'update')
     if (-not (Test-AzVmAzResourceExists -AzArgs @('vm', 'show', '-g', $targetResourceGroup, '-n', $resolvedVmName))) {
@@ -95,9 +89,13 @@ function New-AzVmUpdateCommandRuntime {
 
     $updateOverrides = @{
         azure_subscription_id = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
+        SELECTED_AZURE_SUBSCRIPTION_ID = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
         RESOURCE_GROUP = $targetResourceGroup
+        SELECTED_RESOURCE_GROUP = $targetResourceGroup
         VM_NAME = $resolvedVmName
+        SELECTED_VM_NAME = $resolvedVmName
         AZ_LOCATION = $targetLocation
+        SELECTED_AZURE_REGION = $targetLocation
         VNET_NAME = [string]$networkDescriptor.VnetName
         SUBNET_NAME = [string]$networkDescriptor.SubnetName
         NSG_NAME = [string]$networkDescriptor.NsgName
@@ -107,6 +105,7 @@ function New-AzVmUpdateCommandRuntime {
     }
     if (-not [string]::IsNullOrWhiteSpace([string]$targetOsType)) {
         $updateOverrides['VM_OS_TYPE'] = $targetOsType
+        $updateOverrides['SELECTED_VM_OS'] = $targetOsType
     }
 
     return [pscustomobject]@{

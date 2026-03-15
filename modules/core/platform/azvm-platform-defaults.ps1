@@ -134,12 +134,7 @@ function Resolve-AzVmPlatformConfigMap {
         [string]$Platform
     )
 
-    $resolved = @{}
-    if ($ConfigMap) {
-        foreach ($key in @($ConfigMap.Keys)) {
-            $resolved[[string]$key] = [string]$ConfigMap[$key]
-        }
-    }
+    $resolved = Resolve-AzVmRuntimeConfigAliases -ConfigMap $ConfigMap
 
     foreach ($baseKey in @('VM_IMAGE','VM_SIZE','VM_DISK_SIZE_GB')) {
         $platformKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
@@ -197,7 +192,10 @@ function Resolve-AzVmPlatformSelection {
     else {
         if (-not $PromptWhenFlagsMissing) {
             $fromOverride = ''
-            if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('VM_OS_TYPE')) {
+            if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('SELECTED_VM_OS')) {
+                $fromOverride = [string]$ConfigOverrides['SELECTED_VM_OS']
+            }
+            elseif ($ConfigOverrides -and $ConfigOverrides.ContainsKey('VM_OS_TYPE')) {
                 $fromOverride = [string]$ConfigOverrides['VM_OS_TYPE']
             }
 
@@ -207,19 +205,22 @@ function Resolve-AzVmPlatformSelection {
                     $selected = $candidate
                 }
                 else {
-                    Write-Warning ("Invalid VM_OS_TYPE override '{0}'. Expected windows|linux." -f $fromOverride)
+                    Write-Warning ("Invalid SELECTED_VM_OS override '{0}'. Expected windows|linux." -f $fromOverride)
                 }
             }
 
             if ([string]::IsNullOrWhiteSpace([string]$selected)) {
-                $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_OS_TYPE' -DefaultValue '')
+                $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_VM_OS' -DefaultValue '')
+                if ([string]::IsNullOrWhiteSpace([string]$fromEnv)) {
+                    $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_OS_TYPE' -DefaultValue '')
+                }
                 if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
                     $candidate = $fromEnv.Trim().ToLowerInvariant()
                     if ($candidate -eq 'windows' -or $candidate -eq 'linux') {
                         $selected = $candidate
                     }
                     else {
-                        Write-Warning ("Invalid VM_OS_TYPE '{0}' in .env. Expected windows|linux." -f $fromEnv)
+                        Write-Warning ("Invalid SELECTED_VM_OS '{0}' in .env. Expected windows|linux." -f $fromEnv)
                     }
                 }
             }
@@ -228,7 +229,7 @@ function Resolve-AzVmPlatformSelection {
 
     if ([string]::IsNullOrWhiteSpace($selected)) {
         if ($AutoMode) {
-            Throw-FriendlyError -Detail 'VM OS type is unresolved in auto mode.' -Code 12 -Summary 'Auto mode requires VM_OS_TYPE.' -Hint 'Set VM_OS_TYPE=windows|linux in .env, or pass --windows/--linux.'
+            Throw-FriendlyError -Detail 'VM OS type is unresolved in auto mode.' -Code 12 -Summary 'Auto mode requires SELECTED_VM_OS.' -Hint 'Set SELECTED_VM_OS=windows|linux in .env, or pass --windows/--linux.'
         }
 
         while ($true) {
@@ -255,7 +256,7 @@ function Resolve-AzVmPlatformSelection {
     }
 
     if (-not $AutoMode -and -not $DeferEnvWrite) {
-        Set-DotEnvValue -Path $EnvFilePath -Key 'VM_OS_TYPE' -Value $selected
+        Set-DotEnvValue -Path $EnvFilePath -Key 'SELECTED_VM_OS' -Value $selected
     }
 
     Write-Host ("VM OS type '{0}' will be used." -f $selected) -ForegroundColor Green

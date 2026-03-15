@@ -1,5 +1,78 @@
 # Dotenv read/write helpers.
 
+function Get-AzVmRetiredDotEnvKeys {
+    return @(
+        'VM_OS_TYPE',
+        'VM_NAME',
+        'company_name',
+        'company_web_address',
+        'company_email_address',
+        'employee_email_address',
+        'employee_full_name',
+        'azure_subscription_id',
+        'AZ_LOCATION',
+        'RESOURCE_GROUP',
+        'VNET_NAME',
+        'SUBNET_NAME',
+        'NSG_NAME',
+        'NSG_RULE_NAME',
+        'PUBLIC_IP_NAME',
+        'NIC_NAME',
+        'VM_DISK_NAME',
+        'PRICE_HOURS',
+        'AZ_COMMAND_TIMEOUT_SECONDS'
+    )
+}
+
+function Resolve-AzVmRuntimeConfigAliases {
+    param(
+        [hashtable]$ConfigMap
+    )
+
+    $resolved = @{}
+    if ($ConfigMap) {
+        foreach ($key in @($ConfigMap.Keys)) {
+            $resolved[[string]$key] = [string]$ConfigMap[$key]
+        }
+    }
+
+    foreach ($retiredKey in @(Get-AzVmRetiredDotEnvKeys)) {
+        if ($resolved.ContainsKey([string]$retiredKey)) {
+            $null = $resolved.Remove([string]$retiredKey)
+        }
+    }
+
+    $aliasMap = [ordered]@{
+        SELECTED_VM_OS = 'VM_OS_TYPE'
+        SELECTED_VM_NAME = 'VM_NAME'
+        SELECTED_COMPANY_NAME = 'company_name'
+        SELECTED_COMPANY_WEB_ADDRESS = 'company_web_address'
+        SELECTED_COMPANY_EMAIL_ADDRESS = 'company_email_address'
+        SELECTED_EMPLOYEE_EMAIL_ADDRESS = 'employee_email_address'
+        SELECTED_EMPLOYEE_FULL_NAME = 'employee_full_name'
+        SELECTED_AZURE_SUBSCRIPTION_ID = 'azure_subscription_id'
+        SELECTED_AZURE_REGION = 'AZ_LOCATION'
+        SELECTED_RESOURCE_GROUP = 'RESOURCE_GROUP'
+        VM_PRICE_COUNT_HOURS = 'PRICE_HOURS'
+        AZURE_COMMAND_TIMEOUT_SECONDS = 'AZ_COMMAND_TIMEOUT_SECONDS'
+    }
+
+    foreach ($sourceKey in @($aliasMap.Keys)) {
+        $targetKey = [string]$aliasMap[[string]$sourceKey]
+        $sourceValue = ''
+        if ($resolved.ContainsKey([string]$sourceKey)) {
+            $sourceValue = [string]$resolved[[string]$sourceKey]
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$sourceValue)) {
+            continue
+        }
+
+        $resolved[[string]$targetKey] = [string]$sourceValue
+    }
+
+    return $resolved
+}
+
 # Handles Read-DotEnvFile.
 function Read-DotEnvFile {
     param(
@@ -36,7 +109,7 @@ function Read-DotEnvFile {
         $config[$key] = $value
     }
 
-    return $config
+    return (Resolve-AzVmRuntimeConfigAliases -ConfigMap $config)
 }
 
 # Handles Get-ConfigValue.
@@ -136,6 +209,51 @@ function Set-DotEnvValue {
     Write-TextFileNormalized `
         -Path $Path `
         -Content ($lines -join "`n") `
+        -Encoding "utf8NoBom" `
+        -LineEnding "crlf" `
+        -EnsureTrailingNewline
+}
+
+function Remove-DotEnvKeys {
+    param(
+        [string]$Path,
+        [string[]]$Keys
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $keysToRemove = @(
+        @($Keys) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Sort-Object -Unique
+    )
+    if (@($keysToRemove).Count -eq 0) {
+        return
+    }
+
+    $lines = @((Get-Content -Path $Path -ErrorAction Stop))
+    $filtered = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($lines)) {
+        $removeLine = $false
+        foreach ($key in @($keysToRemove)) {
+            $pattern = "^\s*" + [regex]::Escape($key) + "\s*="
+            if ([string]$line -match $pattern) {
+                $removeLine = $true
+                break
+            }
+        }
+
+        if (-not $removeLine) {
+            [void]$filtered.Add([string]$line)
+        }
+    }
+
+    Write-TextFileNormalized `
+        -Path $Path `
+        -Content (@($filtered) -join "`n") `
         -Encoding "utf8NoBom" `
         -LineEnding "crlf" `
         -EnsureTrailingNewline

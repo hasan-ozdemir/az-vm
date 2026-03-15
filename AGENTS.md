@@ -63,11 +63,11 @@ Use these sources in this order when maintaining the repo:
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
 - `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.
-- Azure-touching commands support `--subscription-id` plus `-s`; resolution precedence is CLI override -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
+- Azure-touching commands support `--subscription-id` plus `-s`; resolution precedence is CLI override -> `.env` `SELECTED_AZURE_SUBSCRIPTION_ID` -> active Azure CLI subscription.
 - Azure-touching commands require an authenticated Azure CLI session; help, README, and runtime errors must say `az login` is required.
 - Interactive `create` and `update` must prompt for Azure subscription selection when `--subscription-id` is omitted.
 - `list` is the managed inventory command: it must stay Azure-read-only, must not mutate Azure resources, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
-- Auto-mode strictness is part of the public contract: `create --auto` requires an explicit platform plus `--vm-name`, `--vm-region`, and `--vm-size`; `update --auto` requires an explicit platform plus `--group` and `--vm-name`.
+- Auto-mode strictness is part of the public contract: `create --auto` must resolve platform, VM name, Azure region, and platform VM size from CLI or `SELECTED_*` plus platform defaults in `.env`; `update --auto` must resolve one managed target from CLI or the selected target values in `.env`.
 - `resize --disk-size` requires exactly one intent flag, `--expand` or `--shrink`; shrink remains a non-mutating guidance path when Azure cannot perform the requested change safely.
 
 ## Configuration Rules
@@ -78,18 +78,19 @@ Use these sources in this order when maintaining the repo:
 - Keep task-only customization in a clearly labeled config block at the top of the owning `vm-init` or `vm-update` script.
 - Do not hard-code personal, company-specific, or secret fallback values in runtime code or shared orchestration paths.
 - Use generic env keys whenever possible.
-- Use `azure_subscription_id` as the shared default Azure subscription selector for Azure-touching commands.
-- Use `company_name` for repo-managed Windows business web shortcuts and `employee_email_address` local-part for repo-managed Windows personal web shortcuts.
+- Treat `SELECTED_*` keys as the only persisted active-selection contract in `.env`.
+- Use `SELECTED_AZURE_SUBSCRIPTION_ID` as the shared default Azure subscription selector for Azure-touching commands.
+- Use `SELECTED_COMPANY_NAME` for repo-managed Windows business web shortcuts and `SELECTED_EMPLOYEE_EMAIL_ADDRESS` local-part for repo-managed Windows personal web shortcuts.
 - Normalize repo-managed Windows Chrome `--profile-directory` values to lowercase even when `.env` casing differs.
-- Keep `employee_full_name` in `.env` as required operator identity metadata for the Windows public desktop shortcut contract.
+- Keep `SELECTED_EMPLOYEE_FULL_NAME` in `.env` as required operator identity metadata for the Windows public desktop shortcut contract.
 - Use shared keys such as `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION` for cross-platform VM feature intent instead of inventing platform-specific duplicates.
 - Use `WIN_` or `LIN_` keys only for true platform-specific settings.
 - Remove deprecated env keys instead of keeping compatibility fallbacks.
 - Validate region, VM naming, SKU, image, and other mutation-critical config before Azure create/update/delete operations.
 
 ## Naming and Resource Rules
-- `VM_NAME` is the single naming seed.
-- Template-driven resource names must derive from `VM_NAME`, region code, and the committed templates.
+- `SELECTED_VM_NAME` is the persisted naming seed.
+- Template-driven resource names must derive from the effective `VM_NAME` runtime value, region code, and the committed templates.
 - Resource-group uniqueness is suffix-based and deterministic.
 - Managed resource name generation must remain explicit, predictable, and validation-backed.
 - Managed resource group ids use a globally increasing `gX` suffix across all managed groups, regardless of region.

@@ -118,7 +118,7 @@ function Resolve-AzVmTargetResourceGroup {
                 -Detail ("No active resource group is configured for auto mode in {0} command." -f $OperationName) `
                 -Code 66 `
                 -Summary ("{0} command cannot resolve target resource group." -f $OperationName) `
-                -Hint "Set RESOURCE_GROUP in .env or provide --group=<name>."
+                -Hint "Set SELECTED_RESOURCE_GROUP in .env or provide --group=<name>."
         }
     }
     else {
@@ -326,7 +326,7 @@ function Resolve-AzVmTargetVmName {
             -Detail ("Auto mode could not resolve one VM in resource group '{0}'." -f $ResourceGroup) `
             -Code 65 `
             -Summary ("{0} command cannot resolve target VM in auto mode." -f $OperationName) `
-            -Hint "Set VM_NAME in .env to the exact Azure VM name, provide a command-specific VM parameter, or use interactive mode."
+            -Hint "Set SELECTED_VM_NAME in .env to the exact Azure VM name, provide a command-specific VM parameter, or use interactive mode."
     }
 
     return (Select-AzVmVmInteractive -ResourceGroup $ResourceGroup -DefaultVmName $DefaultVmName)
@@ -451,8 +451,8 @@ function Resolve-AzVmManagedVmTarget {
         [switch]$FailIfMultipleWithoutExplicitVmForExplicitGroup
     )
 
-    $defaultResourceGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'RESOURCE_GROUP' -DefaultValue '')
-    $defaultVmName = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_NAME' -DefaultValue '')
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
+    $defaultVmName = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_VM_NAME' -DefaultValue '')
     $groupOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
     $vmNameOption = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     $requestedResourceGroup = $groupOption.Trim()

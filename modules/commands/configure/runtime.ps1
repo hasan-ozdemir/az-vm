@@ -179,7 +179,7 @@ function Resolve-AzVmConfigureNsgRuleDescriptor {
             -Detail ("NSG '{0}' in resource group '{1}' exposes multiple candidate rules and configure cannot pick one safely: {2}." -f [string]$NsgName, [string]$ResourceGroup, (@($candidateNames) -join ', ')) `
             -Code 66 `
             -Summary 'Configure command needs one unambiguous managed NSG rule.' `
-            -Hint 'Keep one managed inbound TCP allow rule, or set NSG_RULE_NAME in .env to the exact active rule and retry.'
+            -Hint 'Keep one managed inbound TCP allow rule, or reduce the NSG to one exact active rule and retry.'
     }
 
     $portValues = @()
@@ -406,17 +406,11 @@ function Get-AzVmConfigureTargetState {
     }
 
     $persistMap = [ordered]@{
-        VM_OS_TYPE = [string]$actualPlatform
-        AZ_LOCATION = ([string]$vmObject.location).Trim().ToLowerInvariant()
-        RESOURCE_GROUP = [string]$ResourceGroup
-        VNET_NAME = [string]$networkDescriptor.VnetName
-        SUBNET_NAME = [string]$networkDescriptor.SubnetName
-        NSG_NAME = [string]$networkDescriptor.NsgName
-        NSG_RULE_NAME = [string]$ruleDescriptor.Name
-        PUBLIC_IP_NAME = [string]$networkDescriptor.PublicIpName
-        NIC_NAME = [string]$networkDescriptor.NicName
-        VM_NAME = [string]$VmName
-        VM_DISK_NAME = [string]$networkDescriptor.OsDiskName
+        SELECTED_VM_OS = [string]$actualPlatform
+        SELECTED_AZURE_SUBSCRIPTION_ID = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
+        SELECTED_AZURE_REGION = ([string]$vmObject.location).Trim().ToLowerInvariant()
+        SELECTED_RESOURCE_GROUP = [string]$ResourceGroup
+        SELECTED_VM_NAME = [string]$VmName
         VM_STORAGE_SKU = [string]$diskObject.sku.name
         VM_SSH_PORT = [string]$portDescriptor.SshPort
         VM_RDP_PORT = [string]$portDescriptor.RdpPort
@@ -525,6 +519,8 @@ function Save-AzVmConfigToDotEnv {
             Reason = $reason
         }
     }
+
+    Remove-DotEnvKeys -Path $EnvFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
 
     return @($changes)
 }

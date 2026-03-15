@@ -168,14 +168,20 @@ function Assert-EnvExampleSensitivePlaceholders {
     if ([string]$envMap['VM_ASSISTANT_PASS'] -ne '<CHANGE_ME_STRONG_ASSISTANT_PASSWORD>') {
         throw ".env.example must keep VM_ASSISTANT_PASS as the committed placeholder."
     }
-    if ([string]$envMap['employee_email_address'] -ne '<email>') {
-        throw ".env.example must keep employee_email_address as the committed placeholder."
+    if ([string]$envMap['SELECTED_COMPANY_WEB_ADDRESS'] -ne '<https-url>') {
+        throw ".env.example must keep SELECTED_COMPANY_WEB_ADDRESS as the committed placeholder."
     }
-    if ([string]$envMap['employee_full_name'] -ne '<person-name>') {
-        throw ".env.example must keep employee_full_name as the committed placeholder."
+    if ([string]$envMap['SELECTED_COMPANY_EMAIL_ADDRESS'] -ne '<email>') {
+        throw ".env.example must keep SELECTED_COMPANY_EMAIL_ADDRESS as the committed placeholder."
     }
-    if (-not [string]::IsNullOrWhiteSpace([string]$envMap['azure_subscription_id'])) {
-        throw ".env.example must not commit a concrete azure_subscription_id value."
+    if ([string]$envMap['SELECTED_EMPLOYEE_EMAIL_ADDRESS'] -ne '<email>') {
+        throw ".env.example must keep SELECTED_EMPLOYEE_EMAIL_ADDRESS as the committed placeholder."
+    }
+    if ([string]$envMap['SELECTED_EMPLOYEE_FULL_NAME'] -ne '<person-name>') {
+        throw ".env.example must keep SELECTED_EMPLOYEE_FULL_NAME as the committed placeholder."
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$envMap['SELECTED_AZURE_SUBSCRIPTION_ID'])) {
+        throw ".env.example must not commit a concrete SELECTED_AZURE_SUBSCRIPTION_ID value."
     }
 }
 

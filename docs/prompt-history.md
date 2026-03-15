@@ -5207,3 +5207,19 @@ Clean up the managed app-state payloads. Exclude Ollama model payloads and azd b
 Narrowed the shared app-state runtime so managed capture and replay now target only the `manager` and `assistant` OS profiles on both Windows and Linux. I removed the old `default` and arbitrary-local-user profile enumeration from the shared guest helpers, filtered legacy app-state plan merging down to the managed profile targets, tightened the tracked Windows app-state capture specs so they now prune generated browser caches and model stores, installer/update payloads, telemetry trees, Docker and Ollama runtime artifacts, Office offline bundles, and other low-value payloads, and added a manual `tools\scripts\app-state-audit.ps1` helper that reports zip sizes, foreign profile targets, and the heaviest remaining entries.
 
 I also sanitized the current ignored `windows/update/app-states/*/app-state.zip` payload set in place so it follows the new settings-first contract. The managed payloads no longer contain foreign OS-user targets, the Ollama task no longer carries model or installer-update payloads, the azd task no longer carries `bin` or `telemetry`, and the heaviest browser, Office, Docker Desktop, GitHub CLI, Azure CLI, and Visual Studio payloads were reduced substantially while preserving the managed `manager` / `assistant` state. After the cleanup, the remaining larger payloads were reduced to a small set led by the Office settings payload and the browser settings payloads, and the non-live validation chain passed with smoke, documentation-contract, PowerShell compatibility, code-quality, bash syntax, and release-doc checks.
+
+### 2026-03-15 18:46 TRT
+
+**User Prompt**
+
+````text
+I updated the local `.env` carefully. Analyze that new configuration deeply and refactor the application in a planned way so the change becomes the real contract. Update `.env.example`, the documentation, and the help text too. The settings that start with `SELECTED_*` in `.env` must be sufficient for `az-vm create --auto` to run end-to-end and bring up a virtual machine.
+
+Implement the plan.
+````
+
+**Assistant Summary**
+
+Cut the persisted configuration contract over to a selected-only model and aligned the runtime, docs, and tests around it. `.env.example` now exposes `SELECTED_VM_OS`, `SELECTED_VM_NAME`, `SELECTED_RESOURCE_GROUP`, the selected company and employee identity keys, `SELECTED_AZURE_SUBSCRIPTION_ID`, `SELECTED_AZURE_REGION`, `AZURE_COMMAND_TIMEOUT_SECONDS`, and `VM_PRICE_COUNT_HOURS` as the committed configuration surface, while the old persisted active-selection and resource-output keys were retired from the committed contract.
+
+In the runtime, I added alias resolution so the internal orchestration fields still see the canonical values they need, but those values now come from `SELECTED_*` inputs. `create --auto` now validates and resolves platform, VM name, Azure region, and VM size from CLI overrides first and then from `.env` selected values plus the platform defaults, so unattended auto-create can run from `.env` alone when the selected contract is complete. I also updated configure, update, move, set, delete, list, and the shared managed-target helpers so persistence and target resolution now read and write the selected `.env` keys instead of the old output-key set, then refreshed AGENTS, README, help output, smoke coverage, documentation-contract checks, and sensitive-content placeholders to match the new contract. Finally, I revalidated the change set with smoke, documentation-contract, PowerShell compatibility, code-quality, bash-syntax, and pre-commit release-doc checks.
