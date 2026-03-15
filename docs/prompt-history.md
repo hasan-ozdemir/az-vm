@@ -5179,3 +5179,17 @@ Instant fix: before restoring task `02-check-install-chrome` on the target VM, c
 **Assistant Summary**
 
 Added a task-specific replay preflight to the shared Windows app-state guest helper so `02-check-install-chrome` now closes open Chrome windows before the restore payload is replayed. I revalidated that path on the active managed Windows VM with isolated `task --restore-app-state --vm-update-task=02-check-install-chrome` runs, confirming that the Chrome pre-close step executes as part of the restore flow and that the Chrome app-state replay no longer stalls on the old timeout path caused by leaving the browser open during replay.
+
+### 2026-03-15 18:24 TRT
+
+**User Prompt**
+
+````text
+Implement the approved CLI cutover so isolated task execution moves from `exec` to `task`, `exec` becomes SSH shell or remote-command only, and the old standalone `ssh` and `rdp` commands are replaced by `connect --ssh` and `connect --rdp`. Standardize target selectors on `--group` / `-g` and `--vm-name` / `-v`, keep the Azure subscription CLI option as `--subscription-id` / `-s`, allow both `--option=value` and `--option value`, remove the retired public forms cleanly from code/docs/tests, and update the repo contract files in the same change.
+````
+
+**Assistant Summary**
+
+Completed the public CLI cutover so `task` now owns isolated `vm-init` and `vm-update` task execution through `--run-vm-init` and `--run-vm-update`, `exec` is reduced to two SSH-only modes (`exec` for the interactive shell and `exec --command` / `-c` for one-shot remote commands), and the old standalone `ssh` and `rdp` commands are replaced by `connect --ssh` and `connect --rdp`. I updated the parser, shared option metadata, dispatcher, command contracts, help output, README command matrix, AGENTS command-surface rules, smoke coverage, and documentation-contract checks so the canonical selector set is now `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`, and value-taking options consistently accept both `--option=value` and `--option value` plus the equivalent short forms.
+
+I also finished the remaining contract and validation cleanup around the cutover. `resize --disk-size` now works with both spaced and inline value forms, the reduced `exec` entry contract is wired consistently through runtime and tests, and the automated sensitive-content path was narrowed to current-tree and current-commit auditing so local code-quality checks and commit hooks are not blocked by older already-reachable history while the full reachable-history audit remains available through a direct `tests/sensitive-content-check.ps1` run. The non-live validation chain passed with smoke, documentation-contract, PowerShell compatibility, code-quality, bash syntax, and release-doc checks.

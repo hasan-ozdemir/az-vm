@@ -11,7 +11,7 @@ function Invoke-VmRunCommandBlocks {
         [string]$CombinedShell = "powershell",
         [ValidateSet("continue","strict")]
         [string]$TaskOutcomeMode = "continue",
-        [ValidateSet("vm-init-task","exec-task")]
+        [ValidateSet("vm-init-task","task-run")]
         [string]$PerfTaskCategory = "vm-init-task"
     )
 

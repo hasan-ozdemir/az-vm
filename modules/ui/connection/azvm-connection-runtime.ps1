@@ -5,6 +5,20 @@ function Test-AzVmLocalWindowsHost {
     return ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT)
 }
 
+function Get-AzVmConnectionOperationDisplayText {
+    param(
+        [string]$OperationName
+    )
+
+    $operation = [string]$OperationName
+    $operation = $operation.Trim().ToLowerInvariant()
+    switch ($operation) {
+        'connect-ssh' { return 'connect --ssh' }
+        'connect-rdp' { return 'connect --rdp' }
+        default { return $operation }
+    }
+}
+
 # Handles Resolve-AzVmConnectionRoleName.
 function Resolve-AzVmConnectionRoleName {
     param(
@@ -61,9 +75,10 @@ function Assert-AzVmConnectionVmRunning {
         return
     }
 
-    $commandLabel = ([string]$OperationName).ToUpperInvariant()
+    $operationDisplay = Get-AzVmConnectionOperationDisplayText -OperationName $OperationName
+    $commandLabel = ([string]$operationDisplay).ToUpperInvariant()
     Throw-FriendlyError `
-        -Detail ("The {0} command cannot launch because VM '{1}' in resource group '{2}' is not running. {3}" -f $OperationName, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
+        -Detail ("The {0} command cannot launch because VM '{1}' in resource group '{2}' is not running. {3}" -f $operationDisplay, [string]$Snapshot.VmName, [string]$Snapshot.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $Snapshot)) `
         -Code 66 `
         -Summary ("{0} requires the VM to be running." -f $commandLabel) `
         -Hint ("Start the VM with 'az-vm do --vm-action=start --group={0} --vm-name={1}' and retry." -f [string]$Snapshot.ResourceGroup, [string]$Snapshot.VmName)
@@ -168,9 +183,10 @@ function Initialize-AzVmConnectionCommandContext {
         [string]$OperationName
     )
 
+    $operationDisplay = Get-AzVmConnectionOperationDisplayText -OperationName $OperationName
     if (-not (Test-AzVmLocalWindowsHost)) {
         Throw-FriendlyError `
-            -Detail ("The {0} command is only supported on Windows operator machines." -f $OperationName) `
+            -Detail ("The {0} command is only supported on Windows operator machines." -f $operationDisplay) `
             -Code 66 `
             -Summary "Local client launch is not supported on this operating system." `
             -Hint "Run this command from Windows."
@@ -184,9 +200,9 @@ function Initialize-AzVmConnectionCommandContext {
     if (-not [bool]$lifecycleWaitResult.Ready) {
         $failedSnapshot = $lifecycleWaitResult.Snapshot
         Throw-FriendlyError `
-            -Detail ("The {0} command cannot continue because VM '{1}' in resource group '{2}' did not return to provisioning succeeded. {3}" -f $OperationName, [string]$target.VmName, [string]$target.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $failedSnapshot)) `
+            -Detail ("The {0} command cannot continue because VM '{1}' in resource group '{2}' did not return to provisioning succeeded. {3}" -f $operationDisplay, [string]$target.VmName, [string]$target.ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $failedSnapshot)) `
             -Code 66 `
-            -Summary ("{0} requires a healthy VM provisioning state." -f ([string]$OperationName).ToUpperInvariant()) `
+            -Summary ("{0} requires a healthy VM provisioning state." -f ([string]$operationDisplay).ToUpperInvariant()) `
             -Hint "Wait for provisioning to recover, or inspect Azure activity logs if the automatic redeploy repair did not resolve the issue."
     }
 
@@ -227,7 +243,7 @@ function Initialize-AzVmConnectionCommandContext {
         Throw-FriendlyError `
             -Detail ("Neither FQDN nor public IP could be resolved for VM '{0}'." -f [string]$target.VmName) `
             -Code 66 `
-            -Summary ("{0} command could not resolve a connection host." -f $OperationName) `
+            -Summary ("{0} command could not resolve a connection host." -f $operationDisplay) `
             -Hint "Ensure the VM has a public endpoint and Azure can return VM runtime details."
     }
 
@@ -318,7 +334,7 @@ function Invoke-AzVmSshConnectivityTest {
         [hashtable]$Options
     )
 
-    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'ssh'
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'connect-ssh'
     $sshPort = Resolve-AzVmConnectionPortNumber -PortText ([string]$runtime.VmSshPort) -PortLabel 'SSH'
     $sshReachable = Wait-AzVmTcpPortReachable -HostName ([string]$runtime.ConnectionHost) -Port $sshPort -MaxAttempts 6 -DelaySeconds 5 -TimeoutSeconds 5 -Label 'ssh'
     if (-not $sshReachable) {
@@ -384,13 +400,13 @@ function Invoke-AzVmRdpConnectivityTest {
         [hashtable]$Options
     )
 
-    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'rdp'
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'connect-rdp'
     if (-not [string]::Equals(([string]$runtime.OsType).Trim(), 'Windows', [System.StringComparison]::OrdinalIgnoreCase)) {
         Throw-FriendlyError `
             -Detail ("VM '{0}' reports osType '{1}', so RDP launch is not supported." -f [string]$runtime.VmName, [string]$runtime.OsType) `
             -Code 66 `
-            -Summary "RDP command is only available for Windows VMs." `
-            -Hint "Use the ssh command for Linux VMs, or target a Windows VM."
+            -Summary "Connect --rdp is only available for Windows VMs." `
+            -Hint "Use az-vm connect --ssh for Linux VMs, or target a Windows VM."
     }
 
     $rdpPort = Resolve-AzVmConnectionPortNumber -PortText ([string]$runtime.VmRdpPort) -PortLabel 'RDP'

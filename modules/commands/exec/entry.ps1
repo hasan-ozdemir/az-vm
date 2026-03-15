@@ -3,105 +3,18 @@
 # Handles Invoke-AzVmExecCommand.
 function Invoke-AzVmExecCommand {
     param(
-        [hashtable]$Options,
-        [switch]$AutoMode,
-        [switch]$WindowsFlag,
-        [switch]$LinuxFlag,
-        [ValidateSet('continue','strict')]
-        [string]$TaskOutcomeModeOverride = ''
+        [hashtable]$Options
     )
 
-    $runtime = Initialize-AzVmExecCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
-    $context = $runtime.Context
-    $platform = [string]$runtime.Platform
-    $platformDefaults = $runtime.PlatformDefaults
-    $effectiveTaskOutcomeMode = [string]$runtime.TaskOutcomeMode
-    if (-not [string]::IsNullOrWhiteSpace([string]$TaskOutcomeModeOverride)) {
-        $effectiveTaskOutcomeMode = [string]$TaskOutcomeModeOverride
-    }
-
-    $hasInitTask = Test-AzVmCliOptionPresent -Options $Options -Name 'init-task'
-    $hasUpdateTask = Test-AzVmCliOptionPresent -Options $Options -Name 'update-task'
-    if ($hasInitTask -and $hasUpdateTask) {
-        Throw-FriendlyError `
-            -Detail "Both --init-task and --update-task were provided." `
-            -Code 61 `
-            -Summary "Only one task selector can be used at a time." `
-            -Hint "Use either --init-task=<task-number> or --update-task=<task-number>."
-    }
-
-    $hasTaskSelector = ($hasInitTask -or $hasUpdateTask)
-    if ($hasTaskSelector) {
-        $stage = if ($hasInitTask) { 'init' } else { 'update' }
-        $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.EffectiveConfigMap -OperationName 'exec'
-        $context.ResourceGroup = [string]$target.ResourceGroup
-        $context.VmName = [string]$target.VmName
-
-        if ($stage -eq 'init') {
-            $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmInitTaskDir) -Platform $platform -Stage 'init'
-            $tasks = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
-            $requested = Get-AzVmCliOptionText -Options $Options -Name 'init-task'
-            $selectedTask = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'init' -AutoMode:$AutoMode
-            $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
-            $runCommandResult = Invoke-VmRunCommandBlocks -ResourceGroup ([string]$context.ResourceGroup) -VmName ([string]$context.VmName) -CommandId ([string]$platformDefaults.RunCommandId) -TaskBlocks @($selectedTask) -CombinedShell $combinedShell -TaskOutcomeMode $effectiveTaskOutcomeMode -PerfTaskCategory "exec-task"
-            Write-Host ("Exec completed: init task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
-            return [pscustomobject]@{
-                Stage = 'init'
-                Task = $selectedTask
-                TaskOutcomeMode = $effectiveTaskOutcomeMode
-                Result = $runCommandResult
-            }
-        }
-
-        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$context.VmUpdateTaskDir) -Platform $platform -Stage 'update'
-        $tasks = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $context
-        $requested = Get-AzVmCliOptionText -Options $Options -Name 'update-task'
-        $selectedTask = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $requested -Stage 'update' -AutoMode:$AutoMode
-
-        $vmRuntimeDetails = Get-AzVmVmDetails -Context $context
-        $sshHost = [string]$vmRuntimeDetails.VmFqdn
-        if ([string]::IsNullOrWhiteSpace($sshHost)) {
-            $sshHost = [string]$vmRuntimeDetails.PublicIP
-        }
-        if ([string]::IsNullOrWhiteSpace($sshHost)) {
-            throw "Exec could not resolve VM SSH host (FQDN/Public IP)."
-        }
-
-        $sshTaskResult = Invoke-AzVmSshTaskBlocks `
-            -Platform $platform `
-            -RepoRoot (Get-AzVmRepoRoot) `
-            -SshHost $sshHost `
-            -SshUser ([string]$context.VmUser) `
-            -SshPassword ([string]$context.VmPass) `
-            -SshPort ([string]$context.SshPort) `
-            -AssistantUser ([string]$context.VmAssistantUser) `
-            -ResourceGroup ([string]$context.ResourceGroup) `
-            -VmName ([string]$context.VmName) `
-            -TaskBlocks @($selectedTask) `
-            -TaskOutcomeMode $effectiveTaskOutcomeMode `
-            -PerfTaskCategory 'exec-task' `
-            -SshMaxRetries 1 `
-            -SshTaskTimeoutSeconds ([int]$runtime.SshTaskTimeoutSeconds) `
-            -SshConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
-            -ConfiguredPySshClientPath ([string]$runtime.ConfiguredPySshClientPath)
-
-        Write-Host ("Exec completed: update task '{0}'." -f [string]$selectedTask.Name) -ForegroundColor Green
-        return [pscustomobject]@{
-            Stage = 'update'
-            Task = $selectedTask
-            TaskOutcomeMode = $effectiveTaskOutcomeMode
-            Result = $sshTaskResult
-        }
-    }
-
-    $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.EffectiveConfigMap -OperationName 'exec'
+    $runtime = Initialize-AzVmExecCommandRuntimeContext
+    $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.ConfigMap -OperationName 'exec'
     $selectedResourceGroup = [string]$target.ResourceGroup
     $selectedVmName = [string]$target.VmName
     $vmDetailContext = [ordered]@{
         ResourceGroup = $selectedResourceGroup
         VmName = $selectedVmName
-        AzLocation = [string]$context.AzLocation
-        SshPort = [string]$context.SshPort
+        AzLocation = ''
+        SshPort = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'VM_SSH_PORT' -DefaultValue (Get-AzVmDefaultSshPortText))
     }
 
     $vmRuntimeDetails = Get-AzVmVmDetails -Context $vmDetailContext
@@ -111,6 +24,23 @@ function Invoke-AzVmExecCommand {
     }
     if ([string]::IsNullOrWhiteSpace($sshHost)) {
         throw "Exec REPL could not resolve VM SSH host (FQDN/Public IP)."
+    }
+
+    $vmUser = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'VM_ADMIN_USER' -DefaultValue '')
+    $vmPass = [string](Get-ConfigValue -Config $runtime.ConfigMap -Key 'VM_ADMIN_PASS' -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace([string]$vmUser)) {
+        Throw-FriendlyError `
+            -Detail "VM admin user is missing for exec." `
+            -Code 61 `
+            -Summary "Exec requires VM admin credentials." `
+            -Hint "Set VM_ADMIN_USER in .env before using exec."
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$vmPass)) {
+        Throw-FriendlyError `
+            -Detail "VM admin password is missing for exec." `
+            -Code 61 `
+            -Summary "Exec requires VM admin credentials." `
+            -Hint "Set VM_ADMIN_PASS in .env before using exec."
     }
 
     $vmJson = az vm show -g $selectedResourceGroup -n $selectedVmName -o json --only-show-errors
@@ -125,15 +55,53 @@ function Invoke-AzVmExecCommand {
         -PySshPythonPath ([string]$pySsh.PythonPath) `
         -PySshClientPath ([string]$pySsh.ClientPath) `
         -HostName $sshHost `
-        -UserName ([string]$context.VmUser) `
-        -Password ([string]$context.VmPass) `
-        -Port ([string]$context.SshPort) `
+        -UserName $vmUser `
+        -Password $vmPass `
+        -Port ([string]$vmDetailContext.SshPort) `
         -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds)
     if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
         Write-Host ([string]$bootstrap.Output)
     }
 
-    Write-Host ("Interactive exec shell connected: {0}@{1}:{2} ({3})" -f [string]$context.VmUser, $sshHost, [string]$context.SshPort, $shell) -ForegroundColor Green
+    $commandText = [string](Get-AzVmCliOptionText -Options $Options -Name 'command')
+    if (-not [string]::IsNullOrWhiteSpace([string]$commandText)) {
+        $commandWatch = $null
+        if ($script:PerfMode) {
+            $commandWatch = [System.Diagnostics.Stopwatch]::StartNew()
+        }
+
+        $execArgs = @(
+            [string]$pySsh.ClientPath,
+            'exec',
+            '--host', [string]$sshHost,
+            '--port', [string]$vmDetailContext.SshPort,
+            '--user', $vmUser,
+            '--password', $vmPass,
+            '--timeout', [string]$runtime.SshConnectTimeoutSeconds,
+            '--command', [string]$commandText
+        )
+
+        & ([string]$pySsh.PythonPath) @execArgs
+        $commandExitCode = [int]$LASTEXITCODE
+
+        if ($null -ne $commandWatch -and $commandWatch.IsRunning) {
+            $commandWatch.Stop()
+            Write-AzVmPerfTiming -Category "exec" -Label "remote command" -Seconds $commandWatch.Elapsed.TotalSeconds
+        }
+
+        if ($commandExitCode -ne 0) {
+            Throw-FriendlyError `
+                -Detail ("Remote exec command ended with exit code {0}." -f $commandExitCode) `
+                -Code 61 `
+                -Summary "Remote exec command failed." `
+                -Hint "Review remote command output and retry. Ensure SSH access remains healthy on the VM."
+        }
+
+        Write-Host ("Exec completed on VM '{0}'." -f $selectedVmName) -ForegroundColor Green
+        return
+    }
+
+    Write-Host ("Interactive exec shell connected: {0}@{1}:{2} ({3})" -f $vmUser, $sshHost, [string]$vmDetailContext.SshPort, $shell) -ForegroundColor Green
     Write-Host "Type 'exit' in the remote shell to close the session." -ForegroundColor Cyan
 
     $shellWatch = $null
@@ -145,9 +113,9 @@ function Invoke-AzVmExecCommand {
         [string]$pySsh.ClientPath,
         "shell",
         "--host", [string]$sshHost,
-        "--port", [string]$context.SshPort,
-        "--user", [string]$context.VmUser,
-        "--password", [string]$context.VmPass,
+        "--port", [string]$vmDetailContext.SshPort,
+        "--user", $vmUser,
+        "--password", $vmPass,
         "--timeout", [string]$runtime.SshConnectTimeoutSeconds,
         "--reconnect-retries", "3",
         "--keepalive-seconds", "15",
@@ -159,7 +127,7 @@ function Invoke-AzVmExecCommand {
 
     if ($null -ne $shellWatch -and $shellWatch.IsRunning) {
         $shellWatch.Stop()
-        Write-AzVmPerfTiming -Category "exec-task" -Label "interactive shell session" -Seconds $shellWatch.Elapsed.TotalSeconds
+        Write-AzVmPerfTiming -Category "exec" -Label "interactive shell session" -Seconds $shellWatch.Elapsed.TotalSeconds
     }
 
     if ($shellExitCode -ne 0) {

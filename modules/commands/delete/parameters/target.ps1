@@ -1,7 +1,7 @@
 # 'target' option binding for 'delete'.
 
 function Get-AzVmDeleteTargetOptionSpecification {
-    return (New-AzVmCommandOptionSpecification -Name 'target' -Validate {
+    return (New-AzVmCommandOptionSpecification -Name 'target' -TakesValue -Validate {
         param([hashtable]$Options)
         $targetText = [string](Get-AzVmCliOptionText -Options $Options -Name 'target')
         $target = $targetText.Trim().ToLowerInvariant()

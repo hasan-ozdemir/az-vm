@@ -116,8 +116,8 @@ function Initialize-AzVmCommandRuntimeContext {
     }
 }
 
-# Handles Initialize-AzVmExecCommandRuntimeContext.
-function Initialize-AzVmExecCommandRuntimeContext {
+# Handles Initialize-AzVmTaskExecutionRuntimeContext.
+function Initialize-AzVmTaskExecutionRuntimeContext {
     param(
         [switch]$AutoMode,
         [switch]$WindowsFlag,

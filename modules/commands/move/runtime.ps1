@@ -324,11 +324,17 @@ function Invoke-AzVmMoveTargetHealthCheck {
         -ExpectedDiskSupportsHibernation:$ExpectedDiskSupportsHibernation `
         -ExpectedVmHibernationEnabled:$ExpectedVmHibernationEnabled
 
-    $execResult = Invoke-AzVmExecCommand `
-        -Options @{ group = $ResourceGroup; 'vm-name' = $VmName; 'update-task' = '10099' } `
+    $taskRuntime = Initialize-AzVmTaskExecutionRuntimeContext `
         -AutoMode:$true `
         -WindowsFlag:([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) `
-        -LinuxFlag:([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) `
+        -LinuxFlag:([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase))
+    $execResult = Invoke-AzVmTaskExecutionWithTarget `
+        -Runtime $taskRuntime `
+        -Options @{ group = $ResourceGroup; 'vm-name' = $VmName } `
+        -OperationName 'move' `
+        -Stage 'update' `
+        -Requested '10099' `
+        -AutoMode:$true `
         -TaskOutcomeModeOverride 'strict'
 
     $vmDetailContext = [ordered]@{

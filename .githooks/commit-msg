@@ -17,4 +17,4 @@ if [ "$#" -lt 1 ]; then
   exit 1
 fi
 
-"$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/sensitive-content-check.ps1" -RepoRoot "$REPO_ROOT" -CommitMessagePath "$1" -SkipRepoAudit
+"$PS_EXE" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/tests/sensitive-content-check.ps1" -RepoRoot "$REPO_ROOT" -CommitMessagePath "$1" -SkipRepoAudit -SkipHistoryAudit

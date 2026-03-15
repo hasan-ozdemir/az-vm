@@ -160,12 +160,14 @@ function Test-AzVmAzureTouchingCommand {
 
     if ([string]$CommandName -eq 'task') {
         return (
+            (Test-AzVmCliOptionPresent -Options $Options -Name 'run-vm-init') -or
+            (Test-AzVmCliOptionPresent -Options $Options -Name 'run-vm-update') -or
             (Test-AzVmCliOptionPresent -Options $Options -Name 'save-app-state') -or
             (Test-AzVmCliOptionPresent -Options $Options -Name 'restore-app-state')
         )
     }
 
-    return ([string]$CommandName -in @('create','update','configure','list','show','do','move','resize','set','exec','ssh','rdp','delete'))
+    return ([string]$CommandName -in @('create','update','configure','list','show','do','move','resize','set','exec','connect','delete'))
 }
 
 function Initialize-AzVmCommandSubscriptionState {

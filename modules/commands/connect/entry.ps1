@@ -1,23 +1,41 @@
-# RDP command entry.
+# Connect command entry.
 
-# Handles Invoke-AzVmRdpConnectCommand.
-function Invoke-AzVmRdpConnectCommand {
+function Invoke-AzVmConnectCommand {
     param(
         [hashtable]$Options
     )
+
+    $mode = Resolve-AzVmConnectMode -Options $Options
+    if ([string]::Equals($mode, 'ssh', [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-AzVmCliOptionPresent -Options $Options -Name 'test') {
+            Invoke-AzVmSshConnectivityTest -Options $Options
+            return
+        }
+
+        $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'connect-ssh'
+        $sshExePath = Resolve-AzVmLocalExecutablePath -Candidates @('ssh.exe', (Join-Path $env:SystemRoot 'System32\OpenSSH\ssh.exe')) -FriendlyName 'Windows OpenSSH'
+        $targetText = ("{0}@{1}" -f [string]$runtime.SelectedUserName, [string]$runtime.ConnectionHost)
+        $sshArgs = @('-p', [string]$runtime.VmSshPort, $targetText)
+
+        Write-Host ("Launching SSH client for VM '{0}' in group '{1}'..." -f [string]$runtime.VmName, [string]$runtime.ResourceGroup) -ForegroundColor Cyan
+        Write-Host ("SSH target: {0}" -f $targetText) -ForegroundColor DarkCyan
+        Write-Host "Password entry will appear in the external SSH console window." -ForegroundColor Yellow
+        Start-Process -FilePath $sshExePath -ArgumentList $sshArgs | Out-Null
+        return
+    }
 
     if (Test-AzVmCliOptionPresent -Options $Options -Name 'test') {
         Invoke-AzVmRdpConnectivityTest -Options $Options
         return
     }
 
-    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'rdp'
+    $runtime = Initialize-AzVmConnectionCommandContext -Options $Options -OperationName 'connect-rdp'
     if (-not [string]::Equals(([string]$runtime.OsType).Trim(), 'Windows', [System.StringComparison]::OrdinalIgnoreCase)) {
         Throw-FriendlyError `
             -Detail ("VM '{0}' reports osType '{1}', so RDP launch is not supported." -f [string]$runtime.VmName, [string]$runtime.OsType) `
             -Code 66 `
-            -Summary "RDP command is only available for Windows VMs." `
-            -Hint "Use the ssh command for Linux VMs, or target a Windows VM."
+            -Summary "Connect --rdp is only available for Windows VMs." `
+            -Hint "Use az-vm connect --ssh for Linux VMs, or target a Windows VM."
     }
 
     $cmdKeyPath = Resolve-AzVmLocalExecutablePath -Candidates @((Join-Path $env:SystemRoot 'System32\cmdkey.exe'), 'cmdkey.exe') -FriendlyName 'Windows Credential Manager'
@@ -33,7 +51,7 @@ function Invoke-AzVmRdpConnectCommand {
         Throw-FriendlyError `
             -Detail ("cmdkey failed while staging credentials for target '{0}' (exit={1})." -f $credentialTarget, $exitCode) `
             -Code 66 `
-            -Summary "RDP credential staging failed." `
+            -Summary "Connect --rdp credential staging failed." `
             -Hint "Verify local Windows credential manager access and retry."
     }
 

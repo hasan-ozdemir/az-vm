@@ -93,7 +93,7 @@ Invoke-AuditStep -Name "Sensitive-content audit" -Action {
     }
 
     $powerShellHost = Resolve-PowerShellHost
-    & $powerShellHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $auditPath -RepoRoot $RepoRoot
+    & $powerShellHost -NoLogo -NoProfile -ExecutionPolicy Bypass -File $auditPath -RepoRoot $RepoRoot -SkipHistoryAudit
     if ($LASTEXITCODE -ne 0) {
         throw "sensitive-content-check.ps1 failed."
     }

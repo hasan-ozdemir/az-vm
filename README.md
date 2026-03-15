@@ -41,7 +41,7 @@ At a glance:
   - [Move Regions And Clean Up Safely](#move-regions-and-clean-up-safely)
   - [Delete Only The Scope You Intend](#delete-only-the-scope-you-intend)
   - [Inspect And Control Power State](#inspect-and-control-power-state)
-  - [Connect With SSH Or RDP](#connect-with-ssh-or-rdp)
+  - [Connect To The VM](#connect-to-the-vm)
 - [Command Guide](#command-guide)
   - [Global Options](#global-options)
   - [`configure`](#configure)
@@ -52,8 +52,7 @@ At a glance:
   - [`do`](#do)
   - [`task`](#task)
   - [`exec`](#exec)
-  - [`ssh`](#ssh)
-  - [`rdp`](#rdp)
+  - [`connect`](#connect)
   - [`move`](#move)
   - [`resize`](#resize)
   - [`set`](#set)
@@ -63,7 +62,7 @@ At a glance:
   - [Catalog Ownership](#catalog-ownership)
   - [Task Naming Rules](#task-naming-rules)
   - [Timeouts, Priority, And Enable Flags](#timeouts-priority-and-enable-flags)
-  - [Direct Task Execution With `exec`](#direct-task-execution-with-exec)
+  - [Direct Task Execution With `task`](#direct-task-execution-with-task)
 - [Configuration Guide](#configuration-guide)
   - [Runtime Precedence](#runtime-precedence)
   - [High-Value `.env` Keys](#high-value-env-keys)
@@ -113,7 +112,7 @@ On the current Windows hero path, one successful `create` is designed to leave b
 ### Prerequisites
 - Windows host with PowerShell and the Azure CLI available.
 - Azure subscription access with permission to create, update, and delete compute and networking resources.
-- Azure CLI sign-in is strictly required for Azure-touching commands. Run `az login` before using `configure`, `create`, `update`, `list`, `show`, `do`, `move`, `resize`, `set`, `exec`, `ssh`, `rdp`, or `delete`.
+- Azure CLI sign-in is strictly required for Azure-touching commands. Run `az login` before using `configure`, `create`, `update`, `list`, `show`, `do`, `task --run-*`, `task --save-app-state`, `task --restore-app-state`, `connect`, `move`, `resize`, `set`, `exec`, or `delete`.
 - Local Git for the repo workflow and hook support.
 - Python available when the repo-managed pyssh helper is needed.
 
@@ -151,7 +150,7 @@ If you want the fastest safe path to value, use this order. The target outcome i
 2. Run `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>` or `.\az-vm.cmd create --auto --linux --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>`.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
 4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
-5. Run `.\az-vm.cmd ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd rdp --vm-name=<vm-name> --user=manager --test`.
+5. Run `.\az-vm.cmd connect --ssh --vm-name=<vm-name> --user=manager --test`; for Windows also run `.\az-vm.cmd connect --rdp --vm-name=<vm-name> --user=manager --test`.
 
 Representative PoC / PoE outcomes from the current repo shape:
 - Employee or knowledge-worker desktop: connect over RDP and land on a machine with browser, collaboration, storage, media, support, and accessibility tooling already staged, with desktop shortcuts and startup behavior already prepared.
@@ -165,7 +164,7 @@ az login
 .\az-vm.cmd configure
 .\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku> -s <subscription-guid>
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
-.\az-vm.cmd rdp --vm-name=<vm-name>
+.\az-vm.cmd connect --rdp --vm-name=<vm-name>
 ```
 
 ### Daily Operator Shortcuts
@@ -281,7 +280,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `--perf` | Most public commands | Prints timing metrics for the current command | Useful during profiling, acceptance, and long-running change windows. |
 | `--windows` | `create`, `update`, `exec`, `resize` | Forces the Windows platform path or validates Windows expectation | Use this when the target platform must be explicit. |
 | `--linux` | `create`, `update`, `exec`, `resize` | Forces the Linux platform path or validates Linux expectation | Use this when the target platform must be explicit. |
-| `-s`, `--subscription-id=<subscription-guid>` | All Azure-touching commands except `task` and `help` | Targets Azure operations to one subscription and persists CLI-provided subscription intent locally | `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`. |
+| `-s`, `--subscription-id=<subscription-guid>` | All Azure-touching commands plus `task --run-*` and `task --save/restore-app-state` | Targets Azure operations to one subscription and persists CLI-provided subscription intent locally | `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`. |
 | `-h`, `--help` | All public commands | Prints quick help or command-specific help | `-h`, `--help` are equivalent operator aliases. |
 
 ### Command Matrix
@@ -294,10 +293,9 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `list` | Print managed inventory by type | Azure-read-only | Inventory, targeting, quick visibility | Managed group/resource listings |
 | `show` | Print a full managed report | Azure-read-only | Health review, support handoff, release verification | Inventory and config dump |
 | `do` | Apply lifecycle or repair actions | Azure-mutating or read-only for `status` | Power-state control, reapply, hibernation flow | Target VM lifecycle action |
-| `task` | List discovered task inventory | Local/read-only | Understand task order, timeouts, disabled state | Visible task catalog |
-| `exec` | Run one task or open direct remote shell path | Azure-touching and guest-touching | Isolated diagnosis or targeted rerun | One direct task or shell session |
-| `ssh` | Launch or test SSH access | Azure-touching, local-client action | Linux or Windows SSH access | Direct SSH path |
-| `rdp` | Launch or test RDP access | Azure-touching, local-client action | Windows desktop access | Direct RDP path |
+| `task` | List discovered task inventory, run one task, or save/restore task app-state | Local/read-only for `--list`; Azure-touching for `--run-*` and app-state maintenance | Understand task order, rerun one task, or refresh one task payload | Visible task catalog or one isolated task/app-state action |
+| `connect` | Launch or test SSH/RDP access | Azure-touching, local-client action | Linux or Windows SSH access, or Windows desktop access | Direct client launch or connection test |
+| `exec` | Open direct remote shell path or run one remote command | Azure-touching and guest-touching | Interactive shell work or one-shot remote command execution | One direct shell or command result |
 | `move` | Move a managed VM to another region | Azure-mutating | Planned cutover or regional relocation | Health-gated regional move |
 | `resize` | Change VM SKU or expand OS disk | Azure-mutating | Compute sizing change or safe disk growth | Resized VM or grown OS disk |
 | `set` | Apply hibernation and desired nested virtualization state | Azure-mutating plus guest validation | Feature-state management | Updated feature intent and VM state |
@@ -356,7 +354,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` | `--vm-action=status` | Reads lifecycle state | Preflight and release checks | Fastest safety check before mutation. |
-| `.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>` | lifecycle action | Starts the VM | Connection prep | Use before `ssh` or `rdp`. |
+| `.\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>` | lifecycle action | Starts the VM | Connection prep | Use before `connect --ssh` or `connect --rdp`. |
 | `.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>` | `reapply` | Calls Azure reapply | Repair path | Good when provisioning succeeded but the instance needs Azure-side repair. |
 | `.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>` | `hibernate-stop` | Guest-triggered hibernation through SSH | Preserve guest state without Azure deallocation path | Requires the VM to be running first. |
 | `.\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>` | `hibernate-deallocate` | Azure hibernation-through-deallocation path | Platform-backed hibernation path | Use when the VM is configured for hibernation. |
@@ -368,6 +366,8 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd task --list --vm-init` | `--list`, `--vm-init` | Lists init tasks | Init audit | Shows real execution order. |
 | `.\az-vm.cmd task --list --vm-update --windows` | `--list`, `--vm-update`, `--windows` | Lists Windows update tasks | Update inspection | Good before isolated reruns. |
 | `.\az-vm.cmd task --list --disabled --vm-update --windows` | `--disabled` | Lists disabled tasks | Cleanup or contract review | Surfaces disabled reason and source. |
+| `.\az-vm.cmd task --run-vm-init 01 --group <resource-group> --vm-name <vm-name>` | `--run-vm-init`, target selectors | Runs one init task directly | Isolated bootstrap rerun | Uses Azure run-command against one managed VM. |
+| `.\az-vm.cmd task --run-vm-update 10002 --group <resource-group> --vm-name <vm-name> --windows` | `--run-vm-update`, platform | Runs one update task directly | Isolated guest fix | Uses the SSH task runner against one managed VM. |
 | `.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--save-app-state`, `--vm-update-task`, target selectors | Captures one live task-owned app-state payload into `.../update/app-states/<task-name>/app-state.zip` | Refreshing an operator-owned payload from the active VM | Cleanly skips when no capture coverage exists. |
 | `.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--restore-app-state`, `--vm-update-task`, target selectors | Replays one saved task-owned app-state payload to the active VM | Targeted state restore after reinstall or cleanup | Fails cleanly when the requested zip is missing or invalid. |
 
@@ -375,25 +375,20 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
-| `.\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>` | `--init-task` | Runs one init task directly | Isolated bootstrap rerun | Good for diagnosis without replaying the whole pipeline. |
-| `.\az-vm.cmd exec --update-task=10002 --group=<resource-group> --vm-name=<vm-name> --windows` | `--update-task`, platform | Runs one update task directly | Isolated guest fix | Useful after one failing task. |
-| `.\az-vm.cmd exec --linux` | platform only | Opens the interactive remote-shell path | Manual guest work | Interactive shell mode is used when no task selector is provided. |
+| `.\az-vm.cmd exec --group <resource-group> --vm-name <vm-name>` | target selectors | Opens the interactive remote-shell path | Manual guest work | Interactive shell mode is used when no `--command` is provided. |
+| `.\az-vm.cmd exec --command "Get-Date" --group <resource-group> --vm-name <vm-name>` | `--command`, target selectors | Runs one remote command over SSH | One-shot diagnosis or manual admin action | Uses PowerShell on Windows and bash on Linux. |
+| `.\az-vm.cmd exec -c "uname -a" --group <resource-group> --vm-name <vm-name>` | `-c`, target selectors | Same one-shot remote command path with short syntax | Operator convenience | `-c` and `--command` are equivalent. |
 
-#### `ssh`
-
-| Usage pattern | Key parameters | What it does | When to use it | Important notes |
-| --- | --- | --- | --- | --- |
-| `.\az-vm.cmd ssh --vm-name=<vm-name>` | `--vm-name` | Opens SSH with default targeting | Direct shell access | Only works when the VM is already running. |
-| `.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=assistant` | `--group`, `--vm-name`, `--user` | Opens SSH as a selected user | Role-specific shell access | Password entry remains local. |
-| `.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=manager --test` | `--test` | Runs a non-interactive SSH handshake check | Release and connection verification | Helpful before opening a real session. |
-
-#### `rdp`
+#### `connect`
 
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
-| `.\az-vm.cmd rdp --vm-name=<vm-name>` | `--vm-name` | Opens RDP with default targeting | Windows desktop access | Only works when the VM is already running. |
-| `.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant` | `--group`, `--vm-name`, `--user` | Opens RDP as a selected user | Assistant desktop access | Uses `cmdkey` before `mstsc.exe`. |
-| `.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=manager --test` | `--test` | Runs a non-interactive TCP reachability check | Release and connection verification | Useful before a full interactive desktop session. |
+| `.\az-vm.cmd connect --ssh --vm-name <vm-name>` | `--ssh`, `--vm-name` | Opens SSH with default targeting | Direct shell access | Only works when the VM is already running. |
+| `.\az-vm.cmd connect --ssh --group <resource-group> --vm-name <vm-name> --user assistant` | `--ssh`, `--group`, `--vm-name`, `--user` | Opens SSH as a selected user | Role-specific shell access | Password entry remains local. |
+| `.\az-vm.cmd connect --ssh --group <resource-group> --vm-name <vm-name> --user manager --test` | `--ssh`, `--test` | Runs a non-interactive SSH handshake check | Release and connection verification | Helpful before opening a real session. |
+| `.\az-vm.cmd connect --rdp --vm-name <vm-name>` | `--rdp`, `--vm-name` | Opens RDP with default targeting | Windows desktop access | Only works when the VM is already running. |
+| `.\az-vm.cmd connect --rdp --group <resource-group> --vm-name <vm-name> --user assistant` | `--rdp`, `--group`, `--vm-name`, `--user` | Opens RDP as a selected user | Assistant desktop access | Uses `cmdkey` before `mstsc.exe`. |
+| `.\az-vm.cmd connect --rdp --group <resource-group> --vm-name <vm-name> --user manager --test` | `--rdp`, `--test` | Runs a non-interactive TCP reachability check | Release and connection verification | Useful before a full interactive desktop session. |
 
 #### `move`
 
@@ -481,16 +476,17 @@ Practical outcomes:
 ### Run One Task Or Open A Remote Shell
 ```powershell
 .\az-vm.cmd task --list --vm-update --windows
-.\az-vm.cmd exec --update-task=10099 --group=<resource-group> --vm-name=<vm-name> --windows
-.\az-vm.cmd exec --init-task=01 --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name> --user=manager
-.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
+.\az-vm.cmd task --run-vm-update 10099 --group <resource-group> --vm-name <vm-name> --windows
+.\az-vm.cmd task --run-vm-init 01 --group <resource-group> --vm-name <vm-name>
+.\az-vm.cmd exec --group <resource-group> --vm-name <vm-name>
+.\az-vm.cmd connect --ssh --group <resource-group> --vm-name <vm-name> --user manager
+.\az-vm.cmd connect --rdp --group <resource-group> --vm-name <vm-name> --user assistant
 ```
 
 Practical outcomes:
 - support and development teams can rerun only the failing task instead of replaying the whole deployment
 - `task` exposes the real discovered inventory, including tracked and local-only tasks
-- `ssh` and `rdp` remain direct operator commands, with `--user=manager --test` available for non-interactive validation
+- `connect --ssh` and `connect --rdp` remain direct operator commands, with `--user=manager --test` available for non-interactive validation
 
 ### Resize Compute Or OS Disk In Place
 ```powershell
@@ -526,11 +522,11 @@ Practical outcomes:
 .\az-vm.cmd do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>
 ```
 
-### Connect With SSH Or RDP
+### Connect To The VM
 ```powershell
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd ssh --group=<resource-group> --vm-name=<vm-name>
-.\az-vm.cmd rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
+.\az-vm.cmd connect --ssh --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd connect --rdp --group=<resource-group> --vm-name=<vm-name> --user=assistant
 ```
 
 ## Command Guide
@@ -541,6 +537,7 @@ Practical outcomes:
 - `--windows`, `--linux`: explicit platform selection or platform expectation
 - `-s`, `--subscription-id=<subscription-guid>`: target Azure subscription for every Azure-touching command; successful CLI usage also writes `azure_subscription_id` into `.env`.
 - `-h`, `--help`: print quick or command-specific help
+- Canonical target selectors are `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`; value-taking options accept both `--option=value` and `--option value`, plus short-form `-x=value` and `-x value` when a short alias exists.
 
 Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `azure_subscription_id` -> active Azure CLI subscription.
 
@@ -597,35 +594,31 @@ Behavior notes:
 - `hibernate-stop` and `hibernate-deallocate` remain explicit, separate operator paths
 
 ### `task`
-Purpose: list discovered init/update tasks in runtime order.
+Purpose: list discovered init/update tasks in runtime order, run one task in isolation, or save/restore one task-owned app-state payload.
 
 Behavior notes:
 - shows tracked and local-only tasks together
+- `--run-vm-init` routes one init task through Azure run-command
+- `--run-vm-update` routes one update task through the SSH task runner
+- `--save-app-state` and `--restore-app-state` read or write `.../<stage>/app-states/<task-name>/app-state.zip`
 - useful before isolated reruns or when checking timeout and enable-state behavior
 
 ### `exec`
-Purpose: run one init task, one update task, or open the direct remote shell path.
+Purpose: open the direct remote shell path or run one one-shot remote command.
 
 Behavior notes:
-- ideal for isolated diagnosis
-- resolves only the selected VM plus task context
-- avoids replaying the entire orchestration chain when one task is the real problem
+- ideal for isolated diagnosis or manual guest work
+- resolves only the selected VM plus SSH context
+- `--command` / `-c` runs one remote PowerShell or bash snippet without opening the interactive shell
 
-### `ssh`
-Purpose: launch the local Windows OpenSSH client for a managed VM.
-
-Behavior notes:
-- only works when the VM is already running
-- `--test` performs a non-interactive SSH handshake instead of opening `ssh.exe`
-- politely suggests `az-vm do --vm-action=start` when the target is not running
-
-### `rdp`
-Purpose: launch the local Remote Desktop client for a managed Windows VM.
+### `connect`
+Purpose: launch the local Windows OpenSSH client or Remote Desktop client for a managed VM, or run connection tests without opening the client.
 
 Behavior notes:
 - only works when the VM is already running
-- `--test` performs a non-interactive reachability check instead of launching `mstsc.exe`
-- best paired with `do --vm-action=status` during preflight
+- requires exactly one transport flag: `--ssh` or `--rdp`
+- `--test` performs a non-interactive handshake or reachability check instead of opening the external client
+- `connect --rdp` is only valid for Windows VMs
 
 ### `move`
 Purpose: move a managed VM to another Azure region with a health-gated cutover.
@@ -695,8 +688,8 @@ Catalog JSON files are the source of truth for task ordering, enable state, and 
 - missing tracked entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
 - builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks
 
-### Direct Task Execution With `exec`
-Direct `exec --init-task` and `exec --update-task` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
+### Direct Task Execution With `task`
+Direct `task --run-vm-init` and `task --run-vm-update` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
 
 ## Configuration Guide
 
@@ -791,7 +784,7 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 - Auto `update` requires an explicit platform plus `--group` and `--vm-name`.
 - Auto mode prints the same review context, but it continues without waiting for checkpoint confirmation.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
-- Operator commands such as `show`, `do`, `ssh`, and `rdp` stay direct and do not require `--auto`.
+- Operator commands such as `show`, `do`, `connect`, and `exec` stay direct and do not require `--auto`.
 
 ### Naming And Managed Resource Rules
 - `VM_NAME` is the single naming seed.
@@ -857,14 +850,14 @@ Each task directory has a catalog JSON file that owns execution priority, enable
 - Prefer fixing config and rerunning the isolated failing command instead of restarting from zero immediately.
 
 ### Task Failures
-- Rerun the failing task with `exec`.
+- Rerun the failing task with `task --run-vm-init` or `task --run-vm-update`.
 - Check task catalog timeout and enabled state.
 - Vm-update app-state replay is post-task and plug-in based. If `.../update/app-states/<task-name>/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
 - Use `VM_TASK_OUTCOME_MODE=strict` when you want the stage to stop at the first failure.
 
 ### Connection Failures
 - Check `do --vm-action=status`.
-- Confirm the VM is running before `ssh` or `rdp`.
+- Confirm the VM is running before `connect --ssh` or `connect --rdp`.
 - Verify guest firewall, NSG exposure, and configured ports together.
 - If Azure keeps the VM in provisioning state `Updating`, the connection and direct-task runtime now performs one bounded `az vm redeploy` repair attempt before it gives up.
 
@@ -899,6 +892,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\az-vm-smoke-tests.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\bash-syntax-check.ps1
 ```
 
+`code-quality-check.ps1` and the local commit hook keep the current tree and the current commit message clean. Run `.\tests\sensitive-content-check.ps1` directly when you also want the full reachable-history commit-message audit.
+
 GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` workflow on pull requests, pushes to `main`, and manual dispatch. It covers static audit, an explicit documentation-contract check, PowerShell compatibility, Linux shell syntax, workflow linting, and the non-live smoke-contract suite.
 
 ### Live Release Acceptance
@@ -908,7 +903,7 @@ Before calling the repo or the active profile release-ready for a live publish, 
 - rerun `az-vm update --auto --windows --group=<resource-group> --vm-name=<vm-name> --perf` or `az-vm update --auto --linux --group=<resource-group> --vm-name=<vm-name> --perf` without changing the natural task order
 - confirm `az-vm show` prints the expected inventory while password-bearing `.env` values stay redacted
 - confirm `az-vm do --vm-action=status --vm-name=<vm-name>` reports the VM as started
-- confirm `az-vm ssh --vm-name=<vm-name> --user=manager --test`; for Windows also confirm `az-vm rdp --vm-name=<vm-name> --user=manager --test`
+- confirm `az-vm connect --ssh --vm-name=<vm-name> --user=manager --test`; for Windows also confirm `az-vm connect --rdp --vm-name=<vm-name> --user=manager --test`
 - when `VM_ENABLE_HIBERNATION=true`, validate the intended hibernation path explicitly and restore the VM to `started` before finishing the release gate
 - when `VM_ENABLE_NESTED_VIRTUALIZATION=true`, verify that outcome after the live run before declaring release readiness
 

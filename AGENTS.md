@@ -49,12 +49,17 @@ Use these sources in this order when maintaining the repo:
 - Keep command behavior deterministic across interactive and auto flows.
 
 ## Command-Surface Rules
-- Current public commands are: `configure`, `create`, `update`, `list`, `show`, `do`, `task`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`.
+- Current public commands are: `configure`, `create`, `update`, `list`, `show`, `do`, `task`, `connect`, `move`, `resize`, `set`, `exec`, `delete`, `help`.
 - Do not preserve removed commands or aliases once the repo has cut over to a new surface.
 - If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
 - When a public option is renamed, rename the owning parameter files, manifest entries, parser lookups, help text, README examples, and smoke coverage in the same change; do not leave retired parameter-module filenames behind.
 - Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.
 - Keep help output, README examples, and runtime messages aligned with the actual parser contract.
+- Canonical target selectors are `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`.
+- Value-taking options must accept both `--option=value` and `--option value`, plus short-form `-x=value` and `-x value` when a short alias exists.
+- `task` owns task inventory, isolated `vm-init` / `vm-update` task runs, and task-scoped app-state save/restore.
+- `exec` is SSH-only: it may open an interactive shell or run one remote command through `--command` / `-c`, but it must not own isolated task execution.
+- `connect` owns interactive/test connection flows and requires exactly one transport flag: `--ssh` or `--rdp`.
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
 - `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.

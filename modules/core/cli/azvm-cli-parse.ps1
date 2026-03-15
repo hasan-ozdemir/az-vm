@@ -25,6 +25,80 @@ function Convert-AzVmCliTextToTokens {
     )
 }
 
+function Get-AzVmCliOptionSpecificationLookup {
+    param(
+        [string]$CommandName,
+        [switch]$IncludeHelpFallback
+    )
+
+    $nameMap = @{}
+    $shortMap = @{}
+    $specs = @()
+    $resolvedCommand = [string]$CommandName
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedCommand)) {
+        $specs = @(Get-AzVmCommandOptionSpecifications -CommandName $resolvedCommand)
+    }
+    elseif ($IncludeHelpFallback) {
+        $specs = @(Get-AzVmHelpOptionSpecifications)
+    }
+
+    foreach ($spec in @($specs)) {
+        if ($null -eq $spec) {
+            continue
+        }
+
+        $name = [string]$spec.Name
+        if (-not [string]::IsNullOrWhiteSpace([string]$name)) {
+            $nameMap[$name.Trim().ToLowerInvariant()] = $spec
+        }
+
+        if ($spec.PSObject.Properties.Match('ShortNames').Count -gt 0) {
+            foreach ($shortName in @($spec.ShortNames)) {
+                $shortText = [string]$shortName
+                if ([string]::IsNullOrWhiteSpace([string]$shortText)) {
+                    continue
+                }
+                $shortMap[$shortText.Trim().ToLowerInvariant()] = $spec
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        NameMap = $nameMap
+        ShortMap = $shortMap
+        Specifications = @($specs)
+    }
+}
+
+function Test-AzVmCliOptionSpecificationTakesValue {
+    param(
+        [object]$Specification
+    )
+
+    if ($null -eq $Specification) {
+        return $false
+    }
+
+    if ($Specification.PSObject.Properties.Match('TakesValue').Count -gt 0) {
+        return [bool]$Specification.TakesValue
+    }
+
+    return $false
+}
+
+function Get-AzVmCliSupportedShortOptionSummary {
+    param(
+        [hashtable]$ShortMap
+    )
+
+    $shortNames = @($ShortMap.Keys | Sort-Object -Unique)
+    if (@($shortNames).Count -eq 0) {
+        return '(none)'
+    }
+
+    return (@($shortNames) | ForEach-Object { "-{0}" -f [string]$_ }) -join ', '
+}
+
 # Handles Parse-AzVmCliArguments.
 function Parse-AzVmCliArguments {
     param(
@@ -41,6 +115,19 @@ function Parse-AzVmCliArguments {
     $remaining += @($RawArgs)
 
     $validCommands = Get-AzVmValidCommandList
+    $candidateCommand = ''
+    if (-not [string]::IsNullOrWhiteSpace($rawCommand) -and -not $rawCommand.StartsWith('-')) {
+        $candidateCommand = $rawCommand.Trim().ToLowerInvariant()
+        if ($validCommands -notcontains $candidateCommand) {
+            Throw-FriendlyError `
+                -Detail ("Unknown command '{0}'." -f $rawCommand) `
+                -Code 2 `
+                -Summary "Unknown command." `
+                -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | connect | delete | help."
+        }
+    }
+
+    $optionSpecLookup = Get-AzVmCliOptionSpecificationLookup -CommandName $candidateCommand -IncludeHelpFallback:([string]::IsNullOrWhiteSpace([string]$candidateCommand))
 
     $normalizedArgs = @()
     for ($i = 0; $i -lt @($remaining).Count; $i++) {
@@ -54,84 +141,80 @@ function Parse-AzVmCliArguments {
             continue
         }
 
-        if ($rawArgText -match '^-g=(.+)$') {
-            $normalizedArgs += ("--group={0}" -f [string]$Matches[1])
-            continue
+        $shortMatch = [regex]::Match($rawArgText, '^-(?<name>[^=\s]+)(?:=(?<value>.*))?$')
+        if (-not $shortMatch.Success) {
+            Throw-FriendlyError `
+                -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
+                -Code 2 `
+                -Summary "Invalid option format." `
+                -Hint ("Supported short options: {0}. Use long options for others." -f (Get-AzVmCliSupportedShortOptionSummary -ShortMap $optionSpecLookup.ShortMap))
         }
-        if ($rawArgText -eq '-g') {
-            if (($i + 1) -ge @($remaining).Count) {
-                Throw-FriendlyError `
-                    -Detail "Option '-g' requires a value." `
-                    -Code 2 `
-                    -Summary "Invalid option format." `
-                    -Hint "Use '-g <resource-group>' or '--group=<resource-group>'."
+
+        $shortName = [string]$shortMatch.Groups['name'].Value
+        if ([string]::IsNullOrWhiteSpace([string]$shortName) -or $shortName.Length -ne 1) {
+            Throw-FriendlyError `
+                -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
+                -Code 2 `
+                -Summary "Invalid option format." `
+                -Hint ("Supported short options: {0}. Use long options for others." -f (Get-AzVmCliSupportedShortOptionSummary -ShortMap $optionSpecLookup.ShortMap))
+        }
+
+        $shortKey = $shortName.Trim().ToLowerInvariant()
+        if (-not $optionSpecLookup.ShortMap.ContainsKey($shortKey)) {
+            Throw-FriendlyError `
+                -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
+                -Code 2 `
+                -Summary "Invalid option format." `
+                -Hint ("Supported short options: {0}. Use long options for others." -f (Get-AzVmCliSupportedShortOptionSummary -ShortMap $optionSpecLookup.ShortMap))
+        }
+
+        $spec = $optionSpecLookup.ShortMap[$shortKey]
+        $optionName = [string]$spec.Name
+        $explicitValue = ''
+        if ($shortMatch.Groups['value'].Success) {
+            $explicitValue = [string]$shortMatch.Groups['value'].Value
+        }
+
+        if (Test-AzVmCliOptionSpecificationTakesValue -Specification $spec) {
+            $resolvedValue = $explicitValue
+            if ([string]::IsNullOrWhiteSpace([string]$resolvedValue)) {
+                if (($i + 1) -ge @($remaining).Count) {
+                    Throw-FriendlyError `
+                        -Detail ("Option '-{0}' requires a value." -f $shortKey) `
+                        -Code 2 `
+                        -Summary "Invalid option format." `
+                        -Hint ("Use '-{0} <value>' or '--{1}=<value>'." -f $shortKey, $optionName)
+                }
+
+                $nextArgText = if ($null -eq $remaining[$i + 1]) { '' } else { [string]$remaining[$i + 1] }
+                if ([string]::IsNullOrWhiteSpace([string]$nextArgText) -or $nextArgText.StartsWith('-')) {
+                    Throw-FriendlyError `
+                        -Detail ("Option '-{0}' requires a value." -f $shortKey) `
+                        -Code 2 `
+                        -Summary "Invalid option format." `
+                        -Hint ("Use '-{0} <value>' or '--{1}=<value>'." -f $shortKey, $optionName)
+                }
+
+                $resolvedValue = $nextArgText
+                $i++
             }
 
-            $nextArgText = if ($null -eq $remaining[$i + 1]) { '' } else { [string]$remaining[$i + 1] }
-            if ([string]::IsNullOrWhiteSpace([string]$nextArgText) -or $nextArgText.StartsWith('-')) {
-                Throw-FriendlyError `
-                    -Detail "Option '-g' requires a value." `
-                    -Code 2 `
-                    -Summary "Invalid option format." `
-                    -Hint "Use '-g <resource-group>' or '--group=<resource-group>'."
-            }
-
-            $normalizedArgs += ("--group={0}" -f $nextArgText)
-            $i++
+            $normalizedArgs += ("--{0}={1}" -f $optionName, $resolvedValue)
             continue
         }
 
-        if ($rawArgText -eq '-y') {
-            $normalizedArgs += "--yes=true"
+        if ($shortMatch.Groups['value'].Success) {
+            $normalizedArgs += ("--{0}={1}" -f $optionName, $explicitValue)
             continue
         }
 
-        if ($rawArgText -eq '-a') {
-            $normalizedArgs += "--auto=true"
-            continue
-        }
-
-        if ($rawArgText -eq '-h') {
-            $normalizedArgs += "--help=true"
-            continue
-        }
-        if ($rawArgText -match '^-s=(.+)$') {
-            $normalizedArgs += ("--subscription-id={0}" -f [string]$Matches[1])
-            continue
-        }
-        if ($rawArgText -eq '-s') {
-            if (($i + 1) -ge @($remaining).Count) {
-                Throw-FriendlyError `
-                    -Detail "Option '-s' requires a value." `
-                    -Code 2 `
-                    -Summary "Invalid option format." `
-                    -Hint "Use '-s <subscription-guid>' or '--subscription-id=<subscription-guid>'."
-            }
-
-            $nextArgText = if ($null -eq $remaining[$i + 1]) { '' } else { [string]$remaining[$i + 1] }
-            if ([string]::IsNullOrWhiteSpace([string]$nextArgText) -or $nextArgText.StartsWith('-')) {
-                Throw-FriendlyError `
-                    -Detail "Option '-s' requires a value." `
-                    -Code 2 `
-                    -Summary "Invalid option format." `
-                    -Hint "Use '-s <subscription-guid>' or '--subscription-id=<subscription-guid>'."
-            }
-
-            $normalizedArgs += ("--subscription-id={0}" -f $nextArgText)
-            $i++
-            continue
-        }
-
-        Throw-FriendlyError `
-            -Detail ("Unsupported short option format '{0}'." -f $rawArgText) `
-            -Code 2 `
-            -Summary "Invalid option format." `
-            -Hint "Supported short options: -g, -s, -y, -a, -h. Use long options for others."
+        $normalizedArgs += ("--{0}=true" -f $optionName)
     }
 
     $options = @{}
     $positionals = @()
-    foreach ($arg in @($normalizedArgs)) {
+    for ($i = 0; $i -lt @($normalizedArgs).Count; $i++) {
+        $arg = $normalizedArgs[$i]
         $text = if ($null -eq $arg) { '' } else { [string]$arg }
         if ([string]::IsNullOrWhiteSpace($text)) {
             continue
@@ -149,6 +232,19 @@ function Parse-AzVmCliArguments {
             if ($eqIndex -ge 0) {
                 $name = $body.Substring(0, $eqIndex)
                 $value = $body.Substring($eqIndex + 1)
+            }
+            else {
+                $nameKeyCandidate = $name.Trim().ToLowerInvariant()
+                if ($optionSpecLookup.NameMap.ContainsKey($nameKeyCandidate)) {
+                    $nameSpec = $optionSpecLookup.NameMap[$nameKeyCandidate]
+                    if ((Test-AzVmCliOptionSpecificationTakesValue -Specification $nameSpec) -and (($i + 1) -lt @($normalizedArgs).Count)) {
+                        $nextArgText = if ($null -eq $normalizedArgs[$i + 1]) { '' } else { [string]$normalizedArgs[$i + 1] }
+                        if (-not [string]::IsNullOrWhiteSpace([string]$nextArgText) -and -not $nextArgText.StartsWith('-')) {
+                            $value = $nextArgText
+                            $i++
+                        }
+                    }
+                }
             }
 
             $nameKey = [string]$name
@@ -173,7 +269,7 @@ function Parse-AzVmCliArguments {
                 -Detail ("Unknown command '{0}'." -f $rawCommand) `
                 -Code 2 `
                 -Summary "Unknown command." `
-                -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | ssh | rdp | delete | help."
+                -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | connect | delete | help."
         }
     }
     elseif ($options.ContainsKey('help')) {
@@ -187,7 +283,7 @@ function Parse-AzVmCliArguments {
             -Detail "No command was provided." `
             -Code 2 `
             -Summary "Command is required." `
-            -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | ssh | rdp | delete | help. Example: az-vm create --auto"
+            -Hint "Use one command: create | update | configure | list | show | do | task | move | resize | set | exec | connect | delete | help. Example: az-vm create --auto"
     }
 
     if ($command -eq 'help') {
@@ -218,7 +314,7 @@ function Parse-AzVmCliArguments {
                 -Detail ("Unexpected positional argument(s): {0}" -f ($positionals -join ', ')) `
                 -Code 2 `
                 -Summary "Unexpected arguments were provided." `
-                -Hint "Use only --option or --option=value syntax after the command."
+                -Hint "Use only supported options after the command."
         }
     }
 

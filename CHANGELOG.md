@@ -3,6 +3,27 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.314] - 2026-03-15
+
+### Added
+- Added `connect` as the new public connection command, with explicit `--ssh` and `--rdp` transport flags plus `--test` support for both transport paths.
+- Added `task --run-vm-init` and `task --run-vm-update` so isolated guest-task execution now lives under `task` instead of `exec`.
+- Added shared `--command` / `-c` parameter support for `exec`, and expanded the option-spec metadata so value-taking options can support both `--option=value` and `--option value` plus short-form equivalents.
+
+### Changed
+- Reworked `exec` into an SSH-only shell surface: it now either opens the interactive remote shell or runs one remote command snippet, and no longer owns isolated task execution.
+- Standardized the public target selector contract around `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`, and updated AGENTS, README, help output, and parser behavior to keep that contract aligned.
+- Updated the runtime manifest, parser, dispatcher, help topics, command matrix, and smoke/docs coverage so the new public surface is now `configure`, `create`, `update`, `list`, `show`, `do`, `task`, `connect`, `move`, `resize`, `set`, `exec`, `delete`, `help`.
+
+### Fixed
+- Fixed the `resize --disk-size` option metadata so the generic parser now accepts `--disk-size <value>` in addition to `--disk-size=<value>`.
+- Fixed the dispatcher and smoke/runtime coverage so `exec` now uses its reduced one-parameter entry contract consistently after the task-run cutover.
+- Fixed remaining docs-contract gaps so README and AGENTS now reject the retired standalone `ssh` / `rdp` command surface and the retired `exec --init-task` / `exec --update-task` examples.
+- Fixed the automated sensitive-content gate flow so local code-quality and commit-message checks stay focused on the current tree and the current commit message, while the full reachable-history audit remains available through a direct `tests\sensitive-content-check.ps1` run.
+
+### Tests
+- Revalidated the cutover with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.15.313] - 2026-03-15
 
 ### Added

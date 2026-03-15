@@ -115,7 +115,7 @@ $preCommitText = Get-Content -LiteralPath $preCommitPath -Raw
 $commitMsgText = Get-Content -LiteralPath $commitMsgPath -Raw
 $workflowText = Get-Content -LiteralPath $workflowPath -Raw
 
-$requiredCommandTokens = @('configure','create','update','list','show','do','task','exec','ssh','rdp','move','resize','set','delete','help')
+$requiredCommandTokens = @('configure','create','update','list','show','do','task','connect','exec','move','resize','set','delete','help')
 foreach ($token in $requiredCommandTokens) {
     $commandNeedle = ([string][char]96) + $token + ([string][char]96)
     Assert-True -Condition ($readmeText.Contains($commandNeedle)) -Message ("README.md must mention command '{0}'." -f $token)
@@ -221,6 +221,11 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('All other substantiv
 Assert-True -Condition ($readmeText -match [regex]::Escape('Task-only constants should stay in the owning task script')) -Message 'README.md must explain the task-local configuration policy.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('task --save-app-state --vm-update-task=115')) -Message 'README.md must include the task save-app-state example.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('task --restore-app-state --vm-update-task=115')) -Message 'README.md must include the task restore-app-state example.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('task --run-vm-init 01')) -Message 'README.md must include the task run-vm-init example.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('task --run-vm-update 10002')) -Message 'README.md must include the task run-vm-update example.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('connect --ssh')) -Message 'README.md must document connect --ssh.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('connect --rdp')) -Message 'README.md must document connect --rdp.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('exec --command')) -Message 'README.md must document exec --command.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('company_web_address')) -Message 'README.md must document company_web_address.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('company_email_address')) -Message 'README.md must document company_email_address.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('if left blank, az-vm derives it from the `employee_email_address` local-part plus `-vm`')) -Message 'README.md must document the default VM name derivation rule.'
@@ -299,6 +304,13 @@ foreach ($legacyToken in $legacyTokens) {
 Assert-True -Condition (-not ($readmeText -match [regex]::Escape('### `group`'))) -Message 'README.md must not document the removed group command.'
 Assert-True -Condition (-not ($readmeText -match [regex]::Escape('.\az-vm.cmd group'))) -Message 'README.md must not keep removed group command examples.'
 Assert-True -Condition (-not ($agentsText -match [regex]::Escape('Current public commands are: `configure`, `create`, `update`, `group`'))) -Message 'AGENTS.md must not keep the removed group command in the public command list.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('### `ssh`'))) -Message 'README.md must not document ssh as a standalone command.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('### `rdp`'))) -Message 'README.md must not document rdp as a standalone command.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('.\az-vm.cmd ssh'))) -Message 'README.md must not keep retired ssh command examples.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('.\az-vm.cmd rdp'))) -Message 'README.md must not keep retired rdp command examples.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('exec --init-task'))) -Message 'README.md must not keep retired exec --init-task examples.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('exec --update-task'))) -Message 'README.md must not keep retired exec --update-task examples.'
+Assert-True -Condition (-not ($agentsText -match [regex]::Escape('Current public commands are: `configure`, `create`, `update`, `list`, `show`, `do`, `task`, `exec`, `ssh`, `rdp`, `move`, `resize`, `set`, `delete`, `help`'))) -Message 'AGENTS.md must not keep ssh or rdp in the current public command list.'
 
 $oldHookInstallerPattern = [regex]::Escape('install-git-hooks.ps1')
 Assert-True -Condition (-not ($readmeText -match $oldHookInstallerPattern)) -Message 'README.md must not mention install-git-hooks.ps1.'

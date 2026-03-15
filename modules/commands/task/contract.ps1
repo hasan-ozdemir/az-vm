@@ -7,6 +7,8 @@ function Get-AzVmTaskOptionSpecifications {
         (Get-AzVmTaskListOptionSpecification),
         (Get-AzVmTaskSaveAppStateOptionSpecification),
         (Get-AzVmTaskRestoreAppStateOptionSpecification),
+        (Get-AzVmTaskRunVmInitOptionSpecification),
+        (Get-AzVmTaskRunVmUpdateOptionSpecification),
         (Get-AzVmTaskVmInitOptionSpecification),
         (Get-AzVmTaskVmUpdateOptionSpecification),
         (Get-AzVmTaskVmInitTaskOptionSpecification),

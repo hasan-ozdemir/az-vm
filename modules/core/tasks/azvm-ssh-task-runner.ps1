@@ -37,7 +37,7 @@ function Invoke-AzVmSshTaskBlocks {
         [object[]]$TaskBlocks,
         [ValidateSet('continue','strict')]
         [string]$TaskOutcomeMode = 'continue',
-        [ValidateSet('vm-update-task','exec-task')]
+        [ValidateSet('vm-update-task','task-run')]
         [string]$PerfTaskCategory = 'vm-update-task',
         [int]$SshMaxRetries = 3,
         [int]$SshTaskTimeoutSeconds = 180,

@@ -63,7 +63,26 @@ function Invoke-AzVmTaskCommand {
         }
     }
 
-    $runtime = Initialize-AzVmExecCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    $runtime = Initialize-AzVmTaskExecutionRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag
+    if ([string]::Equals($mode, 'run-vm-init', [System.StringComparison]::OrdinalIgnoreCase) -or
+        [string]::Equals($mode, 'run-vm-update', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $runSelection = Resolve-AzVmTaskRunSelection -Options $Options
+        $runResult = Invoke-AzVmTaskExecutionWithTarget `
+            -Runtime $runtime `
+            -Options $Options `
+            -OperationName 'task' `
+            -Stage ([string]$runSelection.Stage) `
+            -Requested ([string]$runSelection.Requested) `
+            -AutoMode:$AutoMode
+        Write-Host ("Task completed: {0} task '{1}'." -f [string]$runResult.Stage, [string]$runResult.Task.Name) -ForegroundColor Green
+        return [pscustomobject]@{
+            Mode = 'run'
+            Stage = [string]$runResult.Stage
+            Task = $runResult.Task
+            Result = $runResult.Result
+        }
+    }
+
     $context = $runtime.Context
     $platform = [string]$runtime.Platform
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.EffectiveConfigMap -OperationName 'task'

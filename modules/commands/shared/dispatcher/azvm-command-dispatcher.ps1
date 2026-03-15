@@ -101,19 +101,13 @@ function Invoke-AzVmCommandDispatcher {
             'exec' {
                 $script:UpdateMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmExecCommand -Options $Options -AutoMode:$script:AutoMode -WindowsFlag:$windowsFlag -LinuxFlag:$linuxFlag
+                Invoke-AzVmExecCommand -Options $Options
                 return
             }
-            'ssh' {
+            'connect' {
                 $script:UpdateMode = $false
                 $script:ExecutionMode = 'default'
-                Invoke-AzVmSshConnectCommand -Options $Options
-                return
-            }
-            'rdp' {
-                $script:UpdateMode = $false
-                $script:ExecutionMode = 'default'
-                Invoke-AzVmRdpConnectCommand -Options $Options
+                Invoke-AzVmConnectCommand -Options $Options
                 return
             }
             'delete' {
@@ -123,7 +117,7 @@ function Invoke-AzVmCommandDispatcher {
                 return
             }
             default {
-                Throw-FriendlyError -Detail ("Unknown command '{0}'." -f $CommandName) -Code 2 -Summary "Unknown command." -Hint "Use one command: create | update | configure | list | show | do | task | exec | ssh | rdp | move | resize | set | delete | help."
+                Throw-FriendlyError -Detail ("Unknown command '{0}'." -f $CommandName) -Code 2 -Summary "Unknown command." -Hint "Use one command: create | update | configure | list | show | do | task | exec | connect | move | resize | set | delete | help."
             }
         }
     }

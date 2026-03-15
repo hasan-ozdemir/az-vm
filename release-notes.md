@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.314 - 2026-03-15
+
+### Summary
+This release completes the CLI surface cutover that separates task execution, direct shell execution, and user-facing connection flows cleanly. `az-vm task` now owns isolated `vm-init` and `vm-update` task runs, `az-vm exec` is now only the SSH shell/remote-command surface, and the old standalone `ssh` and `rdp` commands are replaced by one explicit `az-vm connect --ssh|--rdp` contract. The same pass also standardizes target selectors on `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`, and tightens parser/help/docs alignment so value-taking options consistently accept both `--option=value` and `--option value`.
+
+### Highlights
+- Added `task --run-vm-init` and `task --run-vm-update`, moving isolated task execution out of `exec` and into the command that already owns task inventory and task app-state maintenance.
+- Added the new `connect` command so SSH and RDP launch/test behavior now lives under one explicit transport-selected surface: `connect --ssh` or `connect --rdp`.
+- Reduced `exec` to two deliberate modes only: bare `exec` for the interactive SSH shell and `exec --command` / `-c` for one-shot remote commands.
+- Standardized the canonical selector names and option-shape handling across the app, then updated help, README, AGENTS, and smoke/docs contract coverage to remove the retired public forms in the same cutover.
+- Kept the full reachable-history sensitive-content audit available through `tests\sensitive-content-check.ps1`, while focusing automated local gate and commit-message checks on the current tree and the current commit message.
+
 ## Release 2026.3.15.313 - 2026-03-15
 
 ### Summary

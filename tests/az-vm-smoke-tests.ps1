@@ -429,25 +429,31 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedConfigureShortHelp = Parse-AzVmCliArguments -CommandToken "configure" -RawArgs @("-h")
     Assert-True -Condition ([string]$parsedConfigureShortHelp.Command -eq "configure") -Message "Configure command with -h parse failed."
 
-    $parsedSshHelp = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("--help")
-    Assert-True -Condition ([string]$parsedSshHelp.Command -eq "ssh") -Message "SSH command with --help parse failed."
+    $parsedConnectHelp = Parse-AzVmCliArguments -CommandToken "connect" -RawArgs @("--help")
+    Assert-True -Condition ([string]$parsedConnectHelp.Command -eq "connect") -Message "Connect command with --help parse failed."
 
-    $parsedSshShortHelp = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("-h")
-    Assert-True -Condition ([string]$parsedSshShortHelp.Command -eq "ssh") -Message "SSH command with -h parse failed."
+    $parsedConnectShortHelp = Parse-AzVmCliArguments -CommandToken "connect" -RawArgs @("-h")
+    Assert-True -Condition ([string]$parsedConnectShortHelp.Command -eq "connect") -Message "Connect command with -h parse failed."
 
-    $parsedSshTest = Parse-AzVmCliArguments -CommandToken "ssh" -RawArgs @("--test")
-    Assert-True -Condition ([string]$parsedSshTest.Command -eq "ssh") -Message "SSH command with --test parse failed."
-    Assert-True -Condition ($parsedSshTest.Options.ContainsKey("test")) -Message "SSH command --test option was not captured."
+    $parsedConnectSshTest = Parse-AzVmCliArguments -CommandToken "connect" -RawArgs @("--ssh", "--test")
+    Assert-True -Condition ([string]$parsedConnectSshTest.Command -eq "connect") -Message "Connect --ssh parse failed."
+    Assert-True -Condition ($parsedConnectSshTest.Options.ContainsKey("ssh")) -Message "Connect --ssh option was not captured."
+    Assert-True -Condition ($parsedConnectSshTest.Options.ContainsKey("test")) -Message "Connect --test option was not captured."
 
-    $parsedRdpHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--help")
-    Assert-True -Condition ([string]$parsedRdpHelp.Command -eq "rdp") -Message "RDP command with --help parse failed."
+    $parsedConnectRdpTest = Parse-AzVmCliArguments -CommandToken "connect" -RawArgs @("--rdp", "--test")
+    Assert-True -Condition ($parsedConnectRdpTest.Options.ContainsKey("rdp")) -Message "Connect --rdp option was not captured."
 
-    $parsedRdpShortHelp = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("-h")
-    Assert-True -Condition ([string]$parsedRdpShortHelp.Command -eq "rdp") -Message "RDP command with -h parse failed."
+    $parsedTaskRunInit = Parse-AzVmCliArguments -CommandToken "task" -RawArgs @("--run-vm-init", "01")
+    Assert-True -Condition ([string]$parsedTaskRunInit.Options['run-vm-init'] -eq '01') -Message "Task --run-vm-init <value> parse failed."
 
-    $parsedRdpTest = Parse-AzVmCliArguments -CommandToken "rdp" -RawArgs @("--test")
-    Assert-True -Condition ([string]$parsedRdpTest.Command -eq "rdp") -Message "RDP command with --test parse failed."
-    Assert-True -Condition ($parsedRdpTest.Options.ContainsKey("test")) -Message "RDP command --test option was not captured."
+    $parsedTaskRunUpdate = Parse-AzVmCliArguments -CommandToken "task" -RawArgs @("--run-vm-update=10002")
+    Assert-True -Condition ([string]$parsedTaskRunUpdate.Options['run-vm-update'] -eq '10002') -Message "Task --run-vm-update=value parse failed."
+
+    $parsedExecCommand = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("--command", "Get-Date")
+    Assert-True -Condition ([string]$parsedExecCommand.Options['command'] -eq 'Get-Date') -Message "Exec --command <value> parse failed."
+
+    $parsedExecShortCommand = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("-c", "Get-Date")
+    Assert-True -Condition ([string]$parsedExecShortCommand.Options['command'] -eq 'Get-Date') -Message "Exec -c <value> parse failed."
 
     $parsedDoHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedDoHelp.Command -eq "do") -Message "Do command with --help parse failed."
@@ -471,6 +477,17 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
 
     $parsedSubscriptionInline = Parse-AzVmCliArguments -CommandToken "show" -RawArgs @("-s=22222222-2222-2222-2222-222222222222")
     Assert-True -Condition ([string]$parsedSubscriptionInline.Options['subscription-id'] -eq '22222222-2222-2222-2222-222222222222') -Message "Inline -s=value must normalize into subscription-id."
+
+    $parsedConnectShortSelectors = Parse-AzVmCliArguments -CommandToken "connect" -RawArgs @("--ssh", "-g", "rg-samplevm-ate1-g1", "-v", "samplevm", "-s", "33333333-3333-3333-3333-333333333333")
+    Assert-True -Condition ([string]$parsedConnectShortSelectors.Options['group'] -eq 'rg-samplevm-ate1-g1') -Message "Short -g must normalize into group."
+    Assert-True -Condition ([string]$parsedConnectShortSelectors.Options['vm-name'] -eq 'samplevm') -Message "Short -v must normalize into vm-name."
+    Assert-True -Condition ([string]$parsedConnectShortSelectors.Options['subscription-id'] -eq '33333333-3333-3333-3333-333333333333') -Message "Short -s must normalize into subscription-id for connect."
+
+    $parsedResizeDiskSize = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("--group", "rg-samplevm-ate1-g1", "--vm-name", "samplevm", "--disk-size", "196gb", "--expand")
+    Assert-True -Condition ([string]$parsedResizeDiskSize.Options['group'] -eq 'rg-samplevm-ate1-g1') -Message "Resize --group <value> parse failed."
+    Assert-True -Condition ([string]$parsedResizeDiskSize.Options['vm-name'] -eq 'samplevm') -Message "Resize --vm-name <value> parse failed."
+    Assert-True -Condition ([string]$parsedResizeDiskSize.Options['disk-size'] -eq '196gb') -Message "Resize --disk-size <value> parse failed."
+    Assert-True -Condition ($parsedResizeDiskSize.Options.ContainsKey('expand')) -Message "Resize --expand option was not captured."
 }
 
 Invoke-Test -Name "Task catalog fallback defaults" -Action {
@@ -531,16 +548,15 @@ Invoke-Test -Name "CLI option assertions allow command help" -Action {
     Assert-AzVmCommandOptions -CommandName "resize" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "set" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "exec" -Options @{ help = $true }
-    Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ help = $true }
-    Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ help = $true }
+    Assert-AzVmCommandOptions -CommandName "connect" -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName "delete" -Options @{ help = $true }
 }
 
-Invoke-Test -Name "SSH and RDP commands accept automated test mode" -Action {
-    Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ test = $true }
-    Assert-AzVmCommandOptions -CommandName "ssh" -Options @{ 'vm-name' = 'samplevm'; user = 'manager'; test = $true }
-    Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ test = $true }
-    Assert-AzVmCommandOptions -CommandName "rdp" -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; user = 'assistant'; test = $true }
+Invoke-Test -Name "Connect command accepts SSH and RDP test mode" -Action {
+    Assert-AzVmCommandOptions -CommandName "connect" -Options @{ ssh = $true; test = $true }
+    Assert-AzVmCommandOptions -CommandName "connect" -Options @{ ssh = $true; 'vm-name' = 'samplevm'; user = 'manager'; test = $true }
+    Assert-AzVmCommandOptions -CommandName "connect" -Options @{ rdp = $true; test = $true }
+    Assert-AzVmCommandOptions -CommandName "connect" -Options @{ rdp = $true; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; user = 'assistant'; test = $true }
 }
 
 Invoke-Test -Name "Create and update accept vm-name override" -Action {
@@ -568,15 +584,26 @@ Invoke-Test -Name "Azure-touching commands accept subscription-id and local-only
         @{ Command = 'resize'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'set'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'exec'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
-        @{ Command = 'ssh'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
-        @{ Command = 'rdp'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
+        @{ Command = 'connect'; Options = @{ ssh = $true; 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'delete'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111'; target = 'vm' } }
     )
     foreach ($case in @($commandOptionCases)) {
         Assert-AzVmCommandOptions -CommandName ([string]$case.Command) -Options ([hashtable]$case.Options)
     }
 
-    foreach ($commandName in @('task','help')) {
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ 'run-vm-update' = '10002'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ 'save-app-state' = $true; 'vm-update-task' = '115'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+
+    $taskListSubscriptionThrew = $false
+    try {
+        Assert-AzVmTaskCommandOptionScope -Mode 'list' -Options @{ list = $true; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    }
+    catch {
+        $taskListSubscriptionThrew = $true
+    }
+    Assert-True -Condition $taskListSubscriptionThrew -Message "Task --list must reject subscription-id."
+
+    foreach ($commandName in @('help')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName $commandName -Options $subscriptionOptions
@@ -1888,9 +1915,10 @@ Invoke-Test -Name "Resize command accepts disk-size and disk intent flags" -Acti
     Assert-AzVmCommandOptions -CommandName 'resize' -Options @{ 'vm-name' = 'samplevm'; group = 'rg-samplevm-ate1-g1'; 'disk-size' = '64gb'; shrink = $true; linux = $true }
 }
 
-Invoke-Test -Name "Exec command accepts vm-name for direct task targeting" -Action {
-    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'init-task' = '01'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
-    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ 'update-task' = '28'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
+Invoke-Test -Name "Task run and exec command accept the direct target contract" -Action {
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ 'run-vm-init' = '01'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'task' -Options @{ 'run-vm-update' = '28'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true }
+    Assert-AzVmCommandOptions -CommandName 'exec' -Options @{ command = 'Get-Date'; group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm' }
 }
 
 Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
@@ -1902,11 +1930,22 @@ Invoke-Test -Name "Do command accepts vm-name and valid vm-action" -Action {
     Assert-AzVmCommandOptions -CommandName 'do' -Options @{ 'vm-action' = '' }
 }
 
-Invoke-Test -Name "Move, Set, Resize, Do, SSH, and RDP reject legacy vm option" -Action {
-    foreach ($commandName in @('move','set','resize','do','ssh','rdp')) {
+Invoke-Test -Name "Target-requiring commands reject legacy vm option" -Action {
+    foreach ($commandName in @('move','set','resize','do','connect','exec','task')) {
         $threw = $false
         try {
-            Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'samplevm' }
+            if ($commandName -eq 'connect') {
+                Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'samplevm'; ssh = $true }
+            }
+            elseif ($commandName -eq 'task') {
+                Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'samplevm'; 'run-vm-update' = '10002' }
+            }
+            elseif ($commandName -eq 'exec') {
+                Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'samplevm'; command = 'Get-Date' }
+            }
+            else {
+                Assert-AzVmCommandOptions -CommandName $commandName -Options @{ vm = 'samplevm' }
+            }
         }
         catch {
             $threw = $true
@@ -1933,9 +1972,9 @@ Invoke-Test -Name "Do help and README document reapply" -Action {
     $readmeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'README.md') -Raw)
 
     Assert-True -Condition ($helpText -match [regex]::Escape('--vm-action=<status|start|restart|stop|deallocate|hibernate-deallocate|hibernate-stop|reapply>')) -Message 'CLI help must list the explicit hibernate actions in the do action contract.'
-    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>')) -Message 'CLI help must show a reapply example.'
-    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>')) -Message 'CLI help must show a hibernate-stop example.'
-    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-deallocate --group=<resource-group> --vm-name=<vm-name>')) -Message 'CLI help must show a hibernate-deallocate example.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=reapply --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a reapply example.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-stop --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a hibernate-stop example.'
+    Assert-True -Condition ($helpText -match [regex]::Escape('az-vm do --vm-action=hibernate-deallocate --group <resource-group> --vm-name <vm-name>')) -Message 'CLI help must show a hibernate-deallocate example.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('Gives operators lifecycle commands for status, start, restart, reapply, stop, deallocate, hibernate-stop, hibernate-deallocate')) -Message 'README must mention the explicit hibernate actions in the lifecycle command summary.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=reapply --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a reapply usage example.'
     Assert-True -Condition ($readmeText -match [regex]::Escape('.\az-vm.cmd do --vm-action=hibernate-stop --group=<resource-group> --vm-name=<vm-name>')) -Message 'README must include a hibernate-stop usage example.'
@@ -1993,7 +2032,7 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
 }
 
 Invoke-Test -Name "Auto option scope contract" -Action {
-    $invalidAutoCommands = @('configure','list','show','do','move','resize','set','exec','ssh','rdp','help')
+    $invalidAutoCommands = @('configure','list','show','do','move','resize','set','exec','connect','help')
     foreach ($commandName in $invalidAutoCommands) {
         $threw = $false
         try {
@@ -2344,8 +2383,8 @@ Invoke-Test -Name "Detailed help topic validation" -Action {
     Show-AzVmCommandHelp -Topic "list"
     Show-AzVmCommandHelp -Topic "do"
     Show-AzVmCommandHelp -Topic "resize"
-    Show-AzVmCommandHelp -Topic "ssh"
-    Show-AzVmCommandHelp -Topic "rdp"
+    Show-AzVmCommandHelp -Topic "connect"
+    Show-AzVmCommandHelp -Topic "exec"
     Show-AzVmCommandHelp -Topic "show"
     Show-AzVmCommandHelp -Topic ""
     Show-AzVmCommandHelp -Overview
@@ -2913,12 +2952,12 @@ Invoke-Test -Name "Connection command running-state guard" -Action {
         }
     }
 
-    Assert-AzVmConnectionVmRunning -OperationName 'ssh' -Snapshot (New-TestConnectionSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
+    Assert-AzVmConnectionVmRunning -OperationName 'connect-ssh' -Snapshot (New-TestConnectionSnapshot -NormalizedState 'started' -PowerStateDisplay 'VM running')
 
     $invalidCases = @(
-        @{ Operation = 'ssh'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'stopped' -PowerStateDisplay 'VM stopped') },
-        @{ Operation = 'rdp'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'deallocated' -PowerStateDisplay 'VM deallocated') },
-        @{ Operation = 'ssh'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'hibernated' -PowerStateDisplay 'VM deallocated' -HibernationStateDisplay 'Hibernated' -HibernationStateCode 'HibernationState/hibernated') }
+        @{ Operation = 'connect-ssh'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'stopped' -PowerStateDisplay 'VM stopped') },
+        @{ Operation = 'connect-rdp'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'deallocated' -PowerStateDisplay 'VM deallocated') },
+        @{ Operation = 'connect-ssh'; Snapshot = (New-TestConnectionSnapshot -NormalizedState 'hibernated' -PowerStateDisplay 'VM deallocated' -HibernationStateDisplay 'Hibernated' -HibernationStateCode 'HibernationState/hibernated') }
     )
 
     foreach ($case in @($invalidCases)) {
@@ -2978,7 +3017,7 @@ Invoke-Test -Name "Connection context checks VM state before credentials" -Actio
 
         $threw = $false
         try {
-            Initialize-AzVmConnectionCommandContext -Options @{} -OperationName 'ssh' | Out-Null
+            Initialize-AzVmConnectionCommandContext -Options @{ ssh = $true } -OperationName 'connect-ssh' | Out-Null
         }
         catch {
             $threw = $true
@@ -3229,7 +3268,7 @@ Invoke-Test -Name "SSH identity output matcher accepts machine-qualified usernam
     Assert-True -Condition (-not (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName 'manager' -OutputText "samplevm\assistant")) -Message 'Identity matcher must reject a different user.'
 }
 
-Invoke-Test -Name "SSH test mode performs a non-interactive handshake without launching ssh.exe" -Action {
+Invoke-Test -Name "Connect --ssh test mode performs a non-interactive handshake without launching ssh.exe" -Action {
     $script:SshTestStartedProcess = $false
     $script:SshTestProcessInvocation = $null
     try {
@@ -3272,7 +3311,7 @@ Invoke-Test -Name "SSH test mode performs a non-interactive handshake without la
         }
         function Resolve-AzVmLocalExecutablePath { throw 'Local SSH executable should not resolve in --test mode.' }
 
-        Invoke-AzVmSshConnectCommand -Options @{ test = $true; user = 'manager' }
+        Invoke-AzVmConnectCommand -Options @{ ssh = $true; test = $true; user = 'manager' }
 
         Assert-True -Condition ($null -ne $script:SshTestProcessInvocation) -Message 'SSH test mode must invoke the pyssh process.'
         Assert-True -Condition (-not $script:SshTestStartedProcess) -Message 'SSH test mode must not launch the external SSH client.'
@@ -3296,7 +3335,7 @@ Invoke-Test -Name "SSH test mode performs a non-interactive handshake without la
     }
 }
 
-Invoke-Test -Name "RDP test mode checks reachability without launching mstsc" -Action {
+Invoke-Test -Name "Connect --rdp test mode checks reachability without launching mstsc" -Action {
     $script:RdpTestStartedProcess = $false
     $script:RdpTestReachabilityCalls = @()
     try {
@@ -3327,7 +3366,7 @@ Invoke-Test -Name "RDP test mode checks reachability without launching mstsc" -A
         }
         function Resolve-AzVmLocalExecutablePath { throw 'Local RDP executables should not resolve in --test mode.' }
 
-        Invoke-AzVmRdpConnectCommand -Options @{ test = $true; user = 'manager' }
+        Invoke-AzVmConnectCommand -Options @{ rdp = $true; test = $true; user = 'manager' }
 
         Assert-True -Condition (@($script:RdpTestReachabilityCalls).Count -eq 1) -Message 'RDP test mode must perform a TCP reachability check.'
         Assert-True -Condition ([int]$script:RdpTestReachabilityCalls[0].Port -eq 3389) -Message 'RDP test mode must probe the resolved RDP port.'
@@ -3375,14 +3414,11 @@ Invoke-Test -Name "Persistent SSH task runner restores the session after transie
     }
 }
 
-Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
-    $script:ExecMinimalRuntimeUsed = $false
-    $script:ExecRunCommandInvocation = $null
+Invoke-Test -Name "Task command run-vm-init uses the isolated task execution path" -Action {
+    $script:TaskRunInvocation = $null
     try {
-        function Initialize-AzVmCommandRuntimeContext { throw 'Full Step-1 runtime context must not be used by exec.' }
-        function Initialize-AzVmExecCommandRuntimeContext {
+        function Initialize-AzVmTaskExecutionRuntimeContext {
             param([switch]$AutoMode, [switch]$WindowsFlag, [switch]$LinuxFlag)
-            $script:ExecMinimalRuntimeUsed = $true
             return [pscustomobject]@{
                 EnvFilePath = (Join-Path $RepoRoot '.env')
                 ConfigMap = @{ RESOURCE_GROUP = 'rg-samplevm-ate1-g1'; VM_NAME = 'samplevm' }
@@ -3427,6 +3463,7 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
                 ActiveTasks = @(
                     [pscustomobject]@{
                         Name = '01-ensure-users-local'
+                        TaskNumber = 1
                         Script = 'Write-Host ok'
                         TimeoutSeconds = 180
                     }
@@ -3436,10 +3473,6 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
         function Resolve-AzVmRuntimeTaskBlocks {
             param([object[]]$TemplateTaskBlocks, [hashtable]$Context)
             return @($TemplateTaskBlocks)
-        }
-        function Resolve-AzVmTaskSelection {
-            param([object[]]$TaskBlocks, [string]$TaskNumberOrName, [string]$Stage, [switch]$AutoMode)
-            return @($TaskBlocks)[0]
         }
         function Invoke-VmRunCommandBlocks {
             param(
@@ -3452,7 +3485,7 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
                 [string]$PerfTaskCategory
             )
 
-            $script:ExecRunCommandInvocation = [pscustomobject]@{
+            $script:TaskRunInvocation = [pscustomobject]@{
                 ResourceGroup = $ResourceGroup
                 VmName = $VmName
                 CommandId = $CommandId
@@ -3461,60 +3494,35 @@ Invoke-Test -Name "Exec command avoids full step1 context resolution" -Action {
                 PerfTaskCategory = $PerfTaskCategory
                 TaskName = [string]@($TaskBlocks)[0].Name
             }
+            return [pscustomobject]@{ SuccessCount = 1; FailedCount = 0; WarningCount = 0; ErrorCount = 0 }
         }
 
-        Invoke-AzVmExecCommand -Options @{ 'init-task' = '01' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
+        $result = Invoke-AzVmTaskCommand -Options @{ 'run-vm-init' = '01' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
 
-        Assert-True -Condition $script:ExecMinimalRuntimeUsed -Message 'Exec command must use the minimal exec runtime context.'
-        Assert-True -Condition ($null -ne $script:ExecRunCommandInvocation) -Message 'Exec init task must invoke run-command blocks.'
-        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.ResourceGroup -eq 'rg-samplevm-ate1-g1') -Message 'Exec init task must preserve target resource group.'
-        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.VmName -eq 'samplevm') -Message 'Exec init task must preserve target VM name.'
-        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.CommandId -eq 'RunPowerShellScript') -Message 'Exec init task must preserve platform run-command id.'
-        Assert-True -Condition ([string]$script:ExecRunCommandInvocation.TaskName -eq '01-ensure-users-local') -Message 'Exec init task must preserve selected task.'
+        Assert-True -Condition ($null -ne $script:TaskRunInvocation) -Message 'Task run-vm-init must invoke run-command blocks.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.ResourceGroup -eq 'rg-samplevm-ate1-g1') -Message 'Task run-vm-init must preserve target resource group.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.VmName -eq 'samplevm') -Message 'Task run-vm-init must preserve target VM name.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.CommandId -eq 'RunPowerShellScript') -Message 'Task run-vm-init must preserve platform run-command id.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.TaskName -eq '01-ensure-users-local') -Message 'Task run-vm-init must preserve selected task.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.PerfTaskCategory -eq 'task-run') -Message 'Task run-vm-init must use the task-run perf category.'
+        Assert-True -Condition ([string]$result.Stage -eq 'init') -Message 'Task run-vm-init must report init stage result.'
     }
     finally {
         foreach ($functionName in @(
-            'Initialize-AzVmCommandRuntimeContext',
-            'Initialize-AzVmExecCommandRuntimeContext',
+            'Initialize-AzVmTaskExecutionRuntimeContext',
             'Resolve-AzVmManagedVmTarget',
             'Get-AzVmTaskBlocksFromDirectory',
             'Resolve-AzVmRuntimeTaskBlocks',
-            'Resolve-AzVmTaskSelection',
             'Invoke-VmRunCommandBlocks'
         )) {
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
         }
-        Remove-Variable -Name ExecMinimalRuntimeUsed -Scope Script -ErrorAction SilentlyContinue
-        Remove-Variable -Name ExecRunCommandInvocation -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name TaskRunInvocation -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
-Invoke-Test -Name "Exec command supports strict outcome override" -Action {
+Invoke-Test -Name "Task execution helper supports strict outcome override for update tasks" -Action {
     try {
-        function Initialize-AzVmExecCommandRuntimeContext {
-            param([switch]$AutoMode, [switch]$WindowsFlag, [switch]$LinuxFlag)
-            return [pscustomobject]@{
-                Context = [ordered]@{
-                    ResourceGroup = 'rg-samplevm-ate1-g1'
-                    VmName = 'samplevm'
-                    VmInitTaskDir = 'windows/init'
-                    VmUpdateTaskDir = 'windows/update'
-                    VmUser = 'manager'
-                    VmPass = 'secret'
-                    SshPort = '444'
-                    AzLocation = 'austriaeast'
-                }
-                Platform = 'windows'
-                PlatformDefaults = [pscustomobject]@{
-                    RunCommandId = 'RunPowerShellScript'
-                }
-                EffectiveConfigMap = @{}
-                TaskOutcomeMode = 'continue'
-                ConfiguredPySshClientPath = ''
-                SshTaskTimeoutSeconds = 180
-                SshConnectTimeoutSeconds = 30
-            }
-        }
         function Resolve-AzVmManagedVmTarget {
             param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
             return [pscustomobject]@{
@@ -3528,6 +3536,7 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
                 ActiveTasks = @(
                     [pscustomobject]@{
                         Name = '10099-capture-snapshot-health'
+                        TaskNumber = 10099
                         Script = 'Write-Host ok'
                         TimeoutSeconds = 30
                     }
@@ -3537,10 +3546,6 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
         function Resolve-AzVmRuntimeTaskBlocks {
             param([object[]]$TemplateTaskBlocks, [hashtable]$Context)
             return @($TemplateTaskBlocks)
-        }
-        function Resolve-AzVmTaskSelection {
-            param([object[]]$TaskBlocks, [string]$TaskNumberOrName, [string]$Stage, [switch]$AutoMode)
-            return @($TaskBlocks)[0]
         }
         function Get-AzVmVmDetails {
             param([hashtable]$Context)
@@ -3568,43 +3573,192 @@ Invoke-Test -Name "Exec command supports strict outcome override" -Action {
                 [string]$ConfiguredPySshClientPath
             )
 
-            $script:ExecSshInvocation = [pscustomobject]@{
+            $script:TaskUpdateInvocation = [pscustomobject]@{
                 ResourceGroup = $ResourceGroup
                 VmName = $VmName
                 TaskName = [string]@($TaskBlocks)[0].Name
                 TaskOutcomeMode = $TaskOutcomeMode
+                PerfTaskCategory = $PerfTaskCategory
                 SshHost = $SshHost
             }
 
-            return [pscustomobject]@{
-                SuccessCount = 1
-                FailedCount = 0
-                WarningCount = 0
-                ErrorCount = 0
-            }
+            return [pscustomobject]@{ SuccessCount = 1; FailedCount = 0; WarningCount = 0; ErrorCount = 0 }
         }
 
-        $result = Invoke-AzVmExecCommand -Options @{ 'update-task' = '10099' } -AutoMode:$false -WindowsFlag -LinuxFlag:$false -TaskOutcomeModeOverride 'strict'
+        $runtime = [pscustomobject]@{
+            Context = [ordered]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+                VmInitTaskDir = 'windows/init'
+                VmUpdateTaskDir = 'windows/update'
+                VmUser = 'manager'
+                VmPass = 'secret'
+                VmAssistantUser = 'assistant'
+                SshPort = '444'
+                AzLocation = 'austriaeast'
+            }
+            Platform = 'windows'
+            EffectiveConfigMap = @{}
+            TaskOutcomeMode = 'continue'
+            ConfiguredPySshClientPath = ''
+            SshTaskTimeoutSeconds = 180
+            SshConnectTimeoutSeconds = 30
+        }
 
-        Assert-True -Condition ($null -ne $script:ExecSshInvocation) -Message 'Exec update task must invoke SSH task runner.'
-        Assert-True -Condition ([string]$script:ExecSshInvocation.TaskName -eq '10099-capture-snapshot-health') -Message 'Exec update task must preserve selected task.'
-        Assert-True -Condition ([string]$script:ExecSshInvocation.TaskOutcomeMode -eq 'strict') -Message 'Exec strict override must flow into SSH task outcome mode.'
-        Assert-True -Condition ([string]$result.Stage -eq 'update') -Message 'Exec update task must report update stage result.'
-        Assert-True -Condition ([string]$result.TaskOutcomeMode -eq 'strict') -Message 'Exec result must expose the strict outcome override.'
+        $result = Invoke-AzVmTaskExecutionWithTarget -Runtime $runtime -Options @{ 'vm-name' = 'samplevm' } -Stage 'update' -Requested '10099' -TaskOutcomeModeOverride 'strict'
+
+        Assert-True -Condition ($null -ne $script:TaskUpdateInvocation) -Message 'Task update execution helper must invoke SSH task runner.'
+        Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskName -eq '10099-capture-snapshot-health') -Message 'Task update execution helper must preserve selected task.'
+        Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskOutcomeMode -eq 'strict') -Message 'Strict override must flow into the SSH task outcome mode.'
+        Assert-True -Condition ([string]$script:TaskUpdateInvocation.PerfTaskCategory -eq 'task-run') -Message 'Task update execution helper must use the task-run perf category.'
+        Assert-True -Condition ([string]$result.Stage -eq 'update') -Message 'Task update execution helper must report update stage result.'
+        Assert-True -Condition ([string]$result.TaskOutcomeMode -eq 'strict') -Message 'Task update execution helper result must expose the strict override.'
     }
     finally {
         foreach ($functionName in @(
-            'Initialize-AzVmExecCommandRuntimeContext',
             'Resolve-AzVmManagedVmTarget',
             'Get-AzVmTaskBlocksFromDirectory',
             'Resolve-AzVmRuntimeTaskBlocks',
-            'Resolve-AzVmTaskSelection',
             'Get-AzVmVmDetails',
             'Invoke-AzVmSshTaskBlocks'
         )) {
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
         }
-        Remove-Variable -Name ExecSshInvocation -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name TaskUpdateInvocation -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Exec command uses the minimal runtime for remote command execution" -Action {
+    $script:ExecMinimalRuntimeUsed = $false
+    $script:ExecPythonArgs = @()
+    try {
+        function Initialize-AzVmCommandRuntimeContext { throw 'Full Step-1 runtime context must not be used by exec.' }
+        function Initialize-AzVmExecCommandRuntimeContext {
+            $script:ExecMinimalRuntimeUsed = $true
+            return [pscustomobject]@{
+                ConfigMap = @{
+                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+                    VM_NAME = 'samplevm'
+                    VM_ADMIN_USER = 'manager'
+                    VM_ADMIN_PASS = 'secret'
+                    VM_SSH_PORT = '444'
+                }
+                ConfiguredPySshClientPath = ''
+                SshConnectTimeoutSeconds = 30
+            }
+        }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+            }
+        }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'samplevm.example'
+                PublicIP = ''
+            }
+        }
+        function Ensure-AzVmPySshTools { param([string]$RepoRoot, [string]$ConfiguredPySshClientPath) return @{ PythonPath = 'Invoke-TestPy'; ClientPath = 'ssh_client.py' } }
+        function Initialize-AzVmSshHostKey { param() return [pscustomobject]@{ Output = '' } }
+        function az {
+            $global:LASTEXITCODE = 0
+            return '{"storageProfile":{"osDisk":{"osType":"Windows"}}}'
+        }
+        function Assert-LastExitCode { param([string]$Context) }
+        function Invoke-TestPy {
+            param([Parameter(ValueFromRemainingArguments = $true)]$Args)
+            $script:ExecPythonArgs = @($Args)
+            $global:LASTEXITCODE = 0
+        }
+
+        Invoke-AzVmExecCommand -Options @{ command = 'Get-Date' }
+
+        Assert-True -Condition $script:ExecMinimalRuntimeUsed -Message 'Exec must use the minimal exec runtime context.'
+        Assert-True -Condition ((@($script:ExecPythonArgs) -join ' ') -match [regex]::Escape('exec --host samplevm.example --port 444 --user manager --password secret --timeout 30 --command Get-Date')) -Message 'Exec --command must run the pyssh exec path with the provided command.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmCommandRuntimeContext',
+            'Initialize-AzVmExecCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmDetails',
+            'Ensure-AzVmPySshTools',
+            'Initialize-AzVmSshHostKey',
+            'az',
+            'Assert-LastExitCode',
+            'Invoke-TestPy'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name ExecMinimalRuntimeUsed -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name ExecPythonArgs -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Exec command opens interactive shell when no command is provided" -Action {
+    $script:ExecShellArgs = @()
+    try {
+        function Initialize-AzVmExecCommandRuntimeContext {
+            return [pscustomobject]@{
+                ConfigMap = @{
+                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+                    VM_NAME = 'samplevm'
+                    VM_ADMIN_USER = 'manager'
+                    VM_ADMIN_PASS = 'secret'
+                    VM_SSH_PORT = '444'
+                }
+                ConfiguredPySshClientPath = ''
+                SshConnectTimeoutSeconds = 30
+            }
+        }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+            }
+        }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'samplevm.example'
+                PublicIP = ''
+            }
+        }
+        function Ensure-AzVmPySshTools { param([string]$RepoRoot, [string]$ConfiguredPySshClientPath) return @{ PythonPath = 'Invoke-TestPyShell'; ClientPath = 'ssh_client.py' } }
+        function Initialize-AzVmSshHostKey { param() return [pscustomobject]@{ Output = '' } }
+        function az {
+            $global:LASTEXITCODE = 0
+            return '{"storageProfile":{"osDisk":{"osType":"Linux"}}}'
+        }
+        function Assert-LastExitCode { param([string]$Context) }
+        function Invoke-TestPyShell {
+            param([Parameter(ValueFromRemainingArguments = $true)]$Args)
+            $script:ExecShellArgs = @($Args)
+            $global:LASTEXITCODE = 0
+        }
+
+        Invoke-AzVmExecCommand -Options @{}
+
+        Assert-True -Condition ((@($script:ExecShellArgs) -join ' ') -match [regex]::Escape('shell --host samplevm.example --port 444 --user manager --password secret --timeout 30 --reconnect-retries 3 --keepalive-seconds 15 --shell bash')) -Message 'Exec without --command must run the pyssh shell path with the resolved Linux shell.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmExecCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmDetails',
+            'Ensure-AzVmPySshTools',
+            'Initialize-AzVmSshHostKey',
+            'az',
+            'Assert-LastExitCode',
+            'Invoke-TestPyShell'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name ExecShellArgs -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
