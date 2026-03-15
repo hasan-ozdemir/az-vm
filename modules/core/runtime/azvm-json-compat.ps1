@@ -94,3 +94,22 @@ function ConvertTo-ObjectArrayCompat {
 
     return $result
 }
+
+# Handles ConvertTo-JsonCompat.
+function ConvertTo-JsonCompat {
+    param(
+        [Parameter(Mandatory = $false)]
+        [object]$InputObject,
+        [int]$Depth = 10
+    )
+
+    if ($null -eq $InputObject) {
+        return 'null'
+    }
+
+    if ($Depth -lt 1) {
+        $Depth = 1
+    }
+
+    return [string](ConvertTo-Json -InputObject $InputObject -Depth $Depth -Compress:$false)
+}

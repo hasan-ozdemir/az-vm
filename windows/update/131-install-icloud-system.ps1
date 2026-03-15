@@ -120,6 +120,20 @@ function Resolve-ICloudAppId {
     return ''
 }
 
+function Test-ICloudAppId {
+    param([string]$AppId)
+
+    if ([string]::IsNullOrWhiteSpace([string]$AppId)) {
+        return $false
+    }
+
+    if ([string]$AppId -match '(?i)filepicker') {
+        return $false
+    }
+
+    return ([string]$AppId -match '(?i)icloud|apple')
+}
+
 function Get-ICloudPackages {
     return @(
         Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
@@ -193,7 +207,7 @@ function Get-ICloudInstallState {
     }
 
     $appId = Resolve-ICloudAppId
-    if (-not [string]::IsNullOrWhiteSpace([string]$appId)) {
+    if (Test-ICloudAppId -AppId ([string]$appId)) {
         return [pscustomobject]@{
             Healthy = $true
             LaunchKind = 'app-id'
@@ -348,8 +362,22 @@ function Resolve-ICloudAppId {
     return ''
 }
 
+function Test-ICloudAppId {
+    param([string]$AppId)
+
+    if ([string]::IsNullOrWhiteSpace([string]$AppId)) {
+        return $false
+    }
+
+    if ([string]$AppId -match '(?i)filepicker') {
+        return $false
+    }
+
+    return ([string]$AppId -match '(?i)icloud|apple')
+}
+
 function Test-ICloudInstalled {
-    return (-not [string]::IsNullOrWhiteSpace([string](Resolve-ICloudAppId)))
+    return (Test-ICloudAppId -AppId ([string](Resolve-ICloudAppId)))
 }
 
 Invoke-AzVmRefreshSessionPath

@@ -3,6 +3,29 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.313] - 2026-03-15
+
+### Added
+- Added live `task --save-app-state` and `task --restore-app-state` maintenance flows for task-owned app-state payloads, with new shared parameter modules and help/README coverage for both init and update selectors.
+- Added the tracked capture-spec registry and shared capture engine under `modules/core/tasks/`, plus SSH fetch support in `tools/pyssh/ssh_client.py`, so live Windows and Linux task state can now be captured into the existing per-task `app-state.zip` contract.
+- Added committed `.env.example` placeholders for `company_web_address` and `company_email_address`, and documented the derived default VM naming rule based on the `employee_email_address` local-part plus `-vm`.
+
+### Changed
+- Reworked task-owned app-state maintenance so update-stage save/restore now uses one shared zip contract, one shared guest helper, one shared timeout policy, and one shared target-resolution path instead of ad hoc task-specific handling.
+- Updated the Windows public desktop shortcut contract so `i1Internet Business` now derives its URL from `company_web_address`, `k1Codex CLI` now uses the richer Codex CLI launch arguments, and the iCloud shortcut uses the real iCloud launch contract instead of the old File Picker fallback.
+- Updated the Windows app-state capture model so task `115-install-npm-packages-global` now captures full per-user `.codex` state alongside the other CLI configuration roots, and current registry capture prefers authoritative current specs over stale legacy registry entries when both exist.
+- Updated the Chrome app-state restore path so task `02-check-install-chrome` now closes open Chrome windows before replay begins, reducing file-in-use conflicts during restore.
+
+### Fixed
+- Fixed task app-state capture-plan merging so ordered-hashtable capture specs no longer collapse into empty profile and registry collections during live save operations.
+- Fixed Windows app-state capture scratch paths so deep `.codex` trees can be zipped without losing files to overlong temporary paths.
+- Fixed registry export directory creation and legacy registry-path normalization during app-state save, and narrowed legacy registry carry-forward so stale mounted-hive roots no longer keep polluting new payloads.
+- Fixed the current tracked tree so the banned historical literals requested for cleanup stay out of source/docs/tests while leaving local `.env` and ignored binary payloads untouched.
+
+### Tests
+- Revalidated the command and documentation contract with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, and `tests\\bash-syntax-check.ps1`.
+- Revalidated the new live task app-state save/restore surface on the active managed Windows VM with isolated runs for `115-install-npm-packages-global` save/restore and repeated `02-check-install-chrome` save/restore verification after the Chrome pre-restore close hook was added.
+
 ## [2026.3.14.312] - 2026-03-14
 
 ### Added
@@ -12,24 +35,24 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Changed
 - Reworked `10002-create-shortcuts-public-desktop.ps1` so Chrome- and Edge-style shortcuts that would exceed the 259-character limit now rewrite themselves through managed short launchers under `C:\ProgramData\az-vm\shortcut-launchers\public-desktop` while keeping the same effective target, URL, profile, and argument contract.
 - Updated `10099-capture-snapshot-health.ps1` so wrapper-backed shortcuts now read back their launcher path plus their effective target and arguments, and `a11MS Edge` keeps its argument contract even when the shortcut is launcher-backed.
-- Consolidated the ignored local JAWS update flow into one self-contained task, `1001-install-configure-jaws.ps1`, backed by the renamed helper module `1001-install-configure-jaws-common.psm1` and the matching `app-states/1001-install-configure-jaws/app-state.zip` plugin path.
-- Removed the automatic retro-log-audit reference from the default non-live gate and retired the old `tests/retro-log-audit.ps1` location.
+- Consolidated the ignored local screen-reader update flow into one self-contained task, backed by one matching local helper module and one matching per-task app-state plugin path.
+- Removed the automatic retro-log-audit reference from the default non-live gate and retired the old automatic test-path location.
 
 ### Fixed
 - Fixed long browser-style Public Desktop shortcuts so they no longer fail because of overlong literal shortcut command lines.
-- Fixed the local JAWS save/restore naming contract so the merged single local task and its export helper now point to the same per-task app-state plugin name.
+- Fixed the local screen-reader save/restore naming contract so the merged single local task and its export helper now point to the same per-task app-state plugin name.
 - Cleaned the current untracked `az-vm-log-*.txt` transcript set from the repo working tree while keeping the existing `.gitignore` protection in place.
 
 ### Tests
 - Revalidated the non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
 - Revalidated the manual retro-audit helper with `tools\\scripts\\retro-log-audit.ps1` after the working-tree transcript cleanup.
-- Revalidated the touched live Windows tasks in isolation on `rg-bizyum-ate1-g2 / bizyum` with `exec --update-task=1001`, `10002`, and `10099`, confirming the merged local JAWS task, the short-launcher-backed Public Desktop shortcuts, and the refreshed shortcut health report.
+- Revalidated the touched live Windows tasks in isolation on the active managed Windows VM with `exec --update-task=1001`, `10002`, and `10099`, confirming the merged local screen-reader task, the short-launcher-backed Public Desktop shortcuts, and the refreshed shortcut health report.
 
 ## [2026.3.14.311] - 2026-03-14
 
 ### Added
 - Added `modules/core/tasks/azvm-store-install-state.psm1` as a shared one-shot Store-install helper module for Windows vm-update tasks, including centralized PATH refresh, portable `winget` resolution, explicit Store install-state persistence, and stale RunOnce cleanup helpers.
-- Added `tests/retro-log-audit.ps1` so the repo can deterministically rescan the historical `az-vm-log-*.txt` transcript set for known noisy or degraded patterns during future maintenance passes.
+- Added a deterministic retro-log audit helper so the repo can rescan the historical `az-vm-log-*.txt` transcript set for known noisy or degraded patterns during future maintenance passes.
 
 ### Changed
 - Reworked the Store-backed Windows install tasks (`117`, `121`, `126`, `131`) so they now use one explicit one-shot install-state contract instead of leaving any next-boot or next-sign-in repair work behind.
@@ -44,12 +67,12 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Fixed Python install verification so `103-install-python-system.ps1` now pins a real Python executable path and avoids Windows Store alias noise during verification.
 - Fixed the iCloud health contract so install-state, shortcut eligibility, and health reporting now use a tighter launch-ready predicate and a consistent recorded launch contract instead of treating package registration alone as success.
 - Fixed `10005-copy-settings-user.ps1` so every emitted skip condition now contributes to the same skip-evidence ledger, which keeps the summary consistent with the detailed skip lines.
-- Fixed local JAWS autostart verification so `1005-verify-autostart-jaws.ps1` now performs a bounded repair-and-reverify pass before deciding whether a warning is still necessary.
+- Fixed local screen-reader autostart verification so the local verify step now performs a bounded repair-and-reverify pass before deciding whether a warning is still necessary.
 - Fixed Windows Store banner normalization so the repeated benign Microsoft Store seizure warning no longer pollutes SSH task transcripts.
 
 ### Tests
-- Revalidated the non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, `tests\\pre-commit-release-doc-check.ps1`, and `tests\\retro-log-audit.ps1`.
-- Revalidated the touched live Windows tasks in isolation on `rg-bizyum-ate1-g2 / bizyum` with `exec --update-task=103`, `114`, `117`, `118`, `121`, `126`, `131`, `10001`, `10002`, `10005`, `10099`, plus local-only `1004` and `1005`, confirming the one-shot Store-install path, Teams startup, iCloud shortcut recovery, Docker readiness, and JAWS autostart repair.
+- Revalidated the non-live gate with `tests\\az-vm-smoke-tests.ps1`, `tests\\documentation-contract-check.ps1`, `tests\\powershell-compatibility-check.ps1`, `tests\\code-quality-check.ps1`, `tests\\bash-syntax-check.ps1`, and `tests\\pre-commit-release-doc-check.ps1`.
+- Revalidated the touched live Windows tasks in isolation on the active managed Windows VM with `exec --update-task=103`, `114`, `117`, `118`, `121`, `126`, `131`, `10001`, `10002`, `10005`, `10099`, plus the relevant local-only screen-reader tasks, confirming the one-shot Store-install path, Teams startup, iCloud shortcut recovery, Docker readiness, and screen-reader autostart repair.
 
 ## [2026.3.14.310] - 2026-03-14
 

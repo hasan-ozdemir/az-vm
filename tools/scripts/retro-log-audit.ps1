@@ -23,7 +23,7 @@ $patterns = @(
     [pscustomobject]@{ Label = 'teams-autostart-skip'; Pattern = 'autostart-skip: Teams' },
     [pscustomobject]@{ Label = 'icloud-shortcut-skip'; Pattern = 'public-shortcut-skip: d4ICloud' },
     [pscustomobject]@{ Label = 'copy-settings-empty-summary'; Pattern = 'copy-settings-user-skip-summary: none' },
-    [pscustomobject]@{ Label = 'jaws-manager-process-missing'; Pattern = 'manager-process-not-observed' }
+    [pscustomobject]@{ Label = 'screen-reader-manager-process-missing'; Pattern = 'manager-process-not-observed' }
 )
 
 foreach ($row in @($patterns)) {

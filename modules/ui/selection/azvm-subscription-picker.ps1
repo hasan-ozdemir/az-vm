@@ -154,8 +154,16 @@ function Save-AzVmSubscriptionIdToDotEnv {
 
 function Test-AzVmAzureTouchingCommand {
     param(
-        [string]$CommandName
+        [string]$CommandName,
+        [hashtable]$Options = @{}
     )
+
+    if ([string]$CommandName -eq 'task') {
+        return (
+            (Test-AzVmCliOptionPresent -Options $Options -Name 'save-app-state') -or
+            (Test-AzVmCliOptionPresent -Options $Options -Name 'restore-app-state')
+        )
+    }
 
     return ([string]$CommandName -in @('create','update','configure','list','show','do','move','resize','set','exec','ssh','rdp','delete'))
 }
@@ -167,7 +175,7 @@ function Initialize-AzVmCommandSubscriptionState {
     )
 
     Clear-AzVmResolvedSubscriptionContext
-    if (-not (Test-AzVmAzureTouchingCommand -CommandName $CommandName)) {
+    if (-not (Test-AzVmAzureTouchingCommand -CommandName $CommandName -Options $Options)) {
         return $null
     }
 

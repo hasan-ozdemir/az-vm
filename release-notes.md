@@ -2,14 +2,25 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.313 - 2026-03-15
+
+### Summary
+This release opens a new live-maintenance surface for task-owned app-state payloads and aligns the surrounding Windows operator contract with it. `az-vm task` can now save and restore per-task app-state zips over SSH, task `115-install-npm-packages-global` now captures richer per-user CLI state including full `.codex` trees, the default VM name can now derive from the local-part of `employee_email_address`, and the Windows public desktop surface now takes its business web root from `company_web_address` while using refreshed iCloud and Codex CLI shortcut contracts. The same pass also hardens Windows app-state capture internals and adds a Chrome-specific pre-restore close hook so app-state replay can reduce file-in-use conflicts instead of trying to restore over running Chrome windows.
+
+### Highlights
+- Added live `task --save-app-state` and `task --restore-app-state` flows that target one init or update task at a time and read or write the existing per-task `app-state.zip` payload under the stage-local `app-states/` tree.
+- Added one shared capture-spec registry plus one shared capture engine, backed by new `fetch` support in the repo-owned pyssh client, so app-state payloads can now be refreshed directly from the live VM instead of being authored only by hand.
+- Updated the Windows shortcut surface so `i1Internet Business` comes from `company_web_address`, `k1Codex CLI` uses the richer Codex CLI invocation, and `d4ICloud` resolves through the real iCloud launch contract instead of the File Picker fallback.
+- Hardened task app-state capture and restore with fixed plan merging, shorter Windows scratch paths for deep `.codex` trees, safer legacy-registry deduplication, and a Chrome pre-restore process-close step that runs before task `02-check-install-chrome` replay.
+
 ## Release 2026.3.14.312 - 2026-03-14
 
 ### Summary
-This release tightens the Windows desktop-finish path around three operational edges: overlong Public Desktop shortcut invocations, fragmented local JAWS execution, and transcript housekeeping. Overlong Chrome and Edge shortcut commands now collapse into managed short launchers without changing the effective browser/profile/URL behavior, the local JAWS workflow now runs as one self-contained local vm-update task instead of five loosely chained tasks, and the retro log audit helper moves into `tools/scripts/` as a manual maintenance tool while the current local transcript files are cleaned from the repo working tree.
+This release tightens the Windows desktop-finish path around three operational edges: overlong Public Desktop shortcut invocations, fragmented local screen-reader execution, and transcript housekeeping. Overlong Chrome and Edge shortcut commands now collapse into managed short launchers without changing the effective browser/profile/URL behavior, the local screen-reader workflow now runs as one self-contained local vm-update task instead of several loosely chained tasks, and the retro log audit helper moves into `tools/scripts/` as a manual maintenance tool while the current local transcript files are cleaned from the repo working tree.
 
 ### Highlights
 - Added a shared managed shortcut launcher helper so Public Desktop shortcut creation and late health validation now use the same short-launcher contract.
-- Merged the local JAWS install, settings, shortcut, autostart, and verify-repair flow into one local task, `1001-install-configure-jaws.ps1`, with one matching app-state plugin name.
+- Merged the local screen-reader install, settings, shortcut, autostart, and verify-repair flow into one local task, with one matching app-state plugin name.
 - Moved `retro-log-audit.ps1` to `tools/scripts/` and removed it from the default non-live gate so it stays available for targeted maintenance runs without being auto-triggered.
 - Cleaned the current untracked `az-vm-log-*.txt` files from the repo root while keeping `.gitignore` coverage in place.
 
@@ -20,11 +31,11 @@ This release closes the retro-log hardening pass without reintroducing any next-
 
 ### Highlights
 - Added a shared Store install-state helper module so the touched Windows Store-backed tasks now share one centralized contract for PATH refresh, `winget` discovery, stale RunOnce cleanup, and launch-ready state persistence.
-- Added `tests/retro-log-audit.ps1` so the historical `az-vm-log-*.txt` corpus can be rescanned deterministically for the noisy or degraded patterns that drove this hardening pass.
+- Added a deterministic retro-log audit helper so the historical `az-vm-log-*.txt` corpus can be rescanned for the noisy or degraded patterns that drove this hardening pass.
 - Updated the touched Store-backed install tasks so they now fail or degrade explicitly when an interactive Store-capable session is missing, instead of scheduling any next-boot or next-sign-in continuation work.
 - Updated Teams startup so the managed startup surface now prefers the packaged `AppsFolder` launch contract, matching the healthy Store shortcut model.
-- Fixed Python verification, copy-settings skip accounting, JAWS autostart self-heal, and benign transcript noise filtering in the SSH task pipeline.
-- Revalidated the changes with isolated live task runs on `rg-bizyum-ate1-g2 / bizyum`, including the touched builtin tasks plus the local-only JAWS autostart tasks, ending with healthy Docker, Ollama, Teams startup, refreshed public shortcuts, and zero managed shortcut or stage-summary failures.
+- Fixed Python verification, copy-settings skip accounting, local screen-reader autostart self-heal, and benign transcript noise filtering in the SSH task pipeline.
+- Revalidated the changes with isolated live task runs on the active managed Windows VM, including the touched builtin tasks plus the local-only screen-reader autostart tasks, ending with healthy Docker, Ollama, Teams startup, refreshed public shortcuts, and zero managed shortcut or stage-summary failures.
 
 ## Release 2026.3.14.310 - 2026-03-14
 

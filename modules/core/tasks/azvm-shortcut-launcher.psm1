@@ -140,7 +140,8 @@ function Write-AzVmShortcutLauncherFile {
     if (-not [string]::IsNullOrWhiteSpace([string]$effectiveWorkingDirectory)) {
         [void]$launcherLines.Add(('cd /d "{0}"' -f $effectiveWorkingDirectory))
     }
-    [void]$launcherLines.Add($commandLine)
+    [void]$launcherLines.Add(('start "" {0}' -f $commandLine))
+    [void]$launcherLines.Add('exit /b 0')
     [void]$launcherLines.Add('endlocal')
 
     Set-Content -LiteralPath $LauncherPath -Value $launcherLines -Encoding ASCII

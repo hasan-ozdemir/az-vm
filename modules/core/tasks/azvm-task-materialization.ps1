@@ -38,6 +38,8 @@ function Get-AzVmTaskTokenReplacements {
         RESOURCE_GROUP = [string]$Context.ResourceGroup
         VM_NAME = [string]$Context.VmName
         COMPANY_NAME = [string]$Context.CompanyName
+        COMPANY_WEB_ADDRESS = [string]$Context.CompanyWebAddress
+        COMPANY_EMAIL_ADDRESS = [string]$Context.CompanyEmailAddress
         EMPLOYEE_EMAIL_ADDRESS = [string]$Context.EmployeeEmailAddress
         EMPLOYEE_FULL_NAME = [string]$Context.EmployeeFullName
         AZ_LOCATION = [string]$Context.AzLocation

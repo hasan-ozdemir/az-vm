@@ -5,9 +5,16 @@ function Get-AzVmTaskOptionSpecifications {
         (Get-AzVmTaskPerfOptionSpecification),
         (Get-AzVmTaskHelpOptionSpecification),
         (Get-AzVmTaskListOptionSpecification),
+        (Get-AzVmTaskSaveAppStateOptionSpecification),
+        (Get-AzVmTaskRestoreAppStateOptionSpecification),
         (Get-AzVmTaskVmInitOptionSpecification),
         (Get-AzVmTaskVmUpdateOptionSpecification),
+        (Get-AzVmTaskVmInitTaskOptionSpecification),
+        (Get-AzVmTaskVmUpdateTaskOptionSpecification),
         (Get-AzVmTaskDisabledOptionSpecification),
+        (Get-AzVmTaskGroupOptionSpecification),
+        (Get-AzVmTaskVmNameOptionSpecification),
+        (Get-AzVmTaskSubscriptionIdOptionSpecification),
         (Get-AzVmTaskWindowsOptionSpecification),
         (Get-AzVmTaskLinuxOptionSpecification)
     )

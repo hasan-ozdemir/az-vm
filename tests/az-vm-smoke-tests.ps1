@@ -122,6 +122,25 @@ Invoke-Test -Name "VM name format contract" -Action {
     Assert-True -Condition (-not (Test-AzVmVmNameFormat -VmName "samplevm_name")) -Message "VM name with underscore should fail."
 }
 
+Invoke-Test -Name "Derived VM name fallback contract" -Action {
+    $testEmployeeEmail = ('first.last+ops' + [char]64 + 'example.test')
+    $derivedVmName = Get-AzVmDerivedVmNameFromEmployeeEmailAddress -EmployeeEmailAddress $testEmployeeEmail
+    Assert-True -Condition ([string]$derivedVmName -eq 'first-last-ops-vm') -Message "Derived VM name must sanitize the employee email local-part and append -vm."
+
+    $configMap = @{
+        employee_email_address = $testEmployeeEmail
+        VM_NAME = ''
+        VM_IMAGE = ''
+        VM_SIZE = ''
+        VM_DISK_SIZE_GB = ''
+        WIN_VM_IMAGE = 'win:image:latest'
+        WIN_VM_SIZE = 'Standard_B4as_v2'
+        WIN_VM_DISK_SIZE_GB = '128'
+    }
+    $resolvedMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform windows
+    Assert-True -Condition ([string]$resolvedMap.VM_NAME -eq 'first-last-ops-vm') -Message "Platform config resolution must derive VM_NAME from employee_email_address when VM_NAME is blank."
+}
+
 Invoke-Test -Name "Managed resource naming contract" -Action {
     Assert-AzVmManagedResourceNamesValid -NameMap @{
         RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
@@ -236,7 +255,7 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
 
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Za-z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
-        'VM_OS_TYPE','VM_NAME','company_name','employee_email_address','employee_full_name','azure_subscription_id','AZ_LOCATION',
+        'VM_OS_TYPE','VM_NAME','company_name','company_web_address','company_email_address','employee_email_address','employee_full_name','azure_subscription_id','AZ_LOCATION',
         'RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','PRICE_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
@@ -260,12 +279,15 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     $envExampleText = Get-Content -LiteralPath $envExamplePath -Raw
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ADMIN_PASS=<CHANGE_ME_STRONG_ADMIN_PASSWORD>')) -Message '.env.example must keep the admin password as a placeholder.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ASSISTANT_PASS=<CHANGE_ME_STRONG_ASSISTANT_PASSWORD>')) -Message '.env.example must keep the assistant password as a placeholder.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('If left blank, az-vm derives VM_NAME from employee_email_address local-part plus -vm.')) -Message '.env.example must document the default VM name derivation rule.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_HIBERNATION=true')) -Message '.env.example must expose VM_ENABLE_HIBERNATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=true')) -Message '.env.example must expose VM_ENABLE_NESTED_VIRTUALIZATION as a shared feature toggle.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('NSG_RULE_NAME_TEMPLATE=nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}')) -Message '.env.example must keep the nsg-rule naming prefix.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('company_name is required for Windows business public desktop shortcuts.')) -Message '.env.example must document company_name as required for the Windows business public desktop shortcut flow.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('Repo-managed Chrome profile-directory values are normalized to lowercase.')) -Message '.env.example must document lowercase Chrome profile-directory normalization.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_web_address=<https-url>')) -Message '.env.example must keep the committed company_web_address default.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('company_email_address=<email>')) -Message '.env.example must keep the committed company_email_address default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('employee_email_address=<email>')) -Message '.env.example must keep the committed employee_email_address default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('employee_full_name=<person-name>')) -Message '.env.example must keep the committed employee_full_name default.'
     Assert-True -Condition (-not ($envExampleText -match [regex]::Escape('<runtime-secret>'))) -Message '.env.example must not keep the old committed assistant password.'
@@ -3598,6 +3620,8 @@ Invoke-Test -Name "Task token replacement" -Action {
         ResourceGroup = "rg-samplevm"
         VmName = "samplevm"
         CompanyName = "orgprofile"
+        CompanyWebAddress = "https://example.test"
+        CompanyEmailAddress = "<email>"
         EmployeeEmailAddress = "<email>"
         EmployeeFullName = "<person-name>"
         AzLocation = "austriaeast"
@@ -3611,7 +3635,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __EMPLOYEE_EMAIL_ADDRESS__ __EMPLOYEE_FULL_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __VM_NAME__ __COMPANY_NAME__ __COMPANY_WEB_ADDRESS__ __COMPANY_EMAIL_ADDRESS__ __EMPLOYEE_EMAIL_ADDRESS__ __EMPLOYEE_FULL_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -3621,6 +3645,8 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*3389*") -Message "RDP port token was not replaced."
     Assert-True -Condition ($scriptBody -like "*samplevm*") -Message "VM name token was not replaced."
     Assert-True -Condition ($scriptBody -like "*orgprofile*") -Message "Company name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*https://example.test*") -Message "Company web-address token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*<email>*") -Message "Company email-address token was not replaced."
     Assert-True -Condition ($scriptBody -like "*<email>*") -Message "Employee email token was not replaced."
     Assert-True -Condition ($scriptBody -like "*<person-name>*") -Message "Employee full name token was not replaced."
     Assert-True -Condition ($scriptBody -like "*W10=*") -Message "Host startup profile token was not replaced."
@@ -4261,7 +4287,7 @@ Invoke-Test -Name "Vm-update app-state plugin contract resolves only stage-local
 
     try {
         Set-Content -LiteralPath (Join-Path $updateDir '114-install-docker-desktop.ps1') -Value 'Write-Host "tracked"' -Encoding UTF8
-        Set-Content -LiteralPath (Join-Path $localDir '1001-install-configure-jaws.ps1') -Value @'
+        Set-Content -LiteralPath (Join-Path $localDir '1001-install-configure-screen-reader.ps1') -Value @'
 # az-vm-task-meta: {"priority":1001,"timeout":780,"enabled":true}
 Write-Host "local"
 '@ -Encoding UTF8
@@ -4285,10 +4311,10 @@ Write-Host "local"
 
         $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $updateDir -Platform windows -Stage update
         $trackedTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '114-install-docker-desktop' })[0]
-        $localTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '1001-install-configure-jaws' })[0]
+        $localTask = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '1001-install-configure-screen-reader' })[0]
 
         $expectedTrackedPluginDir = Join-Path $appStatesDir '114-install-docker-desktop'
-        $expectedLocalPluginDir = Join-Path $appStatesDir '1001-install-configure-jaws'
+        $expectedLocalPluginDir = Join-Path $appStatesDir '1001-install-configure-screen-reader'
         Assert-True -Condition ([string](Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $trackedTask) -eq $appStatesDir) -Message 'Tracked vm-update tasks must resolve the shared stage-local app-states root.'
         Assert-True -Condition ([string](Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $localTask) -eq $appStatesDir) -Message 'Local-only vm-update tasks must resolve the shared stage-local app-states root.'
         Assert-True -Condition ([string](Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $trackedTask) -eq $expectedTrackedPluginDir) -Message 'Tracked task plugin directory mismatch.'
@@ -4310,7 +4336,7 @@ Write-Host "local"
         Assert-True -Condition ([string]$invalidZipInfo.Status -eq 'invalid') -Message 'Task app-state plugin zips with mismatched taskName must be rejected.'
 
         New-Item -Path $expectedLocalPluginDir -ItemType Directory -Force | Out-Null
-        New-TestAppStateZip -DestinationPath (Join-Path $expectedLocalPluginDir 'app-state.zip') -TaskName '1001-install-configure-jaws'
+        New-TestAppStateZip -DestinationPath (Join-Path $expectedLocalPluginDir 'app-state.zip') -TaskName '1001-install-configure-screen-reader'
         $readyInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $localTask
         Assert-True -Condition ([string]$readyInfo.Status -eq 'ready') -Message 'Valid per-task app-state zip plugins must resolve as ready.'
         Assert-True -Condition ($null -ne $readyInfo.Manifest) -Message 'Ready app-state zip plugins must publish their parsed manifest.'
@@ -4350,7 +4376,9 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition ($localExportTaskText -like '*modules\core\tasks\azvm-app-state-plugin-local-export.psm1*') -Message 'Local app-state export tasks must import the shared module from modules/.'
     Assert-True -Condition (-not ($localExportTaskText -like '*app-state-plugin-local-common.psm1*')) -Message 'Local app-state export tasks must not import the retired local helper path.'
     Assert-True -Condition ($gitignoreText -like '*windows/update/app-states/***') -Message '.gitignore must ignore Windows app-state plugin payloads.'
+    Assert-True -Condition ($gitignoreText -like '*windows/init/app-states/***') -Message '.gitignore must ignore Windows init app-state plugin payloads.'
     Assert-True -Condition ($gitignoreText -like '*linux/update/app-states/***') -Message '.gitignore must ignore Linux app-state plugin payloads.'
+    Assert-True -Condition ($gitignoreText -like '*linux/init/app-states/***') -Message '.gitignore must ignore Linux init app-state plugin payloads.'
     Assert-True -Condition (-not ($runnerText -like '*linux replay is not implemented yet*')) -Message 'Shared app-state runtime must not keep the old Linux replay unsupported warning.'
 
     foreach ($removedPath in @(
@@ -4568,7 +4596,6 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Test-ShortcutDetailsMatchManagedSpec',
         'https://chatgpt.com',
         'https://www.google.com',
-        'https://example.invalid/',
         'https://web.whatsapp.com',
         'chrome://settings/syncSetup',
         'https://portal.office.com',
@@ -4585,7 +4612,11 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://www.facebook.com/',
         'https://x.com/',
         'https://x.com/',
-        'https://example.invalid/blog',
+        '$companyWebRootUrl = Normalize-ShortcutUrl -Value $companyWebAddress',
+        '$companyBlogUrl = if ([string]::IsNullOrWhiteSpace([string]$companyWebRootUrl)) { '''' } else { ($companyWebRootUrl + ''/blog'') }',
+        '__COMPANY_WEB_ADDRESS__',
+        '__COMPANY_EMAIL_ADDRESS__',
+        'company_web_address is required for the Windows business public desktop shortcut flow',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true',
@@ -4652,7 +4683,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         '/k cd /d %UserProfile% & docker',
         '%UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5',
         'C:\ProgramData\chocolatey\bin\7z.exe',
-        '--enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search',
+        '-c model_reasoning_summary=detailed -c hide_agent_reasoning=false -c show_raw_agent_reasoning=true -c tui.animations=true --enable multi_agent --enable fast_mode --yolo -s danger-full-access --cd "%UserProfile%" --search',
         '--screen-reader --yolo',
         'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe',
         'Set-ShortcutRunAsAdministratorFlag',
@@ -4772,6 +4803,27 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include WSL readiness fragment '{0}'." -f [string]$fragment)
     }
+}
+
+Invoke-Test -Name "Task command surface supports save and restore app-state maintenance" -Action {
+    $taskContractText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\contract.ps1') -Raw)
+    $taskRuntimeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\runtime.ps1') -Raw)
+    $taskEntryText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\entry.ps1') -Raw)
+    $taskHelpText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\cli\azvm-help.ps1') -Raw)
+
+    Assert-True -Condition ($taskContractText -like '*Get-AzVmTaskSaveAppStateOptionSpecification*') -Message 'Task contract must expose the save-app-state option.'
+    Assert-True -Condition ($taskContractText -like '*Get-AzVmTaskRestoreAppStateOptionSpecification*') -Message 'Task contract must expose the restore-app-state option.'
+    Assert-True -Condition ($taskContractText -like '*Get-AzVmTaskVmInitTaskOptionSpecification*') -Message 'Task contract must expose vm-init-task.'
+    Assert-True -Condition ($taskContractText -like '*Get-AzVmTaskVmUpdateTaskOptionSpecification*') -Message 'Task contract must expose vm-update-task.'
+    Assert-True -Condition ($taskRuntimeText -like '*Assert-AzVmTaskCommandOptionScope*') -Message 'Task runtime must scope task command options by mode.'
+    Assert-True -Condition ($taskRuntimeText -like '*save-app-state*') -Message 'Task runtime must recognize save-app-state mode.'
+    Assert-True -Condition ($taskRuntimeText -like '*restore-app-state*') -Message 'Task runtime must recognize restore-app-state mode.'
+    Assert-True -Condition ($taskEntryText -like '*Save-AzVmTaskAppStateFromVm*') -Message 'Task entry must call the live app-state save path.'
+    Assert-True -Condition ($taskEntryText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Task entry must call the shared app-state restore path.'
+    Assert-True -Condition ($taskHelpText -like '*task --save-app-state --vm-update-task=115*') -Message 'Help must document task save-app-state examples.'
+    Assert-True -Condition ($taskHelpText -like '*task --restore-app-state --vm-update-task=115*') -Message 'Help must document task restore-app-state examples.'
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\parameters\init-task.ps1'))) -Message 'Task command must not keep the retired init-task parameter binding.'
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\parameters\update-task.ps1'))) -Message 'Task command must not keep the retired update-task parameter binding.'
 }
 
 Invoke-Test -Name "Store install state and shortcut launcher helper modules exist" -Action {

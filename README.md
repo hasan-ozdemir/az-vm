@@ -136,13 +136,13 @@ On the current Windows hero path, one successful `create` is designed to leave b
 1. Copy `.env.example` to `.env`.
 2. Set the minimum values:
    - `VM_OS_TYPE`
-   - `VM_NAME`
+   - `VM_NAME` when you want to override the derived default; otherwise az-vm derives it from the `employee_email_address` local-part plus `-vm`
    - `azure_subscription_id` when you want a repo-local default Azure subscription id for Azure-touching commands.
    - `AZ_LOCATION`
    - `VM_ADMIN_USER`, `VM_ADMIN_PASS`
    - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`
    - platform-specific image and size keys as needed
-3. Set `company_name`, `employee_email_address`, and `employee_full_name` for Windows flows. Repo-managed public desktop web shortcuts require all three; business shortcuts use `company_name` and personal shortcuts use the email local-part from `employee_email_address` as the Chrome `--profile-directory`. The task normalizes both sources to lowercase before writing the Chrome profile name.
+3. Set `company_name`, `company_web_address`, `company_email_address`, `employee_email_address`, and `employee_full_name` for Windows flows. Repo-managed public desktop web shortcuts require the company and employee identity inputs; business shortcuts use `company_name` plus `company_web_address`, personal shortcuts use the email local-part from `employee_email_address` as the Chrome `--profile-directory`, and future mail-facing shortcuts can reuse `company_email_address`. The task normalizes profile-directory sources to lowercase before writing the Chrome profile name.
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### Fastest Safe Path To Value
@@ -174,6 +174,8 @@ az login
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
 .\az-vm.cmd task --list --vm-update --windows
+.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
+.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
@@ -366,6 +368,8 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd task --list --vm-init` | `--list`, `--vm-init` | Lists init tasks | Init audit | Shows real execution order. |
 | `.\az-vm.cmd task --list --vm-update --windows` | `--list`, `--vm-update`, `--windows` | Lists Windows update tasks | Update inspection | Good before isolated reruns. |
 | `.\az-vm.cmd task --list --disabled --vm-update --windows` | `--disabled` | Lists disabled tasks | Cleanup or contract review | Surfaces disabled reason and source. |
+| `.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--save-app-state`, `--vm-update-task`, target selectors | Captures one live task-owned app-state payload into `.../update/app-states/<task-name>/app-state.zip` | Refreshing an operator-owned payload from the active VM | Cleanly skips when no capture coverage exists. |
+| `.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--restore-app-state`, `--vm-update-task`, target selectors | Replays one saved task-owned app-state payload to the active VM | Targeted state restore after reinstall or cleanup | Fails cleanly when the requested zip is missing or invalid. |
 
 #### `exec`
 
@@ -709,12 +713,12 @@ This matters because:
 
 ### High-Value `.env` Keys
 - `VM_OS_TYPE`: default platform flavor when the command path needs one
-- `VM_NAME`: single naming seed
+- `VM_NAME`: single naming seed; if left blank, az-vm derives it from the `employee_email_address` local-part plus `-vm`
 - `AZ_LOCATION`: target region default
 - `azure_subscription_id`: optional repo-local default Azure subscription id for Azure-touching commands.
 - `VM_ADMIN_USER`, `VM_ADMIN_PASS`: manager/admin identity
 - `VM_ASSISTANT_USER`, `VM_ASSISTANT_PASS`: assistant identity
-- `company_name`, `employee_email_address`, `employee_full_name`: Windows shortcut and UX identity inputs
+- `company_name`, `company_web_address`, `company_email_address`, `employee_email_address`, `employee_full_name`: Windows shortcut and UX identity inputs
 - `PYSSH_CLIENT_PATH`: default path should remain `tools/pyssh/ssh_client.py`
 
 ### Shared VM Feature Toggles

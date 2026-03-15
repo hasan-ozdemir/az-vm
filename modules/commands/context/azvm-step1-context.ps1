@@ -668,6 +668,8 @@ function Invoke-AzVmStep1Common {
     }
 
     $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue '')) -Tokens $baseTokens
+    $companyWebAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'company_web_address' -DefaultValue '')) -Tokens $baseTokens
+    $companyEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'company_email_address' -DefaultValue '')) -Tokens $baseTokens
     $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'employee_email_address' -DefaultValue '')) -Tokens $baseTokens
     $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'employee_full_name' -DefaultValue '')) -Tokens $baseTokens
     $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_USER' -Tokens $baseTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
@@ -730,6 +732,8 @@ function Invoke-AzVmStep1Common {
         VmDiskName = $vmDiskName
         VmDiskSize = $vmDiskSize
         CompanyName = [string]$companyName
+        CompanyWebAddress = [string]$companyWebAddress
+        CompanyEmailAddress = [string]$companyEmailAddress
         EmployeeEmailAddress = [string]$employeeEmailAddress
         EmployeeFullName = [string]$employeeFullName
         VmUser = $vmUser

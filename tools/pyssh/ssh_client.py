@@ -216,6 +216,30 @@ def run_copy(args: argparse.Namespace) -> int:
         client.close()
 
 
+def run_fetch(args: argparse.Namespace) -> int:
+    local_path = Path(args.local).expanduser().resolve()
+    local_parent = local_path.parent
+    local_parent.mkdir(parents=True, exist_ok=True)
+
+    client = build_client(
+        args.host,
+        args.port,
+        args.user,
+        args.password,
+        args.timeout,
+        args.keepalive_seconds,
+    )
+    try:
+        sftp = client.open_sftp()
+        try:
+            sftp.get(args.remote, str(local_path))
+        finally:
+            sftp.close()
+        return 0
+    finally:
+        client.close()
+
+
 def run_shell(args: argparse.Namespace) -> int:
     client = build_client(
         args.host,
@@ -532,6 +556,11 @@ def parse_args() -> argparse.Namespace:
     copy_parser.add_argument("--local", required=True, help="Local file path")
     copy_parser.add_argument("--remote", required=True, help="Remote file path")
 
+    fetch_parser = subparsers.add_parser("fetch", help="Copy remote file to local path over SFTP")
+    add_common(fetch_parser)
+    fetch_parser.add_argument("--remote", required=True, help="Remote file path")
+    fetch_parser.add_argument("--local", required=True, help="Local file path")
+
     shell_parser = subparsers.add_parser("shell", help="Open an interactive remote shell over SSH")
     add_common(shell_parser)
     shell_parser.add_argument(
@@ -569,6 +598,8 @@ def main() -> int:
         return run_exec(args)
     if args.action == "copy":
         return run_copy(args)
+    if args.action == "fetch":
+        return run_fetch(args)
     if args.action == "shell":
         return run_shell(args)
     if args.action == "session":

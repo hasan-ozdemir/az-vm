@@ -3,6 +3,8 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: create-shortcuts-public-desktop"
 
 $companyName = "__COMPANY_NAME__"
+$companyWebAddress = "__COMPANY_WEB_ADDRESS__"
+$companyEmailAddress = "__COMPANY_EMAIL_ADDRESS__"
 $employeeEmailAddress = "__EMPLOYEE_EMAIL_ADDRESS__"
 $employeeFullName = "__EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
@@ -17,6 +19,8 @@ $whatsAppFallbackPath = ""
 $iCloudFallbackPath = ""
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
+$unresolvedCompanyWebAddressToken = ('__' + 'COMPANY_WEB_ADDRESS' + '__')
+$unresolvedCompanyEmailAddressToken = ('__' + 'COMPANY_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
@@ -48,6 +52,27 @@ function Test-InvalidCompanyName {
     }
 
     return $false
+}
+
+function Test-InvalidCompanyWebAddress {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $true
+    }
+
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedCompanyWebAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ([string]::Equals($trimmed, 'company_web_address', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+    }
+    if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
+        return $true
+    }
+
+    return (-not ($trimmed -match '^https?://'))
 }
 
 function Test-InvalidEmployeeEmailAddress {
@@ -126,8 +151,22 @@ function ConvertTo-TitleCaseShortcutText {
     return [string]$textInfo.ToTitleCase($Value.Trim().ToLowerInvariant())
 }
 
+function Normalize-ShortcutUrl {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ''
+    }
+
+    $trimmed = [string]$Value.Trim()
+    return $trimmed.TrimEnd('/')
+}
+
 if (Test-InvalidCompanyName -Value $companyName) {
     throw "company_name is required for the Windows business public desktop shortcut flow. Set company_name in .env before running 10002-create-shortcuts-public-desktop."
+}
+if (Test-InvalidCompanyWebAddress -Value $companyWebAddress) {
+    throw "company_web_address is required for the Windows business public desktop shortcut flow. Set company_web_address in .env before running 10002-create-shortcuts-public-desktop."
 }
 if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) {
     throw "employee_email_address is required for the Windows public desktop shortcut flow. Set employee_email_address in .env before running 10002-create-shortcuts-public-desktop."
@@ -137,12 +176,16 @@ if (Test-InvalidEmployeeFullName -Value $employeeFullName) {
 }
 
 $companyName = $companyName.Trim()
+$companyWebAddress = $companyWebAddress.Trim()
+$companyEmailAddress = [string]$companyEmailAddress.Trim()
 $employeeEmailAddress = $employeeEmailAddress.Trim()
 $employeeFullName = $employeeFullName.Trim()
 $employeeEmailBaseName = Get-EmployeeEmailBaseName -EmailAddress $employeeEmailAddress
 $companyDisplayName = ConvertTo-TitleCaseShortcutText -Value $companyName
 $companyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $companyName
 $employeeEmailBaseName = ConvertTo-LowerInvariantText -Value $employeeEmailBaseName
+$companyWebRootUrl = Normalize-ShortcutUrl -Value $companyWebAddress
+$companyBlogUrl = if ([string]::IsNullOrWhiteSpace([string]$companyWebRootUrl)) { '' } else { ($companyWebRootUrl + '/blog') }
 
 function Get-ChromeProfileDirectoryForShortcut {
     param(
@@ -613,6 +656,36 @@ function Resolve-ICloudExecutablePath {
     }
 
     return ""
+}
+
+function Test-ICloudAppId {
+    param([string]$AppId)
+
+    if ([string]::IsNullOrWhiteSpace([string]$AppId)) {
+        return $false
+    }
+
+    if ([string]$AppId -match '(?i)filepicker') {
+        return $false
+    }
+
+    return ([string]$AppId -match '(?i)icloud|apple')
+}
+
+function Resolve-ICloudAppId {
+    $candidates = @(
+        (Resolve-AppxAppIdFromPackage -NameFragment 'icloud' -PackageNameHints @('AppleInc.iCloud', '9PKTQ5699M62', 'icloud')),
+        (Resolve-StartAppId -NameFragment 'icloud' -PackageNameHints @('AppleInc.iCloud', '9PKTQ5699M62', 'icloud')),
+        (Resolve-StoreAppId -NameFragment 'icloud' -PackageNameHints @('AppleInc.iCloud', '9PKTQ5699M62', 'icloud'))
+    )
+
+    foreach ($candidate in @($candidates)) {
+        if (Test-ICloudAppId -AppId ([string]$candidate)) {
+            return [string]$candidate
+        }
+    }
+
+    return ''
 }
 
 function Ensure-Directory {
@@ -1532,7 +1605,7 @@ $codexAppId = Resolve-StoreAppId -NameFragment "codex" -PackageNameHints @("Open
 $codexAppResolvedExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0") -ExecutableName "Codex.exe"
 $whatsAppBusinessAppId = Resolve-StoreAppId -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop", "9NKSQGP7F2NH")
 $whatsAppRootExe = Resolve-AppPackageExecutablePath -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop") -ExecutableName "WhatsApp.Root.exe"
-$iCloudAppId = Resolve-StoreAppId -NameFragment "icloud" -PackageNameHints @("icloud", "AppleInc.iCloud", "9PKTQ5699M62")
+$iCloudAppId = Resolve-ICloudAppId
 
 $outlookExe = Resolve-OfficeExecutable -ExeName "OUTLOOK.EXE"
 $wordExe = Resolve-OfficeExecutable -ExeName "WINWORD.EXE"
@@ -1567,8 +1640,8 @@ $socialWebShortcuts = @(
     @{ Name = "s12Facebook Personal"; Url = "https://www.facebook.com/"; ProfileKind = "personal" },
     @{ Name = "s13X-Twitter Business"; Url = "https://x.com/"; ProfileKind = "business" },
     @{ Name = "s14X-Twitter Personal"; Url = "https://x.com/"; ProfileKind = "personal" },
-    @{ Name = ("s15{0} Web" -f $companyDisplayName); Url = "https://example.invalid/"; ProfileKind = "business" },
-    @{ Name = ("s16{0} Blog" -f $companyDisplayName); Url = "https://example.invalid/blog"; ProfileKind = "business" },
+    @{ Name = ("s15{0} Web" -f $companyDisplayName); Url = $companyWebRootUrl; ProfileKind = "business" },
+    @{ Name = ("s16{0} Blog" -f $companyDisplayName); Url = $companyBlogUrl; ProfileKind = "business" },
     @{ Name = "s17SnapChat Business"; Url = "https://www.snapchat.com/@exampleorg"; ProfileKind = "business" },
     @{ Name = "s18NextSosyal Business"; Url = "https://sosyal.teknofest.app/@exampleorg"; ProfileKind = "business" }
 )
@@ -1687,10 +1760,16 @@ foreach ($spec in @($developerWebShortcuts)) {
     Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind 'business' -Variant 'remote')
 }
 
-Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i1Internet Business" -Url "https://example.invalid/" -ProfileKind 'business' -Variant 'remote' -CleanupAliases @("Google Chrome", "Chrome"))
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i1Internet Business" -Url $companyWebRootUrl -ProfileKind 'business' -Variant 'remote' -CleanupAliases @("Google Chrome", "Chrome"))
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i2Internet Personal" -Url "https://www.google.com" -ProfileKind 'personal' -Variant 'remote')
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --enable multi_agent --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
+$codexCliLaunchCommand = if (-not [string]::IsNullOrWhiteSpace([string]$codexCmdPath)) {
+    ('/c start "" /max /high "{0}" -c model_reasoning_summary=detailed -c hide_agent_reasoning=false -c show_raw_agent_reasoning=true -c tui.animations=true --enable multi_agent --enable fast_mode --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath)
+}
+else {
+    '/c start "" /max /high codex -c model_reasoning_summary=detailed -c hide_agent_reasoning=false -c show_raw_agent_reasoning=true -c tui.animations=true --enable multi_agent --enable fast_mode --yolo -s danger-full-access --cd "%UserProfile%" --search'
+}
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments $codexCliLaunchCommand -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $codexCmdPath -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k3Github Copilot CLI" -TargetPath $cmdExe -Arguments '/c cd /d %UserProfile% & %UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5' -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 

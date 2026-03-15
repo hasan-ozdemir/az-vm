@@ -159,6 +159,8 @@ function Initialize-AzVmExecCommandRuntimeContext {
     $vmDiskSize = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmDiskSizeConfigKey -DefaultValue ([string]$platformDefaults.VmDiskSizeDefault))) -Tokens $nameTokens
     $vmDiskName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_DISK_NAME' -DefaultValue '')) -Tokens $nameTokens
     $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_name' -DefaultValue '')) -Tokens $nameTokens
+    $companyWebAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_web_address' -DefaultValue '')) -Tokens $nameTokens
+    $companyEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_email_address' -DefaultValue '')) -Tokens $nameTokens
     $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'employee_email_address' -DefaultValue '')) -Tokens $nameTokens
     $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'employee_full_name' -DefaultValue '')) -Tokens $nameTokens
     $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ADMIN_USER' -Tokens $nameTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
@@ -227,6 +229,8 @@ function Initialize-AzVmExecCommandRuntimeContext {
         VmDiskName = [string]$vmDiskName
         VmDiskSize = [string]$vmDiskSize
         CompanyName = [string]$companyName
+        CompanyWebAddress = [string]$companyWebAddress
+        CompanyEmailAddress = [string]$companyEmailAddress
         EmployeeEmailAddress = [string]$employeeEmailAddress
         EmployeeFullName = [string]$employeeFullName
         VmUser = [string]$vmUser

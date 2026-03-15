@@ -15,7 +15,9 @@ tmp/
 tmp-logs/
 
 # Ignore local-only stage task trees
+windows/init/app-states/**
 windows/update/app-states/**
+linux/init/app-states/**
 linux/update/app-states/**
 windows/init/local/**
 !windows/init/local/

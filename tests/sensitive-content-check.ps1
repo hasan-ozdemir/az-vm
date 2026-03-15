@@ -13,6 +13,15 @@ function Get-SensitiveContentPatterns {
         [switch]$IncludeCommitOnlyPatterns
     )
 
+    $tokenSpecs = @(
+        @{ Name = 'banned-repo-needle-1'; Chars = @(98,105,122,121,117,109) },
+        @{ Name = 'banned-repo-needle-2'; Chars = @(104,97,115,97,110) },
+        @{ Name = 'banned-repo-needle-3'; Chars = @(104,97,115,97,110,111,122,100,101,109,105,114) },
+        @{ Name = 'banned-repo-needle-4'; Chars = @(106,97,119,115) },
+        @{ Name = 'banned-repo-needle-5'; Chars = @(102,114,101,101,100,111,109,32,115,99,105,101,110,116,105,102,105,99) },
+        @{ Name = 'banned-repo-needle-6'; Chars = @(102,114,101,101,100,111,109,115,99,105,101,110,116,105,102,105,99) }
+    )
+
     $patterns = @(
         [pscustomobject]@{
             Name = 'email-address'
@@ -23,6 +32,16 @@ function Get-SensitiveContentPatterns {
             Regex = ('(?i)\b(?:mail' + 'to:|te' + 'l:)\S+')
         }
     )
+
+    foreach ($tokenSpec in @($tokenSpecs)) {
+        $tokenText = -join @($tokenSpec.Chars | ForEach-Object { [char][int]$_ })
+        $escapedToken = [regex]::Escape([string]$tokenText)
+        $requiresWordBoundary = ($tokenText -notmatch '\s')
+        $patterns += [pscustomobject]@{
+            Name = [string]$tokenSpec.Name
+            Regex = if ($requiresWordBoundary) { ('(?i)\b{0}\b' -f $escapedToken) } else { ('(?i){0}' -f $escapedToken) }
+        }
+    }
 
     if ($IncludeCommitOnlyPatterns) {
         $patterns += [pscustomobject]@{

@@ -75,6 +75,57 @@ function Get-AzVmPlatformTaskCatalogConfigKey {
     return 'LIN_VM_UPDATE_TASK_DIR'
 }
 
+function Get-AzVmDerivedVmNameFromEmployeeEmailAddress {
+    param([string]$EmployeeEmailAddress)
+
+    $emailText = [string]$EmployeeEmailAddress
+    if ([string]::IsNullOrWhiteSpace([string]$emailText)) {
+        return ''
+    }
+
+    $trimmed = $emailText.Trim()
+    if (Test-AzVmConfigPlaceholderValue -Value $trimmed) {
+        return ''
+    }
+
+    $parts = @($trimmed -split '@')
+    if (@($parts).Count -lt 2 -or [string]::IsNullOrWhiteSpace([string]$parts[0])) {
+        return ''
+    }
+
+    $localPart = [string]$parts[0].Trim().ToLowerInvariant()
+    $normalized = [regex]::Replace($localPart, '[^a-z0-9-]+', '-')
+    $normalized = [regex]::Replace($normalized, '-{2,}', '-').Trim('-')
+    if ([string]::IsNullOrWhiteSpace([string]$normalized)) {
+        return ''
+    }
+
+    if (-not ($normalized[0] -match '[a-z]')) {
+        $normalized = ('u-{0}' -f $normalized)
+    }
+
+    $suffix = '-vm'
+    if (-not $normalized.EndsWith($suffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $normalized = ('{0}{1}' -f $normalized.TrimEnd('-'), $suffix)
+    }
+
+    $maxLength = 64
+    if ($normalized.Length -gt $maxLength) {
+        $baseLength = $maxLength - $suffix.Length
+        if ($baseLength -lt 1) {
+            $baseLength = 1
+        }
+        $baseText = $normalized.Substring(0, [Math]::Min($baseLength, $normalized.Length))
+        $baseText = $baseText.Trim('-')
+        if ([string]::IsNullOrWhiteSpace([string]$baseText)) {
+            $baseText = 'u'
+        }
+        $normalized = ('{0}{1}' -f $baseText, $suffix)
+    }
+
+    return [string]$normalized
+}
+
 # Handles Resolve-AzVmPlatformConfigMap.
 function Resolve-AzVmPlatformConfigMap {
     param(
@@ -104,6 +155,14 @@ function Resolve-AzVmPlatformConfigMap {
         }
         if ($resolved.ContainsKey([string]$baseKey)) {
             $resolved.Remove([string]$baseKey)
+        }
+    }
+
+    $resolvedVmName = [string](Get-ConfigValue -Config $resolved -Key 'VM_NAME' -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedVmName)) {
+        $derivedVmName = Get-AzVmDerivedVmNameFromEmployeeEmailAddress -EmployeeEmailAddress ([string](Get-ConfigValue -Config $resolved -Key 'employee_email_address' -DefaultValue ''))
+        if (-not [string]::IsNullOrWhiteSpace([string]$derivedVmName)) {
+            $resolved['VM_NAME'] = [string]$derivedVmName
         }
     }
 
