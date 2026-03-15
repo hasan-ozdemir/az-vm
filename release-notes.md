@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.15.319 - 2026-03-15
+
+### Summary
+This release hardens the Windows SSH task transport for environments where the OpenSSH command channel is healthy but the SFTP subsystem refuses negotiation. Windows SSH asset uploads now retry SFTP briefly and then fall back to a chunked PowerShell `exec` transfer that can stage helper modules and larger task scripts without tripping the remote Windows command-line limit, keeping `vm-update` moving instead of aborting at the first `pyssh copy asset` failure.
+
+### Highlights
+- Added a Windows-specific no-SFTP asset-transfer fallback in the shared SSH asset helper so `vm-update` can keep using one-shot SSH execution even when Paramiko cannot open an SFTP channel.
+- Reduced the inline chunk size used by the fallback transport so larger staged task scripts and helper modules avoid the remote `The command line is too long.` failure while still reconstructing the remote file deterministically.
+- Revalidated the behavior live by rebuilding the managed Windows target, then confirming the resulting VM is in `Provisioning succeeded` / `VM running` state and that both `connect --ssh --test` and `connect --rdp --test` pass against the new managed VM.
+
 ## Release 2026.3.15.318 - 2026-03-15
 
 ### Summary

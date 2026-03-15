@@ -5256,3 +5256,15 @@ This greeting must appear in all cases, including valid commands, invalid comman
 Verified that vm-update already used the shared app-state restore helper after each task and that `task --restore-app-state` already reused that same helper, but vm-init still differed: it ran init tasks through Azure Run Command without the shared post-task restore path. I refactored the init runner so vm-init now executes one task at a time over Azure Run Command and invokes the same shared task app-state restore helper after each successful init task when a matching stage-local plugin zip exists. I also routed `task --restore-app-state --vm-init-task ...` through that same shared helper by adding a run-command transport to the app-state restore runtime, so init post-task replay and direct vm-init restore now share the same plugin resolution and replay core instead of splitting between unrelated paths.
 
 In the same change, I added an unconditional CLI welcome banner at `az-vm.ps1`. Every invocation now starts with `AZ-VM CLI V<version>` and a two-line feature summary before command parsing and dispatch, so the same banner appears for valid commands, invalid commands, parameterized runs, and parameterless runs alike. I updated README, AGENTS, changelog, release notes, and smoke coverage to match the new behavior, and revalidated the change set with the non-live validation chain.
+
+### 2026-03-15 20:28 TRT
+
+**User Prompt**
+
+````text
+publish to production: first, delete all resource groups tagged to be managed by az-vm; then run the `az-vm create --auto --windows --perf` command to bring up a virtual machine; if any problem occurs during this command, stop, fix the code, and run the same command again; at the end of this work, let our new virtual machine go live...
+````
+
+**Assistant Summary**
+
+Completed: I deleted the existing az-vm-managed resource groups, traced the Windows live-create failure to the SSH asset-transfer path, fixed the repo to fall back from broken Windows SFTP negotiation to chunked PowerShell `exec` uploads, and reran the production workflow until a new managed VM was online. I then synchronized the resulting target into `.env` with `configure`, verified the VM was in `Provisioning succeeded` / `VM running` state, and confirmed both `connect --ssh --test` and `connect --rdp --test` passed for `bizyum` in `rg-bizyum-ate1-g1`. The final long `create` transcript hit the local tool timeout late in the Windows `vm-update` task list, but the VM itself was created successfully, remains reachable over both transports, and is now the active managed target.

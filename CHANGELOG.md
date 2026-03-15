@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.15.319] - 2026-03-15
+
+### Changed
+- Reworked the Windows SSH asset-transfer helper so Windows `vm-update` and other SSH-stage asset uploads now retry SFTP briefly and then fall back to a chunked PowerShell `exec` transfer when the Windows OpenSSH SFTP subsystem is present but fails negotiation.
+
+### Fixed
+- Fixed Windows post-init update flows that previously aborted on `paramiko.ssh_exception.SSHException: EOF during negotiation` during `pyssh copy asset`, which blocked one-shot fallback tasks and task-owned helper-module staging even though normal SSH command execution was healthy.
+- Fixed the Windows no-SFTP asset fallback so larger inline uploads no longer hit the remote `The command line is too long.` failure; the fallback now sends smaller bounded chunks and finalizes the remote file successfully.
+
+### Tests
+- Revalidated the new Windows asset fallback live against the active Azure target by deleting the existing az-vm-managed resource groups, reprovisioning `az-vm create --auto --windows --perf`, syncing the resulting target with `configure`, and confirming `do --vm-action=status`, `connect --ssh --test`, and `connect --rdp --test` against the new managed VM.
+
 ## [2026.3.15.318] - 2026-03-15
 
 ### Added
