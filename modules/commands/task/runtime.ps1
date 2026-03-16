@@ -481,7 +481,12 @@ function Invoke-AzVmTaskExecutionWithTarget {
 
     if ([string]::Equals([string]$Stage, 'init', [System.StringComparison]::OrdinalIgnoreCase)) {
         $combinedShell = if ([string]::Equals([string]$Runtime.Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) { 'bash' } else { 'powershell' }
-        $runCommandResult = Invoke-VmRunCommandBlocks -ResourceGroup ([string]$Runtime.Context.ResourceGroup) -VmName ([string]$Runtime.Context.VmName) -CommandId ([string]$Runtime.PlatformDefaults.RunCommandId) -TaskBlocks @($taskBlock) -CombinedShell $combinedShell -TaskOutcomeMode $effectiveTaskOutcomeMode -PerfTaskCategory "task-run" -Platform ([string]$Runtime.Platform) -RepoRoot (Get-AzVmRepoRoot) -ManagerUser ([string]$Runtime.Context.VmUser) -AssistantUser ([string]$Runtime.Context.VmAssistantUser)
+        $vmRuntimeDetails = Get-AzVmVmDetails -Context $Runtime.Context
+        $sshHost = [string]$vmRuntimeDetails.VmFqdn
+        if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
+            $sshHost = [string]$vmRuntimeDetails.PublicIP
+        }
+        $runCommandResult = Invoke-VmRunCommandBlocks -ResourceGroup ([string]$Runtime.Context.ResourceGroup) -VmName ([string]$Runtime.Context.VmName) -CommandId ([string]$Runtime.PlatformDefaults.RunCommandId) -TaskBlocks @($taskBlock) -CombinedShell $combinedShell -TaskOutcomeMode $effectiveTaskOutcomeMode -PerfTaskCategory "task-run" -Platform ([string]$Runtime.Platform) -RepoRoot (Get-AzVmRepoRoot) -ManagerUser ([string]$Runtime.Context.VmUser) -AssistantUser ([string]$Runtime.Context.VmAssistantUser) -SshHost $sshHost -SshUser ([string]$Runtime.Context.VmUser) -SshPassword ([string]$Runtime.Context.VmPass) -SshPort ([string]$Runtime.Context.SshPort) -SshConnectTimeoutSeconds ([int]$Runtime.SshConnectTimeoutSeconds) -ConfiguredPySshClientPath ([string]$Runtime.ConfiguredPySshClientPath)
         return [pscustomobject]@{
             Stage = 'init'
             Task = $taskBlock

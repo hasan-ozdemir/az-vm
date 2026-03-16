@@ -234,6 +234,8 @@ Assert-True -Condition ($readmeText -match [regex]::Escape('task --restore-app-s
 Assert-True -Condition ($readmeText -match [regex]::Escape('backup-app-states/<task-name>/')) -Message 'README.md must document the task-adjacent backup-app-states root.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('verify-report.json')) -Message 'README.md must document the restore verify report.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('Managed app-state save and restore target only the `manager` and `assistant` OS profiles.')) -Message 'README.md must describe the managed app-state profile-target contract.'
+Assert-True -Condition ($readmeText -match [regex]::Escape('init and update restore flows both reuse the same shared per-task app-state post-process over SSH; init defers replay until SSH is reachable and update replays immediately over SSH')) -Message 'README.md must document the SSH-only VM app-state replay contract.'
+Assert-True -Condition (-not ($readmeText -match [regex]::Escape('init routes it through Azure Run Command and update routes it through SSH'))) -Message 'README.md must not keep the retired run-command app-state replay wording.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('task --run-vm-init 01')) -Message 'README.md must include the task run-vm-init example.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('task --run-vm-update 10002')) -Message 'README.md must include the task run-vm-update example.'
 Assert-True -Condition ($readmeText -match [regex]::Escape('connect --ssh')) -Message 'README.md must document connect --ssh.'

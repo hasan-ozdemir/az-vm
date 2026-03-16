@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.329] - 2026-03-16
+
+### Changed
+- Removed task-local app-state ownership from `10002-create-shortcuts-public-desktop`, so the Windows Public Desktop shortcut task now stays fully on-the-fly and no longer restores stale `.lnk` or launcher artifacts from a saved payload after it finishes.
+- Kept the shipped shortcut launcher boundary unchanged in runtime behavior: direct `.lnk` targets remain in place when the combined `TargetPath + Arguments` invocation length is `<= 259`, and only true over-limit shortcuts continue to resolve through managed launcher `.cmd` files.
+
+### Fixed
+- Fixed the live Public Desktop regeneration path so rerunning `10002-create-shortcuts-public-desktop` no longer replays an old task-local `app-state.zip` over freshly generated shortcuts, which had been leaving direct-safe entries such as `z1Google Account Setup`, `i1Internet Business`, and `a11MS Edge` stuck on older `cmd.exe`-wrapped shapes.
+
+### Tests
+- Revalidated the updated Public Desktop task non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the live shortcut behavior in isolation on the active managed Windows VM with `task --run-vm-update 10002 --windows --perf` plus `exec` readbacks that confirmed `z1Google Account Setup`, `i1Internet Business`, and `a11MS Edge` now resolve directly to their browser executables while over-limit entries such as `q2Spotify` still use managed launcher `.cmd` files.
+
 ## [2026.3.16.328] - 2026-03-16
 
 ### Changed

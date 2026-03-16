@@ -5,30 +5,37 @@
   "appState": {
     "machineDirectories": [],
     "machineFiles": [],
-    "profileDirectories": [],
-    "profileFiles": [
+    "profileDirectories": [
       {
-        "path": "AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Bookmarks",
+        "path": "AppData\\Local\\Microsoft\\Edge\\User Data",
         "targetProfiles": [],
-        "excludeNames": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "GrShaderCache",
+          "DawnGraphiteCache",
+          "DawnWebGPUCache",
+          "ShaderCache",
+          "Crashpad",
+          "Crash Reports",
+          "CrashDumps",
+          "Temp",
+          "tmp"
+        ],
         "excludePathPatterns": [],
-        "excludeFilePatterns": []
-      },
-      {
-        "path": "AppData\\Local\\Microsoft\\Edge\\User Data\\Default\\Preferences",
-        "targetProfiles": [],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
-      },
-      {
-        "path": "AppData\\Local\\Microsoft\\Edge\\User Data\\Local State",
-        "targetProfiles": [],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.temp",
+          "*.etl",
+          "*.log",
+          "*.crdownload",
+          "Singleton*"
+        ]
       }
     ],
+    "profileFiles": [],
     "machineRegistryKeys": [],
     "userRegistryKeys": []
   }

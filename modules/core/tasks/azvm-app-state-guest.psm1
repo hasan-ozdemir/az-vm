@@ -1588,12 +1588,46 @@ function Stop-AzVmManagedProcessesGracefully {
     }
 }
 
-function Invoke-AzVmTaskAppStateReplayPreflight {
+function Get-AzVmTaskAppStateManagedProcessNames {
     param([string]$TaskName)
 
     if ([string]::Equals([string]$TaskName, '02-check-install-chrome', [System.StringComparison]::OrdinalIgnoreCase)) {
-        Stop-AzVmManagedProcessesGracefully -ProcessNames @('chrome') -GracefulWaitSeconds 15
+        return @('chrome')
     }
+    if ([string]::Equals([string]$TaskName, '110-install-edge-browser', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return @('msedge')
+    }
+
+    return @()
+}
+
+function Invoke-AzVmTaskAppStateBrowserPreflight {
+    param(
+        [string]$TaskName,
+        [ValidateSet('capture', 'replay')]
+        [string]$Mode
+    )
+
+    $processNames = @(Get-AzVmTaskAppStateManagedProcessNames -TaskName $TaskName)
+    if (@($processNames).Count -lt 1) {
+        return
+    }
+
+    Write-Host ("app-state-phase => task={0}; phase=preflight-start; mode={1}; processes={2}" -f [string]$TaskName, [string]$Mode, (@($processNames) -join ','))
+    Stop-AzVmManagedProcessesGracefully -ProcessNames @($processNames) -GracefulWaitSeconds 15
+    Write-Host ("app-state-phase => task={0}; phase=preflight-complete; mode={1}; processes={2}" -f [string]$TaskName, [string]$Mode, (@($processNames) -join ','))
+}
+
+function Invoke-AzVmTaskAppStateCapturePreflight {
+    param([string]$TaskName)
+
+    Invoke-AzVmTaskAppStateBrowserPreflight -TaskName $TaskName -Mode 'capture'
+}
+
+function Invoke-AzVmTaskAppStateReplayPreflight {
+    param([string]$TaskName)
+
+    Invoke-AzVmTaskAppStateBrowserPreflight -TaskName $TaskName -Mode 'replay'
 }
 
 function Resolve-AzVmAppStateCapturePathMatches {
@@ -1880,6 +1914,7 @@ function Invoke-AzVmTaskAppStateCapture {
 
     try {
         Remove-Item -LiteralPath $OutputZipPath -Force -ErrorAction SilentlyContinue
+        Invoke-AzVmTaskAppStateCapturePreflight -TaskName $TaskName
         foreach ($entry in @($plan.machineDirectories)) {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.path)) { continue }
             foreach ($matchPath in @(Resolve-AzVmAppStateCapturePathMatches -BasePath '' -RelativeOrAbsolutePath ([string]$entry.path))) {

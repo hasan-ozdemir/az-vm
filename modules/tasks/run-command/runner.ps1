@@ -220,6 +220,164 @@ function Invoke-AzVmSingleRunCommandTask {
     }
 }
 
+function Get-AzVmRunCommandTaskAppStateDisposition {
+    param([psobject]$TaskBlock)
+
+    $pluginInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $TaskBlock
+    $taskName = if ($null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) { [string]$TaskBlock.Name } else { '' }
+
+    switch ([string]$pluginInfo.Status) {
+        'ready' {
+            return [pscustomobject]@{
+                Status = 'ready'
+                TaskName = [string]$taskName
+                Message = 'ready'
+            }
+        }
+        'missing-plugin' {
+            return [pscustomobject]@{
+                Status = 'skip'
+                TaskName = [string]$taskName
+                Message = 'no plugin'
+            }
+        }
+        'missing-zip' {
+            return [pscustomobject]@{
+                Status = 'skip'
+                TaskName = [string]$taskName
+                Message = 'no zip'
+            }
+        }
+        'invalid' {
+            return [pscustomobject]@{
+                Status = 'warning'
+                TaskName = [string]$taskName
+                Message = [string]$pluginInfo.Message
+            }
+        }
+        default {
+            return [pscustomobject]@{
+                Status = 'skip'
+                TaskName = [string]$taskName
+                Message = 'unknown plugin state'
+            }
+        }
+    }
+}
+
+function Test-AzVmRunCommandAppStateSshReady {
+    param(
+        [string]$SshHost,
+        [string]$SshPort,
+        [int]$ConnectTimeoutSeconds = 30,
+        [switch]$AllowWait
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$SshHost) -or [string]::IsNullOrWhiteSpace([string]$SshPort)) {
+        return $false
+    }
+
+    $portNumber = 0
+    try {
+        $portNumber = [int]$SshPort
+    }
+    catch {
+        return $false
+    }
+    if ($portNumber -lt 1 -or $portNumber -gt 65535) {
+        return $false
+    }
+
+    $timeoutSeconds = [Math]::Min([Math]::Max([int]$ConnectTimeoutSeconds, 5), 10)
+    $maxAttempts = if ($AllowWait) { 3 } else { 1 }
+    $delaySeconds = if ($AllowWait) { 5 } else { 0 }
+
+    return [bool](Wait-AzVmTcpPortReachable -HostName $SshHost -Port $portNumber -MaxAttempts $maxAttempts -DelaySeconds $delaySeconds -TimeoutSeconds $timeoutSeconds -Label 'ssh')
+}
+
+function Invoke-AzVmRunCommandDeferredAppStateFlush {
+    param(
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
+        [string]$RepoRoot,
+        [psobject[]]$PendingTaskBlocks = @(),
+        [string]$SshHost,
+        [string]$SshUser,
+        [string]$SshPassword,
+        [string]$SshPort,
+        [int]$SshConnectTimeoutSeconds = 30,
+        [string]$ConfiguredPySshClientPath = '',
+        [string]$ManagerUser = '',
+        [string]$AssistantUser = '',
+        [switch]$AllowWait
+    )
+
+    $pendingTasks = @($PendingTaskBlocks)
+    if (@($pendingTasks).Count -lt 1) {
+        return [pscustomobject]@{
+            RemainingTasks = @()
+            WarningTasks = @()
+        }
+    }
+
+    if (-not (Test-AzVmRunCommandAppStateSshReady -SshHost $SshHost -SshPort $SshPort -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -AllowWait:$AllowWait)) {
+        return [pscustomobject]@{
+            RemainingTasks = @($pendingTasks)
+            WarningTasks = @()
+        }
+    }
+
+    $pySsh = Ensure-AzVmPySshTools -RepoRoot $RepoRoot -ConfiguredPySshClientPath $ConfiguredPySshClientPath
+    $bootstrap = Initialize-AzVmSshHostKey `
+        -PySshPythonPath ([string]$pySsh.PythonPath) `
+        -PySshClientPath ([string]$pySsh.ClientPath) `
+        -HostName $SshHost `
+        -UserName $SshUser `
+        -Password $SshPassword `
+        -Port $SshPort `
+        -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+    if ($null -ne $bootstrap -and $bootstrap.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
+        Write-Host ([string]$bootstrap.Output)
+    }
+
+    $warningTasks = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($taskBlock in @($pendingTasks)) {
+        if ($null -eq $taskBlock) {
+            continue
+        }
+
+        $taskName = if ($taskBlock.PSObject.Properties.Match('Name').Count -gt 0) { [string]$taskBlock.Name } else { '(unknown-task)' }
+        try {
+            $appStateResult = Invoke-AzVmTaskAppStatePostProcess `
+                -Platform $Platform `
+                -RepoRoot $RepoRoot `
+                -TaskBlock $taskBlock `
+                -PySshPythonPath ([string]$pySsh.PythonPath) `
+                -PySshClientPath ([string]$pySsh.ClientPath) `
+                -HostName $SshHost `
+                -UserName $SshUser `
+                -Password $SshPassword `
+                -Port $SshPort `
+                -ConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                -TimeoutSeconds (Get-AzVmTaskTimeoutSeconds -TaskBlock $taskBlock -DefaultTimeoutSeconds 180) `
+                -ManagerUser ([string]$ManagerUser) `
+                -AssistantUser ([string]$AssistantUser)
+            if ($null -ne $appStateResult -and $appStateResult.PSObject.Properties.Match('Warning').Count -gt 0 -and [bool]$appStateResult.Warning) {
+                $warningTasks.Add(("{0} => app-state" -f [string]$taskName)) | Out-Null
+            }
+        }
+        catch {
+            Write-Warning ("App-state warning: {0} => {1}" -f [string]$taskName, $_.Exception.Message)
+            $warningTasks.Add(("{0} => app-state" -f [string]$taskName)) | Out-Null
+        }
+    }
+
+    return [pscustomobject]@{
+        RemainingTasks = @()
+        WarningTasks = @($warningTasks.ToArray())
+    }
+}
+
 # Handles Invoke-VmRunCommandBlocks.
 function Invoke-VmRunCommandBlocks {
     param(
@@ -237,7 +395,13 @@ function Invoke-VmRunCommandBlocks {
         [string]$Platform = 'windows',
         [string]$RepoRoot = '',
         [string]$ManagerUser = '',
-        [string]$AssistantUser = ''
+        [string]$AssistantUser = '',
+        [string]$SshHost = '',
+        [string]$SshUser = '',
+        [string]$SshPassword = '',
+        [string]$SshPort = '',
+        [int]$SshConnectTimeoutSeconds = 30,
+        [string]$ConfiguredPySshClientPath = ''
     )
 
     if (-not $TaskBlocks -or $TaskBlocks.Count -eq 0) {
@@ -256,6 +420,8 @@ function Invoke-VmRunCommandBlocks {
     $warningTasks = @()
     $rebootRequestedTasks = @()
     $processedTaskCount = 0
+    $pendingAppStateTaskBlocks = New-Object 'System.Collections.Generic.List[object]'
+    $deferredAppStateTasks = @{}
 
     foreach ($taskBlock in @($TaskBlocks)) {
         $processedTaskCount++
@@ -282,20 +448,64 @@ function Invoke-VmRunCommandBlocks {
             $totalSuccess += [int]$taskResult.SuccessCount
             $successfulTasks += $taskName
 
-            $appStateResult = Invoke-AzVmTaskAppStatePostProcess `
-                -Platform $Platform `
-                -Transport 'run-command' `
-                -RepoRoot $RepoRoot `
-                -TaskBlock $taskBlock `
-                -ResourceGroup $ResourceGroup `
-                -VmName $VmName `
-                -RunCommandId $CommandId `
-                -TimeoutSeconds (Get-AzVmTaskTimeoutSeconds -TaskBlock $taskBlock -DefaultTimeoutSeconds 180) `
-                -ManagerUser ([string]$ManagerUser) `
-                -AssistantUser ([string]$AssistantUser)
-            if ($null -ne $appStateResult -and $appStateResult.PSObject.Properties.Match('Warning').Count -gt 0 -and [bool]$appStateResult.Warning) {
-                $totalWarnings++
-                $warningTasks += ("{0} => app-state" -f [string]$taskName)
+            $appStateDisposition = Get-AzVmRunCommandTaskAppStateDisposition -TaskBlock $taskBlock
+            switch ([string]$appStateDisposition.Status) {
+                'ready' {
+                    $pendingAppStateTaskBlocks.Add($taskBlock) | Out-Null
+                }
+                'warning' {
+                    $totalWarnings++
+                    $warningTasks += ("{0} => app-state-contract" -f [string]$taskName)
+                    Write-Warning ("App-state warning: {0} => {1}" -f [string]$taskName, [string]$appStateDisposition.Message)
+                }
+            }
+
+            if ($pendingAppStateTaskBlocks.Count -gt 0) {
+                try {
+                    $flushResult = Invoke-AzVmRunCommandDeferredAppStateFlush `
+                        -Platform $Platform `
+                        -RepoRoot $RepoRoot `
+                        -PendingTaskBlocks @($pendingAppStateTaskBlocks.ToArray()) `
+                        -SshHost $SshHost `
+                        -SshUser $SshUser `
+                        -SshPassword $SshPassword `
+                        -SshPort $SshPort `
+                        -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                        -ConfiguredPySshClientPath $ConfiguredPySshClientPath `
+                        -ManagerUser ([string]$ManagerUser) `
+                        -AssistantUser ([string]$AssistantUser)
+                }
+                catch {
+                    Write-Warning ("App-state deferred flush failed: {0}" -f $_.Exception.Message)
+                    $flushResult = [pscustomobject]@{
+                        RemainingTasks = @($pendingAppStateTaskBlocks.ToArray())
+                        WarningTasks = @()
+                    }
+                }
+
+                $pendingAppStateTaskBlocks = New-Object 'System.Collections.Generic.List[object]'
+                foreach ($remainingTask in @($flushResult.RemainingTasks)) {
+                    if ($null -ne $remainingTask) {
+                        $pendingAppStateTaskBlocks.Add($remainingTask) | Out-Null
+                    }
+                }
+                foreach ($warningTask in @($flushResult.WarningTasks)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$warningTask)) {
+                        $totalWarnings++
+                        $warningTasks += [string]$warningTask
+                    }
+                }
+                foreach ($remainingTask in @($pendingAppStateTaskBlocks.ToArray())) {
+                    if ($null -eq $remainingTask) {
+                        continue
+                    }
+
+                    $remainingTaskName = if ($remainingTask.PSObject.Properties.Match('Name').Count -gt 0) { [string]$remainingTask.Name } else { '(unknown-task)' }
+                    if (-not $deferredAppStateTasks.ContainsKey($remainingTaskName)) {
+                        Write-Host ("App-state deferred: {0} => waiting for SSH readiness." -f [string]$remainingTaskName) -ForegroundColor Yellow
+                        $deferredAppStateTasks[$remainingTaskName] = $true
+                    }
+                }
             }
         }
         else {
@@ -318,6 +528,48 @@ function Invoke-VmRunCommandBlocks {
                 $totalWarnings++
                 $warningTasks += ("{0} => reboot" -f [string]$taskName)
             }
+        }
+    }
+
+    if ($pendingAppStateTaskBlocks.Count -gt 0) {
+        try {
+            $finalFlushResult = Invoke-AzVmRunCommandDeferredAppStateFlush `
+                -Platform $Platform `
+                -RepoRoot $RepoRoot `
+                -PendingTaskBlocks @($pendingAppStateTaskBlocks.ToArray()) `
+                -SshHost $SshHost `
+                -SshUser $SshUser `
+                -SshPassword $SshPassword `
+                -SshPort $SshPort `
+                -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                -ConfiguredPySshClientPath $ConfiguredPySshClientPath `
+                -ManagerUser ([string]$ManagerUser) `
+                -AssistantUser ([string]$AssistantUser) `
+                -AllowWait
+        }
+        catch {
+            Write-Warning ("App-state final flush failed: {0}" -f $_.Exception.Message)
+            $finalFlushResult = [pscustomobject]@{
+                RemainingTasks = @($pendingAppStateTaskBlocks.ToArray())
+                WarningTasks = @()
+            }
+        }
+
+        foreach ($warningTask in @($finalFlushResult.WarningTasks)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$warningTask)) {
+                $totalWarnings++
+                $warningTasks += [string]$warningTask
+            }
+        }
+        foreach ($remainingTask in @($finalFlushResult.RemainingTasks)) {
+            if ($null -eq $remainingTask) {
+                continue
+            }
+
+            $remainingTaskName = if ($remainingTask.PSObject.Properties.Match('Name').Count -gt 0) { [string]$remainingTask.Name } else { '(unknown-task)' }
+            $totalWarnings++
+            $warningTasks += ("{0} => app-state-deferred" -f [string]$remainingTaskName)
+            Write-Warning ("App-state warning: {0} => SSH was not ready before vm-init completed." -f [string]$remainingTaskName)
         }
     }
 

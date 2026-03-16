@@ -5,23 +5,37 @@
   "appState": {
     "machineDirectories": [],
     "machineFiles": [],
-    "profileDirectories": [],
-    "profileFiles": [
+    "profileDirectories": [
       {
-        "path": "AppData\\Local\\Google\\Chrome\\User Data\\Default\\Preferences",
+        "path": "AppData\\Local\\Google\\Chrome\\User Data",
         "targetProfiles": [],
-        "excludeNames": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "GrShaderCache",
+          "DawnGraphiteCache",
+          "DawnWebGPUCache",
+          "ShaderCache",
+          "Crashpad",
+          "Crash Reports",
+          "CrashDumps",
+          "Temp",
+          "tmp"
+        ],
         "excludePathPatterns": [],
-        "excludeFilePatterns": []
-      },
-      {
-        "path": "AppData\\Local\\Google\\Chrome\\User Data\\Local State",
-        "targetProfiles": [],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.temp",
+          "*.etl",
+          "*.log",
+          "*.crdownload",
+          "Singleton*"
+        ]
       }
     ],
+    "profileFiles": [],
     "machineRegistryKeys": [],
     "userRegistryKeys": []
   }

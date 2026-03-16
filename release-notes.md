@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.329 - 2026-03-16
+
+### Summary
+This release removes task-local app-state replay from `10002-create-shortcuts-public-desktop` so the Windows Public Desktop task stays purely on-the-fly. Fresh shortcut generation now wins end to end: direct-safe browser shortcuts stay bound directly to `chrome.exe` or `msedge.exe`, while only genuinely over-limit invocations continue to use managed launcher `.cmd` files.
+
+### Highlights
+- Removed the task-local `app-state.zip` ownership from `10002-create-shortcuts-public-desktop`, so rerunning the Public Desktop task no longer restores stale shortcut or launcher artifacts after it regenerates the managed shortcut set.
+- Kept the direct-vs-launcher boundary exactly at the shipped combined `TargetPath + Arguments` threshold of `259`, with direct `.lnk` targets for shorter browser entries and managed launcher `.cmd` files only for longer entries.
+- Revalidated the task live in isolation on the active managed Windows VM, confirming that `z1Google Account Setup`, `i1Internet Business`, and `a11MS Edge` now resolve directly to their browser executables while `q2Spotify` still routes through a managed launcher because its effective invocation length is `265`.
+
 ## Release 2026.3.16.328 - 2026-03-16
 
 ### Summary

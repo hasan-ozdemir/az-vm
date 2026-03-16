@@ -498,29 +498,28 @@ function Save-AzVmTaskAppStateFromVm {
 
     $remotePlanPath = Get-AzVmTaskAppStateRemoteCapturePlanPath -TaskName $taskName
     $remoteZipPath = Get-AzVmTaskAppStateRemoteCaptureZipPath -TaskName $taskName
+    $localPlanPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-plan-{0}-{1}.json' -f $safeTaskName, ([guid]::NewGuid().ToString('N')))
     try {
         $scriptTimeout = $TimeoutSeconds
         if ($scriptTimeout -lt 60) { $scriptTimeout = 60 }
         if ($scriptTimeout -gt 3600) { $scriptTimeout = 3600 }
         $taskShell = 'powershell'
         $captureScript = ''
+        Set-Content -LiteralPath $localPlanPath -Value $planJson -Encoding UTF8
         if ([string]::Equals($Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) {
-            $localPlanPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-plan-{0}-{1}.json' -f $safeTaskName, ([guid]::NewGuid().ToString('N')))
             $guestHelperPath = Get-AzVmAppStateGuestHelperPath
-            Set-Content -LiteralPath $localPlanPath -Value $planJson -Encoding UTF8
             Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $localPlanPath -RemotePath $remotePlanPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
             Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath 'C:/Windows/Temp/az-vm-app-state-guest.psm1' -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
             $captureScript = Get-AzVmTaskAppStateGuestCaptureScript -TaskName $taskName -PlanPath $remotePlanPath -OutputZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
         }
         else {
             $taskShell = 'bash'
-            $encodedPlanJson = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes([string]$planJson))
+            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $localPlanPath -RemotePath $remotePlanPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
             $bashTaskName = [string]$taskName.Replace("'", "'""'""'")
             $bashRemotePlanPath = [string]$remotePlanPath.Replace("'", "'""'""'")
             $bashRemoteZipPath = [string]$remoteZipPath.Replace("'", "'""'""'")
             $bashManagerUser = [string]$ManagerUser.Replace("'", "'""'""'")
             $bashAssistantUser = [string]$AssistantUser.Replace("'", "'""'""'")
-            $bashPlanB64 = [string]$encodedPlanJson.Replace("'", "'""'""'")
             $captureScript = @"
 set -euo pipefail
 task_name='$bashTaskName'
@@ -528,7 +527,6 @@ plan_path='$bashRemotePlanPath'
 zip_path='$bashRemoteZipPath'
 manager_user='$bashManagerUser'
 assistant_user='$bashAssistantUser'
-plan_b64='$bashPlanB64'
 scratch_root="$(mktemp -d /tmp/az-vm-app-state-save.XXXXXX)"
 cleanup() {
   rm -rf "$scratch_root"
@@ -544,9 +542,7 @@ else
   echo 'WARNING: app-state-save-skip => python interpreter was not found.'
   exit 3
 fi
-printf '%s' "$plan_b64" | "$python_bin" -c "import base64,sys; sys.stdout.write(base64.b64decode(sys.stdin.read()).decode('utf-8'))" > "$plan_path"
 "$python_bin" - "$task_name" "$plan_path" "$zip_path" "$manager_user" "$assistant_user" <<'PY'
-import base64
 import glob
 import json
 import os

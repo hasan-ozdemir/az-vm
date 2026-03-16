@@ -2,17 +2,20 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: capture-snapshot-health"
 
 $companyName = "__SELECTED_COMPANY_NAME__"
+$companyWebAddress = "__SELECTED_COMPANY_WEB_ADDRESS__"
 $employeeEmailAddress = "__SELECTED_EMPLOYEE_EMAIL_ADDRESS__"
 $employeeFullName = "__SELECTED_EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $publicDesktop = "C:\Users\Public\Desktop"
-$publicEdgeUserDataDir = 'C:\Users\Public\AppData\Local\Microsoft\msedge\userdata'
+$publicChromeUserDataDir = 'C:\Users\Public\AppData\Local\Google\Chrome\UserData'
+$publicEdgeUserDataDir = 'C:\Users\Public\AppData\Local\Microsoft\msedge\UserData'
 $dockerStartupShortcutPath = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk"
 $ollamaStartupShortcutPath = ("C:\Users\{0}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk" -f $managerUser)
 $shortcutRunAsAdminFlag = 0x00002000
 $unresolvedCompanyNameToken = ('__' + 'SELECTED_COMPANY_NAME' + '__')
+$unresolvedCompanyWebAddressToken = ('__' + 'SELECTED_COMPANY_WEB_ADDRESS' + '__')
 $unresolvedEmployeeEmailAddressToken = ('__' + 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' + '__')
 $unresolvedEmployeeFullNameToken = ('__' + 'SELECTED_EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
@@ -208,6 +211,17 @@ function Test-InvalidEmployeeEmailAddress {
     return $false
 }
 
+function Test-InvalidCompanyWebAddress {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
+    $trimmed = $Value.Trim()
+    if ([string]::Equals($trimmed, $unresolvedCompanyWebAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, 'SELECTED_COMPANY_WEB_ADDRESS', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) { return $true }
+    return (-not ($trimmed -match '^https?://'))
+}
+
 function Test-InvalidEmployeeFullName {
     param([string]$Value)
 
@@ -250,6 +264,16 @@ function ConvertTo-LowerInvariantText {
     return [string]$Value.Trim().ToLowerInvariant()
 }
 
+function Normalize-ShortcutUrl {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ''
+    }
+
+    return ([string]$Value.Trim()).TrimEnd('/')
+}
+
 function Get-ChromeProfileDirectoryForShortcut {
     param(
         [ValidateSet('business','personal')]
@@ -263,6 +287,18 @@ function Get-ChromeProfileDirectoryForShortcut {
     return [string]$script:resolvedCompanyChromeProfileDirectory
 }
 
+function Get-ChromeArgsPrefix {
+    param(
+        [ValidateSet('business','personal')]
+        [string]$ProfileKind = 'business',
+        [ValidateSet('remote','setup','bank')]
+        [string]$Variant = 'remote'
+    )
+
+    $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
+    return ('--new-window --start-maximized --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
+}
+
 function Get-EdgeArgsPrefix {
     param(
         [ValidateSet('business','personal')]
@@ -272,17 +308,7 @@ function Get-EdgeArgsPrefix {
     )
 
     $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
-    switch ([string]$Variant) {
-        'setup' {
-            return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
-        }
-        'bank' {
-            return ('--new-window --start-maximized --profile-directory="{0}"' -f $profileDirectory)
-        }
-        default {
-            return ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
-        }
-    }
+    return ('--new-window --start-maximized --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
 }
 
 function Get-WindowsOptionalFeatureState {
@@ -1159,12 +1185,31 @@ function Write-JawsUserRegistryStatus {
     }
 }
 
+function Write-BrowserUserDataStatus {
+    param(
+        [string]$BrowserName,
+        [string]$UserName,
+        [string]$RelativeRoot
+    )
+
+    $rootPath = Join-Path ("C:\Users\{0}" -f [string]$UserName) [string]$RelativeRoot
+    $localStatePath = Join-Path $rootPath 'Local State'
+    $defaultPreferencesPath = Join-Path $rootPath 'Default\Preferences'
+    $defaultExtensionsPath = Join-Path $rootPath 'Default\Extensions'
+
+    Write-Host ("browser-user-data => {0} => {1} => exists={2}; local-state={3}; default-preferences={4}; default-extensions={5}; path={6}" -f [string]$BrowserName, [string]$UserName, [bool](Test-Path -LiteralPath $rootPath), [bool](Test-Path -LiteralPath $localStatePath), [bool](Test-Path -LiteralPath $defaultPreferencesPath), [bool](Test-Path -LiteralPath $defaultExtensionsPath), [string]$rootPath)
+}
+
 $resolvedCompanyName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { $companyName.Trim() }
+$resolvedCompanyWebAddress = if (Test-InvalidCompanyWebAddress -Value $companyWebAddress) { $unresolvedCompanyWebAddressToken } else { $companyWebAddress.Trim() }
 $resolvedCompanyDisplayName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { ConvertTo-TitleCaseShortcutText -Value $companyName.Trim() }
 $resolvedEmployeeEmailAddress = if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) { $unresolvedEmployeeEmailAddressToken } else { $employeeEmailAddress.Trim() }
 $resolvedEmployeeFullName = if (Test-InvalidEmployeeFullName -Value $employeeFullName) { $unresolvedEmployeeFullNameToken } else { $employeeFullName.Trim() }
 $script:resolvedEmployeeEmailBaseName = ConvertTo-LowerInvariantText -Value (Get-EmployeeEmailBaseName -EmailAddress $resolvedEmployeeEmailAddress)
 $script:resolvedCompanyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $resolvedCompanyName
+$companyWebRootUrl = Normalize-ShortcutUrl -Value $resolvedCompanyWebAddress
+$expectedChromeBusinessArgs = ((Get-ChromeArgsPrefix -ProfileKind 'business' -Variant 'remote') + ' "' + [string]$companyWebRootUrl + '"')
+$expectedChromeSetupArgs = ((Get-ChromeArgsPrefix -ProfileKind 'business' -Variant 'setup') + ' "chrome://settings/syncSetup"')
 $expectedEdgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind 'business' -Variant 'remote'
 $publicShortcutNames = @(
     "a1ChatGPT Web",
@@ -1498,6 +1543,50 @@ if (Test-Path -LiteralPath $edgeShortcutPath) {
 else {
     Write-Host ("edge-shortcut-missing => {0}" -f $edgeShortcutPath)
 }
+
+$chromeShortcutPath = Join-Path $publicDesktop 'i1Internet Business.lnk'
+Write-Host "CHROME SHORTCUT CONTRACT:"
+if (Test-Path -LiteralPath $chromeShortcutPath) {
+    $chromeShortcutHealth = Get-ShortcutHealth -ShortcutPath $chromeShortcutPath
+    $chromeShortcutDetails = $chromeShortcutHealth.Details
+    $chromeResolvedInvocation = if ($null -ne $chromeShortcutHealth -and $chromeShortcutHealth.PSObject.Properties.Match('ResolvedInvocation').Count -gt 0) { $chromeShortcutHealth.ResolvedInvocation } else { $null }
+    $chromeEffectiveTarget = if ($null -ne $chromeResolvedInvocation -and -not [string]::IsNullOrWhiteSpace([string]$chromeResolvedInvocation.TargetPath)) { [string]$chromeResolvedInvocation.TargetPath } else { [string]$chromeShortcutDetails.TargetPath }
+    $chromeEffectiveArgs = if ($null -ne $chromeResolvedInvocation) { [string]$chromeResolvedInvocation.Arguments } else { [string]$chromeShortcutDetails.Arguments }
+    $chromeArgsMatch = [string]::Equals(([string]$chromeEffectiveArgs).Trim(), ([string]$expectedChromeBusinessArgs).Trim(), [System.StringComparison]::OrdinalIgnoreCase)
+    Write-Host ("chrome-shortcut-target => {0}" -f $chromeEffectiveTarget)
+    Write-Host ("chrome-shortcut-args => {0}" -f $chromeEffectiveArgs)
+    Write-Host ("chrome-shortcut-expected-args => {0}" -f [string]$expectedChromeBusinessArgs)
+    Write-Host ("chrome-shortcut-user-data-root => {0}" -f $publicChromeUserDataDir)
+    if ($null -ne $chromeResolvedInvocation -and [bool]$chromeResolvedInvocation.UsesManagedLauncher) {
+        Write-Host ("chrome-shortcut-launcher => {0}" -f [string]$chromeResolvedInvocation.LauncherPath)
+    }
+    Write-Host ("chrome-shortcut-args-match => {0}" -f [bool]$chromeArgsMatch)
+}
+else {
+    Write-Host ("chrome-shortcut-missing => {0}" -f $chromeShortcutPath)
+}
+
+$chromeSetupShortcutPath = Join-Path $publicDesktop 'z1Google Account Setup.lnk'
+Write-Host "CHROME SETUP SHORTCUT CONTRACT:"
+if (Test-Path -LiteralPath $chromeSetupShortcutPath) {
+    $chromeSetupShortcutHealth = Get-ShortcutHealth -ShortcutPath $chromeSetupShortcutPath
+    $chromeSetupShortcutDetails = $chromeSetupShortcutHealth.Details
+    $chromeSetupResolvedInvocation = if ($null -ne $chromeSetupShortcutHealth -and $chromeSetupShortcutHealth.PSObject.Properties.Match('ResolvedInvocation').Count -gt 0) { $chromeSetupShortcutHealth.ResolvedInvocation } else { $null }
+    $chromeSetupEffectiveArgs = if ($null -ne $chromeSetupResolvedInvocation) { [string]$chromeSetupResolvedInvocation.Arguments } else { [string]$chromeSetupShortcutDetails.Arguments }
+    $chromeSetupArgsMatch = [string]::Equals(([string]$chromeSetupEffectiveArgs).Trim(), ([string]$expectedChromeSetupArgs).Trim(), [System.StringComparison]::OrdinalIgnoreCase)
+    Write-Host ("chrome-setup-shortcut-args => {0}" -f $chromeSetupEffectiveArgs)
+    Write-Host ("chrome-setup-shortcut-expected-args => {0}" -f [string]$expectedChromeSetupArgs)
+    Write-Host ("chrome-setup-shortcut-args-match => {0}" -f [bool]$chromeSetupArgsMatch)
+}
+else {
+    Write-Host ("chrome-setup-shortcut-missing => {0}" -f $chromeSetupShortcutPath)
+}
+
+Write-Host "BROWSER USER DATA STATUS:"
+Write-BrowserUserDataStatus -BrowserName 'chrome' -UserName $managerUser -RelativeRoot 'AppData\Local\Google\Chrome\User Data'
+Write-BrowserUserDataStatus -BrowserName 'chrome' -UserName $assistantUser -RelativeRoot 'AppData\Local\Google\Chrome\User Data'
+Write-BrowserUserDataStatus -BrowserName 'edge' -UserName $managerUser -RelativeRoot 'AppData\Local\Microsoft\Edge\User Data'
+Write-BrowserUserDataStatus -BrowserName 'edge' -UserName $assistantUser -RelativeRoot 'AppData\Local\Microsoft\Edge\User Data'
 
 Write-Host "PER-USER DESKTOP STATUS:"
 Write-DesktopState -Label 'manager' -Path ("C:\Users\{0}\Desktop" -f $managerUser)

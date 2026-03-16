@@ -3761,6 +3761,13 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
             param([object[]]$TemplateTaskBlocks, [hashtable]$Context)
             return @($TemplateTaskBlocks)
         }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'samplevm.austriaeast.cloudapp.azure.com'
+                PublicIP = '1.2.3.4'
+            }
+        }
         function Invoke-VmRunCommandBlocks {
             param(
                 [string]$ResourceGroup,
@@ -3773,7 +3780,13 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
                 [string]$Platform,
                 [string]$RepoRoot,
                 [string]$ManagerUser,
-                [string]$AssistantUser
+                [string]$AssistantUser,
+                [string]$SshHost,
+                [string]$SshUser,
+                [string]$SshPassword,
+                [string]$SshPort,
+                [int]$SshConnectTimeoutSeconds,
+                [string]$ConfiguredPySshClientPath
             )
 
             $script:TaskRunInvocation = [pscustomobject]@{
@@ -3787,6 +3800,8 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
                 RepoRoot = $RepoRoot
                 ManagerUser = $ManagerUser
                 AssistantUser = $AssistantUser
+                SshHost = $SshHost
+                SshPort = $SshPort
                 TaskName = [string]@($TaskBlocks)[0].Name
             }
             return [pscustomobject]@{ SuccessCount = 1; FailedCount = 0; WarningCount = 0; ErrorCount = 0 }
@@ -3803,6 +3818,8 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
         Assert-True -Condition ([string]$script:TaskRunInvocation.Platform -eq 'windows') -Message 'Task run-vm-init must pass platform through to the run-command runner.'
         Assert-True -Condition ([string]$script:TaskRunInvocation.ManagerUser -eq 'manager') -Message 'Task run-vm-init must pass manager user through to shared init app-state replay.'
         Assert-True -Condition ([string]$script:TaskRunInvocation.AssistantUser -eq 'assistant') -Message 'Task run-vm-init must pass assistant user through to shared init app-state replay.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.SshHost -eq 'samplevm.austriaeast.cloudapp.azure.com') -Message 'Task run-vm-init must resolve the SSH host for deferred app-state replay.'
+        Assert-True -Condition ([string]$script:TaskRunInvocation.SshPort -eq '444') -Message 'Task run-vm-init must pass the SSH port for deferred app-state replay.'
         Assert-True -Condition ([string]$result.Stage -eq 'init') -Message 'Task run-vm-init must report init stage result.'
     }
     finally {
@@ -3811,6 +3828,7 @@ Invoke-Test -Name "Task command run-vm-init uses the isolated task execution pat
             'Resolve-AzVmManagedVmTarget',
             'Get-AzVmTaskBlocksFromDirectory',
             'Resolve-AzVmRuntimeTaskBlocks',
+            'Get-AzVmVmDetails',
             'Invoke-VmRunCommandBlocks'
         )) {
             Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
@@ -4863,7 +4881,9 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition ($runtimeManifestText -like '*modules/core/tasks/azvm-app-state-plugin.ps1*') -Message 'Runtime manifest must load the shared app-state plugin helper module.'
     Assert-True -Condition ($runnerText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Windows update SSH runner must invoke the shared app-state post-process after each task.'
     Assert-True -Condition ($runCommandRunnerText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'VM init run-command runner must invoke the shared app-state post-process after each task.'
-    Assert-True -Condition ($runCommandRunnerText -like '*-Transport ''run-command''*') -Message 'VM init run-command runner must use the shared run-command app-state transport.'
+    Assert-True -Condition ($runCommandRunnerText -like '*Invoke-AzVmRunCommandDeferredAppStateFlush*') -Message 'VM init run-command runner must defer app-state replay until SSH is ready.'
+    Assert-True -Condition ($runCommandRunnerText -like '*App-state deferred:*') -Message 'VM init run-command runner must log deferred app-state replay while waiting for SSH readiness.'
+    Assert-True -Condition ($runCommandRunnerText -like '*SSH was not ready before vm-init completed*') -Message 'VM init run-command runner must summarize unresolved deferred app-state replay at stage end.'
     Assert-True -Condition ($runnerText -like '*Invoke-AzVmSshTaskScript*') -Message 'Windows update SSH runner must use the shared SSH task execution wrapper.'
     Assert-True -Condition ($runnerText -like '*signal-warning=*') -Message 'Windows update SSH runner must surface task-emitted warning signals in the stage summary.'
     Assert-True -Condition ($runnerText -like '*Wait-AzVmProvisioningReadyOrRepair*') -Message 'Windows update SSH runner must guard against persistent Updating provisioning states before task execution.'
@@ -4871,6 +4891,7 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition (($runnerText.IndexOf('-AssistantUser', [System.StringComparison]::Ordinal) -ge 0) -and ($runnerText.IndexOf('[string]$AssistantUser', [System.StringComparison]::Ordinal) -ge 0)) -Message 'Windows update SSH runner must pass the assistant user through to app-state replay.'
     Assert-True -Condition ($sessionHelpersText -like '*function Invoke-AzVmOneShotSshTask*') -Message 'SSH session helpers must provide a one-shot task fallback helper.'
     Assert-True -Condition ($sessionHelpersText -like '*function Invoke-AzVmSshTaskScript*') -Message 'SSH session helpers must provide a shared task-execution wrapper.'
+    Assert-True -Condition (-not ($runCommandRunnerText -like '*-Transport ''run-command''*')) -Message 'VM init run-command runner must not keep the retired run-command app-state transport.'
     Assert-True -Condition ($localExportModuleText -like '*function Get-LocalAppStatePluginDirectoryPath*') -Message 'Local app-state export helpers must resolve task-local plugin directories.'
     Assert-True -Condition ($localExportModuleText -like '*Join-Path $candidate ''app-state''*') -Message 'Local app-state export helpers must write to each task-local app-state folder.'
     Assert-True -Condition ($localExportModuleText -like '*''jaws'' = ''131-install-jaws-screen-reader''*') -Message 'Local app-state export helpers must map JAWS to its tracked task.'
@@ -4904,6 +4925,8 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
 Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed public shortcuts" -Action {
     $shortcutTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10002-create-shortcuts-public-desktop'
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
+    $shortcutTaskJsonPath = Join-Path (Split-Path -Path $shortcutTaskPath -Parent) 'task.json'
+    $shortcutTaskJsonText = [string](Get-Content -LiteralPath $shortcutTaskJsonPath -Raw)
     $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
@@ -5176,7 +5199,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'Resolve-AppPackageExecutablePath -NameFragment "whatsapp"',
         '5319275A.WhatsAppDesktop',
         'iCloudHome.exe',
-        '$publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\userdata"',
+        '$publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\UserData"',
         '$edgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind ''business'' -Variant ''remote''',
         '/c start outlook.exe /select "outlook:\\{0}\\Inbox"',
         'https://developer.apple.com/account',
@@ -5203,8 +5226,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'WindowStyle',
         'RunAsAdmin = [bool]$RunAsAdmin',
         'ShowCmd = [int]$ShowCmd',
-        'Name "z1Google Account Setup" -TargetPath $cmdExe',
-        '/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"',
+        'New-ChromeShortcutSpec -Name "z1Google Account Setup" -Url "chrome://settings/syncSetup"',
         'Resolve-CommandPath -CommandName "control.exe"',
         'Microsoft.NetworkAndSharingCenter',
         'function Clear-DesktopEntries',
@@ -5239,10 +5261,15 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($shortcutTaskScript.IndexOf('t10AZD CLI', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep the old t10AZD CLI shortcut label.'
     Assert-True -Condition (($healthTaskScript.IndexOf('t10AZD CLI', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Health snapshot must not keep the old t10AZD CLI shortcut label.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Test-PersonalChromeShortcutName', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not route personal Chrome profiles by the old label-text helper.'
+    foreach ($legacyBrowserArgument in @('--disable-extensions', '--disable-default-apps', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=9222', '--no-first-run', '--no-default-browser-check')) {
+        Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$legacyBrowserArgument, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Shortcut task must not keep the retired browser launcher arg '{0}'." -f [string]$legacyBrowserArgument)
+        Assert-True -Condition (($healthTaskScript.IndexOf([string]$legacyBrowserArgument, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Health snapshot must not keep the retired browser launcher arg '{0}'." -f [string]$legacyBrowserArgument)
+    }
 
     foreach ($fragment in @($expectedFragments)) {
         Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$fragment, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Shortcut task must include fragment '{0}'." -f $fragment)
     }
+    Assert-True -Condition (-not ($shortcutTaskJsonText -match '"appState"\s*:')) -Message 'Public desktop shortcut task must stay on-the-fly and must not own a task-local app-state snapshot/replay contract.'
     Assert-True -Condition ($shortcutTaskScript -like '*RunAsAdmin*') -Message 'Shortcut task must model RunAsAdmin in the manifest.'
     Assert-True -Condition ($shortcutTaskScript -like '*ShowCmd*') -Message 'Shortcut task must model ShowCmd in the manifest.'
     Assert-True -Condition ($healthTaskScript -like '*hotkey =>*') -Message 'Health snapshot must read back shortcut hotkeys.'
@@ -5289,6 +5316,15 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-launcher =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge launcher path when a managed launcher is used.'
     Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-args-match =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge shortcut argument match state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('edge-shortcut-user-data-root =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the MS Edge shared user-data root.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('CHROME SHORTCUT CONTRACT:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the dedicated Chrome shortcut contract.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('chrome-shortcut-args-match =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the Chrome shortcut argument match state.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('chrome-shortcut-user-data-root =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the Chrome shared user-data root.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('CHROME SETUP SHORTCUT CONTRACT:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the dedicated Chrome setup shortcut contract.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('chrome-setup-shortcut-args-match =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the Chrome setup shortcut argument match state.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('BROWSER USER DATA STATUS:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report browser user-data presence for managed users.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('browser-user-data => {0} => {1} =>', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must emit the browser user-data readback format.'
+    Assert-True -Condition (($healthTaskScript.IndexOf("Write-BrowserUserDataStatus -BrowserName 'chrome' -UserName $managerUser", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report manager Chrome user-data status.'
+    Assert-True -Condition (($healthTaskScript.IndexOf("Write-BrowserUserDataStatus -BrowserName 'edge' -UserName $assistantUser", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant Edge user-data status.'
 }
 
 Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite signals" -Action {
@@ -5323,6 +5359,8 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $guestHelperText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-guest.psm1') -Raw)
     $captureHelperText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-capture.ps1') -Raw)
     $localAppStateText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-local.ps1') -Raw)
+    $chromeTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '02-check-install-chrome') -Raw)
+    $edgeTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '110-install-edge-browser') -Raw)
     $copySettingsTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10005-copy-settings-user') -Raw)
     $dockerTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '114-install-docker-desktop') -Raw)
     $ollamaTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '116-install-ollama-system') -Raw)
@@ -5346,8 +5384,16 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($guestHelperText -like '*Get-AzVmTaskAppStateReplayOperations*') -Message 'Windows app-state guest helpers must materialize restore operations before replay.'
     Assert-True -Condition ($guestHelperText -like '*Backup-AzVmTaskAppStateOperations*') -Message 'Windows app-state guest helpers must back up touched targets before replay.'
     Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateRollback*') -Message 'Windows app-state guest helpers must support rollback after restore verification failures.'
+    Assert-True -Condition ($guestHelperText -like '*Get-AzVmTaskAppStateManagedProcessNames*') -Message 'Windows app-state guest helpers must map browser replay tasks to managed process names.'
+    Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateCapturePreflight*') -Message 'Windows app-state guest helpers must preflight capture before saving browser payloads.'
+    Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateReplayPreflight*') -Message 'Windows app-state guest helpers must preflight replay before restoring browser payloads.'
+    Assert-True -Condition ($guestHelperText -like '*chrome*') -Message 'Windows app-state guest helpers must include Chrome process preflight handling.'
+    Assert-True -Condition ($guestHelperText -like '*msedge*') -Message 'Windows app-state guest helpers must include Edge process preflight handling.'
     Assert-True -Condition ($guestHelperText -like '*phase=verify-complete*') -Message 'Windows app-state guest helpers must log restore verification completion.'
     Assert-True -Condition ($guestHelperText -like '*phase=rollback-complete*') -Message 'Windows app-state guest helpers must log rollback completion.'
+    Assert-True -Condition ($captureHelperText -like '*Copy-AzVmAssetToVm*') -Message 'Shared app-state capture must upload capture plans over SSH.'
+    Assert-True -Condition (-not ($captureHelperText -like '*plan_b64*')) -Message 'Shared app-state capture must not embed capture plans as base64 blobs.'
+    Assert-True -Condition (-not ($captureHelperText -like '*import base64*')) -Message 'Shared app-state capture must not keep the retired base64 decode helper path.'
     Assert-True -Condition ($sshAssetsText -like '*Get-AzVmPscpExecutablePath*') -Message 'Windows SSH asset copy must resolve pscp.exe for the primary Windows SCP transport.'
     Assert-True -Condition ($sshAssetsText -like '*Get-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must resolve trusted SCP host key fingerprints dynamically.'
     Assert-True -Condition ($sshAssetsText -like '*ssh-keyscan.exe*') -Message 'Windows SCP transport must use ssh-keyscan.exe to discover the current VM host keys.'
@@ -5363,6 +5409,16 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($localAppStateText -like '*Get-AzVmTaskAppStateBackupRootDirectoryPath*') -Message 'Local app-state helpers must resolve task-adjacent backup-app-states roots.'
     Assert-True -Condition ($localAppStateText -like '*rolled-back*') -Message 'Local app-state helpers must mark rollback outcomes in the restore journal.'
     Assert-True -Condition ($dockerTaskJsonText -like '*DawnWebGPUCache*') -Message 'Task-local app-state specs must exclude low-value WebGPU cache payloads.'
+    Assert-True -Condition ($chromeTaskJsonText -like '*AppData\\Local\\Google\\Chrome\\User Data*') -Message 'Chrome task-local app-state must capture the full User Data root.'
+    Assert-True -Condition ($edgeTaskJsonText -like '*AppData\\Local\\Microsoft\\Edge\\User Data*') -Message 'Edge task-local app-state must capture the full User Data root.'
+    foreach ($browserExclusion in @('Cache', 'Code Cache', 'GPUCache', 'GrShaderCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'ShaderCache', 'Crashpad', 'Crash Reports', 'CrashDumps', 'Temp', 'tmp', '*.lock', '*.tmp', '*.temp', '*.etl', '*.log', '*.crdownload', 'Singleton*')) {
+        Assert-True -Condition ($chromeTaskJsonText -like ('*' + [string]$browserExclusion + '*')) -Message ("Chrome task-local app-state must exclude '{0}'." -f [string]$browserExclusion)
+        Assert-True -Condition ($edgeTaskJsonText -like ('*' + [string]$browserExclusion + '*')) -Message ("Edge task-local app-state must exclude '{0}'." -f [string]$browserExclusion)
+    }
+    foreach ($browserDurablePath in @('Service Worker', 'CacheStorage', 'ScriptCache', 'Database')) {
+        Assert-True -Condition (-not ($chromeTaskJsonText -like ('*' + [string]$browserDurablePath + '*'))) -Message ("Chrome task-local app-state must not exclude durable browser subtree token '{0}'." -f [string]$browserDurablePath)
+        Assert-True -Condition (-not ($edgeTaskJsonText -like ('*' + [string]$browserDurablePath + '*'))) -Message ("Edge task-local app-state must not exclude durable browser subtree token '{0}'." -f [string]$browserDurablePath)
+    }
     Assert-True -Condition ($copySettingsTaskJsonText -like '*SolutionPackages*') -Message 'Task-local Office capture specs must exclude generated offline solution packages.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*updates_v2*') -Message 'Task-local Ollama capture specs must exclude installer update payloads.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*EBWebView*') -Message 'Task-local app-state specs must exclude embedded WebView runtime payloads where they are not durable settings.'
@@ -5387,6 +5443,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($auditScriptText -like '*foreign-source-users*') -Message 'The manual app-state audit helper must report foreign source profile tokens when present.'
     Assert-True -Condition (Test-Path -LiteralPath $normalizeScriptPath) -Message 'The repo must ship a dedicated app-state normalization helper under tools/scripts.'
     Assert-True -Condition ((Get-Content -LiteralPath $normalizeScriptPath -Raw) -like '*foreign-users:*') -Message 'The app-state normalization helper must summarize normalized foreign profile tokens.'
+    Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'tools\trim-browser-app-state-zips.ps1'))) -Message 'The repo must not keep the retired browser app-state trim helper.'
 }
 
 Invoke-Test -Name "Portable app-state normalization rewrites local user markers to manager" -Action {
@@ -5757,10 +5814,11 @@ Invoke-Test -Name "Task command surface supports save and restore app-state main
     Assert-True -Condition ($taskEntryText -like '*Restore-AzVmTaskAppStateToLocalMachine*') -Message 'Task entry must call the local app-state restore path.'
     Assert-True -Condition ($taskEntryText -like '*Invoke-AzVmTaskAppStatePostProcess*') -Message 'Task entry must call the shared VM app-state restore path.'
     Assert-True -Condition ($taskEntryText -like '*New-AzVmTaskAppStateFilteredTaskBlock*') -Message 'Task entry must filter VM restore payloads when a user subset is selected.'
-    Assert-True -Condition ($taskEntryText -like '*-Transport ''run-command''*') -Message 'Task entry must route vm-init app-state restore through the shared run-command transport.'
+    Assert-True -Condition (-not ($taskEntryText -like '*-Transport ''run-command''*')) -Message 'Task entry must not keep the retired run-command app-state restore transport.'
     Assert-True -Condition ($taskHelpText -like '*task --save-app-state --vm-update-task=115*') -Message 'Help must document task save-app-state examples.'
     Assert-True -Condition ($taskHelpText -like '*task --save-app-state --source=lm --user=.current.*') -Message 'Help must document local save-app-state examples.'
     Assert-True -Condition ($taskHelpText -like '*task --restore-app-state --target=lm --user=.current.*') -Message 'Help must document local restore-app-state examples.'
+    Assert-True -Condition ($taskHelpText -like '*VM save/restore is SSH-based*') -Message 'Help must describe the SSH-based VM app-state transport.'
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\parameters\init-task.ps1'))) -Message 'Task command must not keep the retired init-task parameter binding.'
     Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\parameters\update-task.ps1'))) -Message 'Task command must not keep the retired update-task parameter binding.'
 }

@@ -215,30 +215,6 @@ function Invoke-AzVmTaskCommand {
             $effectiveTaskBlock = $filteredTaskScope.TaskBlock
         }
 
-        if ([string]::Equals($mode, 'restore-app-state', [System.StringComparison]::OrdinalIgnoreCase) -and
-            [string]::Equals([string]$taskSelection.Stage, 'init', [System.StringComparison]::OrdinalIgnoreCase)) {
-            [void](Assert-AzVmTaskAppStatePluginReadyOrThrow -TaskBlock $effectiveTaskBlock -Stage ([string]$taskSelection.Stage))
-            $restoreResult = Invoke-AzVmTaskAppStatePostProcess `
-                -Platform $platform `
-                -Transport 'run-command' `
-                -RepoRoot (Get-AzVmRepoRoot) `
-                -TaskBlock $effectiveTaskBlock `
-                -ResourceGroup ([string]$context.ResourceGroup) `
-                -VmName ([string]$context.VmName) `
-                -RunCommandId ([string]$runtime.PlatformDefaults.RunCommandId) `
-                -TimeoutSeconds ([int]$appStateTimeoutSeconds) `
-                -ManagerUser ([string]$context.VmUser) `
-                -AssistantUser ([string]$context.VmAssistantUser)
-            Write-Host ("Task completed: restore app-state for '{0}'." -f [string]$taskBlock.Name) -ForegroundColor Green
-            return [pscustomobject]@{
-                Mode = 'restore-app-state'
-                Surface = 'vm'
-                Stage = [string]$taskSelection.Stage
-                Task = $taskBlock
-                Result = $restoreResult
-            }
-        }
-
         if ($platform -eq 'linux') {
             try {
                 $session = Start-AzVmPersistentSshSession `

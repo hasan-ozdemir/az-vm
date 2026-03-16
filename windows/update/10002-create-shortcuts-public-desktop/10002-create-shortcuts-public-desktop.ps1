@@ -10,7 +10,7 @@ $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
-$publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\userdata"
+$publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\UserData"
 $beMyEyesStoreProductId = "9MSW46LTDWGF"
 $beMyEyesStoreUri = "ms-windows-store://pdp/?ProductId=9MSW46LTDWGF"
 $codexAppFallbackPath = ""
@@ -211,17 +211,7 @@ function Get-ChromeArgsPrefix {
     )
 
     $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
-    switch ([string]$Variant) {
-        'setup' {
-            return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
-        }
-        'bank' {
-            return ('--new-window --start-maximized --profile-directory="{0}"' -f $profileDirectory)
-        }
-        default {
-            return ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
-        }
-    }
+    return ('--new-window --start-maximized --user-data-dir="{0}" --profile-directory="{1}"' -f $publicChromeUserDataDir, $profileDirectory)
 }
 
 function Get-EdgeArgsPrefix {
@@ -233,17 +223,7 @@ function Get-EdgeArgsPrefix {
     )
 
     $profileDirectory = Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind
-    switch ([string]$Variant) {
-        'setup' {
-            return ('--new-window --start-maximized --no-first-run --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
-        }
-        'bank' {
-            return ('--new-window --start-maximized --profile-directory="{0}"' -f $profileDirectory)
-        }
-        default {
-            return ('--new-window --start-maximized --disable-extensions --disable-default-apps --no-first-run --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --no-default-browser-check --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
-        }
-    }
+    return ('--new-window --start-maximized --user-data-dir="{0}" --profile-directory="{1}"' -f $publicEdgeUserDataDir, $profileDirectory)
 }
 
 function Refresh-SessionPath {
@@ -1514,7 +1494,6 @@ $chromeExe = Resolve-CommandPath -CommandName "chrome.exe" -FallbackCandidates @
     "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
 )
 $chromeTarget = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Chrome\Application\chrome.exe" -ResolvedPath $chromeExe -FallbackPath "C:\Program Files\Google\Chrome\Application\chrome.exe"
-$chromeSyncSetupCommand = ('/c start "" "{0}" --new-window --start-maximized --user-data-dir="{1}" --profile-directory={2} "chrome://settings/syncSetup"' -f $chromeTarget, $publicChromeUserDataDir, $companyChromeProfileDirectory)
 $controlExe = Resolve-CommandPath -CommandName "control.exe" -FallbackCandidates @("C:\Windows\System32\control.exe")
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
 $powershellExe = Resolve-CommandPath -CommandName "powershell.exe" -FallbackCandidates @("C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe")
@@ -1832,7 +1811,7 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "u7Network and Shari
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v1VS2022Com" -TargetPath $vs2022CommunityExe -WorkingDirectory (Split-Path -Path $vs2022CommunityExe -Parent) -IconLocation (Resolve-IconLocation -PreferredPath $vs2022CommunityExe -FallbackPath $powershellExe) -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("Visual Studio 2022") -CleanupMatchTargetOnly $true)
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "v5VS Code" -TargetPath $powershellExe -Arguments ('-command "&''{0}''"' -f '%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd') -WorkingDirectory "%UserProfile%" -IconLocation ($powershellExe + ",0") -ValidationKind "app")
 
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "z1Google Account Setup" -TargetPath $cmdExe -Arguments $chromeSyncSetupCommand -IconLocation ($chromeTarget + ",0") -ValidationKind "chrome-setup")
+Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "z1Google Account Setup" -Url "chrome://settings/syncSetup" -ProfileKind 'business' -Variant 'setup')
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "z2Office365 Account Setup" -Url "https://portal.office.com" -ProfileKind 'business' -Variant 'setup')
 
 $ownedManagedShortcutNames = @(

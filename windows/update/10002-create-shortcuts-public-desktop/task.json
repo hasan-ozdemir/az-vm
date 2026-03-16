@@ -11,28 +11,5 @@
       "local": "../../../modules/core/tasks/azvm-shortcut-launcher.psm1",
       "remote": "C:/Windows/Temp/az-vm-shortcut-launcher.psm1"
     }
-  ],
-  "appState": {
-    "machineDirectories": [
-      {
-        "path": "C:\\Users\\Public\\Desktop",
-        "targetProfiles": [],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
-      },
-      {
-        "path": "C:\\ProgramData\\az-vm\\shortcut-launchers\\public-desktop",
-        "targetProfiles": [],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
-      }
-    ],
-    "machineFiles": [],
-    "profileDirectories": [],
-    "profileFiles": [],
-    "machineRegistryKeys": [],
-    "userRegistryKeys": []
-  }
+  ]
 }

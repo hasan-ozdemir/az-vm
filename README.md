@@ -611,7 +611,7 @@ Behavior notes:
 - managed VM app-state reads or writes the task-local payload at `<task-folder>/app-state/app-state.zip`
 - VM restore uses guest-side temporary backup staging, verifies restored files and registry after replay, and rolls back automatically if verification fails
 - local-machine save/restore is Windows-host-only and reuses the same task-local payload path
-- init and update restore flows both reuse the same shared per-task app-state post-process; init routes it through Azure Run Command and update routes it through SSH
+- init and update restore flows both reuse the same shared per-task app-state post-process over SSH; init defers replay until SSH is reachable and update replays immediately over SSH
 - task-owned app-state payloads target only the managed `manager` and `assistant` OS profiles on VM paths; missing zips skip cleanly, and broad generated caches, installers, models, and telemetry payloads are pruned from the managed capture contract
 - local restore validates the current `task.json` allow-list, writes task-adjacent `backup-app-states/<task-name>/` snapshots plus `restore-journal.json` and `verify-report.json` first, verifies the replayed content, and rolls back the current target user if replay or verification fails
 - useful before isolated reruns or when checking timeout and enable-state behavior
@@ -870,7 +870,7 @@ Each task directory is self-contained. The folder holds one same-named script, o
 ### Task Failures
 - Rerun the failing task with `task --run-vm-init` or `task --run-vm-update`.
 - Check `task.json` timeout and enabled state.
-- Vm-init and vm-update app-state replay are post-task and plug-in based. If `<task-folder>/app-state/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
+- Vm-init and vm-update app-state replay are post-task and plug-in based. If `<task-folder>/app-state/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared SSH post-process deploys it without requiring a dedicated restore task, and vm-init defers replay until SSH is ready.
 - Managed app-state save and restore target only the `manager` and `assistant` OS profiles. Large generated payloads such as installers, models, telemetry trees, and low-value caches are intentionally pruned so the zips stay operator-owned and reusable instead of drifting into machine-image snapshots.
 - Local-machine app-state restore validates the current `task.json` allow-list and writes task-adjacent `backup-app-states/<task-name>/` snapshots plus `restore-journal.json` and `verify-report.json` before replaying onto the operator machine.
 - Windows public desktop shortcut validation names the exact missing `.env` keys, for example `SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow.` and `SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow.`

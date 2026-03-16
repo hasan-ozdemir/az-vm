@@ -5015,3 +5015,17 @@ Added a dedicated repo maintenance helper, `tools/scripts/normalize-app-state-zi
 
 I ran the normalization helper on the real repository payload set and cleared the remaining foreign-user residue from `10005-copy-settings-user`, `116-install-codex-app`, `117-install-teams-system`, `120-install-whatsapp-system`, and `125-install-be-my-eyes`; a follow-up audit confirmed that no current `app-state.zip` payload still reports foreign source or embedded user tokens. On the shortcut side, I made the Public Desktop launcher threshold explicit and testable by exposing the combined invocation-length helper, exporting it from the shortcut-launcher module, and pinning the task to the `259` combined `TargetPath + Arguments` contract. I revalidated the full change non-live with `tests\az-vm-smoke-tests.ps1`.
 
+### 2026-03-16 14:35 UTC
+
+**User Prompt**
+
+````text
+Fix and update the new Public Desktop shortcut behavior: keep launcher `.cmd` files only for Public Desktop shortcut targets whose combined target plus arguments length exceeds 259 characters, do not write launcher scripts for direct-safe shortcuts at or below that boundary, keep the `public-desktop-icons` vm-update task generating those shortcuts on the fly, and delete that task's `app-state.zip` so it no longer performs snapshot/replay.
+````
+
+**Assistant Summary**
+
+Completed the Public Desktop shortcut cleanup around `10002-create-shortcuts-public-desktop`. I removed the task-local app-state contract from the task manifest, deleted the stale task-local `app-state.zip`, and kept the existing direct-vs-launcher threshold logic intact so the task now stays purely on-the-fly and no longer replays old shortcut artifacts over the freshly generated Public Desktop set.
+
+I revalidated the task non-live with the smoke, documentation, code-quality, PowerShell compatibility, and release-doc checks, then reran `task --run-vm-update 10002 --windows --perf` live in isolation on the active managed Windows VM. Final `exec` readbacks on the live VM confirmed that direct-safe entries such as `z1Google Account Setup`, `i1Internet Business`, and `a11MS Edge` now resolve directly to `chrome.exe` or `msedge.exe`, while a truly over-limit entry such as `q2Spotify` still routes through a managed launcher `.cmd` because its effective invocation length is 265 characters.
+
