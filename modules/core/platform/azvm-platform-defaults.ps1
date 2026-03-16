@@ -134,7 +134,12 @@ function Resolve-AzVmPlatformConfigMap {
         [string]$Platform
     )
 
-    $resolved = Resolve-AzVmRuntimeConfigAliases -ConfigMap $ConfigMap
+    $resolved = @{}
+    if ($ConfigMap) {
+        foreach ($key in @($ConfigMap.Keys)) {
+            $resolved[[string]$key] = [string]$ConfigMap[$key]
+        }
+    }
 
     foreach ($baseKey in @('VM_IMAGE','VM_SIZE','VM_DISK_SIZE_GB')) {
         $platformKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey ([string]$baseKey)
@@ -153,15 +158,15 @@ function Resolve-AzVmPlatformConfigMap {
         }
     }
 
-    $resolvedVmName = [string](Get-ConfigValue -Config $resolved -Key 'VM_NAME' -DefaultValue '')
+    $resolvedVmName = [string](Get-ConfigValue -Config $resolved -Key 'SELECTED_VM_NAME' -DefaultValue '')
     if ([string]::IsNullOrWhiteSpace([string]$resolvedVmName)) {
-        $derivedVmName = Get-AzVmDerivedVmNameFromEmployeeEmailAddress -EmployeeEmailAddress ([string](Get-ConfigValue -Config $resolved -Key 'employee_email_address' -DefaultValue ''))
+        $derivedVmName = Get-AzVmDerivedVmNameFromEmployeeEmailAddress -EmployeeEmailAddress ([string](Get-ConfigValue -Config $resolved -Key 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' -DefaultValue ''))
         if (-not [string]::IsNullOrWhiteSpace([string]$derivedVmName)) {
-            $resolved['VM_NAME'] = [string]$derivedVmName
+            $resolved['SELECTED_VM_NAME'] = [string]$derivedVmName
         }
     }
 
-    $resolved['VM_OS_TYPE'] = $Platform
+    $resolved['SELECTED_VM_OS'] = $Platform
     return $resolved
 }
 
@@ -195,10 +200,6 @@ function Resolve-AzVmPlatformSelection {
             if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('SELECTED_VM_OS')) {
                 $fromOverride = [string]$ConfigOverrides['SELECTED_VM_OS']
             }
-            elseif ($ConfigOverrides -and $ConfigOverrides.ContainsKey('VM_OS_TYPE')) {
-                $fromOverride = [string]$ConfigOverrides['VM_OS_TYPE']
-            }
-
             if (-not [string]::IsNullOrWhiteSpace([string]$fromOverride)) {
                 $candidate = $fromOverride.Trim().ToLowerInvariant()
                 if ($candidate -eq 'windows' -or $candidate -eq 'linux') {
@@ -211,9 +212,6 @@ function Resolve-AzVmPlatformSelection {
 
             if ([string]::IsNullOrWhiteSpace([string]$selected)) {
                 $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_VM_OS' -DefaultValue '')
-                if ([string]::IsNullOrWhiteSpace([string]$fromEnv)) {
-                    $fromEnv = [string](Get-ConfigValue -Config $ConfigMap -Key 'VM_OS_TYPE' -DefaultValue '')
-                }
                 if (-not [string]::IsNullOrWhiteSpace($fromEnv)) {
                     $candidate = $fromEnv.Trim().ToLowerInvariant()
                     if ($candidate -eq 'windows' -or $candidate -eq 'linux') {

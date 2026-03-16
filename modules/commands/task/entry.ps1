@@ -163,21 +163,23 @@ function Invoke-AzVmTaskCommand {
     $shell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
     $session = $null
     try {
-        try {
-            $session = Start-AzVmPersistentSshSession `
-                -PySshPythonPath ([string]$pySsh.PythonPath) `
-                -PySshClientPath ([string]$pySsh.ClientPath) `
-                -HostName $sshHost `
-                -UserName ([string]$context.VmUser) `
-                -Password ([string]$context.VmPass) `
-                -Port ([string]$context.SshPort) `
-                -Shell $shell `
-                -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
-                -DefaultTaskTimeoutSeconds ([int]$taskTimeoutSeconds)
-        }
-        catch {
-            $session = $null
-            Write-Warning ("Persistent SSH session bootstrap failed for task app-state maintenance. Falling back to one-shot transport: {0}" -f $_.Exception.Message)
+        if ($platform -eq 'linux') {
+            try {
+                $session = Start-AzVmPersistentSshSession `
+                    -PySshPythonPath ([string]$pySsh.PythonPath) `
+                    -PySshClientPath ([string]$pySsh.ClientPath) `
+                    -HostName $sshHost `
+                    -UserName ([string]$context.VmUser) `
+                    -Password ([string]$context.VmPass) `
+                    -Port ([string]$context.SshPort) `
+                    -Shell $shell `
+                    -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds) `
+                    -DefaultTaskTimeoutSeconds ([int]$taskTimeoutSeconds)
+            }
+            catch {
+                $session = $null
+                Write-Warning ("Persistent SSH session bootstrap failed for task app-state maintenance. Switching to one-shot transport: {0}" -f $_.Exception.Message)
+            }
         }
 
         if ([string]::Equals($mode, 'save-app-state', [System.StringComparison]::OrdinalIgnoreCase)) {

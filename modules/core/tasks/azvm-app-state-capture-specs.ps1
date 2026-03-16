@@ -81,11 +81,9 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
     $script:AzVmTaskAppStateCaptureSpecRegistry = @{
         '02-check-install-chrome' = (New-AzVmAppStateCaptureSpec `
             -TaskName '02-check-install-chrome' `
-            -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Google\Chrome\User Data' -ExcludeNames $browserExcludeNames -ExcludeFilePatterns $browserExcludeFilePatterns)
-            ) `
-            -UserRegistryKeys @(
-                (New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Google\Chrome')
+            -ProfileFiles @(
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Google\Chrome\User Data\Default\Preferences'),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Google\Chrome\User Data\Local State')
             ))
         '10001-configure-apps-startup' = (New-AzVmAppStateCaptureSpec `
             -TaskName '10001-configure-apps-startup' `
@@ -154,10 +152,11 @@ function Get-AzVmTaskAppStateCaptureSpecRegistry {
             -UserRegistryKeys @((New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\VSCommon')))
         '111-install-edge-browser' = (New-AzVmAppStateCaptureSpec `
             -TaskName '111-install-edge-browser' `
-            -ProfileDirectories @(
-                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Edge\User Data' -ExcludeNames $browserExcludeNames -ExcludeFilePatterns $browserExcludeFilePatterns)
-            ) `
-            -UserRegistryKeys @((New-AzVmAppStateRegistryCaptureRule -Path 'HKCU\Software\Microsoft\Edge')))
+            -ProfileFiles @(
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Edge\User Data\Default\Bookmarks'),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Edge\User Data\Default\Preferences'),
+                (New-AzVmAppStatePathCaptureRule -Path 'AppData\Local\Microsoft\Edge\User Data\Local State')
+            ))
         '112-install-azd-cli' = (New-AzVmAppStateCaptureSpec -TaskName '112-install-azd-cli' -ProfileDirectories @((New-AzVmAppStatePathCaptureRule -Path '.azd' -ExcludeNames @('bin', 'telemetry', '.azd'))))
         '113-install-wsl2-system' = (New-AzVmAppStateCaptureSpec `
             -TaskName '113-install-wsl2-system' `

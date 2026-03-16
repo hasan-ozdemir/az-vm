@@ -130,6 +130,32 @@ def reconnect_client(current_client: Optional[paramiko.SSHClient], args: argpars
 
 
 def run_exec(args: argparse.Namespace) -> int:
+    stdin_path = None
+    stdin_offset = 0
+    stdin_length = -1
+    if getattr(args, "stdin_file", None):
+        stdin_path = Path(args.stdin_file).expanduser().resolve()
+        if not stdin_path.exists():
+            write_stderr(f"STDIN file was not found: {stdin_path}\n")
+            return 2
+        try:
+            stdin_offset = max(0, int(getattr(args, "stdin_file_offset", 0) or 0))
+        except Exception:
+            stdin_offset = 0
+        try:
+            stdin_length = int(getattr(args, "stdin_file_length", -1) or -1)
+        except Exception:
+            stdin_length = -1
+        if stdin_length < 0:
+            stdin_length = -1
+
+        file_size = stdin_path.stat().st_size
+        if stdin_offset > file_size:
+            write_stderr(f"STDIN file offset is beyond EOF: {stdin_offset} > {file_size}\n")
+            return 2
+        if stdin_length >= 0:
+            stdin_length = min(stdin_length, max(0, file_size - stdin_offset))
+
     client = build_client(
         args.host,
         args.port,
@@ -150,6 +176,54 @@ def run_exec(args: argparse.Namespace) -> int:
         deadline = None
         if int(args.timeout) > 0:
             deadline = time.monotonic() + int(args.timeout)
+
+        if stdin_path is not None:
+            with stdin_path.open("rb") as stdin_handle:
+                if stdin_offset > 0:
+                    stdin_handle.seek(stdin_offset)
+                remaining = stdin_length
+                while True:
+                    if deadline is not None and time.monotonic() >= deadline:
+                        channel.close()
+                        write_stderr(f"SSH command timed out after {args.timeout} second(s).\n")
+                        return 124
+
+                    if remaining == 0:
+                        break
+
+                    read_size = 65536
+                    if remaining > 0:
+                        read_size = min(read_size, remaining)
+
+                    chunk = stdin_handle.read(read_size)
+                    if not chunk:
+                        break
+                    if remaining > 0:
+                        remaining -= len(chunk)
+
+                    pending = memoryview(chunk)
+                    while len(pending) > 0:
+                        if deadline is not None and time.monotonic() >= deadline:
+                            channel.close()
+                            write_stderr(f"SSH command timed out after {args.timeout} second(s).\n")
+                            return 124
+
+                        if channel.closed:
+                            write_stderr("SSH channel closed while streaming stdin.\n")
+                            return 3
+
+                        sent = channel.send(pending)
+                        if sent is None:
+                            sent = 0
+                        if sent <= 0:
+                            time.sleep(0.05)
+                            continue
+                        pending = pending[sent:]
+
+            try:
+                channel.shutdown_write()
+            except Exception:
+                pass
 
         stdout_chunks = []
         stderr_chunks = []
@@ -550,6 +624,9 @@ def parse_args() -> argparse.Namespace:
     exec_parser = subparsers.add_parser("exec", help="Execute a remote command over SSH")
     add_common(exec_parser)
     exec_parser.add_argument("--command", required=True, help="Remote command to execute")
+    exec_parser.add_argument("--stdin-file", help="Optional local file path streamed to the remote command over stdin")
+    exec_parser.add_argument("--stdin-file-offset", type=int, default=0, help="Optional byte offset into --stdin-file")
+    exec_parser.add_argument("--stdin-file-length", type=int, default=-1, help="Optional byte count from --stdin-file")
 
     copy_parser = subparsers.add_parser("copy", help="Copy local file to remote path over SFTP")
     add_common(copy_parser)

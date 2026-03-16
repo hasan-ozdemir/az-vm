@@ -2,9 +2,9 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: capture-snapshot-health"
 
-$companyName = "__COMPANY_NAME__"
-$employeeEmailAddress = "__EMPLOYEE_EMAIL_ADDRESS__"
-$employeeFullName = "__EMPLOYEE_FULL_NAME__"
+$companyName = "__SELECTED_COMPANY_NAME__"
+$employeeEmailAddress = "__SELECTED_EMPLOYEE_EMAIL_ADDRESS__"
+$employeeFullName = "__SELECTED_EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
@@ -13,9 +13,9 @@ $publicEdgeUserDataDir = 'C:\Users\Public\AppData\Local\Microsoft\msedge\userdat
 $dockerStartupShortcutPath = "C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk"
 $ollamaStartupShortcutPath = ("C:\Users\{0}\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk" -f $managerUser)
 $shortcutRunAsAdminFlag = 0x00002000
-$unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
-$unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
-$unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
+$unresolvedCompanyNameToken = ('__' + 'SELECTED_COMPANY_NAME' + '__')
+$unresolvedEmployeeEmailAddressToken = ('__' + 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' + '__')
+$unresolvedEmployeeFullNameToken = ('__' + 'SELECTED_EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
 $launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
 
@@ -192,7 +192,7 @@ function Test-InvalidCompanyName {
     if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
     $trimmed = $Value.Trim()
     if ([string]::Equals($trimmed, $unresolvedCompanyNameToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-    if ([string]::Equals($trimmed, "company_name", [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, "SELECTED_COMPANY_NAME", [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
     return $false
 }
@@ -203,7 +203,7 @@ function Test-InvalidEmployeeEmailAddress {
     if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
     $trimmed = $Value.Trim()
     if ([string]::Equals($trimmed, $unresolvedEmployeeEmailAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-    if ([string]::Equals($trimmed, 'employee_email_address', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, 'SELECTED_EMPLOYEE_EMAIL_ADDRESS', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
     if (($trimmed -split '@').Count -lt 2) { return $true }
     return $false
@@ -215,7 +215,7 @@ function Test-InvalidEmployeeFullName {
     if ([string]::IsNullOrWhiteSpace([string]$Value)) { return $true }
     $trimmed = $Value.Trim()
     if ([string]::Equals($trimmed, $unresolvedEmployeeFullNameToken, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
-    if ([string]::Equals($trimmed, 'employee_full_name', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+    if ([string]::Equals($trimmed, 'SELECTED_EMPLOYEE_FULL_NAME', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
     if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) { return $true }
     return $false
 }

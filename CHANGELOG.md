@@ -3,6 +3,24 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.321] - 2026-03-16
+
+### Changed
+- Cut the runtime over to the current selected-only configuration contract so orchestration, naming templates, task materialization, target selection, and runtime persistence now read and write only the current `SELECTED_*` and `AZURE_COMMAND_TIMEOUT_SECONDS` keys instead of synthesizing retired `.env` names.
+- Reworked runtime diagnostics so create, update, configure, and task flows now print one canonical effective-configuration block where each resolved key appears once as `KEY=value (source)` instead of repeating the same values across multiple snapshots.
+- Replaced the Windows SSH asset-transfer fallback model with one primary Windows `windows-base64` upload path that stages files over bounded command-text chunks, reports grouped progress and completion, and reuses remote hash metadata instead of spamming per-chunk pyssh lines.
+- Tightened the managed browser app-state contract so Chrome and Edge app-state capture now keeps lightweight settings files instead of broad profile trees and low-value registry payloads.
+
+### Fixed
+- Fixed Windows SSH process execution so pyssh stdout and stderr are now captured directly without the PowerShell-native CLIXML noise that previously obscured real transport failures such as timeout and command-length errors.
+- Fixed Windows task and app-state runners that previously leaked copy-result objects into task results, causing array-shaped failures and hiding the true task outcome.
+- Fixed Windows app-state replay staging so each restore uses a unique remote zip path, waits for the uploaded zip to become readable, logs replay phases clearly, and surfaces remote replay output when a task restore fails.
+- Fixed the Windows `vm-init` `108-install-sysinternals-suite` timeout ceiling so the isolated init rerun no longer fails on a cold run because of the previous short timeout.
+
+### Tests
+- Revalidated the selected-only runtime and diagnostics changes with `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the Windows transport and app-state path live in isolation against the active managed Windows target with `task --run-vm-init 108 --windows --group <resource-group> --vm-name <vm-name> --perf`, `task --run-vm-update 02 --windows --group <resource-group> --vm-name <vm-name> --perf`, `task --run-vm-update 111 --windows --group <resource-group> --vm-name <vm-name> --perf`, and `task --run-vm-update 110 --windows --group <resource-group> --vm-name <vm-name> --perf`.
+
 ## [2026.3.16.320] - 2026-03-16
 
 ### Changed

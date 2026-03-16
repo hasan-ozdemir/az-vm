@@ -1,5 +1,59 @@
 # SSH process execution helpers.
 
+function Invoke-AzVmCapturedProcess {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = [string]$FilePath
+    $psi.Arguments = ((@($Arguments) | ForEach-Object { Convert-AzVmProcessArgument -Value ([string]$_) }) -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psiType = $psi.GetType()
+    if ($psiType.GetProperty('StandardOutputEncoding')) {
+        try { $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+    }
+    if ($psiType.GetProperty('StandardErrorEncoding')) {
+        try { $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8 } catch { }
+    }
+    $null = $psi.EnvironmentVariables
+    $psi.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+
+    if (-not $proc.Start()) {
+        throw ("Process could not be started: {0}" -f [string]$FilePath)
+    }
+
+    try {
+        $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+        $stderrTask = $proc.StandardError.ReadToEndAsync()
+        $proc.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        $outputParts = @()
+        if (-not [string]::IsNullOrWhiteSpace([string]$stdout)) {
+            $outputParts += [string]$stdout
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$stderr)) {
+            $outputParts += [string]$stderr
+        }
+
+        return [pscustomobject]@{
+            ExitCode = [int]$proc.ExitCode
+            Output = (($outputParts | ForEach-Object { [string]$_ }) -join "`n").Trim()
+        }
+    }
+    finally {
+        try { $proc.Dispose() } catch { }
+    }
+}
+
 # Handles Invoke-AzVmProcessWithRetry.
 function Invoke-AzVmProcessWithRetry {
     param(
@@ -7,7 +61,8 @@ function Invoke-AzVmProcessWithRetry {
         [string[]]$Arguments,
         [string]$Label,
         [int]$MaxAttempts = 3,
-        [switch]$AllowFailure
+        [switch]$AllowFailure,
+        [switch]$SuppressTrackedLogging
     )
 
     if ($MaxAttempts -lt 1) {
@@ -21,18 +76,16 @@ function Invoke-AzVmProcessWithRetry {
     $lastExit = 0
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         $attemptLabel = if ($MaxAttempts -gt 1) { ("{0} (attempt {1}/{2})" -f $Label, $attempt, $MaxAttempts) } else { $Label }
-        $previousDontWriteBytecode = [System.Environment]::GetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "Process")
-        try {
-            [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", "1", "Process")
-            $output = Invoke-TrackedAction -Label $attemptLabel -Action {
-                & $FilePath -B @Arguments 2>&1
+        if ($SuppressTrackedLogging) {
+            $processResult = Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments (@('-B') + @($Arguments))
+        }
+        else {
+            $processResult = Invoke-TrackedAction -Label $attemptLabel -Action {
+                Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments (@('-B') + @($Arguments))
             }
         }
-        finally {
-            [System.Environment]::SetEnvironmentVariable("PYTHONDONTWRITEBYTECODE", $previousDontWriteBytecode, "Process")
-        }
-        $lastExit = [int]$LASTEXITCODE
-        $lastOutput = ((@($output) | ForEach-Object { [string]$_ }) -join "`n")
+        $lastExit = [int]$processResult.ExitCode
+        $lastOutput = [string]$processResult.Output
 
         if ($lastExit -eq 0 -or $AllowFailure) {
             return [pscustomobject]@{

@@ -19,6 +19,7 @@ function Invoke-AzVmCommandDispatcher {
     }
 
     $script:ConfigOverrides = @{}
+    $script:AzVmConfigValueSources = @{}
     $script:ActiveCommand = [string]$CommandName
     $helpRequested = Get-AzVmCliOptionBool -Options $Options -Name 'help' -DefaultValue $false
 

@@ -137,9 +137,11 @@ function Invoke-AzVmMain {
         $cancelledStage = ''
 
         Invoke-Step 'Step 1/7 - configuration values will be shown...' {
-            Show-AzVmStepReview -Title 'Configuration review' -Values (New-AzVmStep1ConfigDisplayMap -Platform $platform -Context $step1Context -OperationName $CommandName) -TaskTitle '' -TaskBlocks @()
             if ($script:AutoMode) {
                 Show-AzVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $repoRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
+            }
+            else {
+                Show-AzVmStepReview -Title 'Configuration review' -Values (New-AzVmStep1ConfigDisplayMap -Platform $platform -Context $step1Context -OperationName $CommandName) -TaskTitle '' -TaskBlocks @()
             }
             if ($shouldRunPrecheck) {
                 Invoke-AzVmPrecheckStep -Context $step1Context

@@ -48,7 +48,7 @@ function Save-AzVmStep1ContextPersistenceMap {
         Set-DotEnvValue -Path $EnvFilePath -Key $name -Value ([string]$PersistMap[$name])
     }
 
-    Remove-DotEnvKeys -Path $EnvFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
+    Remove-AzVmUnsupportedDotEnvKeys -Path $EnvFilePath
 }
 
 function New-AzVmStep1ConfigDisplayMap {
@@ -143,7 +143,8 @@ function Invoke-AzVmInteractiveStep1Editor {
         while ($true) {
             $candidateVmName = Read-AzVmStep1OverrideValue -Label 'SELECTED_VM_NAME' -CurrentValue ([string]$Context.VmName)
             if (Test-AzVmVmNameFormat -VmName $candidateVmName) {
-                $ConfigOverrides['VM_NAME'] = [string]$candidateVmName
+                $ConfigOverrides['SELECTED_VM_NAME'] = [string]$candidateVmName
+                Set-AzVmConfigValueSource -Key 'SELECTED_VM_NAME' -Source 'interactive value'
                 break
             }
 
@@ -154,7 +155,8 @@ function Invoke-AzVmInteractiveStep1Editor {
             $candidateLocation = Read-AzVmStep1OverrideValue -Label 'SELECTED_AZURE_REGION' -CurrentValue ([string]$Context.AzLocation)
             try {
                 Assert-LocationExists -Location $candidateLocation
-                $ConfigOverrides['AZ_LOCATION'] = ([string]$candidateLocation).Trim().ToLowerInvariant()
+                $ConfigOverrides['SELECTED_AZURE_REGION'] = ([string]$candidateLocation).Trim().ToLowerInvariant()
+                Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_REGION' -Source 'interactive value'
                 break
             }
             catch {
@@ -167,6 +169,11 @@ function Invoke-AzVmInteractiveStep1Editor {
     $ConfigOverrides[$vmImageConfigKey] = Read-AzVmStep1OverrideValue -Label $vmImageConfigKey -CurrentValue ([string]$Context.VmImage)
     $ConfigOverrides[$vmDiskSizeConfigKey] = Read-AzVmStep1OverrideValue -Label $vmDiskSizeConfigKey -CurrentValue ([string]$Context.VmDiskSize)
     $ConfigOverrides['VM_STORAGE_SKU'] = Read-AzVmStep1OverrideValue -Label 'VM_STORAGE_SKU' -CurrentValue ([string]$Context.VmStorageSku)
+    foreach ($key in @('VM_SIZE', $vmImageConfigKey, $vmDiskSizeConfigKey, 'VM_STORAGE_SKU')) {
+        if ($ConfigOverrides.ContainsKey([string]$key) -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides[[string]$key])) {
+            Set-AzVmConfigValueSource -Key ([string]$key) -Source 'interactive value'
+        }
+    }
 
     $resolvedContext = Invoke-AzVmStep1Common `
         -ConfigMap $ConfigMap `
@@ -185,9 +192,9 @@ function Invoke-AzVmInteractiveStep1Editor {
         -SkipInteractiveConfigEditor
 
     if ([string]::Equals([string]$OperationName, 'create', [System.StringComparison]::OrdinalIgnoreCase)) {
-        foreach ($fieldName in @('RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME')) {
+        foreach ($fieldName in @('SELECTED_RESOURCE_GROUP','VNET_NAME','SUBNET_NAME','NSG_NAME','NSG_RULE_NAME','PUBLIC_IP_NAME','NIC_NAME','VM_DISK_NAME')) {
             $currentValue = switch ($fieldName) {
-                'RESOURCE_GROUP' { [string]$resolvedContext.ResourceGroup }
+                'SELECTED_RESOURCE_GROUP' { [string]$resolvedContext.ResourceGroup }
                 'VNET_NAME' { [string]$resolvedContext.VNET }
                 'SUBNET_NAME' { [string]$resolvedContext.SUBNET }
                 'NSG_NAME' { [string]$resolvedContext.NSG }
@@ -198,7 +205,13 @@ function Invoke-AzVmInteractiveStep1Editor {
             }
 
             $candidateValue = Read-AzVmStep1OverrideValue -Label $fieldName -CurrentValue $currentValue
-            $ConfigOverrides[$fieldName] = [string]$candidateValue
+            if ([string]::Equals([string]$fieldName, 'SELECTED_RESOURCE_GROUP', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $ConfigOverrides['SELECTED_RESOURCE_GROUP'] = [string]$candidateValue
+                Set-AzVmConfigValueSource -Key 'SELECTED_RESOURCE_GROUP' -Source 'interactive value'
+            }
+            else {
+                $ConfigOverrides[$fieldName] = [string]$candidateValue
+            }
         }
 
         $resolvedContext = Invoke-AzVmStep1Common `
@@ -283,11 +296,11 @@ function Invoke-AzVmStep1Common {
     $pendingEnvUpdates = [ordered]@{}
 
     $vmNameDefaultResolved = ''
-    if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('VM_NAME') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['VM_NAME'])) {
-        $vmNameDefaultResolved = [string]$ConfigOverrides['VM_NAME']
+    if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('SELECTED_VM_NAME') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['SELECTED_VM_NAME'])) {
+        $vmNameDefaultResolved = [string]$ConfigOverrides['SELECTED_VM_NAME']
     }
     else {
-        $vmNameDefaultResolved = [string](Get-ConfigValue -Config $ConfigMap -Key "VM_NAME" -DefaultValue $VmNameDefault)
+        $vmNameDefaultResolved = [string](Get-ConfigValue -Config $ConfigMap -Key "SELECTED_VM_NAME" -DefaultValue $VmNameDefault)
     }
 
     $vmName = $vmNameDefaultResolved
@@ -338,7 +351,7 @@ function Invoke-AzVmStep1Common {
 
     $vmName = $userInput
     if ($ConfigOverrides) {
-        $ConfigOverrides["VM_NAME"] = $vmName
+        $ConfigOverrides["SELECTED_VM_NAME"] = $vmName
     }
 
     Write-Host "VM name '$vmName' will be used for the Azure VM and default resource naming." -ForegroundColor Green
@@ -348,9 +361,9 @@ function Invoke-AzVmStep1Common {
     $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_DISK_SIZE_GB"
     $vmInitTaskDirConfigKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'init'
     $vmUpdateTaskDirConfigKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'update'
-    $baseTokens = @{ VM_NAME = [string]$vmName }
+    $baseTokens = @{ SELECTED_VM_NAME = [string]$vmName }
 
-    $defaultAzLocation = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "AZ_LOCATION" -DefaultValue "") -Tokens $baseTokens
+    $defaultAzLocation = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "SELECTED_AZURE_REGION" -DefaultValue "") -Tokens $baseTokens
     $vmImage = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmImageConfigKey -DefaultValue $VmImageDefault) -Tokens $baseTokens
     $vmStorageSku = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key "VM_STORAGE_SKU" -DefaultValue "StandardSSD_LRS") -Tokens $baseTokens
     $defaultVmSize = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmSizeConfigKey -DefaultValue $VmSizeDefault) -Tokens $baseTokens
@@ -371,8 +384,8 @@ function Invoke-AzVmStep1Common {
     $forcedVmDiskSize = ''
     $forcedVmStorageSku = ''
     if ($ConfigOverrides) {
-        if ($ConfigOverrides.ContainsKey('AZ_LOCATION')) {
-            $forcedAzLocation = [string]$ConfigOverrides['AZ_LOCATION']
+        if ($ConfigOverrides.ContainsKey('SELECTED_AZURE_REGION')) {
+            $forcedAzLocation = [string]$ConfigOverrides['SELECTED_AZURE_REGION']
         }
         if ($ConfigOverrides.ContainsKey('VM_SIZE')) {
             $forcedVmSize = [string]$ConfigOverrides['VM_SIZE']
@@ -429,8 +442,10 @@ function Invoke-AzVmStep1Common {
             break
         }
         if ($ConfigOverrides) {
-            $ConfigOverrides["AZ_LOCATION"] = $azLocation
+            $ConfigOverrides["SELECTED_AZURE_REGION"] = $azLocation
             $ConfigOverrides["VM_SIZE"] = $vmSize
+            Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_REGION' -Source 'interactive value'
+            Set-AzVmConfigValueSource -Key 'VM_SIZE' -Source 'interactive value'
         }
 
         Write-Host "Interactive selection -> SELECTED_AZURE_REGION='$azLocation', VM_SIZE='$vmSize'." -ForegroundColor Green
@@ -448,17 +463,17 @@ function Invoke-AzVmStep1Common {
     $regionCode = Get-AzVmRegionCode -Location $azLocation
 
     $nameTokens = @{
-        VM_NAME = [string]$vmName
+        SELECTED_VM_NAME = [string]$vmName
         REGION_CODE = [string]$regionCode
         N = "1"
     }
 
-    $resourceGroupTemplate = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{VM_NAME}-{REGION_CODE}-g{N}")
+    $resourceGroupTemplate = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SELECTED_VM_NAME}-{REGION_CODE}-g{N}")
 
-    $configuredResourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "RESOURCE_GROUP" -DefaultValue "")
+    $configuredResourceGroupRaw = [string](Get-ConfigValue -Config $ConfigMap -Key "SELECTED_RESOURCE_GROUP" -DefaultValue "")
     $configuredResourceGroup = ''
-    if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('RESOURCE_GROUP') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['RESOURCE_GROUP'])) {
-        $configuredResourceGroup = [string]$ConfigOverrides['RESOURCE_GROUP']
+    if ($ConfigOverrides -and $ConfigOverrides.ContainsKey('SELECTED_RESOURCE_GROUP') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['SELECTED_RESOURCE_GROUP'])) {
+        $configuredResourceGroup = [string]$ConfigOverrides['SELECTED_RESOURCE_GROUP']
     }
     elseif (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroupRaw)) {
         $configuredResourceGroup = Resolve-AzVmTemplate -Template $configuredResourceGroupRaw -Tokens $nameTokens
@@ -479,7 +494,7 @@ function Invoke-AzVmStep1Common {
         Assert-AzVmManagedResourceGroup -ResourceGroup $resourceGroup -OperationName 'update'
     }
     elseif ([string]::Equals([string]$OperationName, 'create', [System.StringComparison]::OrdinalIgnoreCase)) {
-        if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup) -and $ConfigOverrides -and $ConfigOverrides.ContainsKey('RESOURCE_GROUP')) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup) -and $ConfigOverrides -and $ConfigOverrides.ContainsKey('SELECTED_RESOURCE_GROUP')) {
             $resourceGroup = [string]$configuredResourceGroup
             Write-Host ("Create command will use the requested new resource group name '{0}'." -f $resourceGroup) -ForegroundColor Green
         }
@@ -502,7 +517,7 @@ function Invoke-AzVmStep1Common {
         }
     }
     else {
-        $resourceGroupForced = ($ConfigOverrides -and $ConfigOverrides.ContainsKey('RESOURCE_GROUP') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['RESOURCE_GROUP']))
+        $resourceGroupForced = ($ConfigOverrides -and $ConfigOverrides.ContainsKey('SELECTED_RESOURCE_GROUP') -and -not [string]::IsNullOrWhiteSpace([string]$ConfigOverrides['SELECTED_RESOURCE_GROUP']))
         if ($resourceGroupForced -and -not [string]::IsNullOrWhiteSpace([string]$configuredResourceGroup)) {
             $resourceGroup = [string]$configuredResourceGroup
             Write-Host ("Resource group override '{0}' will be used." -f $resourceGroup) -ForegroundColor Green
@@ -547,7 +562,7 @@ function Invoke-AzVmStep1Common {
         $managedResourceIndexAllocator = New-AzVmManagedResourceIndexAllocator
     }
 
-    $vnetSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{VM_NAME}-{REGION_CODE}-n{N}'
+    $vnetSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'VNET_NAME' -TemplateKey 'VNET_NAME_TEMPLATE' -TemplateDefaultValue 'net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $vnetRaw = [string]$vnetSeed.Value
     $vnetExplicit = [bool]$vnetSeed.Explicit
     if ($vnetExplicit) {
@@ -558,7 +573,7 @@ function Invoke-AzVmStep1Common {
     }
     Register-AzVmManagedResourceNameIndex -Allocator $managedResourceIndexAllocator -Name $VNET -LogicalName 'VNET_NAME' | Out-Null
 
-    $subnetSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'SUBNET_NAME' -TemplateKey 'SUBNET_NAME_TEMPLATE' -TemplateDefaultValue 'subnet-{VM_NAME}-{REGION_CODE}-n{N}'
+    $subnetSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'SUBNET_NAME' -TemplateKey 'SUBNET_NAME_TEMPLATE' -TemplateDefaultValue 'subnet-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $subnetRaw = [string]$subnetSeed.Value
     $subnetExplicit = [bool]$subnetSeed.Explicit
     if ($subnetExplicit) {
@@ -569,7 +584,7 @@ function Invoke-AzVmStep1Common {
     }
     Register-AzVmManagedResourceNameIndex -Allocator $managedResourceIndexAllocator -Name $SUBNET -LogicalName 'SUBNET_NAME' | Out-Null
 
-    $nsgSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'NSG_NAME' -TemplateKey 'NSG_NAME_TEMPLATE' -TemplateDefaultValue 'nsg-{VM_NAME}-{REGION_CODE}-n{N}'
+    $nsgSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'NSG_NAME' -TemplateKey 'NSG_NAME_TEMPLATE' -TemplateDefaultValue 'nsg-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $nsgRaw = [string]$nsgSeed.Value
     $nsgExplicit = [bool]$nsgSeed.Explicit
     if ($nsgExplicit) {
@@ -580,7 +595,7 @@ function Invoke-AzVmStep1Common {
     }
     Register-AzVmManagedResourceNameIndex -Allocator $managedResourceIndexAllocator -Name $NSG -LogicalName 'NSG_NAME' | Out-Null
 
-    $nsgRuleSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'NSG_RULE_NAME' -TemplateKey 'NSG_RULE_NAME_TEMPLATE' -TemplateDefaultValue 'nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}'
+    $nsgRuleSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'NSG_RULE_NAME' -TemplateKey 'NSG_RULE_NAME_TEMPLATE' -TemplateDefaultValue 'nsg-rule-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $nsgRuleRaw = [string]$nsgRuleSeed.Value
     $nsgRuleExplicit = [bool]$nsgRuleSeed.Explicit
     if ($nsgRuleExplicit) {
@@ -591,7 +606,7 @@ function Invoke-AzVmStep1Common {
     }
     Register-AzVmManagedResourceNameIndex -Allocator $managedResourceIndexAllocator -Name $nsgRule -LogicalName 'NSG_RULE_NAME' | Out-Null
 
-    $ipSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'PUBLIC_IP_NAME' -TemplateKey 'PUBLIC_IP_NAME_TEMPLATE' -TemplateDefaultValue 'ip-{VM_NAME}-{REGION_CODE}-n{N}'
+    $ipSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'PUBLIC_IP_NAME' -TemplateKey 'PUBLIC_IP_NAME_TEMPLATE' -TemplateDefaultValue 'ip-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $ipRaw = [string]$ipSeed.Value
     $ipExplicit = [bool]$ipSeed.Explicit
     if ($ipExplicit) {
@@ -602,7 +617,7 @@ function Invoke-AzVmStep1Common {
     }
     Register-AzVmManagedResourceNameIndex -Allocator $managedResourceIndexAllocator -Name $IP -LogicalName 'PUBLIC_IP_NAME' | Out-Null
 
-    $nicSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'NIC_NAME' -TemplateKey 'NIC_NAME_TEMPLATE' -TemplateDefaultValue 'nic-{VM_NAME}-{REGION_CODE}-n{N}'
+    $nicSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'NIC_NAME' -TemplateKey 'NIC_NAME_TEMPLATE' -TemplateDefaultValue 'nic-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $nicRaw = [string]$nicSeed.Value
     $nicExplicit = [bool]$nicSeed.Explicit
     if ($nicExplicit) {
@@ -613,7 +628,7 @@ function Invoke-AzVmStep1Common {
     }
     Register-AzVmManagedResourceNameIndex -Allocator $managedResourceIndexAllocator -Name $NIC -LogicalName 'NIC_NAME' | Out-Null
 
-    $vmDiskSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'VM_DISK_NAME' -TemplateKey 'VM_DISK_NAME_TEMPLATE' -TemplateDefaultValue 'disk-{VM_NAME}-{REGION_CODE}-n{N}'
+    $vmDiskSeed = Get-AzVmManagedNameSeed -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -OperationName $OperationName -NameKey 'VM_DISK_NAME' -TemplateKey 'VM_DISK_NAME_TEMPLATE' -TemplateDefaultValue 'disk-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}'
     $vmDiskNameRaw = [string]$vmDiskSeed.Value
     $vmDiskExplicit = [bool]$vmDiskSeed.Explicit
     if ($vmDiskExplicit) {
@@ -662,11 +677,11 @@ function Invoke-AzVmStep1Common {
         $vmDiskSize = [string]$forcedVmDiskSize
     }
 
-    $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key "company_name" -DefaultValue '')) -Tokens $baseTokens
-    $companyWebAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'company_web_address' -DefaultValue '')) -Tokens $baseTokens
-    $companyEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'company_email_address' -DefaultValue '')) -Tokens $baseTokens
-    $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'employee_email_address' -DefaultValue '')) -Tokens $baseTokens
-    $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'employee_full_name' -DefaultValue '')) -Tokens $baseTokens
+    $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key "SELECTED_COMPANY_NAME" -DefaultValue '')) -Tokens $baseTokens
+    $companyWebAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_COMPANY_WEB_ADDRESS' -DefaultValue '')) -Tokens $baseTokens
+    $companyEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_COMPANY_EMAIL_ADDRESS' -DefaultValue '')) -Tokens $baseTokens
+    $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' -DefaultValue '')) -Tokens $baseTokens
+    $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_EMPLOYEE_FULL_NAME' -DefaultValue '')) -Tokens $baseTokens
     $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_USER' -Tokens $baseTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
     $vmPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ADMIN_PASS' -Tokens $baseTokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
     $vmAssistantUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $ConfigMap -Key 'VM_ASSISTANT_USER' -Tokens $baseTokens -Summary 'VM assistant user is required.' -Hint 'Set VM_ASSISTANT_USER in .env to the secondary VM username.'

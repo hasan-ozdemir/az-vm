@@ -239,33 +239,6 @@ function Invoke-AzVmOneShotSshTask {
         $scriptPayload += "`n"
     }
 
-    if ($Shell -eq 'powershell' -and $scriptPayload.Length -le 7000) {
-        $encodedBytes = [System.Text.Encoding]::Unicode.GetBytes($scriptPayload)
-        $encodedCommand = [System.Convert]::ToBase64String($encodedBytes)
-        $result = Invoke-AzVmProcessWithRetry `
-            -FilePath $PySshPythonPath `
-            -Arguments @(
-                $PySshClientPath,
-                'exec',
-                '--host', [string]$HostName,
-                '--port', [string]$Port,
-                '--user', [string]$UserName,
-                '--password', [string]$Password,
-                '--timeout', [string]$TimeoutSeconds,
-                '--command', ('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {0}' -f [string]$encodedCommand)
-            ) `
-            -Label ("pyssh one-shot task -> {0}" -f [string]$TaskName) `
-            -MaxAttempts 1 `
-            -AllowFailure
-
-        return [pscustomobject]@{
-            ExitCode = [int]$result.ExitCode
-            Output = [string]$result.Output
-            DurationSeconds = 0.0
-            ExecutionMode = 'one-shot'
-        }
-    }
-
     $extension = if ($Shell -eq 'bash') { 'sh' } else { 'ps1' }
     $localTempPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-task-{0}-{1}.{2}' -f $safeTaskName, ([guid]::NewGuid().ToString('N')), $extension)
     $remoteScriptPath = if ($Shell -eq 'bash') {
@@ -288,7 +261,7 @@ function Invoke-AzVmOneShotSshTask {
             -Port $Port `
             -LocalPath $localTempPath `
             -RemotePath $remoteScriptPath `
-            -ConnectTimeoutSeconds $TimeoutSeconds
+            -ConnectTimeoutSeconds $TimeoutSeconds | Out-Null
 
         $commandText = if ($Shell -eq 'bash') {
             'bash "{0}"' -f [string]$remoteScriptPath
@@ -391,8 +364,8 @@ function Invoke-AzVmSshTaskScript {
         -SkipRemoteCleanup:$SkipRemoteCleanup)
 }
 
-# Handles Test-AzVmSshTransportFallbackSignal.
-function Test-AzVmSshTransportFallbackSignal {
+# Handles Test-AzVmSshTransportRecoverySignal.
+function Test-AzVmSshTransportRecoverySignal {
     param(
         [AllowNull()]
         [string]$Text

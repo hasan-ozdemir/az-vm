@@ -114,6 +114,171 @@ function Get-AzVmValueStateTracker {
     return (, $script:AzVmValueStateTracker)
 }
 
+function Get-AzVmConfigValueSourceTracker {
+    if (-not $script:AzVmConfigValueSources) {
+        $script:AzVmConfigValueSources = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    }
+
+    return (, $script:AzVmConfigValueSources)
+}
+
+function Set-AzVmConfigValueSource {
+    param(
+        [string]$Key,
+        [string]$Source
+    )
+
+    $normalizedKey = [string]$Key
+    $normalizedSource = [string]$Source
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedKey) -or [string]::IsNullOrWhiteSpace([string]$normalizedSource)) {
+        return
+    }
+
+    $tracker = Get-AzVmConfigValueSourceTracker
+    $tracker[[string]$normalizedKey] = [string]$normalizedSource.Trim()
+}
+
+function Get-AzVmConfigValueSource {
+    param([string]$Key)
+
+    $normalizedKey = [string]$Key
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedKey)) {
+        return ''
+    }
+
+    $tracker = Get-AzVmConfigValueSourceTracker
+    if ($tracker.ContainsKey([string]$normalizedKey)) {
+        return [string]$tracker[[string]$normalizedKey]
+    }
+
+    return ''
+}
+
+function Test-AzVmDictionaryHasNonBlankValue {
+    param(
+        [System.Collections.IDictionary]$Dictionary,
+        [string]$Key
+    )
+
+    if ($null -eq $Dictionary -or [string]::IsNullOrWhiteSpace([string]$Key)) {
+        return $false
+    }
+
+    if ($Dictionary.PSObject.Methods.Match('ContainsKey').Count -gt 0 -and $Dictionary.ContainsKey([string]$Key)) {
+        return (-not [string]::IsNullOrWhiteSpace([string]$Dictionary[[string]$Key]))
+    }
+
+    if ($Dictionary.PSObject.Methods.Match('Contains').Count -gt 0 -and $Dictionary.Contains([string]$Key)) {
+        return (-not [string]::IsNullOrWhiteSpace([string]$Dictionary[[string]$Key]))
+    }
+
+    foreach ($candidateKey in @($Dictionary.Keys)) {
+        if (-not [string]::Equals([string]$candidateKey, [string]$Key, [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        return (-not [string]::IsNullOrWhiteSpace([string]$Dictionary[$candidateKey]))
+    }
+
+    return $false
+}
+
+function Resolve-AzVmConfigValueSourceLabel {
+    param(
+        [string]$Key,
+        [System.Collections.IDictionary]$ConfigMap,
+        [System.Collections.IDictionary]$ConfigOverrides,
+        [string]$FallbackSource = 'derived value'
+    )
+
+    $trackedSource = [string](Get-AzVmConfigValueSource -Key $Key)
+    if (-not [string]::IsNullOrWhiteSpace([string]$trackedSource)) {
+        return $trackedSource
+    }
+
+    if (Test-AzVmDictionaryHasNonBlankValue -Dictionary $ConfigOverrides -Key $Key) {
+        return 'runtime value'
+    }
+
+    if (Test-AzVmDictionaryHasNonBlankValue -Dictionary $ConfigMap -Key $Key) {
+        return '.env value'
+    }
+
+    return [string]$FallbackSource
+}
+
+function New-AzVmRuntimeConfigurationRows {
+    param(
+        [string]$Platform,
+        [System.Collections.IDictionary]$ConfigMap,
+        [System.Collections.IDictionary]$ConfigOverrides,
+        [hashtable]$Context
+    )
+
+    $platformImageKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey 'VM_IMAGE'
+    $platformSizeKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey 'VM_SIZE'
+    $platformDiskSizeKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey 'VM_DISK_SIZE_GB'
+    $platformInitDirKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'init'
+    $platformUpdateDirKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'update'
+
+    $specs = @(
+        @{ Key = 'SELECTED_VM_OS'; Value = [string]$Context.VmOsType; FallbackSource = 'derived value' },
+        @{ Key = 'SELECTED_AZURE_SUBSCRIPTION_ID'; Value = [string]$Context.AzureSubscriptionId; FallbackSource = 'azure value' },
+        @{ Key = 'SELECTED_AZURE_REGION'; Value = [string]$Context.AzLocation; FallbackSource = 'derived value' },
+        @{ Key = 'SELECTED_RESOURCE_GROUP'; Value = [string]$Context.ResourceGroup; FallbackSource = 'derived value' },
+        @{ Key = 'SELECTED_VM_NAME'; Value = [string]$Context.VmName; FallbackSource = 'derived value' },
+        @{ Key = [string]$platformImageKey; Value = [string]$Context.VmImage; FallbackSource = 'default value' },
+        @{ Key = [string]$platformSizeKey; Value = [string]$Context.VmSize; FallbackSource = 'default value' },
+        @{ Key = [string]$platformDiskSizeKey; Value = [string]$Context.VmDiskSize; FallbackSource = 'default value' },
+        @{ Key = 'VM_STORAGE_SKU'; Value = [string]$Context.VmStorageSku; FallbackSource = 'default value' },
+        @{ Key = 'VM_SECURITY_TYPE'; Value = [string]$Context.VmSecurityType; FallbackSource = 'default value' },
+        @{ Key = 'VM_ENABLE_SECURE_BOOT'; Value = [string]$Context.VmEnableSecureBoot; FallbackSource = 'default value' },
+        @{ Key = 'VM_ENABLE_VTPM'; Value = [string]$Context.VmEnableVtpm; FallbackSource = 'default value' },
+        @{ Key = 'VM_ENABLE_HIBERNATION'; Value = [string]$Context.VmEnableHibernation; FallbackSource = 'default value' },
+        @{ Key = 'VM_ENABLE_NESTED_VIRTUALIZATION'; Value = [string]$Context.VmEnableNestedVirtualization; FallbackSource = 'default value' },
+        @{ Key = 'VM_SSH_PORT'; Value = [string]$Context.SshPort; FallbackSource = 'default value' },
+        @{ Key = 'VM_RDP_PORT'; Value = [string]$Context.RdpPort; FallbackSource = 'default value' },
+        @{ Key = 'TCP_PORTS'; Value = [string]$Context.TcpPortsConfiguredCsv; FallbackSource = 'default value' },
+        @{ Key = 'SELECTED_COMPANY_NAME'; Value = [string]$Context.CompanyName; FallbackSource = '.env value' },
+        @{ Key = 'SELECTED_COMPANY_WEB_ADDRESS'; Value = [string]$Context.CompanyWebAddress; FallbackSource = '.env value' },
+        @{ Key = 'SELECTED_COMPANY_EMAIL_ADDRESS'; Value = [string]$Context.CompanyEmailAddress; FallbackSource = '.env value' },
+        @{ Key = 'SELECTED_EMPLOYEE_EMAIL_ADDRESS'; Value = [string]$Context.EmployeeEmailAddress; FallbackSource = '.env value' },
+        @{ Key = 'SELECTED_EMPLOYEE_FULL_NAME'; Value = [string]$Context.EmployeeFullName; FallbackSource = '.env value' },
+        @{ Key = [string]$platformInitDirKey; Value = [string]$Context.VmInitTaskDir; FallbackSource = 'default value' },
+        @{ Key = [string]$platformUpdateDirKey; Value = [string]$Context.VmUpdateTaskDir; FallbackSource = 'default value' },
+        @{ Key = 'AZURE_COMMAND_TIMEOUT_SECONDS'; Value = [string]$Context.AzCommandTimeoutSeconds; FallbackSource = 'default value' },
+        @{ Key = 'SSH_TASK_TIMEOUT_SECONDS'; Value = [string]$Context.SshTaskTimeoutSeconds; FallbackSource = 'default value' },
+        @{ Key = 'SSH_CONNECT_TIMEOUT_SECONDS'; Value = [string]$Context.SshConnectTimeoutSeconds; FallbackSource = 'default value' },
+        @{ Key = 'VM_TASK_OUTCOME_MODE'; Value = [string]$Context.TaskOutcomeMode; FallbackSource = 'default value' },
+        @{ Key = 'PYSSH_CLIENT_PATH'; Value = [string]$Context.ConfiguredPySshClientPath; FallbackSource = 'default value' },
+        @{ Key = 'REGION_CODE'; Value = [string]$Context.RegionCode; FallbackSource = 'derived value' },
+        @{ Key = 'VNET_NAME'; Value = [string]$Context.VNET; FallbackSource = 'derived value' },
+        @{ Key = 'SUBNET_NAME'; Value = [string]$Context.SUBNET; FallbackSource = 'derived value' },
+        @{ Key = 'NSG_NAME'; Value = [string]$Context.NSG; FallbackSource = 'derived value' },
+        @{ Key = 'NSG_RULE_NAME'; Value = [string]$Context.NsgRule; FallbackSource = 'derived value' },
+        @{ Key = 'PUBLIC_IP_NAME'; Value = [string]$Context.IP; FallbackSource = 'derived value' },
+        @{ Key = 'NIC_NAME'; Value = [string]$Context.NIC; FallbackSource = 'derived value' },
+        @{ Key = 'VM_DISK_NAME'; Value = [string]$Context.VmDiskName; FallbackSource = 'derived value' }
+    )
+
+    $rows = @()
+    foreach ($spec in @($specs)) {
+        $key = [string]$spec.Key
+        $value = ConvertTo-AzVmDisplayValue -Value $spec.Value
+        if ([string]::IsNullOrWhiteSpace([string]$key) -or [string]::IsNullOrWhiteSpace([string]$value)) {
+            continue
+        }
+
+        $rows += [pscustomobject]@{
+            Key = [string]$key
+            Value = [string]$value
+            Source = [string](Resolve-AzVmConfigValueSourceLabel -Key $key -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -FallbackSource ([string]$spec.FallbackSource))
+        }
+    }
+
+    return @($rows)
+}
+
 # Handles Register-AzVmValueObservation.
 function Register-AzVmValueObservation {
     param(
@@ -434,122 +599,16 @@ function Show-AzVmRuntimeConfigurationSnapshot {
     }
 
     if ($Context) {
-        $selectedRows = @()
-        $selectedFields = [ordered]@{
-            ResourceGroup = "Azure Resource Group"
-            AzLocation = "Azure Region"
-            VmSize = "Azure VM SKU"
-            VmDiskSize = "VM Disk Size GB"
-            VmImage = "VM OS Image"
-            VmEnableHibernation = "VM Enable Hibernation"
-            VmEnableNestedVirtualization = "VM Enable Nested Virtualization"
-        }
-        foreach ($fieldKey in @($selectedFields.Keys)) {
-            $observed = Register-AzVmValueObservation -Key ([string]$fieldKey) -Value $Context[$fieldKey]
-            if ($observed.ShouldPrint) {
-                $selectedRows += [pscustomobject]@{
-                    Label = [string]$selectedFields[$fieldKey]
-                    Value = [string]$observed.DisplayValue
-                    IsFirst = [bool]$observed.IsFirst
-                }
-            }
-        }
-        if ($selectedRows.Count -gt 0) {
-            Write-Host "Selected deployment values:"
-            foreach ($row in @($selectedRows)) {
-                Write-Host ("- {0}: {1}" -f [string]$row.Label, [string]$row.Value)
-            }
-        }
-    }
-
-    $runtimeRows = @()
-    $runtimeFields = [ordered]@{
-        AutoMode = [bool]$AutoMode
-        UpdateMode = [bool]$UpdateMode
-        ScriptRoot = [string]$ScriptRoot
-        ScriptName = [string]$ScriptName
-    }
-    $runtimeLabels = @{
-        AutoMode = "Auto mode"
-        UpdateMode = "Update mode"
-        ScriptRoot = "Script root"
-        ScriptName = "Script name"
-    }
-    foreach ($fieldKey in @($runtimeFields.Keys)) {
-        $observed = Register-AzVmValueObservation -Key ([string]$fieldKey) -Value $runtimeFields[$fieldKey]
-        if ($observed.ShouldPrint) {
-            $runtimeRows += [pscustomobject]@{
-                Label = [string]$runtimeLabels[$fieldKey]
-                Value = [string]$observed.DisplayValue
-                IsFirst = [bool]$observed.IsFirst
-            }
-        }
-    }
-    if ($runtimeRows.Count -gt 0) {
-        Write-Host "Runtime flags and app parameters:"
-        foreach ($row in @($runtimeRows)) {
-            Write-Host ("- {0}: {1}" -f [string]$row.Label, [string]$row.Value)
-        }
-    }
-
-    $envRows = @()
-    if ($ConfigMap -and $ConfigMap.Count -gt 0) {
-        foreach ($key in @($ConfigMap.Keys | Sort-Object)) {
-            $obsKey = "ENV::{0}" -f [string]$key
-            $observed = Register-AzVmValueObservation -Key $obsKey -Value $ConfigMap[$key]
-            if ($observed.ShouldPrint) {
-                $envRows += [pscustomobject]@{
-                    Label = [string]$key
-                    Value = [string]$observed.DisplayValue
-                    IsFirst = [bool]$observed.IsFirst
-                }
-            }
-        }
-    }
-    if ($envRows.Count -gt 0) {
-        Write-Host ".env loaded values:"
-        foreach ($row in @($envRows)) {
-            Write-Host ("- {0} = {1}" -f [string]$row.Label, [string]$row.Value)
-        }
-    }
-
-    $overrideRows = @()
-    if ($ConfigOverrides -and $ConfigOverrides.Count -gt 0) {
-        foreach ($key in @($ConfigOverrides.Keys | Sort-Object)) {
-            $obsKey = "OVERRIDE::{0}" -f [string]$key
-            $observed = Register-AzVmValueObservation -Key $obsKey -Value $ConfigOverrides[$key]
-            if ($observed.ShouldPrint) {
-                $overrideRows += [pscustomobject]@{
-                    Label = [string]$key
-                    Value = [string]$observed.DisplayValue
-                    IsFirst = [bool]$observed.IsFirst
-                }
-            }
-        }
-    }
-    if ($overrideRows.Count -gt 0) {
-        Write-Host "Runtime overrides:"
-        foreach ($row in @($overrideRows)) {
-            Write-Host ("- {0} = {1}" -f [string]$row.Label, [string]$row.Value)
-        }
-    }
-
-    if ($Context) {
-        $effectiveRows = @()
-        foreach ($key in @($Context.Keys | Sort-Object)) {
-            $observed = Register-AzVmValueObservation -Key ([string]$key -replace '^\s+|\s+$', '') -Value $Context[$key]
-            if ($observed.ShouldPrint) {
-                $effectiveRows += [pscustomobject]@{
-                    Label = [string]$key
-                    Value = [string]$observed.DisplayValue
-                    IsFirst = [bool]$observed.IsFirst
-                }
-            }
-        }
+        $effectiveRows = @(New-AzVmRuntimeConfigurationRows -Platform $Platform -ConfigMap $ConfigMap -ConfigOverrides $ConfigOverrides -Context $Context)
         if ($effectiveRows.Count -gt 0) {
-            Write-Host "Resolved effective values:"
+            Write-Host "Effective configuration:"
             foreach ($row in @($effectiveRows)) {
-                Write-Host ("- {0} = {1}" -f [string]$row.Label, [string]$row.Value)
+                $observed = Register-AzVmValueObservation -Key ([string]$row.Key) -Value $row.Value
+                if (-not [bool]$observed.ShouldPrint) {
+                    continue
+                }
+
+                Write-Host ("- {0}={1} ({2})" -f [string]$row.Key, [string]$row.Value, [string]$row.Source)
             }
         }
     }

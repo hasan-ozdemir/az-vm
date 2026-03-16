@@ -75,10 +75,10 @@ function Get-AzVmRegionCode {
     $normalized = if ($null -eq $Location) { '' } else { [string]$Location.Trim().ToLowerInvariant() }
     if ([string]::IsNullOrWhiteSpace($normalized)) {
         Throw-FriendlyError `
-            -Detail "Region code could not be resolved because AZ_LOCATION is empty." `
+            -Detail "Region code could not be resolved because SELECTED_AZURE_REGION is empty." `
             -Code 22 `
             -Summary "Region code resolution failed." `
-            -Hint "Set AZ_LOCATION to a valid Azure region."
+            -Hint "Set SELECTED_AZURE_REGION to a valid Azure region."
     }
 
     $map = Get-AzVmRegionCodeMap

@@ -12,7 +12,7 @@ function Assert-AzVmCreateAutoOptions {
         return
     }
 
-    $validationConfig = if ($ConfigMap) { Resolve-AzVmRuntimeConfigAliases -ConfigMap $ConfigMap } else { @{} }
+    $validationConfig = if ($ConfigMap) { Resolve-AzVmSupportedDotEnvConfig -ConfigMap $ConfigMap } else { @{} }
     $platform = if ($WindowsFlag) {
         'windows'
     }
@@ -94,35 +94,40 @@ function New-AzVmCreateCommandRuntime {
             -SubscriptionName ([string]$selectedSubscription.name) `
             -TenantId ([string]$selectedSubscription.tenantId) `
             -ResolutionSource 'interactive'
-        $createOverrides['azure_subscription_id'] = [string]$selectedSubscription.id
         $createOverrides['SELECTED_AZURE_SUBSCRIPTION_ID'] = [string]$selectedSubscription.id
+        Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Source 'interactive value'
     }
 
     $createVmName = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     if (-not [string]::IsNullOrWhiteSpace([string]$createVmName)) {
-        $createOverrides['VM_NAME'] = $createVmName.Trim()
+        $createOverrides['SELECTED_VM_NAME'] = $createVmName.Trim()
+        Set-AzVmConfigValueSource -Key 'SELECTED_VM_NAME' -Source 'cli value'
     }
     else {
         $configuredVmName = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_VM_NAME' -DefaultValue '')
         if (-not [string]::IsNullOrWhiteSpace([string]$configuredVmName)) {
-            $createOverrides['VM_NAME'] = $configuredVmName.Trim()
+            $createOverrides['SELECTED_VM_NAME'] = $configuredVmName.Trim()
+            Set-AzVmConfigValueSource -Key 'SELECTED_VM_NAME' -Source '.env value'
         }
     }
 
     $createVmRegion = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-region')
     if (-not [string]::IsNullOrWhiteSpace([string]$createVmRegion)) {
-        $createOverrides['AZ_LOCATION'] = $createVmRegion.Trim().ToLowerInvariant()
+        $createOverrides['SELECTED_AZURE_REGION'] = $createVmRegion.Trim().ToLowerInvariant()
+        Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_REGION' -Source 'cli value'
     }
     else {
         $configuredVmRegion = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_AZURE_REGION' -DefaultValue '')
         if (-not [string]::IsNullOrWhiteSpace([string]$configuredVmRegion)) {
-            $createOverrides['AZ_LOCATION'] = $configuredVmRegion.Trim().ToLowerInvariant()
+            $createOverrides['SELECTED_AZURE_REGION'] = $configuredVmRegion.Trim().ToLowerInvariant()
+            Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_REGION' -Source '.env value'
         }
     }
 
     $createVmSize = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-size')
     if (-not [string]::IsNullOrWhiteSpace([string]$createVmSize)) {
         $createOverrides['VM_SIZE'] = $createVmSize.Trim()
+        Set-AzVmConfigValueSource -Key 'VM_SIZE' -Source 'cli value'
     }
 
     return [pscustomobject]@{

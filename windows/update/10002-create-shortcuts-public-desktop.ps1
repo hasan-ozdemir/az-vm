@@ -2,11 +2,11 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: create-shortcuts-public-desktop"
 
-$companyName = "__COMPANY_NAME__"
-$companyWebAddress = "__COMPANY_WEB_ADDRESS__"
-$companyEmailAddress = "__COMPANY_EMAIL_ADDRESS__"
-$employeeEmailAddress = "__EMPLOYEE_EMAIL_ADDRESS__"
-$employeeFullName = "__EMPLOYEE_FULL_NAME__"
+$companyName = "__SELECTED_COMPANY_NAME__"
+$companyWebAddress = "__SELECTED_COMPANY_WEB_ADDRESS__"
+$companyEmailAddress = "__SELECTED_COMPANY_EMAIL_ADDRESS__"
+$employeeEmailAddress = "__SELECTED_EMPLOYEE_EMAIL_ADDRESS__"
+$employeeFullName = "__SELECTED_EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
 $assistantUser = "__ASSISTANT_USER__"
 $publicDesktop = "C:\Users\Public\Desktop"
@@ -18,11 +18,11 @@ $codexAppFallbackPath = ""
 $whatsAppFallbackPath = ""
 $iCloudFallbackPath = ""
 $shortcutRunAsAdminFlag = 0x00002000
-$unresolvedCompanyNameToken = ('__' + 'COMPANY_NAME' + '__')
-$unresolvedCompanyWebAddressToken = ('__' + 'COMPANY_WEB_ADDRESS' + '__')
-$unresolvedCompanyEmailAddressToken = ('__' + 'COMPANY_EMAIL_ADDRESS' + '__')
-$unresolvedEmployeeEmailAddressToken = ('__' + 'EMPLOYEE_EMAIL_ADDRESS' + '__')
-$unresolvedEmployeeFullNameToken = ('__' + 'EMPLOYEE_FULL_NAME' + '__')
+$unresolvedCompanyNameToken = ('__' + 'SELECTED_COMPANY_NAME' + '__')
+$unresolvedCompanyWebAddressToken = ('__' + 'SELECTED_COMPANY_WEB_ADDRESS' + '__')
+$unresolvedCompanyEmailAddressToken = ('__' + 'SELECTED_COMPANY_EMAIL_ADDRESS' + '__')
+$unresolvedEmployeeEmailAddressToken = ('__' + 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' + '__')
+$unresolvedEmployeeFullNameToken = ('__' + 'SELECTED_EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
 $launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
 
@@ -44,7 +44,7 @@ function Test-InvalidCompanyName {
     if ([string]::Equals($trimmed, $unresolvedCompanyNameToken, [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
-    if ([string]::Equals($trimmed, "company_name", [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals($trimmed, "SELECTED_COMPANY_NAME", [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
     if ($trimmed.StartsWith("__", [System.StringComparison]::Ordinal) -and $trimmed.EndsWith("__", [System.StringComparison]::Ordinal)) {
@@ -65,7 +65,7 @@ function Test-InvalidCompanyWebAddress {
     if ([string]::Equals($trimmed, $unresolvedCompanyWebAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
-    if ([string]::Equals($trimmed, 'company_web_address', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals($trimmed, 'SELECTED_COMPANY_WEB_ADDRESS', [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
     if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
@@ -86,7 +86,7 @@ function Test-InvalidEmployeeEmailAddress {
     if ([string]::Equals($trimmed, $unresolvedEmployeeEmailAddressToken, [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
-    if ([string]::Equals($trimmed, 'employee_email_address', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals($trimmed, 'SELECTED_EMPLOYEE_EMAIL_ADDRESS', [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
     if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
@@ -110,7 +110,7 @@ function Test-InvalidEmployeeFullName {
     if ([string]::Equals($trimmed, $unresolvedEmployeeFullNameToken, [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
-    if ([string]::Equals($trimmed, 'employee_full_name', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals($trimmed, 'SELECTED_EMPLOYEE_FULL_NAME', [System.StringComparison]::OrdinalIgnoreCase)) {
         return $true
     }
     if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
@@ -124,7 +124,7 @@ function Get-EmployeeEmailBaseName {
     param([string]$EmailAddress)
 
     if (Test-InvalidEmployeeEmailAddress -Value $EmailAddress) {
-        throw "employee_email_address must be a non-placeholder email address before running 10002-create-shortcuts-public-desktop."
+        throw "SELECTED_EMPLOYEE_EMAIL_ADDRESS must be a non-placeholder email address before running 10002-create-shortcuts-public-desktop."
     }
 
     return [string]($EmailAddress.Trim().Split('@')[0])
@@ -163,16 +163,16 @@ function Normalize-ShortcutUrl {
 }
 
 if (Test-InvalidCompanyName -Value $companyName) {
-    throw "company_name is required for the Windows business public desktop shortcut flow. Set company_name in .env before running 10002-create-shortcuts-public-desktop."
+    throw "SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow. Set SELECTED_COMPANY_NAME in .env before running 10002-create-shortcuts-public-desktop."
 }
 if (Test-InvalidCompanyWebAddress -Value $companyWebAddress) {
-    throw "company_web_address is required for the Windows business public desktop shortcut flow. Set company_web_address in .env before running 10002-create-shortcuts-public-desktop."
+    throw "SELECTED_COMPANY_WEB_ADDRESS is required for the Windows business public desktop shortcut flow. Set SELECTED_COMPANY_WEB_ADDRESS in .env before running 10002-create-shortcuts-public-desktop."
 }
 if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) {
-    throw "employee_email_address is required for the Windows public desktop shortcut flow. Set employee_email_address in .env before running 10002-create-shortcuts-public-desktop."
+    throw "SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow. Set SELECTED_EMPLOYEE_EMAIL_ADDRESS in .env before running 10002-create-shortcuts-public-desktop."
 }
 if (Test-InvalidEmployeeFullName -Value $employeeFullName) {
-    throw "employee_full_name is required for the Windows public desktop shortcut flow. Set employee_full_name in .env before running 10002-create-shortcuts-public-desktop."
+    throw "SELECTED_EMPLOYEE_FULL_NAME is required for the Windows public desktop shortcut flow. Set SELECTED_EMPLOYEE_FULL_NAME in .env before running 10002-create-shortcuts-public-desktop."
 }
 
 $companyName = $companyName.Trim()

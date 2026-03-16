@@ -12,7 +12,7 @@ function Assert-AzVmUpdateAutoOptions {
         return
     }
 
-    $validationConfig = if ($ConfigMap) { Resolve-AzVmRuntimeConfigAliases -ConfigMap $ConfigMap } else { @{} }
+    $validationConfig = if ($ConfigMap) { Resolve-AzVmSupportedDotEnvConfig -ConfigMap $ConfigMap } else { @{} }
     $effectiveGroup = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
     if ([string]::IsNullOrWhiteSpace([string]$effectiveGroup)) {
         $effectiveGroup = [string](Get-ConfigValue -Config $validationConfig -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
@@ -68,6 +68,7 @@ function New-AzVmUpdateCommandRuntime {
             -SubscriptionName ([string]$selectedSubscription.name) `
             -TenantId ([string]$selectedSubscription.tenantId) `
             -ResolutionSource 'interactive'
+        Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Source 'interactive value'
     }
 
     $defaultResourceGroup = [string](Get-ConfigValue -Config $configMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
@@ -88,13 +89,9 @@ function New-AzVmUpdateCommandRuntime {
     $networkDescriptor = Get-AzVmVmNetworkDescriptor -ResourceGroup $targetResourceGroup -VmName $resolvedVmName
 
     $updateOverrides = @{
-        azure_subscription_id = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
         SELECTED_AZURE_SUBSCRIPTION_ID = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
-        RESOURCE_GROUP = $targetResourceGroup
         SELECTED_RESOURCE_GROUP = $targetResourceGroup
-        VM_NAME = $resolvedVmName
         SELECTED_VM_NAME = $resolvedVmName
-        AZ_LOCATION = $targetLocation
         SELECTED_AZURE_REGION = $targetLocation
         VNET_NAME = [string]$networkDescriptor.VnetName
         SUBNET_NAME = [string]$networkDescriptor.SubnetName
@@ -104,8 +101,11 @@ function New-AzVmUpdateCommandRuntime {
         VM_DISK_NAME = [string]$networkDescriptor.OsDiskName
     }
     if (-not [string]::IsNullOrWhiteSpace([string]$targetOsType)) {
-        $updateOverrides['VM_OS_TYPE'] = $targetOsType
         $updateOverrides['SELECTED_VM_OS'] = $targetOsType
+    }
+
+    foreach ($overrideKey in @($updateOverrides.Keys)) {
+        Set-AzVmConfigValueSource -Key ([string]$overrideKey) -Source 'azure value'
     }
 
     return [pscustomobject]@{

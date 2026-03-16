@@ -89,7 +89,20 @@ function Show-AzVmStepReview {
     Write-Host ""
     Write-Host $Title -ForegroundColor DarkCyan
     if ($Values -and $Values.Count -gt 0) {
-        Show-AzVmKeyValueList -Title 'Planned values:' -Values $Values
+        $distinctValues = [ordered]@{}
+        foreach ($key in @($Values.Keys)) {
+            $normalizedKey = [string]$key
+            $observed = Register-AzVmValueObservation -Key $normalizedKey -Value $Values[$key]
+            if (-not [bool]$observed.ShouldPrint) {
+                continue
+            }
+
+            $distinctValues[$normalizedKey] = [string]$observed.DisplayValue
+        }
+
+        if ($distinctValues.Count -gt 0) {
+            Show-AzVmKeyValueList -Title 'Planned values:' -Values $distinctValues
+        }
     }
     if (-not [string]::IsNullOrWhiteSpace([string]$TaskTitle)) {
         Show-AzVmTaskReviewRows -Title $TaskTitle -TaskBlocks $TaskBlocks
@@ -128,8 +141,8 @@ function Invoke-AzVmReviewCheckpoint {
     )
 
     if ($AutoMode) {
-        if ($Values -or $TaskBlocks) {
-            Show-AzVmStepReview -Title $StageName -Values $Values -TaskTitle $TaskTitle -TaskBlocks $TaskBlocks
+        if ($TaskBlocks) {
+            Show-AzVmStepReview -Title $StageName -Values @{} -TaskTitle $TaskTitle -TaskBlocks $TaskBlocks
         }
         Write-Host ("Auto mode: continuing with {0}." -f [string]$StageName) -ForegroundColor Cyan
         return 'yes'

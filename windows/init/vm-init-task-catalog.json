@@ -51,7 +51,7 @@
       "taskType": "normal",
       "priority": 108,
       "enabled": true,
-      "timeout": 82
+      "timeout": 180
     },
     {
       "name": "130-autologon-manager-user",

@@ -679,7 +679,12 @@ function Invoke-AzVmTaskAppStatePostProcess {
         return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = [string]$pluginInfo.Message }
     }
 
-    $remoteZipPath = Get-AzVmTaskAppStateRemoteZipPath -TaskName $taskName
+    $remoteZipTaskName = [string]$taskName
+    if ([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$Transport, 'ssh', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $remoteZipTaskName = ('{0}-{1}' -f [string]$taskName, ([guid]::NewGuid().ToString('N').Substring(0, 8)))
+    }
+    $remoteZipPath = Get-AzVmTaskAppStateRemoteZipPath -TaskName $remoteZipTaskName
     $remoteGuestHelperPath = Get-AzVmTaskAppStateRemoteGuestHelperPath -Platform $Platform
     try {
         if ([string]::Equals([string]$Transport, 'run-command', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -690,7 +695,7 @@ function Invoke-AzVmTaskAppStatePostProcess {
             Invoke-AzVmTaskAppStateRunCommandUpload -Platform $Platform -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $RunCommandId -TaskName $taskName -ContentBytes ([System.IO.File]::ReadAllBytes([string]$pluginInfo.ZipPath)) -RemotePath $remoteZipPath -PayloadLabel 'zip'
         }
         else {
-            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath ([string]$pluginInfo.ZipPath) -RemotePath $remoteZipPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath ([string]$pluginInfo.ZipPath) -RemotePath $remoteZipPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
         }
         $scriptText = ''
         if ($Platform -eq 'windows') {
@@ -705,7 +710,7 @@ function Invoke-AzVmTaskAppStatePostProcess {
                 Invoke-AzVmTaskAppStateRunCommandUpload -Platform $Platform -ResourceGroup $ResourceGroup -VmName $VmName -CommandId $RunCommandId -TaskName $taskName -ContentBytes $guestHelperBytes -RemotePath $remoteGuestHelperPath -PayloadLabel 'guest-helper'
             }
             else {
-                Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath $remoteGuestHelperPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+                Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath $remoteGuestHelperPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
             }
             $scriptText = Get-AzVmTaskAppStateGuestScript -TaskName $taskName -RemoteZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
         }
@@ -736,6 +741,9 @@ function Invoke-AzVmTaskAppStatePostProcess {
                 -TimeoutSeconds $scriptTimeout `
                 -SkipRemoteCleanup
             if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
+                if ($null -ne $result -and $result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
+                    Write-Host ([string]$result.Output)
+                }
                 $exitCode = if ($null -ne $result -and $result.PSObject.Properties.Match('ExitCode').Count -gt 0) { [int]$result.ExitCode } else { -1 }
                 Write-Warning ("App-state warning: {0} => replay exited with code {1}" -f [string]$taskName, $exitCode)
                 return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = ("replay exited with code {0}" -f $exitCode) }

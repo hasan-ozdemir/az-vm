@@ -89,7 +89,7 @@ function Initialize-AzVmCommandRuntimeContext {
     if ($sshConnectTimeoutSeconds -lt 5) { $sshConnectTimeoutSeconds = 5 }
     if ($sshConnectTimeoutSeconds -gt 300) { $sshConnectTimeoutSeconds = 300 }
 
-    $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
+    $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZURE_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
     $azCommandTimeoutSeconds = $script:AzCommandTimeoutSeconds
     if ($azCommandTimeoutText -match '^\d+$') { $azCommandTimeoutSeconds = [int]$azCommandTimeoutText }
     if ($azCommandTimeoutSeconds -lt 30) { $azCommandTimeoutSeconds = 30 }
@@ -101,6 +101,8 @@ function Initialize-AzVmCommandRuntimeContext {
     $step1Context['AzCommandTimeoutSeconds'] = $azCommandTimeoutSeconds
     $step1Context['SshTaskTimeoutSeconds'] = $sshTaskTimeoutSeconds
     $step1Context['SshConnectTimeoutSeconds'] = $sshConnectTimeoutSeconds
+    $step1Context['TaskOutcomeMode'] = [string]$taskOutcomeMode
+    $step1Context['ConfiguredPySshClientPath'] = [string]$configuredPySshClientPath
 
     return [pscustomobject]@{
         EnvFilePath = $envFilePath
@@ -131,21 +133,21 @@ function Initialize-AzVmTaskExecutionRuntimeContext {
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
     $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
 
-    $vmName = [string](Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_NAME' -Summary 'VM name is required.' -Hint 'Set SELECTED_VM_NAME in .env, or pass --vm-name where the command supports it.')
+    $vmName = [string](Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'SELECTED_VM_NAME' -Summary 'VM name is required.' -Hint 'Set SELECTED_VM_NAME in .env, or pass --vm-name where the command supports it.')
 
-    $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_LOCATION' -DefaultValue '')
+    $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_AZURE_REGION' -DefaultValue '')
     $regionCode = ''
     if (-not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
         $regionCode = Get-AzVmRegionCode -Location ([string]$azLocation)
     }
 
     $nameTokens = @{
-        VM_NAME = [string]$vmName
+        SELECTED_VM_NAME = [string]$vmName
         REGION_CODE = [string]$regionCode
         N = '1'
     }
 
-    $resourceGroup = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'RESOURCE_GROUP' -DefaultValue '')
+    $resourceGroup = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
     if (-not [string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
         $resourceGroup = Resolve-AzVmTemplate -Template $resourceGroup -Tokens $nameTokens
     }
@@ -158,11 +160,11 @@ function Initialize-AzVmTaskExecutionRuntimeContext {
     $vmImage = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmImageConfigKey -DefaultValue ([string]$platformDefaults.VmImageDefault))) -Tokens $nameTokens
     $vmDiskSize = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key $vmDiskSizeConfigKey -DefaultValue ([string]$platformDefaults.VmDiskSizeDefault))) -Tokens $nameTokens
     $vmDiskName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_DISK_NAME' -DefaultValue '')) -Tokens $nameTokens
-    $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_name' -DefaultValue '')) -Tokens $nameTokens
-    $companyWebAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_web_address' -DefaultValue '')) -Tokens $nameTokens
-    $companyEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'company_email_address' -DefaultValue '')) -Tokens $nameTokens
-    $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'employee_email_address' -DefaultValue '')) -Tokens $nameTokens
-    $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'employee_full_name' -DefaultValue '')) -Tokens $nameTokens
+    $companyName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_COMPANY_NAME' -DefaultValue '')) -Tokens $nameTokens
+    $companyWebAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_COMPANY_WEB_ADDRESS' -DefaultValue '')) -Tokens $nameTokens
+    $companyEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_COMPANY_EMAIL_ADDRESS' -DefaultValue '')) -Tokens $nameTokens
+    $employeeEmailAddress = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' -DefaultValue '')) -Tokens $nameTokens
+    $employeeFullName = Resolve-AzVmTemplate -Template ([string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_EMPLOYEE_FULL_NAME' -DefaultValue '')) -Tokens $nameTokens
     $vmUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ADMIN_USER' -Tokens $nameTokens -Summary 'VM admin user is required.' -Hint 'Set VM_ADMIN_USER in .env to the primary VM username.'
     $vmPass = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ADMIN_PASS' -Tokens $nameTokens -Summary 'VM admin password is required.' -Hint 'Set VM_ADMIN_PASS in .env to a non-placeholder password.'
     $vmAssistantUser = Get-AzVmRequiredResolvedConfigValue -ConfigMap $effectiveConfigMap -Key 'VM_ASSISTANT_USER' -Tokens $nameTokens -Summary 'VM assistant user is required.' -Hint 'Set VM_ASSISTANT_USER in .env to the secondary VM username.'
@@ -209,7 +211,7 @@ function Initialize-AzVmTaskExecutionRuntimeContext {
     if ($sshConnectTimeoutSeconds -lt 5) { $sshConnectTimeoutSeconds = 5 }
     if ($sshConnectTimeoutSeconds -gt 300) { $sshConnectTimeoutSeconds = 300 }
 
-    $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
+    $azCommandTimeoutText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZURE_COMMAND_TIMEOUT_SECONDS' -DefaultValue ([string]$script:AzCommandTimeoutSeconds))
     $azCommandTimeoutSeconds = $script:AzCommandTimeoutSeconds
     if ($azCommandTimeoutText -match '^\d+$') { $azCommandTimeoutSeconds = [int]$azCommandTimeoutText }
     if ($azCommandTimeoutSeconds -lt 30) { $azCommandTimeoutSeconds = 30 }
@@ -280,15 +282,15 @@ function Initialize-AzVmTaskCommandRuntimeContext {
     $platformDefaults = Get-AzVmPlatformDefaults -Platform $platform
     $effectiveConfigMap = Resolve-AzVmPlatformConfigMap -ConfigMap $configMap -Platform $platform
 
-    $vmName = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'VM_NAME' -DefaultValue '')
-    $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'AZ_LOCATION' -DefaultValue '')
+    $vmName = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_VM_NAME' -DefaultValue '')
+    $azLocation = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SELECTED_AZURE_REGION' -DefaultValue '')
     $regionCode = ''
     if (-not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
         $regionCode = Get-AzVmRegionCode -Location ([string]$azLocation)
     }
 
     $nameTokens = @{
-        VM_NAME = [string]$vmName
+        SELECTED_VM_NAME = [string]$vmName
         REGION_CODE = [string]$regionCode
         N = '1'
     }

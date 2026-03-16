@@ -12,6 +12,35 @@ function Ensure-AzVmAppStateDirectory {
     }
 }
 
+function Wait-AzVmAppStateZipReady {
+    param(
+        [string]$ZipPath,
+        [int]$TimeoutSeconds = 60
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ZipPath) -or -not (Test-Path -LiteralPath $ZipPath)) {
+        throw ("Task app-state zip was not found on guest: {0}" -f [string]$ZipPath)
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max($TimeoutSeconds, 5))
+    while ([DateTime]::UtcNow -lt $deadline) {
+        try {
+            $stream = [System.IO.File]::Open($ZipPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+            try {
+                return [int64]$stream.Length
+            }
+            finally {
+                if ($null -ne $stream) { $stream.Dispose() }
+            }
+        }
+        catch {
+            Start-Sleep -Milliseconds 500
+        }
+    }
+
+    throw ("App-state zip stayed busy after upload: {0}" -f [string]$ZipPath)
+}
+
 function Get-AzVmAppStateManifestFromExpandedRoot {
     param(
         [string]$ExpandedRoot,
@@ -991,12 +1020,19 @@ function Invoke-AzVmTaskAppStateReplay {
         throw ("Task app-state zip was not found on guest: {0}" -f [string]$ZipPath)
     }
 
+    $replayWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    Write-Host ("app-state-phase => task={0}; phase=zip-ready-wait-start" -f [string]$TaskName)
+    $zipLength = Wait-AzVmAppStateZipReady -ZipPath $ZipPath -TimeoutSeconds 60
+    Write-Host ("app-state-phase => task={0}; phase=zip-ready; bytes={1}; elapsed={2:N1}s" -f [string]$TaskName, [int64]$zipLength, $replayWatch.Elapsed.TotalSeconds)
+
     $scratchRoot = Get-AzVmAppStateScratchRootPath -Prefix 'azv-replay'
     Ensure-AzVmAppStateDirectory -Path $scratchRoot
     $previousProgressPreference = $global:ProgressPreference
     try {
         $global:ProgressPreference = 'SilentlyContinue'
+        Write-Host ("app-state-phase => task={0}; phase=extract-start; elapsed={1:N1}s" -f [string]$TaskName, $replayWatch.Elapsed.TotalSeconds)
         Expand-Archive -LiteralPath $ZipPath -DestinationPath $scratchRoot -Force
+        Write-Host ("app-state-phase => task={0}; phase=extract-complete; elapsed={1:N1}s" -f [string]$TaskName, $replayWatch.Elapsed.TotalSeconds)
     }
     finally {
         $global:ProgressPreference = $previousProgressPreference
@@ -1006,6 +1042,7 @@ function Invoke-AzVmTaskAppStateReplay {
         $manifest = Get-AzVmAppStateManifestFromExpandedRoot -ExpandedRoot $scratchRoot -TaskName $TaskName
         Invoke-AzVmTaskAppStateReplayPreflight -TaskName $TaskName
         $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser)
+        Write-Host ("app-state-phase => task={0}; phase=manifest-ready; profiles={1}; elapsed={2:N1}s" -f [string]$TaskName, @($profileTargets).Count, $replayWatch.Elapsed.TotalSeconds)
 
         $machineRegistryImports = 0
         $userRegistryImports = 0
@@ -1102,13 +1139,6 @@ function Invoke-AzVmTaskAppStateReplay {
                         Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
                 )
                 foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $profileTargets -Entry $entry)) {
-                    if ([string]::Equals([string]$profileTarget.Label, 'manager', [System.StringComparison]::OrdinalIgnoreCase)) {
-                        if (Invoke-AzVmRegImport -SourcePath $sourcePath) {
-                            $userRegistryImports++
-                            continue
-                        }
-                    }
-
                     $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$profileTarget.ProfilePath) -PreferredLabel ([string]$profileTarget.UserName)
                     if ($null -eq $mountInfo) {
                         Write-Warning ("app-state-user-registry-skip => {0} => hive-unavailable" -f [string]$profileTarget.Label)
@@ -1149,6 +1179,10 @@ function Invoke-AzVmTaskAppStateReplay {
         }
     }
     finally {
+        if ($replayWatch.IsRunning) {
+            Write-Host ("app-state-phase => task={0}; phase=cleanup-start; elapsed={1:N1}s" -f [string]$TaskName, $replayWatch.Elapsed.TotalSeconds)
+            $replayWatch.Stop()
+        }
         Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue
     }

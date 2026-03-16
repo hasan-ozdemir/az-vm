@@ -386,11 +386,13 @@ function Invoke-AzVmChangeCommand {
     $runtimeConfigOverrides = @{}
     $groupOptionValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'group')
     if (-not [string]::IsNullOrWhiteSpace([string]$groupOptionValue)) {
-        $runtimeConfigOverrides['RESOURCE_GROUP'] = $groupOptionValue.Trim()
+        $runtimeConfigOverrides['SELECTED_RESOURCE_GROUP'] = $groupOptionValue.Trim()
+        Set-AzVmConfigValueSource -Key 'SELECTED_RESOURCE_GROUP' -Source 'cli value'
     }
     $vmOptionValue = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
     if (-not [string]::IsNullOrWhiteSpace([string]$vmOptionValue)) {
-        $runtimeConfigOverrides['VM_NAME'] = $vmOptionValue.Trim()
+        $runtimeConfigOverrides['SELECTED_VM_NAME'] = $vmOptionValue.Trim()
+        Set-AzVmConfigValueSource -Key 'SELECTED_VM_NAME' -Source 'cli value'
     }
 
     $runtime = Initialize-AzVmCommandRuntimeContext -AutoMode:$AutoMode -WindowsFlag:$WindowsFlag -LinuxFlag:$LinuxFlag -ConfigMapOverrides $runtimeConfigOverrides
@@ -443,8 +445,8 @@ function Invoke-AzVmChangeCommand {
                 -WindowsFlag:$WindowsFlag `
                 -LinuxFlag:$LinuxFlag `
                 -ConfigMapOverrides @{
-                    RESOURCE_GROUP = $selectedResourceGroup
-                    VM_NAME = $selectedVmName
+                    SELECTED_RESOURCE_GROUP = $selectedResourceGroup
+                    SELECTED_VM_NAME = $selectedVmName
                 }
             $context = $runtime.Context
             $envFilePath = [string]$runtime.EnvFilePath
@@ -614,24 +616,24 @@ function Invoke-AzVmChangeCommand {
 
         $targetRegionCode = Get-AzVmRegionCode -Location $targetRegion
         $nameTokens = @{
-            VM_NAME = [string]$context.VmName
+            SELECTED_VM_NAME = [string]$context.VmName
             REGION_CODE = [string]$targetRegionCode
         }
 
-        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{VM_NAME}-{REGION_CODE}-g{N}")
+        $targetResourceGroupTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "RESOURCE_GROUP_TEMPLATE" -DefaultValue "rg-{SELECTED_VM_NAME}-{REGION_CODE}-g{N}")
         $targetResourceGroup = Resolve-AzVmResourceGroupNameFromTemplate `
             -Template $targetResourceGroupTemplate `
             -VmName ([string]$context.VmName) `
             -RegionCode $targetRegionCode `
             -UseNextIndex
 
-        $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{VM_NAME}-{REGION_CODE}-n{N}")
-        $targetVnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{VM_NAME}-{REGION_CODE}-n{N}")
-        $targetSubnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{VM_NAME}-{REGION_CODE}-n{N}")
-        $targetNsgTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{VM_NAME}-{REGION_CODE}-n{N}")
-        $targetNsgRuleTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsg-rule-{VM_NAME}-{REGION_CODE}-n{N}")
-        $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{VM_NAME}-{REGION_CODE}-n{N}")
-        $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{VM_NAME}-{REGION_CODE}-n{N}")
+        $targetDiskTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VM_DISK_NAME_TEMPLATE" -DefaultValue "disk-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
+        $targetVnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "VNET_NAME_TEMPLATE" -DefaultValue "net-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
+        $targetSubnetTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "SUBNET_NAME_TEMPLATE" -DefaultValue "subnet-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
+        $targetNsgTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_NAME_TEMPLATE" -DefaultValue "nsg-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
+        $targetNsgRuleTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NSG_RULE_NAME_TEMPLATE" -DefaultValue "nsg-rule-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
+        $targetIpTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "PUBLIC_IP_NAME_TEMPLATE" -DefaultValue "ip-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
+        $targetNicTemplate = [string](Get-ConfigValue -Config $effectiveConfigMap -Key "NIC_NAME_TEMPLATE" -DefaultValue "nic-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}")
         $targetResourceIndexAllocator = New-AzVmManagedResourceIndexAllocator
 
         $targetVmName = [string]$context.VmName
@@ -935,19 +937,20 @@ function Invoke-AzVmChangeCommand {
         Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_AZURE_REGION' -Value $targetRegion
         Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_RESOURCE_GROUP' -Value $activeResourceGroup
         Set-DotEnvValue -Path $envFilePath -Key 'SELECTED_VM_NAME' -Value ([string]$context.VmName)
-        Remove-DotEnvKeys -Path $envFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
+        Remove-AzVmUnsupportedDotEnvKeys -Path $envFilePath
 
         $script:ConfigOverrides['SELECTED_AZURE_REGION'] = $targetRegion
         $script:ConfigOverrides['SELECTED_RESOURCE_GROUP'] = $activeResourceGroup
         $script:ConfigOverrides['SELECTED_VM_NAME'] = [string]$context.VmName
-        $script:ConfigOverrides['AZ_LOCATION'] = $targetRegion
-        $script:ConfigOverrides['RESOURCE_GROUP'] = $activeResourceGroup
-        $script:ConfigOverrides['VM_NAME'] = [string]$context.VmName
+        Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_REGION' -Source 'azure value'
+        Set-AzVmConfigValueSource -Key 'SELECTED_RESOURCE_GROUP' -Source 'azure value'
+        Set-AzVmConfigValueSource -Key 'SELECTED_VM_NAME' -Source 'azure value'
     }
 
     if ($sizeChangedAfterRegion) {
         Set-DotEnvValue -Path $envFilePath -Key $vmSizeConfigKey -Value $targetSize
         $script:ConfigOverrides[$vmSizeConfigKey] = $targetSize
+        Set-AzVmConfigValueSource -Key $vmSizeConfigKey -Source 'cli value'
     }
 
     if ($regionMoveApplied) {

@@ -231,11 +231,11 @@ function Resolve-AzVmResourceGroupNameFromTemplate {
 
     $effectiveTemplate = [string]$Template
     if ([string]::IsNullOrWhiteSpace([string]$effectiveTemplate)) {
-        $effectiveTemplate = "rg-{VM_NAME}-{REGION_CODE}-g{N}"
+        $effectiveTemplate = "rg-{SELECTED_VM_NAME}-{REGION_CODE}-g{N}"
     }
 
     $baseTokens = @{
-        VM_NAME = [string]$VmName
+        SELECTED_VM_NAME = [string]$VmName
         REGION_CODE = [string]$RegionCode
     }
 
@@ -267,12 +267,12 @@ function Resolve-AzVmNameFromTemplate {
 
     $effectiveTemplate = [string]$Template
     if ([string]::IsNullOrWhiteSpace($effectiveTemplate)) {
-        $effectiveTemplate = "{RESOURCE_TYPE}-{VM_NAME}-{REGION_CODE}-n{N}"
+        $effectiveTemplate = "{RESOURCE_TYPE}-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}"
     }
 
     $baseTokens = @{
         RESOURCE_TYPE = [string]$ResourceType
-        VM_NAME = [string]$VmName
+        SELECTED_VM_NAME = [string]$VmName
         REGION_CODE = [string]$RegionCode
     }
 

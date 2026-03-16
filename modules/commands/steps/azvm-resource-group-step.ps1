@@ -14,7 +14,7 @@ function Invoke-AzVmResourceGroupStep {
     $azLocation = [string]$Context.AzLocation
     if ([string]::IsNullOrWhiteSpace([string]$azLocation)) {
         Throw-FriendlyError `
-            -Detail "AZ_LOCATION is empty. Resource group creation cannot continue without a region." `
+            -Detail "SELECTED_AZURE_REGION is empty. Resource group creation cannot continue without a region." `
             -Code 22 `
             -Summary "Azure region is required before resource group creation." `
             -Hint "Set SELECTED_AZURE_REGION in .env or complete interactive region selection."

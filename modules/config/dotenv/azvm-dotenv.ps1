@@ -1,73 +1,76 @@
 # Dotenv read/write helpers.
 
-function Get-AzVmRetiredDotEnvKeys {
+function Get-AzVmSupportedDotEnvKeys {
     return @(
-        'VM_OS_TYPE',
-        'VM_NAME',
-        'company_name',
-        'company_web_address',
-        'company_email_address',
-        'employee_email_address',
-        'employee_full_name',
-        'azure_subscription_id',
-        'AZ_LOCATION',
-        'RESOURCE_GROUP',
-        'VNET_NAME',
-        'SUBNET_NAME',
-        'NSG_NAME',
-        'NSG_RULE_NAME',
-        'PUBLIC_IP_NAME',
-        'NIC_NAME',
-        'VM_DISK_NAME',
-        'PRICE_HOURS',
-        'AZ_COMMAND_TIMEOUT_SECONDS'
+        'SELECTED_VM_OS',
+        'SELECTED_VM_NAME',
+        'SELECTED_RESOURCE_GROUP',
+        'SELECTED_COMPANY_NAME',
+        'SELECTED_COMPANY_WEB_ADDRESS',
+        'SELECTED_COMPANY_EMAIL_ADDRESS',
+        'SELECTED_EMPLOYEE_EMAIL_ADDRESS',
+        'SELECTED_EMPLOYEE_FULL_NAME',
+        'SELECTED_AZURE_SUBSCRIPTION_ID',
+        'SELECTED_AZURE_REGION',
+        'RESOURCE_GROUP_TEMPLATE',
+        'VNET_NAME_TEMPLATE',
+        'SUBNET_NAME_TEMPLATE',
+        'NSG_NAME_TEMPLATE',
+        'NSG_RULE_NAME_TEMPLATE',
+        'PUBLIC_IP_NAME_TEMPLATE',
+        'NIC_NAME_TEMPLATE',
+        'VM_DISK_NAME_TEMPLATE',
+        'VM_STORAGE_SKU',
+        'VM_SECURITY_TYPE',
+        'VM_ENABLE_HIBERNATION',
+        'VM_ENABLE_NESTED_VIRTUALIZATION',
+        'VM_ENABLE_SECURE_BOOT',
+        'VM_ENABLE_VTPM',
+        'VM_PRICE_COUNT_HOURS',
+        'VM_ADMIN_USER',
+        'VM_ADMIN_PASS',
+        'VM_ASSISTANT_USER',
+        'VM_ASSISTANT_PASS',
+        'VM_SSH_PORT',
+        'VM_RDP_PORT',
+        'AZURE_COMMAND_TIMEOUT_SECONDS',
+        'SSH_CONNECT_TIMEOUT_SECONDS',
+        'SSH_TASK_TIMEOUT_SECONDS',
+        'WIN_VM_IMAGE',
+        'WIN_VM_SIZE',
+        'WIN_VM_DISK_SIZE_GB',
+        'LIN_VM_IMAGE',
+        'LIN_VM_SIZE',
+        'LIN_VM_DISK_SIZE_GB',
+        'WIN_VM_INIT_TASK_DIR',
+        'WIN_VM_UPDATE_TASK_DIR',
+        'LIN_VM_INIT_TASK_DIR',
+        'LIN_VM_UPDATE_TASK_DIR',
+        'VM_TASK_OUTCOME_MODE',
+        'SSH_MAX_RETRIES',
+        'PYSSH_CLIENT_PATH',
+        'TCP_PORTS'
     )
 }
 
-function Resolve-AzVmRuntimeConfigAliases {
+function Resolve-AzVmSupportedDotEnvConfig {
     param(
         [hashtable]$ConfigMap
     )
 
     $resolved = @{}
+    $supportedKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in @(Get-AzVmSupportedDotEnvKeys)) {
+        [void]$supportedKeys.Add([string]$key)
+    }
+
     if ($ConfigMap) {
         foreach ($key in @($ConfigMap.Keys)) {
-            $resolved[[string]$key] = [string]$ConfigMap[$key]
+            $normalizedKey = [string]$key
+            if ($supportedKeys.Contains($normalizedKey)) {
+                $resolved[$normalizedKey] = [string]$ConfigMap[$key]
+            }
         }
-    }
-
-    foreach ($retiredKey in @(Get-AzVmRetiredDotEnvKeys)) {
-        if ($resolved.ContainsKey([string]$retiredKey)) {
-            $null = $resolved.Remove([string]$retiredKey)
-        }
-    }
-
-    $aliasMap = [ordered]@{
-        SELECTED_VM_OS = 'VM_OS_TYPE'
-        SELECTED_VM_NAME = 'VM_NAME'
-        SELECTED_COMPANY_NAME = 'company_name'
-        SELECTED_COMPANY_WEB_ADDRESS = 'company_web_address'
-        SELECTED_COMPANY_EMAIL_ADDRESS = 'company_email_address'
-        SELECTED_EMPLOYEE_EMAIL_ADDRESS = 'employee_email_address'
-        SELECTED_EMPLOYEE_FULL_NAME = 'employee_full_name'
-        SELECTED_AZURE_SUBSCRIPTION_ID = 'azure_subscription_id'
-        SELECTED_AZURE_REGION = 'AZ_LOCATION'
-        SELECTED_RESOURCE_GROUP = 'RESOURCE_GROUP'
-        VM_PRICE_COUNT_HOURS = 'PRICE_HOURS'
-        AZURE_COMMAND_TIMEOUT_SECONDS = 'AZ_COMMAND_TIMEOUT_SECONDS'
-    }
-
-    foreach ($sourceKey in @($aliasMap.Keys)) {
-        $targetKey = [string]$aliasMap[[string]$sourceKey]
-        $sourceValue = ''
-        if ($resolved.ContainsKey([string]$sourceKey)) {
-            $sourceValue = [string]$resolved[[string]$sourceKey]
-        }
-        if ([string]::IsNullOrWhiteSpace([string]$sourceValue)) {
-            continue
-        }
-
-        $resolved[[string]$targetKey] = [string]$sourceValue
     }
 
     return $resolved
@@ -109,7 +112,7 @@ function Read-DotEnvFile {
         $config[$key] = $value
     }
 
-    return (Resolve-AzVmRuntimeConfigAliases -ConfigMap $config)
+    return (Resolve-AzVmSupportedDotEnvConfig -ConfigMap $config)
 }
 
 # Handles Get-ConfigValue.
@@ -248,6 +251,50 @@ function Remove-DotEnvKeys {
 
         if (-not $removeLine) {
             [void]$filtered.Add([string]$line)
+        }
+    }
+
+    Write-TextFileNormalized `
+        -Path $Path `
+        -Content (@($filtered) -join "`n") `
+        -Encoding "utf8NoBom" `
+        -LineEnding "crlf" `
+        -EnsureTrailingNewline
+}
+
+function Remove-AzVmUnsupportedDotEnvKeys {
+    param(
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return
+    }
+
+    $supportedKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in @(Get-AzVmSupportedDotEnvKeys)) {
+        [void]$supportedKeys.Add([string]$key)
+    }
+
+    $lines = @((Get-Content -Path $Path -ErrorAction Stop))
+    $filtered = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($lines)) {
+        $rawLine = [string]$line
+        $trimmedLine = $rawLine.Trim()
+        if ([string]::IsNullOrWhiteSpace([string]$trimmedLine) -or $trimmedLine.StartsWith('#')) {
+            [void]$filtered.Add($rawLine)
+            continue
+        }
+
+        $match = [regex]::Match($rawLine, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=')
+        if (-not $match.Success) {
+            [void]$filtered.Add($rawLine)
+            continue
+        }
+
+        $key = [string]$match.Groups[1].Value
+        if ($supportedKeys.Contains($key)) {
+            [void]$filtered.Add($rawLine)
         }
     }
 

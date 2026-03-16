@@ -451,8 +451,8 @@ function Save-AzVmTaskAppStateFromVm {
             $localPlanPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-plan-{0}-{1}.json' -f $safeTaskName, ([guid]::NewGuid().ToString('N')))
             $guestHelperPath = Get-AzVmAppStateGuestHelperPath
             Set-Content -LiteralPath $localPlanPath -Value $planJson -Encoding UTF8
-            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $localPlanPath -RemotePath $remotePlanPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds
-            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath 'C:/Windows/Temp/az-vm-app-state-guest.psm1' -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $localPlanPath -RemotePath $remotePlanPath -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
+            Copy-AzVmAssetToVm -PySshPythonPath $PySshPythonPath -PySshClientPath $PySshClientPath -HostName $HostName -UserName $UserName -Password $Password -Port $Port -LocalPath $guestHelperPath -RemotePath 'C:/Windows/Temp/az-vm-app-state-guest.psm1' -ConnectTimeoutSeconds $ConnectTimeoutSeconds | Out-Null
             $captureScript = Get-AzVmTaskAppStateGuestCaptureScript -TaskName $taskName -PlanPath $remotePlanPath -OutputZipPath $remoteZipPath -ManagerUser $ManagerUser -AssistantUser $AssistantUser
         }
         else {

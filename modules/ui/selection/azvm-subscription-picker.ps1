@@ -137,10 +137,8 @@ function Set-AzVmResolvedSubscriptionContext {
 function Clear-AzVmResolvedSubscriptionContext {
     $script:AzVmActiveSubscriptionId = ''
     $script:AzVmResolvedSubscriptionContext = $null
-    foreach ($key in @('azure_subscription_id','SELECTED_AZURE_SUBSCRIPTION_ID')) {
-        if ($script:ConfigOverrides -and $script:ConfigOverrides.ContainsKey($key)) {
-            $null = $script:ConfigOverrides.Remove($key)
-        }
+    if ($script:ConfigOverrides -and $script:ConfigOverrides.ContainsKey('SELECTED_AZURE_SUBSCRIPTION_ID')) {
+        $null = $script:ConfigOverrides.Remove('SELECTED_AZURE_SUBSCRIPTION_ID')
     }
 }
 
@@ -152,7 +150,7 @@ function Save-AzVmSubscriptionIdToDotEnv {
 
     $normalizedId = [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $SubscriptionId -OptionSource 'SELECTED_AZURE_SUBSCRIPTION_ID persistence')
     Set-DotEnvValue -Path $EnvFilePath -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Value $normalizedId
-    Remove-DotEnvKeys -Path $EnvFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
+    Remove-AzVmUnsupportedDotEnvKeys -Path $EnvFilePath
 }
 
 function Test-AzVmAzureTouchingCommand {
@@ -239,8 +237,13 @@ function Initialize-AzVmCommandSubscriptionState {
     if ($script:ConfigOverrides -eq $null) {
         $script:ConfigOverrides = @{}
     }
-    $script:ConfigOverrides['azure_subscription_id'] = [string]$selectedRow.id
     $script:ConfigOverrides['SELECTED_AZURE_SUBSCRIPTION_ID'] = [string]$selectedRow.id
+    $sourceLabel = switch ([string]$resolutionSource) {
+        'cli' { 'cli value' }
+        'env' { '.env value' }
+        default { 'azure value' }
+    }
+    Set-AzVmConfigValueSource -Key 'SELECTED_AZURE_SUBSCRIPTION_ID' -Source $sourceLabel
     return (Get-AzVmResolvedSubscriptionContext)
 }
 

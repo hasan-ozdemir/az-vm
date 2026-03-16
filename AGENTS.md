@@ -90,7 +90,7 @@ Use these sources in this order when maintaining the repo:
 
 ## Naming and Resource Rules
 - `SELECTED_VM_NAME` is the persisted naming seed.
-- Template-driven resource names must derive from the effective `VM_NAME` runtime value, region code, and the committed templates.
+- Template-driven resource names must derive from the effective `SELECTED_VM_NAME` runtime value, region code, and the committed templates.
 - Resource-group uniqueness is suffix-based and deterministic.
 - Managed resource name generation must remain explicit, predictable, and validation-backed.
 - Managed resource group ids use a globally increasing `gX` suffix across all managed groups, regardless of region.

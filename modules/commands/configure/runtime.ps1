@@ -520,7 +520,7 @@ function Save-AzVmConfigToDotEnv {
         }
     }
 
-    Remove-DotEnvKeys -Path $EnvFilePath -Keys (Get-AzVmRetiredDotEnvKeys)
+    Remove-AzVmUnsupportedDotEnvKeys -Path $EnvFilePath
 
     return @($changes)
 }

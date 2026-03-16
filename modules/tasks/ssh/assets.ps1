@@ -25,30 +25,29 @@ function Test-AzVmWindowsRemotePath {
     return ([string]$RemotePath -match '^[A-Za-z]:[\\/]')
 }
 
-function Test-AzVmSftpNegotiationFailureText {
+function Get-AzVmFileSha256 {
     param(
-        [AllowNull()]
-        [string]$MessageText
+        [string]$Path
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$MessageText)) {
-        return $false
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        throw ("File was not found for SHA256 hashing: {0}" -f [string]$Path)
     }
 
-    $value = [string]$MessageText
-    foreach ($pattern in @(
-        'EOF during negotiation',
-        'subsystem request failed',
-        'sftp',
-        'open_sftp',
-        'channel closed'
-    )) {
-        if ($value.IndexOf($pattern, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            return $true
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead([string]$Path)
+        try {
+            $hashBytes = $sha256.ComputeHash($stream)
+            return ([System.BitConverter]::ToString($hashBytes)).Replace('-', '').Trim().ToUpperInvariant()
+        }
+        finally {
+            if ($null -ne $stream) { $stream.Dispose() }
         }
     }
-
-    return $false
+    finally {
+        if ($null -ne $sha256) { $sha256.Dispose() }
+    }
 }
 
 function Invoke-AzVmRemotePowerShellExec {
@@ -60,28 +59,151 @@ function Invoke-AzVmRemotePowerShellExec {
         [string]$Password,
         [string]$Port,
         [string]$ScriptText,
+        [string]$StdinFilePath = '',
+        [long]$StdinFileOffsetBytes = 0,
+        [long]$StdinFileLengthBytes = -1,
         [string]$Label,
-        [int]$TimeoutSeconds = 30
+        [int]$TimeoutSeconds = 30,
+        [switch]$SuppressTrackedLogging
     )
 
     if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }
     if ($TimeoutSeconds -gt 300) { $TimeoutSeconds = 300 }
 
     $encodedCommand = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes([string]$ScriptText))
+    $arguments = @(
+        [string]$PySshClientPath,
+        'exec',
+        '--host', [string]$HostName,
+        '--port', [string]$Port,
+        '--user', [string]$UserName,
+        '--password', [string]$Password,
+        '--timeout', [string]$TimeoutSeconds,
+        '--command', ('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {0}' -f [string]$encodedCommand)
+    )
+    if (-not [string]::IsNullOrWhiteSpace([string]$StdinFilePath)) {
+        $arguments += @('--stdin-file', [string]$StdinFilePath)
+        if ($StdinFileOffsetBytes -gt 0) {
+            $arguments += @('--stdin-file-offset', [string]$StdinFileOffsetBytes)
+        }
+        if ($StdinFileLengthBytes -ge 0) {
+            $arguments += @('--stdin-file-length', [string]$StdinFileLengthBytes)
+        }
+    }
     return (Invoke-AzVmProcessWithRetry `
         -FilePath $PySshPythonPath `
-        -Arguments @(
-            [string]$PySshClientPath,
-            'exec',
-            '--host', [string]$HostName,
-            '--port', [string]$Port,
-            '--user', [string]$UserName,
-            '--password', [string]$Password,
-            '--timeout', [string]$TimeoutSeconds,
-            '--command', ('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {0}' -f [string]$encodedCommand)
-        ) `
+        -Arguments $arguments `
         -Label $Label `
-        -MaxAttempts 1)
+        -MaxAttempts 1 `
+        -SuppressTrackedLogging:$SuppressTrackedLogging)
+}
+
+function Invoke-AzVmRemotePowerShellCommandTextExec {
+    param(
+        [string]$PySshPythonPath,
+        [string]$PySshClientPath,
+        [string]$HostName,
+        [string]$UserName,
+        [string]$Password,
+        [string]$Port,
+        [string]$ScriptText,
+        [string]$Label,
+        [int]$TimeoutSeconds = 30,
+        [switch]$SuppressTrackedLogging
+    )
+
+    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }
+    if ($TimeoutSeconds -gt 300) { $TimeoutSeconds = 300 }
+
+    $commandScriptText = ([string]$ScriptText).Replace('"', '""')
+    $arguments = @(
+        [string]$PySshClientPath,
+        'exec',
+        '--host', [string]$HostName,
+        '--port', [string]$Port,
+        '--user', [string]$UserName,
+        '--password', [string]$Password,
+        '--timeout', [string]$TimeoutSeconds,
+        '--command', ('powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "{0}"' -f [string]$commandScriptText)
+    )
+
+    return (Invoke-AzVmProcessWithRetry `
+        -FilePath $PySshPythonPath `
+        -Arguments $arguments `
+        -Label $Label `
+        -MaxAttempts 1 `
+        -SuppressTrackedLogging:$SuppressTrackedLogging)
+}
+
+function Get-AzVmWindowsRemoteFileMetadata {
+    param(
+        [string]$PySshPythonPath,
+        [string]$PySshClientPath,
+        [string]$HostName,
+        [string]$UserName,
+        [string]$Password,
+        [string]$Port,
+        [string]$RemotePath,
+        [int]$ConnectTimeoutSeconds = 30
+    )
+
+    $escapedRemotePath = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$RemotePath)
+    $metadataScript = @(
+        "`$path = '$escapedRemotePath'"
+        "if (-not (Test-Path -LiteralPath `$path)) {"
+        "    Write-Host 'missing'"
+        "    exit 0"
+        "}"
+        "`$item = Get-Item -LiteralPath `$path -ErrorAction Stop"
+        "`$hash = ''"
+        "try {"
+        "    `$sha256 = [System.Security.Cryptography.SHA256]::Create()"
+        "    try {"
+        "        `$stream = [System.IO.File]::OpenRead(`$path)"
+        "        try {"
+        "            `$hashBytes = `$sha256.ComputeHash(`$stream)"
+        "            `$hash = ([System.BitConverter]::ToString(`$hashBytes)).Replace('-', '')"
+        "        }"
+        "        finally {"
+        "            if (`$null -ne `$stream) { `$stream.Dispose() }"
+        "        }"
+        "    }"
+        "    finally {"
+        "        if (`$null -ne `$sha256) { `$sha256.Dispose() }"
+        "    }"
+        "}"
+        "catch { }"
+        "Write-Host ('present length={0} sha256={1}' -f [int64]`$item.Length, [string]`$hash)"
+        "exit 0"
+    ) -join "`n"
+
+    $result = Invoke-AzVmRemotePowerShellExec `
+        -PySshPythonPath $PySshPythonPath `
+        -PySshClientPath $PySshClientPath `
+        -HostName $HostName `
+        -UserName $UserName `
+        -Password $Password `
+        -Port $Port `
+        -ScriptText $metadataScript `
+        -Label ("pyssh inspect asset -> {0}" -f [string]$RemotePath) `
+        -TimeoutSeconds $ConnectTimeoutSeconds `
+        -SuppressTrackedLogging
+
+    $outputText = [string]$result.Output
+    $exists = $false
+    $length = 0
+    $sha256 = ''
+    if ($outputText -match 'present\s+length=(\d+)\s+sha256=([A-Fa-f0-9]*)') {
+        $exists = $true
+        $length = [int64]$matches[1]
+        $sha256 = ([string]$matches[2]).Trim().ToUpperInvariant()
+    }
+
+    return [pscustomobject]@{
+        Exists = [bool]$exists
+        Length = [int64]$length
+        Sha256 = [string]$sha256
+    }
 }
 
 function Copy-AzVmAssetToWindowsViaExec {
@@ -98,76 +220,97 @@ function Copy-AzVmAssetToWindowsViaExec {
     )
 
     $resolvedLocalPath = (Resolve-Path -LiteralPath $LocalPath).Path
-    $fileBytes = [System.IO.File]::ReadAllBytes($resolvedLocalPath)
-    $maxFallbackBytes = 1MB
-    if ($fileBytes.Length -gt $maxFallbackBytes) {
-        throw ("Windows SSH exec asset fallback supports files up to {0} bytes. '{1}' is {2} bytes." -f $maxFallbackBytes, $resolvedLocalPath, $fileBytes.Length)
-    }
-
-    $payloadBase64 = [Convert]::ToBase64String($fileBytes)
-    $chunkSize = 1000
-    $chunkCount = [Math]::Max(1, [int][Math]::Ceiling($payloadBase64.Length / [double]$chunkSize))
-    $remoteTempBase64Path = ('C:/Windows/Temp/az-vm-upload-{0}.b64' -f ([guid]::NewGuid().ToString('N')))
+    $fileInfo = Get-Item -LiteralPath $resolvedLocalPath -ErrorAction Stop
+    $fileHash = Get-AzVmFileSha256 -Path $resolvedLocalPath
     $escapedRemotePath = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$RemotePath)
-    $escapedTempPath = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$remoteTempBase64Path)
-    $prepScript = @(
-        "`$destination = '$escapedRemotePath'"
-        "`$tempBase64 = '$escapedTempPath'"
-        "`$directory = [System.IO.Path]::GetDirectoryName(`$destination)"
-        "if (-not [string]::IsNullOrWhiteSpace([string]`$directory)) {"
-        "    [System.IO.Directory]::CreateDirectory(`$directory) | Out-Null"
-        "}"
-        "Remove-Item -LiteralPath `$tempBase64 -Force -ErrorAction SilentlyContinue"
-        "Remove-Item -LiteralPath `$destination -Force -ErrorAction SilentlyContinue"
-        "exit 0"
-    ) -join "`n"
-    Invoke-AzVmRemotePowerShellExec `
-        -PySshPythonPath $PySshPythonPath `
-        -PySshClientPath $PySshClientPath `
-        -HostName $HostName `
-        -UserName $UserName `
-        -Password $Password `
-        -Port $Port `
-        -ScriptText $prepScript `
-        -Label ("pyssh copy asset fallback prep -> {0}" -f [string]$RemotePath) `
-        -TimeoutSeconds $ConnectTimeoutSeconds | Out-Null
-
-    for ($offset = 0; $offset -lt $payloadBase64.Length; $offset += $chunkSize) {
-        $chunkIndex = [int]($offset / $chunkSize) + 1
-        $chunkLength = [Math]::Min($chunkSize, $payloadBase64.Length - $offset)
-        $chunkText = $payloadBase64.Substring($offset, $chunkLength)
-        $escapedChunkText = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value $chunkText
-        $chunkScript = if ($offset -eq 0) {
-            "[System.IO.File]::WriteAllText('$escapedTempPath', '$escapedChunkText', [System.Text.Encoding]::ASCII); exit 0"
-        }
-        else {
-            "[System.IO.File]::AppendAllText('$escapedTempPath', '$escapedChunkText', [System.Text.Encoding]::ASCII); exit 0"
-        }
-
-        Invoke-AzVmRemotePowerShellExec `
+    $stagingRemotePath = ('{0}.upload-{1}' -f [string]$RemotePath, ([guid]::NewGuid().ToString('N')))
+    $escapedStagingRemotePath = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$stagingRemotePath)
+    $remoteMetadata = $null
+    try {
+        $remoteMetadata = Get-AzVmWindowsRemoteFileMetadata `
             -PySshPythonPath $PySshPythonPath `
             -PySshClientPath $PySshClientPath `
             -HostName $HostName `
             -UserName $UserName `
             -Password $Password `
             -Port $Port `
-            -ScriptText $chunkScript `
-            -Label ("pyssh copy asset fallback chunk {0}/{1} -> {2}" -f $chunkIndex, $chunkCount, [string]$RemotePath) `
-            -TimeoutSeconds $ConnectTimeoutSeconds | Out-Null
+            -RemotePath $RemotePath `
+            -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+    }
+    catch { }
+
+    if ($null -ne $remoteMetadata -and [bool]$remoteMetadata.Exists -and
+        [int64]$remoteMetadata.Length -eq [int64]$fileInfo.Length -and
+        -not [string]::IsNullOrWhiteSpace([string]$remoteMetadata.Sha256) -and
+        [string]::Equals([string]$remoteMetadata.Sha256, [string]$fileHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("Task asset copy skipped: {0} -> {1} (cache hit, sha256={2})" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [string]$fileHash.Substring(0, 12))
+        return [pscustomobject]@{
+            RemotePath = [string]$RemotePath
+            Copied = $false
+            Bytes = [int64]$fileInfo.Length
+            ChunkCount = 0
+            Sha256 = [string]$fileHash
+        }
+    }
+
+    Write-Host ("Task asset copy started: {0} -> {1} (mode=windows-base64, bytes={2})" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length)
+    $transferWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $remoteBase64Path = ('{0}.b64' -f [string]$stagingRemotePath)
+    $escapedRemoteBase64Path = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$remoteBase64Path)
+    $payloadBase64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($resolvedLocalPath))
+    $chunkLength = 7500
+    if ($chunkLength -lt 1024) { $chunkLength = 1024 }
+    $chunkCount = [int][Math]::Max(1, [Math]::Ceiling(([double]$payloadBase64.Length) / [double]$chunkLength))
+    $nextProgressSeconds = 15.0
+    $chunkTimeoutSeconds = if ($chunkCount -gt 1) { [Math]::Max(90, $ConnectTimeoutSeconds) } else { [Math]::Max(30, $ConnectTimeoutSeconds) }
+    $initializeScript = '$d=''' + $escapedRemoteBase64Path + ''';$p=Split-Path -Parent $d;if(-not [string]::IsNullOrWhiteSpace([string]$p)){New-Item -ItemType Directory -Path $p -Force|Out-Null};[IO.File]::WriteAllText($d,'''',[Text.Encoding]::ASCII)'
+    Invoke-AzVmRemotePowerShellCommandTextExec `
+        -PySshPythonPath $PySshPythonPath `
+        -PySshClientPath $PySshClientPath `
+        -HostName $HostName `
+        -UserName $UserName `
+        -Password $Password `
+        -Port $Port `
+        -ScriptText $initializeScript `
+        -Label ("pyssh asset init -> {0}" -f [string]$RemotePath) `
+        -TimeoutSeconds ([Math]::Max(30, $ConnectTimeoutSeconds)) `
+        -SuppressTrackedLogging | Out-Null
+    for ($chunkIndex = 0; $chunkIndex -lt $chunkCount; $chunkIndex++) {
+        $offset = $chunkIndex * $chunkLength
+        $currentChunkLength = [Math]::Min($chunkLength, ($payloadBase64.Length - $offset))
+        $chunkText = $payloadBase64.Substring($offset, $currentChunkLength)
+        $chunkSafe = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$chunkText)
+        $appendScript = "[IO.File]::AppendAllText('{0}','{1}',[Text.Encoding]::ASCII)" -f $escapedRemoteBase64Path, $chunkSafe
+        Invoke-AzVmRemotePowerShellCommandTextExec `
+            -PySshPythonPath $PySshPythonPath `
+            -PySshClientPath $PySshClientPath `
+            -HostName $HostName `
+            -UserName $UserName `
+            -Password $Password `
+            -Port $Port `
+            -ScriptText $appendScript `
+            -Label ("pyssh asset chunk {0}/{1} -> {2}" -f ($chunkIndex + 1), $chunkCount, [string]$RemotePath) `
+            -TimeoutSeconds $chunkTimeoutSeconds `
+            -SuppressTrackedLogging | Out-Null
+
+        if ($transferWatch.Elapsed.TotalSeconds -ge $nextProgressSeconds -and ($chunkIndex + 1) -lt $chunkCount) {
+            $progressPercent = [int][Math]::Floor((($chunkIndex + 1) * 100.0) / $chunkCount)
+            Write-Host ("Task asset copy progress: {0} -> {1} ({2}/{3} chunks, {4}%, {5:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, ($chunkIndex + 1), $chunkCount, $progressPercent, $transferWatch.Elapsed.TotalSeconds)
+            $nextProgressSeconds += 15.0
+        }
     }
 
     $finalizeScript = @(
-        "`$destination = '$escapedRemotePath'"
-        "`$tempBase64 = '$escapedTempPath'"
-        "`$base64 = [System.IO.File]::ReadAllText(`$tempBase64, [System.Text.Encoding]::ASCII)"
-        "`$bytes = [System.Convert]::FromBase64String(`$base64)"
-        "[System.IO.File]::WriteAllBytes(`$destination, `$bytes)"
-        "`$item = Get-Item -LiteralPath `$destination -ErrorAction Stop"
-        "Write-Host ('asset-copy-ready length={0}' -f [int64]`$item.Length)"
-        "Remove-Item -LiteralPath `$tempBase64 -Force -ErrorAction SilentlyContinue"
-        "exit 0"
-    ) -join "`n"
-    Invoke-AzVmRemotePowerShellExec `
+        '$b=''' + $escapedRemoteBase64Path + ''''
+        '$s=''' + $escapedStagingRemotePath + ''''
+        '$d=''' + $escapedRemotePath + ''''
+        '$t=[IO.File]::ReadAllText($b,[Text.Encoding]::ASCII)'
+        '[IO.File]::WriteAllBytes($s,[Convert]::FromBase64String($t))'
+        'Remove-Item -LiteralPath $b -Force -EA SilentlyContinue'
+        'if(Test-Path -LiteralPath $d){Remove-Item -LiteralPath $d -Force -EA SilentlyContinue}'
+        'Move-Item -LiteralPath $s -Destination $d -Force'
+    ) -join ';'
+    Invoke-AzVmRemotePowerShellCommandTextExec `
         -PySshPythonPath $PySshPythonPath `
         -PySshClientPath $PySshClientPath `
         -HostName $HostName `
@@ -175,8 +318,22 @@ function Copy-AzVmAssetToWindowsViaExec {
         -Password $Password `
         -Port $Port `
         -ScriptText $finalizeScript `
-        -Label ("pyssh copy asset fallback finalize -> {0}" -f [string]$RemotePath) `
-        -TimeoutSeconds $ConnectTimeoutSeconds | Out-Null
+        -Label ("pyssh asset finalize -> {0}" -f [string]$RemotePath) `
+        -TimeoutSeconds ([Math]::Max(30, $ConnectTimeoutSeconds)) `
+        -SuppressTrackedLogging | Out-Null
+
+    if ($transferWatch.IsRunning) {
+        $transferWatch.Stop()
+    }
+    Write-Host ("Task asset copy completed: {0} -> {1} (mode=windows-base64, bytes={2}, chunks={3}, elapsed={4:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length, $chunkCount, $transferWatch.Elapsed.TotalSeconds)
+
+    return [pscustomobject]@{
+        RemotePath = [string]$RemotePath
+        Copied = $true
+        Bytes = [int64]$fileInfo.Length
+        ChunkCount = [int]$chunkCount
+        Sha256 = [string]$fileHash
+    }
 }
 
 # Handles Copy-AzVmAssetToVm.
@@ -202,6 +359,19 @@ function Copy-AzVmAssetToVm {
     if ($ConnectTimeoutSeconds -lt 5) { $ConnectTimeoutSeconds = 5 }
     if ($ConnectTimeoutSeconds -gt 300) { $ConnectTimeoutSeconds = 300 }
 
+    if (Test-AzVmWindowsRemotePath -RemotePath $RemotePath) {
+        return (Copy-AzVmAssetToWindowsViaExec `
+            -PySshPythonPath $PySshPythonPath `
+            -PySshClientPath $PySshClientPath `
+            -HostName $HostName `
+            -UserName $UserName `
+            -Password $Password `
+            -Port $Port `
+            -LocalPath $LocalPath `
+            -RemotePath $RemotePath `
+            -ConnectTimeoutSeconds $ConnectTimeoutSeconds)
+    }
+
     $copyArgs = @(
         [string]$PySshClientPath,
         "copy",
@@ -214,28 +384,7 @@ function Copy-AzVmAssetToVm {
         "--remote", [string]$RemotePath
     )
 
-    try {
-        Invoke-AzVmProcessWithRetry -FilePath $PySshPythonPath -Arguments $copyArgs -Label ("pyssh copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 2 | Out-Null
-    }
-    catch {
-        $copyErrorText = [string]$_.Exception.Message
-        if ((Test-AzVmWindowsRemotePath -RemotePath $RemotePath) -and (Test-AzVmSftpNegotiationFailureText -MessageText $copyErrorText)) {
-            Write-Warning ("SFTP asset copy failed for '{0}'. Falling back to PowerShell exec transfer." -f [string]$RemotePath)
-            Copy-AzVmAssetToWindowsViaExec `
-                -PySshPythonPath $PySshPythonPath `
-                -PySshClientPath $PySshClientPath `
-                -HostName $HostName `
-                -UserName $UserName `
-                -Password $Password `
-                -Port $Port `
-                -LocalPath $LocalPath `
-                -RemotePath $RemotePath `
-                -ConnectTimeoutSeconds $ConnectTimeoutSeconds
-            return
-        }
-
-        throw
-    }
+    Invoke-AzVmProcessWithRetry -FilePath $PySshPythonPath -Arguments $copyArgs -Label ("pyssh copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 2 | Out-Null
 }
 
 # Handles Copy-AzVmAssetFromVm.

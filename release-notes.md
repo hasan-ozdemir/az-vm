@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.321 - 2026-03-16
+
+### Summary
+This release finishes the runtime cutover to the selected-only configuration contract and cleans up the Windows SSH transport path that was inflating live `create` and isolated `task` runs. The runtime now resolves and logs one effective configuration snapshot with explicit value sources, Windows asset delivery now uses one direct base64 chunk transport instead of falling through layered fallback paths, and Windows app-state replay now stages unique zip paths, waits for the zip to become readable, and exposes replay phases and remote errors clearly. The same pass trims the managed browser app-state contract down to lightweight settings payloads and raises the Sysinternals init timeout so isolated reruns behave deterministically.
+
+### Highlights
+- Removed the old `.env` compatibility surface from the live runtime so only current `SELECTED_*` names, current naming placeholders, and `AZURE_COMMAND_TIMEOUT_SECONDS` remain in the active configuration contract.
+- Replaced repeated config review dumps with one canonical `KEY=value (source)` snapshot so operators see every effective setting once without losing visibility into where the value came from.
+- Reworked Windows SSH execution and asset staging so the repo now uses a single bounded base64 upload path with grouped progress logs, direct stdout and stderr capture, remote hash reuse, and no per-chunk pyssh noise.
+- Tightened Windows app-state replay by using unique remote zip names, zip-readiness waits, clearer replay-phase logging, and lighter Chrome and Edge settings payloads, then verified the new path live with isolated `vm-init` and `vm-update` task reruns on the active managed Windows VM.
+
 ## Release 2026.3.16.320 - 2026-03-16
 
 ### Summary

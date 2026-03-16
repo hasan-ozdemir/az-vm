@@ -4,7 +4,7 @@ Script Description:
 - Unified Azure VM provisioning flow for Windows and Linux.
 - OS selection: --windows or --linux (or SELECTED_VM_OS from .env).
 - Init tasks run once on first VM creation via Azure Run Command, one task at a time.
-- Update tasks run via persistent pyssh task-by-task.
+- Update tasks run task-by-task over the active platform SSH transport.
 #>
 
 param(
@@ -23,6 +23,7 @@ $script:TranscriptStarted = $false
 $script:HadError = $false
 $script:ExitCode = 0
 $script:ConfigOverrides = @{}
+$script:AzVmConfigValueSources = @{}
 $script:ExecutionMode = if ($script:UpdateMode) { 'update' } else { 'default' }
 $script:AzCommandTimeoutSeconds = 1800
 $script:SshTaskTimeoutSeconds = 180

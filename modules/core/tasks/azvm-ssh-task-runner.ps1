@@ -64,8 +64,8 @@ function Invoke-AzVmSshTaskBlocks {
 
     $shell = if ($Platform -eq 'windows') { 'powershell' } else { 'bash' }
     $session = $null
-    $persistentSessionEnabled = $true
-    $usedOneShotFallback = $false
+    $persistentSessionEnabled = ($Platform -eq 'linux')
+    $usedOneShotTransport = ($Platform -eq 'windows')
     $totalSuccess = 0
     $totalWarnings = 0
     $signalWarningCount = 0
@@ -118,7 +118,12 @@ function Invoke-AzVmSshTaskBlocks {
     }
 
     try {
-        Write-Host 'VM update stage mode: tasks run one-by-one over a persistent SSH session.'
+        if ($persistentSessionEnabled) {
+            Write-Host 'VM update stage mode: tasks run one-by-one over a persistent SSH session.'
+        }
+        else {
+            Write-Host 'VM update stage mode: tasks run one-by-one over one-shot SSH execution.'
+        }
         Write-Host ("Task outcome policy: {0}" -f $TaskOutcomeMode)
         Write-Host ("SSH timeouts: task={0}s, connect={1}s" -f $SshTaskTimeoutSeconds, $SshConnectTimeoutSeconds) -ForegroundColor DarkCyan
         if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
@@ -128,14 +133,16 @@ function Invoke-AzVmSshTaskBlocks {
             }
         }
 
-        try {
-            $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
-        }
-        catch {
-            $persistentSessionEnabled = $false
-            $usedOneShotFallback = $true
-            $session = $null
-            Write-Warning ("Persistent SSH session bootstrap failed. Falling back to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+        if ($persistentSessionEnabled) {
+            try {
+                $session = Start-AzVmPersistentSshSession -PySshPythonPath ([string]$pySsh.PythonPath) -PySshClientPath ([string]$pySsh.ClientPath) -HostName $SshHost -UserName $SshUser -Password $SshPassword -Port $SshPort -Shell $shell -ConnectTimeoutSeconds $SshConnectTimeoutSeconds -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+            }
+            catch {
+                $persistentSessionEnabled = $false
+                $usedOneShotTransport = $true
+                $session = $null
+                Write-Warning ("Persistent SSH session bootstrap failed. Switching to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+            }
         }
 
         foreach ($task in @($TaskBlocks)) {
@@ -154,9 +161,9 @@ function Invoke-AzVmSshTaskBlocks {
                 }
                 catch {
                     $persistentSessionEnabled = $false
-                    $usedOneShotFallback = $true
+                    $usedOneShotTransport = $true
                     $session = $null
-                    Write-Warning ("Persistent SSH session recovery failed. Falling back to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+                    Write-Warning ("Persistent SSH session recovery failed. Switching to one-shot SSH task execution: {0}" -f $_.Exception.Message)
                 }
             }
 
@@ -181,7 +188,7 @@ function Invoke-AzVmSshTaskBlocks {
                     -Port $SshPort `
                     -LocalPath $assetLocalPath `
                     -RemotePath $assetRemotePath `
-                    -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+                    -ConnectTimeoutSeconds $SshConnectTimeoutSeconds | Out-Null
                 Write-Host ("Task asset copy completed: {0}" -f $assetRemotePath)
             }
 
@@ -212,9 +219,9 @@ function Invoke-AzVmSshTaskBlocks {
                             }
                             catch {
                                 $persistentSessionEnabled = $false
-                                $usedOneShotFallback = $true
+                                $usedOneShotTransport = $true
                                 $session = $null
-                                Write-Warning ("Persistent SSH session recovery failed. Falling back to one-shot SSH task execution: {0}" -f $_.Exception.Message)
+                                Write-Warning ("Persistent SSH session recovery failed. Switching to one-shot SSH task execution: {0}" -f $_.Exception.Message)
                             }
                         }
                         else {
@@ -230,13 +237,13 @@ function Invoke-AzVmSshTaskBlocks {
                     $taskOutputText = [string]$taskResult.Output
                 }
 
-                if (([int]$taskResult.ExitCode -ne 0) -and (Test-AzVmSshTransportFallbackSignal -Text $taskOutputText)) {
+                if (([int]$taskResult.ExitCode -ne 0) -and (Test-AzVmSshTransportRecoverySignal -Text $taskOutputText)) {
                     Write-Warning ("Persistent SSH shell reported a known bootstrap failure for '{0}'. Retrying once via one-shot SSH execution." -f $taskName)
                     if ($null -ne $session) {
                         Stop-AzVmPersistentSshSession -Session $session
                     }
                     $persistentSessionEnabled = $false
-                    $usedOneShotFallback = $true
+                    $usedOneShotTransport = $true
                     $session = $null
                     try {
                         $taskResult = Invoke-AzVmSshTaskScript `
@@ -260,9 +267,6 @@ function Invoke-AzVmSshTaskBlocks {
 
             if ($taskWatch.IsRunning) { $taskWatch.Stop() }
             $taskElapsedSeconds = $taskWatch.Elapsed.TotalSeconds
-            if ($null -ne $taskResult) {
-                $taskResult.DurationSeconds = [double]$taskElapsedSeconds
-            }
             if ($script:PerfMode) {
                 Write-AzVmPerfTiming -Category $PerfTaskCategory -Label $taskName -Seconds $taskElapsedSeconds
             }
@@ -280,9 +284,9 @@ function Invoke-AzVmSshTaskBlocks {
                         }
                         catch {
                             $persistentSessionEnabled = $false
-                            $usedOneShotFallback = $true
+                            $usedOneShotTransport = $true
                             $session = $null
-                            Write-Warning ("Persistent SSH session recovery is still unavailable after task '{0}'. Falling back to one-shot SSH execution: {1}" -f $taskName, $_.Exception.Message)
+                            Write-Warning ("Persistent SSH session recovery is still unavailable after task '{0}'. Switching to one-shot SSH execution: {1}" -f $taskName, $_.Exception.Message)
                         }
                     }
                     continue
@@ -330,6 +334,9 @@ function Invoke-AzVmSshTaskBlocks {
             }
             else {
                 $failedTasks += $taskName
+                if ($taskResult.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
+                    Write-Host ([string]$taskResult.Output)
+                }
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
                     Write-Warning ("Task warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
@@ -361,8 +368,13 @@ function Invoke-AzVmSshTaskBlocks {
         $uniqueSignalWarningTasks = @($signalWarningTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
         Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, signal-warning={3}, error={4}, reboot={5}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $signalWarningCount, $totalErrors, $rebootCount)
-        if ($usedOneShotFallback) {
-            Write-Host 'VM update transport summary: one-shot SSH fallback was used for one or more tasks.' -ForegroundColor Yellow
+        if ($usedOneShotTransport) {
+            if ($Platform -eq 'windows') {
+                Write-Host 'VM update transport summary: one-shot SSH execution was used for the Windows task stage.' -ForegroundColor Cyan
+            }
+            else {
+                Write-Host 'VM update transport summary: one-shot SSH execution was used for one or more tasks.' -ForegroundColor Yellow
+            }
         }
         if (@($uniqueSignalWarningTasks).Count -gt 0) {
             Write-Host 'Signal warning tasks:' -ForegroundColor Yellow
