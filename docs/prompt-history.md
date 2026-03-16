@@ -5113,3 +5113,17 @@ I implemented the new commandless `az-vm --version` path so the launcher can pri
 
 I made guest task output visible as part of the normal operator transcript: Windows `vm-update` now streams guest stdout and stderr live over SSH, and `vm-init` now relays the full guest transcript immediately after each Azure Run Command task completes, including clearer failure framing for run-command errors. I updated CLI help, README, smoke and documentation-contract tests, corrected the Windows-friendly UTC heading regex in the documentation contract check, and revalidated the shipped behavior non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates before preparing the release documents for the new version.
 
+### 2026-03-16 21:02 UTC
+
+**User Prompt**
+
+````text
+Delete all failing GitHub Actions workflow runs so the repository stays clean. In practice, keep only the latest GitHub Actions run and delete every earlier run.
+````
+
+**Assistant Summary**
+
+I audited the current GitHub Actions run history with `gh`, confirmed that the latest `quality-gate` run for commit `57288da95ee69fe89376fce0738d4b8d6d6c690a` had completed successfully, and then deleted every earlier workflow run from the repository through the GitHub Actions API. This removed both the older failed runs and the older successful runs so the Actions history now keeps only the most recent clean run.
+
+I finished by relisting the remaining Actions history and verifying that only the latest successful `quality-gate` run was still present. No tracked runtime code or documentation contract changed as part of the cleanup beyond this prompt-history record.
+
