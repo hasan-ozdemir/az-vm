@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.325 - 2026-03-16
+
+### Summary
+This release removes all remaining on-disk disabled `vm-init` and `vm-update` task folders while preserving the empty `disabled/` directory contract. The stage trees now keep only placeholder `.gitkeep` files where the disabled roots must remain visible, and the stale Windows local disabled task folders no longer show up as leftover cleanup residue.
+
+### Highlights
+- Removed the remaining disabled task folders from the repository disk layout so disabled task cleanup now means an actually empty disabled tree, not a tree that still carries stale task folders.
+- Standardized empty `disabled/` roots for both Linux and Windows stage trees by keeping only `.gitkeep` placeholders where the directory contract should remain explicit.
+- Revalidated the result non-live with direct disabled-inventory checks plus the smoke, documentation-contract, and release-doc gates.
+
 ## Release 2026.3.16.324 - 2026-03-16
 
 ### Summary

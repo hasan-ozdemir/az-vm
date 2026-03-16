@@ -4959,3 +4959,17 @@ Reworked task-scoped app-state restore so local-machine replay now writes task-a
 
 I also extended the shared Windows guest VM restore helper with the same safety model using guest-side temporary backup staging, post-restore verification, and automatic rollback on mismatch. I updated `.gitignore`, AGENTS, README, changelog, release notes, and the smoke/documentation contract checks to document the new `backup-app-states` plus verify-report contract, then revalidated the change non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1` before the final release-doc and quality gates.
 
+### 2026-03-16 04:18 UTC
+
+**User Prompt**
+
+````text
+Fix: delete all disabled vm-init and vm-update tasks from disk completely, but keep the disabled folders themselves empty.
+````
+
+**Assistant Summary**
+
+Removed the remaining disabled task folders from disk so the disabled stage roots are now actually empty, while preserving the `disabled/` directory contract with placeholder `.gitkeep` files. I also cleaned the stale Windows local disabled task folders so they no longer linger as on-disk residue after local task work, and I standardized empty Linux `disabled/` roots to match the Windows stage layout.
+
+I revalidated the result non-live by checking the disabled task inventory across Windows and Linux init/update stages, then reran the smoke, documentation-contract, and release-doc gates before finalizing the cleanup.
+

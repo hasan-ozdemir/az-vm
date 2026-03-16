@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.325] - 2026-03-16
+
+### Changed
+- Removed the remaining on-disk disabled `vm-init` / `vm-update` task folders so the active repository no longer keeps stale disabled task implementations under the stage trees.
+- Standardized empty `disabled/` roots across Linux and Windows stage trees, keeping only placeholder `.gitkeep` files where the directory contract needs to remain visible.
+
+### Fixed
+- Fixed the Windows local disabled task inventory so stale disabled task folders no longer linger on disk and reappear in discovery or cleanup workflows after newer local task work adds different priorities.
+
+### Tests
+- Revalidated disabled-task cleanup non-live with direct `task --list --disabled` inventory checks across Windows and Linux init/update stages, plus the smoke, documentation-contract, and release-doc gates.
+
 ## [2026.3.16.324] - 2026-03-16
 
 ### Changed
