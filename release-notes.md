@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.322 - 2026-03-16
+
+### Summary
+This release completes a three-part portability and maintenance pass. Vm-init and vm-update now use portable task folders instead of flat stage-root task files and stage-root catalog JSON files, task-scoped app-state save/restore now supports both the managed VM default surface and a new Windows local-machine surface, and maintained documentation timestamps now standardize on UTC. The runtime, help, docs, and tests now describe one task-owned contract consistently: the folder names the task, `task.json` owns its runtime metadata, and `<task-folder>/app-state/app-state.zip` owns its reusable settings payload.
+
+### Highlights
+- Replaced tracked stage-root task scripts with portable task folders across Windows and Linux init/update stages, renumbered the stage inventories without band gaps, and kept missing portable task folders hot-swap-safe so absent tasks are skipped cleanly instead of breaking the workflow.
+- Added `task --save-app-state --source=lm|vm` and `task --restore-app-state --target=lm|vm`, kept `vm` as the default behavior, added `.all.`, `.current.`, and comma-separated multi-user support, and hardened local restore with allow-list validation, backups, per-user journals, and rollback.
+- Converted the maintained UTC policy from a forward-only rule into a current-tree standard by updating AGENTS, README, prompt-history formatting rules, and the existing `docs/prompt-history.md` headings to UTC.
+- Revalidated the feature set with the non-live smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates only; live isolated reruns were intentionally deferred because the active managed VM had already been deleted.
+
 ## Release 2026.3.16.321 - 2026-03-16
 
 ### Summary

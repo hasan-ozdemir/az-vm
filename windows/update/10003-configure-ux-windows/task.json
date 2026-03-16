@@ -1,0 +1,34 @@
+{
+  "priority": 10003,
+  "enabled": true,
+  "timeout": 60,
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [],
+    "profileFiles": [],
+    "machineRegistryKeys": [],
+    "userRegistryKeys": [
+      {
+        "path": "HKCU\\Control Panel\\Desktop",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Control Panel\\Accessibility",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Narrator",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      }
+    ]
+  }
+}

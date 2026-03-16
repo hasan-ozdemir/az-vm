@@ -5,7 +5,7 @@
 At a glance:
 - Customer teams get a repeatable Azure VM outcome that can feel closer to an all-in-one prepared remote computer than a portal-built raw VM.
 - Executive teams get lower drift, faster support handoff, and one repo that captures runtime behavior, guest-configuration intent, release notes, and operating guidance together.
-- Developers and DevOps maintainers get one command surface plus task catalogs that can preload apps, services, settings, desktop behavior, and UX details on both Windows and Linux.
+- Developers and DevOps maintainers get one command surface plus portable task folders that can preload apps, services, settings, desktop behavior, and UX details on both Windows and Linux.
 - Employees, administrative teams, workers, and regular operators get a near-zero-touch first session: connect remotely and find the machine already prepared for common daily work.
 - Visitors and sponsors can evaluate a mature operational toolkit with visible docs, quality gates, release discipline, and proof-of-outcome scenarios instead of vague promises.
 
@@ -59,7 +59,7 @@ At a glance:
   - [`delete`](#delete)
   - [`help`](#help)
 - [Task Authoring And Execution](#task-authoring-and-execution)
-  - [Catalog Ownership](#catalog-ownership)
+  - [Task Folder Ownership](#task-folder-ownership)
   - [Task Naming Rules](#task-naming-rules)
   - [Timeouts, Priority, And Enable Flags](#timeouts-priority-and-enable-flags)
   - [Direct Task Execution With `task`](#direct-task-execution-with-task)
@@ -82,7 +82,7 @@ At a glance:
 - [Architecture From Zero To Hero](#architecture-from-zero-to-hero)
   - [Entrypoints And Runtime Modules](#entrypoints-and-runtime-modules)
   - [Configuration Resolution](#configuration-resolution)
-  - [Task Catalog Model](#task-catalog-model)
+  - [Task Folder Model](#task-folder-model)
   - [Windows And Linux Execution Model](#windows-and-linux-execution-model)
   - [End-To-End Create And Update Flow](#end-to-end-create-and-update-flow)
   - [Safety Model And Failure Handling](#safety-model-and-failure-handling)
@@ -125,8 +125,8 @@ On the current Windows hero path, one successful `create` is designed to leave b
 - `modules/commands/`: command-owned implementations split by command, plus shared pipeline/context/step/feature helpers.
 - `modules/ui/`: prompts, interactive selection, show/report rendering, and connection presentation helpers.
 - `modules/tasks/`: Azure Run Command and persistent SSH transport/runtime helpers.
-- `windows/init/`, `windows/update/`: Windows stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
-- `linux/init/`, `linux/update/`: Linux stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
+- `windows/init/`, `windows/update/`: Windows stage roots with portable task folders at the root, portable disabled task folders under `disabled/`, and portable local-only task folders under `local/` and `local/disabled/`.
+- `linux/init/`, `linux/update/`: Linux stage roots with portable task folders at the root, portable disabled task folders under `disabled/`, and portable local-only task folders under `local/` and `local/disabled/`.
 - `tools/`: pyssh helper, scripts, Windows helper assets, and git-hook toggles.
 - `tests/`: local quality and contract checks.
 - `docs/prompt-history.md`: English-normalized historical ledger of completed prompt/summary pairs.
@@ -145,7 +145,7 @@ On the current Windows hero path, one successful `create` is designed to leave b
 4. Treat `.env` as the home for app-wide identity, secrets, and reusable overrides. Task-only constants should stay in the owning task script's top config block.
 
 ### Fastest Safe Path To Value
-If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated. On the current Windows path that includes Store-aware public desktop shortcuts, managed short-launcher wrapping for overlong Chrome/Edge-style shortcut invocations, per-task git-ignored app-state zip plugins resolved from `windows/update/app-states/<task-name>/app-state.zip`, and WSL2 plus Docker Desktop prerequisite hardening before developer-runtime health is considered ready:
+If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated. On the current Windows path that includes Store-aware public desktop shortcuts, managed short-launcher wrapping for overlong Chrome/Edge-style shortcut invocations, per-task git-ignored app-state zip plugins resolved from `<task-folder>/app-state/app-state.zip`, and WSL2 plus Docker Desktop prerequisite hardening before developer-runtime health is considered ready:
 1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
 2. Run `.\az-vm.cmd create --auto -s <subscription-guid>`. When `.env` already contains a complete `SELECTED_*` target plus the matching platform image and size defaults, the command can provision end-to-end without repeating platform, VM name, region, or size on the CLI.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
@@ -154,9 +154,9 @@ If you want the fastest safe path to value, use this order. The target outcome i
 
 Representative PoC / PoE outcomes from the current repo shape:
 - Employee or knowledge-worker desktop: connect over RDP and land on a machine with browser, collaboration, storage, media, support, and accessibility tooling already staged, with desktop shortcuts and startup behavior already prepared.
-- Developer or DevOps workstation: connect and find PowerShell, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, WSL2, Docker Desktop, Ollama, Codex app, and other repo-managed tooling prepared by current task catalogs.
+- Developer or DevOps workstation: connect and find PowerShell, Git, Python, Node.js, Azure CLI, GitHub CLI, azd, VS Code, WSL2, Docker Desktop, Ollama, Codex app, and other repo-managed tooling prepared by the current portable task inventory.
 - Administrative or support machine: connect and find remote-support, startup, health-capture, user-copy, and advanced settings tasks already applied so day-two assistance is easier.
-- Linux proof path: use the same orchestrator, connection flow, and task-catalog model today, then extend the lighter default guest with your own task-authored apps, services, and settings as needed.
+- Linux proof path: use the same orchestrator, connection flow, and portable task-folder model today, then extend the lighter default guest with your own task-authored apps, services, and settings as needed.
 
 ### First End-To-End Run
 ```powershell
@@ -175,6 +175,8 @@ az login
 .\az-vm.cmd task --list --vm-update --windows
 .\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
 .\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
+.\az-vm.cmd task --save-app-state --source=lm --user=.current. --vm-update-task=115 --windows
+.\az-vm.cmd task --restore-app-state --target=lm --user=.current. --vm-update-task=115 --windows
 .\az-vm.cmd resize --group=<resource-group> --vm-name=<vm-name> --vm-size=Standard_D4as_v5 --windows
 ```
 
@@ -185,7 +187,7 @@ az login
 The strongest current story is the Windows workstation path. With one command, the repo can provision Azure resources and continue until the guest looks and behaves much closer to a prepared remote computer than to an empty VM: core tooling is installed, common collaboration and storage apps are staged, startup behavior is configured, public desktop shortcuts are created and refreshed, Store-backed desktop apps can launch through `shell:AppsFolder\<AUMID>` instead of brittle version-pinned paths, overlong browser-style shortcut commands are rewritten through managed short launchers so the desktop contract stays healthy, advanced OS settings are applied, per-task app-state plugins can replay durable settings when a matching `app-state.zip` exists, and safe user-level preferences are copied where the repo already has task coverage. The result is a near-zero-touch first session for the people who actually need to use the machine.
 
 From a customer-facing perspective, the value proposition is concrete:
-- one-command path to a near-zero-touch remote Windows workstation in Azure, backed by the current task catalogs
+- one-command path to a near-zero-touch remote Windows workstation in Azure, backed by the current portable task inventory
 - faster time to a usable VM with known software, known guest-side configuration, and a prepared desktop experience
 - safer day-two operations because the same toolkit handles update, inspect, resize, move, repair, and delete flows
 - more predictable support handoff because runtime behavior, docs, release notes, and prompt history live in the same repository
@@ -197,7 +199,7 @@ Representative PoC / PoE stories the current repo can already support:
 
 ## Executive Summary
 
-For decision-makers, `az-vm` is an operational standardization asset. It turns a previously manual, portal-heavy, and person-dependent VM build into a repo-governed process with validation before mutation, visible orchestration steps, repeatable guest task catalogs, and non-live quality gates. That matters because environment drift, undocumented post-install tweaks, and ad hoc support work are expensive even when the VM count is small.
+For decision-makers, `az-vm` is an operational standardization asset. It turns a previously manual, portal-heavy, and person-dependent VM build into a repo-governed process with validation before mutation, visible orchestration steps, repeatable guest task folders, and non-live quality gates. That matters because environment drift, undocumented post-install tweaks, and ad hoc support work are expensive even when the VM count is small.
 
 Viewed as a service outcome rather than a scripting repo, `az-vm` helps teams deliver an Azure-hosted computer experience, not just an Azure-hosted VM. The flagship Windows path is intentionally positioned to produce an all-in-one remote workstation feel: applications installed, desktop experience shaped, startup behavior prepared, advanced settings applied, and supportability built in. That shortens the path from "budget approved" to "someone is productively connected and working."
 
@@ -248,13 +250,13 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 
 ### What It Does
 - Provisions Azure infrastructure for one managed Windows or Linux VM from one orchestrator.
-- Applies deterministic guest initialization and guest update task catalogs.
+- Applies deterministic guest initialization and guest update task inventories.
 - Gives operators lifecycle commands for status, start, restart, reapply, redeploy, stop, deallocate, hibernate-stop, hibernate-deallocate, move, resize, connect, inspect, and delete flows.
 - Keeps command wording, configuration behavior, and execution semantics as parallel as possible across Windows and Linux.
 
 ### Problems It Solves
 - Eliminates ad hoc VM setup drift caused by one-off portal changes and manual guest tweaking.
-- Replaces hidden or implicit guest scripts with explicit, catalog-driven task ordering and timeouts.
+- Replaces hidden or implicit guest scripts with explicit, portable task-folder ordering and timeouts.
 - Reduces unsafe Azure mutations by validating names, regions, SKUs, image values, and state before mutating resources.
 - Gives one repeatable operator workflow for create, update, repair, inspect, connect, and cutover work.
 - Captures repo behavior, release notes, and development decisions in the same repository instead of splitting them across chat history and tribal knowledge.
@@ -293,7 +295,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `list` | Print managed inventory by type | Azure-read-only | Inventory, targeting, quick visibility | Managed group/resource listings |
 | `show` | Print a full managed report | Azure-read-only | Health review, support handoff, release verification | Inventory and config dump |
 | `do` | Apply lifecycle or repair actions | Azure-mutating or read-only for `status` | Power-state control, reapply, redeploy, hibernation flow | Target VM lifecycle action |
-| `task` | List discovered task inventory, run one task, or save/restore task app-state | Local/read-only for `--list`; Azure-touching for `--run-*` and app-state maintenance | Understand task order, rerun one task, or refresh one task payload | Visible task catalog or one isolated task/app-state action |
+| `task` | List discovered task inventory, run one task, or save/restore task app-state | Local/read-only for `--list`; Azure-touching for `--run-*` and VM app-state maintenance; local-machine for `--source=lm` / `--target=lm` | Understand task order, rerun one task, or refresh one task payload | Visible task inventory or one isolated task/app-state action |
 | `connect` | Launch or test SSH/RDP access | Azure-touching, local-client action | Linux or Windows SSH access, or Windows desktop access | Direct client launch or connection test |
 | `exec` | Open direct remote shell path or run one remote command | Azure-touching and guest-touching | Interactive shell work or one-shot remote command execution | One direct shell or command result |
 | `move` | Move a managed VM to another region | Azure-mutating | Planned cutover or regional relocation | Health-gated regional move |
@@ -369,8 +371,10 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd task --list --disabled --vm-update --windows` | `--disabled` | Lists disabled tasks | Cleanup or contract review | Surfaces disabled reason and source. |
 | `.\az-vm.cmd task --run-vm-init 01 --group <resource-group> --vm-name <vm-name>` | `--run-vm-init`, target selectors | Runs one init task directly | Isolated bootstrap rerun | Uses Azure run-command against one managed VM. |
 | `.\az-vm.cmd task --run-vm-update 10002 --group <resource-group> --vm-name <vm-name> --windows` | `--run-vm-update`, platform | Runs one update task directly | Isolated guest fix | Uses the SSH task runner against one managed VM. |
-| `.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--save-app-state`, `--vm-update-task`, target selectors | Captures one live task-owned app-state payload into `.../update/app-states/<task-name>/app-state.zip` | Refreshing an operator-owned payload from the active VM | Cleanly skips when no capture coverage exists. |
+| `.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--save-app-state`, `--vm-update-task`, target selectors | Captures one live task-owned app-state payload into the task-local `<task-folder>/app-state/app-state.zip` | Refreshing an operator-owned payload from the active VM | Cleanly skips when no capture coverage exists. |
 | `.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--restore-app-state`, `--vm-update-task`, target selectors | Replays one saved task-owned app-state payload to the active VM | Targeted state restore after reinstall or cleanup | Fails cleanly when the requested zip is missing or invalid. |
+| `.\az-vm.cmd task --save-app-state --source=lm --user=.current. --vm-update-task=115 --windows` | `--save-app-state`, `--source=lm`, `--user=.current.` | Captures one local-machine task payload into the same task-local zip path | Refreshing a portable app-state payload from the operator machine | Windows-host-only. |
+| `.\az-vm.cmd task --restore-app-state --target=lm --user=.current. --vm-update-task=115 --windows` | `--restore-app-state`, `--target=lm`, `--user=.current.` | Restores one task-local payload back onto the operator machine | Safe local replay and troubleshooting | Validates `task.json`, writes a backup root plus restore journal, and rolls back on failure. |
 
 #### `exec`
 
@@ -599,12 +603,16 @@ Behavior notes:
 Purpose: list discovered init/update tasks in runtime order, run one task in isolation, or save/restore one task-owned app-state payload.
 
 Behavior notes:
-- shows tracked and local-only tasks together
+- shows tracked and local-only task folders together
 - `--run-vm-init` routes one init task through Azure run-command
 - `--run-vm-update` routes one update task through the SSH task runner
-- `--save-app-state` and `--restore-app-state` read or write `.../<stage>/app-states/<task-name>/app-state.zip`
+- `--save-app-state` defaults to `--source=vm`; `--restore-app-state` defaults to `--target=vm`; both default to `--user=.all.`
+- `--user` accepts `.all.`, `.current.`, one explicit user, or a comma-separated user list such as `--user=operator,assistant`
+- managed VM app-state reads or writes the task-local payload at `<task-folder>/app-state/app-state.zip`
+- local-machine save/restore is Windows-host-only and reuses the same task-local payload path
 - init and update restore flows both reuse the same shared per-task app-state post-process; init routes it through Azure Run Command and update routes it through SSH
-- task-owned app-state payloads target only the managed `manager` and `assistant` OS profiles; missing zips skip cleanly, and broad generated caches, installers, models, and telemetry payloads are pruned from the managed capture contract
+- task-owned app-state payloads target only the managed `manager` and `assistant` OS profiles on VM paths; missing zips skip cleanly, and broad generated caches, installers, models, and telemetry payloads are pruned from the managed capture contract
+- local restore validates the current `task.json` allow-list, writes a backup root plus restore journal first, and rolls back the current target user if replay fails mid-flight
 - useful before isolated reruns or when checking timeout and enable-state behavior
 
 ### `exec`
@@ -665,37 +673,36 @@ Behavior notes:
 
 ## Task Authoring And Execution
 
-### Catalog Ownership
-Catalog JSON files are the source of truth for task ordering, enable state, and timeouts. Runtime code must not rewrite them automatically.
+### Task Folder Ownership
+Every task is a portable folder. The folder name defines the task identity, the same-named script defines the executable body, and `task.json` defines ordering, enable state, timeout, assets, and app-state capture coverage. Runtime code must not rewrite `task.json` automatically.
 
 ### Task Naming Rules
-- `<task-number>-verb-noun-target.ext`
+- `<task-number>-verb-noun-target/`
 - task-number bands:
   - `01-99` = `initial`
   - `101-999` = `normal`
   - `1001-9999` = local-only
   - `10001-10099` = `final`
 - 2-5 English words in kebab-case
-- `.ps1` for Windows
-- `.sh` for Linux
+- each task folder contains one same-named `.ps1` or `.sh` script plus `task.json`
 
 ### Timeouts, Priority, And Enable Flags
-- tracked task at the stage root: use catalog values
-- local-only task under `local/` may declare `# az-vm-task-meta: {...}` on the first non-empty comment line for `priority`, `enabled`, `timeout`, and `assets`
-- local-only tasks under `local/` are discovered from disk dynamically and do not consume catalog entries
+- every task folder uses `task.json` for `priority`, `enabled`, `timeout`, optional `assets`, and optional `appState`
+- local-only tasks under `local/` are discovered from disk dynamically
 - local-only tasks under `local/disabled/` remain disabled by location
-- local-only asset paths are resolved relative to the local task file directory
-- if both catalog state and script metadata exist, the catalog wins for `priority`, `enabled`, and `timeout`
-- tracked missing `priority`: default to `1000`
-- local missing `priority`: script metadata first, then filename task number, then deterministic auto-detect from the `1001+` band
+- task asset paths are resolved relative to the owning task folder
+- task-folder discovery scans the stage root, `disabled/`, `local/`, and `local/disabled/`
+- missing task folders behave as if the task never existed; malformed task folders warn and skip; duplicate task names or duplicate effective priorities still fail fast
+- missing `priority`: default to the filename task number when available, otherwise `1000`
 - missing `timeout`: default to `180`
-- missing tracked entry entirely: `priority=1000`, `enabled=true`, `timeout=180`
-- builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks
+- builtin `initial` task folders, builtin `normal` task folders, local task folders from `local/`, then builtin `final` task folders
 
 ### Direct Task Execution With `task`
 Direct `task --run-vm-init` and `task --run-vm-update` are the main diagnosis path when one task needs to be rerun without replaying the entire orchestration chain.
 
 Current task template replacement uses the public selected-value placeholders: `__SELECTED_VM_NAME__`, `__SELECTED_AZURE_REGION__`, `__SELECTED_RESOURCE_GROUP__`, `__SELECTED_COMPANY_NAME__`, `__SELECTED_COMPANY_WEB_ADDRESS__`, `__SELECTED_COMPANY_EMAIL_ADDRESS__`, `__SELECTED_EMPLOYEE_EMAIL_ADDRESS__`, and `__SELECTED_EMPLOYEE_FULL_NAME__`.
+
+Task-scoped app-state capture and replay use the same portable task folder contract. The current task-local zip path is always `<task-folder>/app-state/app-state.zip`, and the current app-state allow-list lives beside it in the same folder's `task.json`.
 
 ## Configuration Guide
 
@@ -738,7 +745,7 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 
 ### Connection And Task Settings
 - Configure SSH and RDP ports through the committed runtime contract instead of editing tasks blindly.
-- Keep long-running task timeouts in task catalogs, not hidden in repo-wide runtime logic.
+- Keep long-running task timeouts in `task.json`, not hidden in repo-wide runtime logic.
 - Use `--perf` when you want timing evidence for long-running flows.
 
 ### Global Versus Task-Local Configuration
@@ -782,8 +789,8 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 ### Init Tasks Versus Update Tasks
 - `vm-init` is Azure Run Command driven and is used for early guest bootstrap, one task at a time.
 - `vm-update` is pyssh driven and is used for richer task-by-task update flows after the VM is reachable.
-- Both stages use catalog JSON files as the source of truth for ordering, timeout, and enable/disable state, and both now invoke the same per-task app-state restore helper as a post-task step when a matching plugin zip exists.
-- The natural execution order for both stages is: builtin catalog `initial` tasks, builtin catalog `normal` tasks, local git-untracked tasks from `local/`, then builtin catalog `final` tasks.
+- Both stages use portable task folders plus `task.json` as the source of truth for ordering, timeout, and enable/disable state, and both now invoke the same per-task app-state restore helper as a post-task step when a matching task-local plugin zip exists.
+- The natural execution order for both stages is: builtin `initial` task folders, builtin `normal` task folders, local task folders from `local/`, then builtin `final` task folders.
 
 ### Interactive Versus Auto Mode
 - Interactive mode is the default and prompts when required values are missing.
@@ -826,8 +833,8 @@ This matters because:
 - `.env.example` is the committed contract
 - `.env` remains local and untracked
 
-### Task Catalog Model
-Each task directory has a catalog JSON file that owns execution priority, enable/disable state, and timeout per task. The runtime never auto-writes catalog JSON files.
+### Task Folder Model
+Each task directory is self-contained. The folder holds one same-named script, one `task.json`, optional helper assets, and an optional git-ignored `app-state/` directory. The runtime never auto-writes `task.json`, and a missing portable task folder is treated as absent rather than as a failure.
 
 ### Windows And Linux Execution Model
 - Windows and Linux share the same top-level orchestration model.
@@ -861,9 +868,10 @@ Each task directory has a catalog JSON file that owns execution priority, enable
 
 ### Task Failures
 - Rerun the failing task with `task --run-vm-init` or `task --run-vm-update`.
-- Check task catalog timeout and enabled state.
-- Vm-init and vm-update app-state replay are post-task and plug-in based. If `.../<stage>/app-states/<task-name>/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
+- Check `task.json` timeout and enabled state.
+- Vm-init and vm-update app-state replay are post-task and plug-in based. If `<task-folder>/app-state/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
 - Managed app-state save and restore target only the `manager` and `assistant` OS profiles. Large generated payloads such as installers, models, telemetry trees, and low-value caches are intentionally pruned so the zips stay operator-owned and reusable instead of drifting into machine-image snapshots.
+- Local-machine app-state restore validates the current `task.json` allow-list and writes a backup root plus restore journal before replaying onto the operator machine.
 - Windows public desktop shortcut validation names the exact missing `.env` keys, for example `SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow.` and `SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow.`
 - Use `VM_TASK_OUTCOME_MODE=strict` when you want the stage to stop at the first failure.
 
@@ -931,6 +939,7 @@ When a prompt changes repo files:
 - update `README.md`, `AGENTS.md`, `.env.example`, tests, or help text when the contract changes
 - update `CHANGELOG.md` and `release-notes.md` in the same final change set before commit
 - update `docs/prompt-history.md` with the English-normalized prompt and final summary
+- when a maintained document records a time-of-day, record it in UTC
 
 ### Prompt History Rule
 - Very short approval/confirmation/follow-up prompts are not auto-recorded.
@@ -938,6 +947,7 @@ When a prompt changes repo files:
 - All other substantive prompts are recorded.
 - Excluded prompt types are recorded only after explicit user confirmation.
 - Recorded entries are stored in English. If the original dialog was not English, it is translated before recording.
+- Prompt-history headings use `### YYYY-MM-DD HH:MM UTC`.
 
 ## Documentation Set
 - `AGENTS.md`: engineering contract and collaboration rules.

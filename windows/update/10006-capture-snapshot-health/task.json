@@ -1,0 +1,16 @@
+{
+  "priority": 10006,
+  "enabled": true,
+  "timeout": 120,
+  "assets": [
+    {
+      "local": "../../../modules/core/tasks/azvm-store-install-state.psm1",
+      "remote": "C:/Windows/Temp/az-vm-store-install-state.psm1"
+    },
+    {
+      "local": "../../../modules/core/tasks/azvm-shortcut-launcher.psm1",
+      "remote": "C:/Windows/Temp/az-vm-shortcut-launcher.psm1"
+    }
+  ]
+}
+

@@ -5,7 +5,7 @@ This repository manages Azure VM provisioning and lifecycle operations for Windo
 
 ## Source of Truth Hierarchy
 Use these sources in this order when maintaining the repo:
-1. Current code and task catalogs for runtime behavior.
+1. Current code and task-folder manifests for runtime behavior.
 2. Current CLI/help output for command-surface truth.
 3. Current `.env.example` for committed configuration contract.
 4. Current local `.env` only when a user explicitly states that their local runtime configuration is the temporary source of truth for alignment work.
@@ -31,8 +31,8 @@ Use these sources in this order when maintaining the repo:
 - `az-vm.cmd`: elevated launcher for Windows operators.
 - `az-vm.ps1`: unified orchestrator entrypoint.
 - `modules/`: runtime modules grouped by domain.
-- `windows/init/`, `windows/update/`: Windows stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
-- `linux/init/`, `linux/update/`: Linux stage roots with tracked catalog-driven tasks at the root, tracked disabled tasks under `disabled/`, and local-only metadata-driven tasks under `local/` and `local/disabled/`.
+- `windows/init/`, `windows/update/`: Windows stage roots with portable task folders at the root, portable disabled task folders under `disabled/`, and portable local-only task folders under `local/` and `local/disabled/`.
+- `linux/init/`, `linux/update/`: Linux stage roots with portable task folders at the root, portable disabled task folders under `disabled/`, and portable local-only task folders under `local/` and `local/disabled/`.
 - `tools/`: helper tooling, pyssh bootstrap, git-hook toggles, and support scripts.
 - `tests/`: static, compatibility, audit, and contract checks.
 - `docs/prompt-history.md`: human-readable prompt ledger for this repo.
@@ -45,7 +45,7 @@ Use these sources in this order when maintaining the repo:
   - init/update task language
   - Windows-only RDP and Windows service configuration
 - Prefer explicit orchestration steps over hidden side effects.
-- Prefer task catalogs over hard-coded ad hoc execution order.
+- Prefer portable task folders plus `task.json` manifests over hard-coded ad hoc execution order.
 - Keep command behavior deterministic across interactive and auto flows.
 
 ## Command-Surface Rules
@@ -53,11 +53,14 @@ Use these sources in this order when maintaining the repo:
 - Do not preserve removed commands or aliases once the repo has cut over to a new surface.
 - If a command or option is renamed, remove the old form cleanly and update all docs/tests in the same change.
 - When a public option is renamed, rename the owning parameter files, manifest entries, parser lookups, help text, README examples, and smoke coverage in the same change; do not leave retired parameter-module filenames behind.
-- Use `step` for top-level orchestration phases and `task` for guest task execution. Do not revive removed terms such as `substep`.
+- Use `step` for top-level orchestration phases and `task` for guest task execution.
 - Keep help output, README examples, and runtime messages aligned with the actual parser contract.
 - Canonical target selectors are `--group` / `-g`, `--vm-name` / `-v`, and `--subscription-id` / `-s`.
 - Value-taking options must accept both `--option=value` and `--option value`, plus short-form `-x=value` and `-x value` when a short alias exists.
 - `task` owns task inventory, isolated `vm-init` / `vm-update` task runs, and task-scoped app-state save/restore.
+- `task --save-app-state` defaults to `--source=vm`; `task --restore-app-state` defaults to `--target=vm`; both default to `--user=.all.`.
+- `task --save-app-state` / `--restore-app-state` accept `--user=.all.`, `--user=.current.`, one explicit user, or a comma-separated user list.
+- Local-machine task app-state save/restore is Windows-host-only, must validate the current `task.json` allow-list before local restore, and must write a lightweight backup plus restore journal before mutating the operator machine.
 - `exec` is SSH-only: it may open an interactive shell or run one remote command through `--command` / `-c`, but it must not own isolated task execution.
 - `connect` owns interactive/test connection flows and requires exactly one transport flag: `--ssh` or `--rdp`.
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
@@ -97,33 +100,33 @@ Use these sources in this order when maintaining the repo:
 - Managed resource ids use a globally increasing `nX` suffix across all generated managed resources; one generated `nX` must not be reused by another managed resource, even across resource types.
 - If naming rules change, update README, tests, and any naming-related summaries in the same change.
 
-## Task Catalog Rules
-- Task files use `<task-number>-verb-noun-target.ext`.
+## Task Folder Rules
+- Each task lives in a portable folder named `<task-number>-verb-noun-target`.
+- Each task folder must contain one same-named task script plus one `task.json`.
 - Task-number bands are:
   - `01-99` for `initial`
   - `101-999` for `normal`
   - `1001-9999` for intentionally local-only tasks
   - `10001-10099` for `final`
-- The task catalog JSON files are the execution-order and timeout source of truth for tracked tasks at the stage root.
-- Intentionally local-only tasks live under `local/`, are discovered from disk at runtime, and use script metadata only.
+- `task.json` is the execution-order, enable-state, timeout, asset, and app-state source of truth for tracked and local-only task folders.
+- Intentionally local-only tasks live under `local/` as portable task folders and are discovered from disk at runtime.
 - Intentionally local-only disabled tasks live under `local/disabled/` and remain disabled by location.
 - Root `disabled/` remains for tracked disabled tasks.
-- The only allowed task app-state source is the stage-local plugin zip `.../<stage>/app-states/<task-name>/app-state.zip`.
-- Builtin catalog and local-only init/update tasks must use the same post-process app-state contract and the same exact plugin path rule.
-- Stage-local `app-states/` roots are untracked and git-ignored; missing task plugins must log a skip and continue instead of failing the stage.
-- `local/`, task-side helper folders, and any legacy overlay paths must not be used as alternate app-state storage locations.
+- A missing task folder must be treated as absent; init/update execution must continue cleanly as if that task never existed.
+- Malformed task folders must warn and skip instead of aborting the stage, unless duplicate names or duplicate effective priorities make execution order ambiguous.
+- The only allowed task app-state source is the task-local plugin zip `<task-folder>/app-state/app-state.zip`.
+- Builtin and local-only init/update task folders must use the same post-process app-state contract and the same exact task-local plugin path rule.
+- Task-local `app-state/` folders are untracked and git-ignored; missing task plugins must log a skip and continue instead of failing the stage.
+- Stage-root shared `app-states/`, task-side helper folders outside the owning task folder, and any legacy overlay paths must not be used as alternate app-state storage locations.
 - Managed app-state save and restore must target only the `manager` and `assistant` OS profiles. Do not capture or replay `default` or arbitrary local user profiles.
 - App-state capture is settings-first. Exclude generated installers, models, telemetry trees, caches, and other low-value runtime artifacts unless a task explicitly proves they are durable required state.
-- Script-local metadata may supply `priority`, `enabled`, `timeout`, and `assets` for intentionally local-only tasks that stay out of source control.
-- When both a task catalog entry and script metadata exist, the catalog entry wins for `priority`, `enabled`, and `timeout`.
-- Task priority is catalog-driven for tracked tasks and metadata-driven first for intentionally local-only tasks.
-- Local-only task priority precedence is: script metadata `priority` -> filename task number -> deterministic auto-detect in the `1001+` band.
-- Runtime code must not auto-write, auto-sync, or auto-reconcile catalog JSON files.
-- For tracked tasks that are missing from catalog entries, runtime defaults to `priority=1000`, `enabled=true`, `timeout=180`.
-- For catalog entries missing `priority`, default to `1000`.
-- For catalog entries missing `timeout`, default to `180`.
+- `task.json` may supply `priority`, `enabled`, `timeout`, `assets`, and `appState`.
+- Task priority precedence is: `task.json priority` -> filename task number -> deterministic fallback within the current task-number band.
+- Runtime code must not auto-write, auto-sync, or auto-reconcile `task.json` files.
+- For task folders with missing `priority`, default to the filename task number when available, otherwise `1000`.
+- For task folders with missing `timeout`, default to `180`.
 - Disabled tasks belong under `disabled/` and must be ignored by execution logic.
-- Init and update catalogs may diverge by platform, but the orchestration model should remain parallel in concept.
+- Init and update task inventories may diverge by platform, but the orchestration model should remain parallel in concept.
 
 ## Reliability and Error-Handling Rules
 - Validate before mutating Azure resources.
@@ -170,7 +173,7 @@ Use these sources in this order when maintaining the repo:
 - No commit may introduce concrete secrets, contact-style values, personal identifiers, organization identifiers, or live-target sample values into tracked code, docs, examples, tests, or commit messages.
 - Maintain an always-on sensitive-content audit in local hooks and CI; update that audit in the same change whenever new committed surfaces or new leak-prone example formats are introduced.
 - For live publish or release-readiness claims, require one successful end-to-end live acceptance cycle against the active profile: clean `create` when safe, full natural-order `update`, `show` redaction check, `do --vm-action=status`, connection tests, and enabled feature verification.
-- Update audit/contract checks when command names, docs, env keys, or task catalog behavior change.
+- Update audit/contract checks when command names, docs, env keys, or task-folder behavior change.
 
 ## Documentation Responsibilities
 - `AGENTS.md`: engineering contract and collaboration rules.
@@ -184,6 +187,7 @@ Use these sources in this order when maintaining the repo:
 - `release-notes.md`: current release-oriented summary.
 - `roadmap.md`: forward-looking project plan.
 - `docs/prompt-history.md`: human-readable prompt ledger with English-normalized user prompts and assistant summaries.
+- When maintained repository documentation records a time-of-day, record it in UTC.
 
 ## Release Versioning Rule
 - `CHANGELOG.md` and `release-notes.md` must use `YYYY.M.D.N`.
@@ -200,6 +204,7 @@ Use these sources in this order when maintaining the repo:
 - Do not omit completed substantive turns that changed repo files.
 - Keep the file appendable, chronologically ordered, and human-readable.
 - Record prompt-history entries in English.
+- Record prompt-history timestamps as `### YYYY-MM-DD HH:MM UTC`.
 - If the original user prompt or assistant summary is not English, translate it to English before recording it in `docs/prompt-history.md`.
 - If the original user prompt or assistant summary is already English, record it unchanged.
 - Use the relevant `.codex` JSONL files as the primary source when reconstructing past turns.

@@ -1,0 +1,71 @@
+{
+  "priority": 120,
+  "enabled": true,
+  "timeout": 90,
+  "assets": [
+    {
+      "local": "../../../modules/core/tasks/azvm-store-install-state.psm1",
+      "remote": "C:/Windows/Temp/az-vm-store-install-state.psm1"
+    }
+  ],
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [
+      {
+        "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\Settings",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\LocalState",
+        "targetProfiles": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "DawnCache",
+          "Crashpad",
+          "CrashDumps",
+          "Temp",
+          "tmp",
+          "Logs"
+        ],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.etl",
+          "*.log"
+        ]
+      },
+      {
+        "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\RoamingState",
+        "targetProfiles": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "DawnCache",
+          "Crashpad",
+          "CrashDumps",
+          "Temp",
+          "tmp",
+          "Logs"
+        ],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.etl",
+          "*.log"
+        ]
+      }
+    ],
+    "profileFiles": [],
+    "machineRegistryKeys": [],
+    "userRegistryKeys": []
+  }
+}

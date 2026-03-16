@@ -1,0 +1,107 @@
+{
+  "priority": 10005,
+  "enabled": true,
+  "timeout": 300,
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [
+      {
+        "path": "AppData\\Roaming\\Microsoft\\Templates",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Roaming\\Microsoft\\Signatures",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Roaming\\Microsoft\\QuickStyles",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Roaming\\Microsoft\\UProof",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Roaming\\Microsoft\\Office",
+        "targetProfiles": [],
+        "excludeNames": [
+          "OfficeFileCache",
+          "Licensing",
+          "SolutionPackages",
+          "OTele",
+          "Telemetry"
+        ],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Local\\Microsoft\\Office",
+        "targetProfiles": [],
+        "excludeNames": [
+          "OfficeFileCache",
+          "Licensing",
+          "Spw",
+          "SolutionPackages",
+          "OTele",
+          "Telemetry",
+          "webview2",
+          "EBWebView",
+          "BrowserMetrics"
+        ],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": [
+          "*.ost",
+          "*.pst",
+          "*.nst"
+        ]
+      }
+    ],
+    "profileFiles": [],
+    "machineRegistryKeys": [],
+    "userRegistryKeys": [
+      {
+        "path": "HKCU\\Software\\Microsoft\\Office\\Common",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Office\\16.0\\Common",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Office\\16.0\\Word",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Office\\16.0\\Excel",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Office\\16.0\\PowerPoint",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKCU\\Software\\Microsoft\\Office\\16.0\\OneNote",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      }
+    ]
+  }
+}

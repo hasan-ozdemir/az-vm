@@ -1,5 +1,33 @@
 # Run-command task block replacement helpers.
 
+function Resolve-AzVmTaskRepoRootFromPath {
+    param([string]$StartPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$StartPath)) {
+        return ''
+    }
+
+    $cursor = [string]$StartPath
+    if (Test-Path -LiteralPath $cursor -PathType Leaf) {
+        $cursor = [string](Split-Path -Path $cursor -Parent)
+    }
+
+    while (-not [string]::IsNullOrWhiteSpace([string]$cursor)) {
+        if (Test-Path -LiteralPath (Join-Path $cursor 'az-vm.ps1')) {
+            return [string]$cursor
+        }
+
+        $parent = [string](Split-Path -Path $cursor -Parent)
+        if ([string]::IsNullOrWhiteSpace([string]$parent) -or [string]::Equals([string]$parent, [string]$cursor, [System.StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+
+        $cursor = $parent
+    }
+
+    return ''
+}
+
 # Handles Apply-AzVmTaskBlockReplacements.
 function Apply-AzVmTaskBlockReplacements {
     param(
@@ -17,11 +45,23 @@ function Apply-AzVmTaskBlockReplacements {
         $taskScript = [string]$taskBlock.Script
         $relativePath = ''
         $directoryPath = ''
+        $taskRootPath = ''
+        $taskMetadataPath = ''
+        $stageRootDirectoryPath = ''
         if ($taskBlock.PSObject.Properties.Match('RelativePath').Count -gt 0) {
             $relativePath = [string]$taskBlock.RelativePath
         }
         if ($taskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
             $directoryPath = [string]$taskBlock.DirectoryPath
+        }
+        if ($taskBlock.PSObject.Properties.Match('TaskRootPath').Count -gt 0) {
+            $taskRootPath = [string]$taskBlock.TaskRootPath
+        }
+        if ($taskBlock.PSObject.Properties.Match('TaskMetadataPath').Count -gt 0) {
+            $taskMetadataPath = [string]$taskBlock.TaskMetadataPath
+        }
+        if ($taskBlock.PSObject.Properties.Match('StageRootDirectoryPath').Count -gt 0) {
+            $stageRootDirectoryPath = [string]$taskBlock.StageRootDirectoryPath
         }
         $timeoutSeconds = 180
         if ($taskBlock.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0) {
@@ -67,8 +107,11 @@ function Apply-AzVmTaskBlockReplacements {
                 }
             }
 
-            if ($taskName -in @('10003-configure-ux-windows', '10005-copy-settings-user', '126-install-be-my-eyes', '131-install-icloud-system')) {
-                $repoRoot = Split-Path -Path (Split-Path -Path $directoryPath -Parent) -Parent
+            if ($taskName -in @('10003-configure-ux-windows', '10005-copy-settings-user', '125-install-be-my-eyes', '129-install-icloud-system')) {
+                $repoRoot = Resolve-AzVmTaskRepoRootFromPath -StartPath $directoryPath
+                if ([string]::IsNullOrWhiteSpace([string]$repoRoot)) {
+                    throw ("Repo root could not be resolved for task '{0}' from '{1}'." -f $taskName, $directoryPath)
+                }
                 $helperLocalPath = Join-Path $repoRoot 'tools\scripts\az-vm-interactive-session-helper.ps1'
                 if (-not (Test-Path -LiteralPath $helperLocalPath)) {
                     throw ("Interactive session helper was not found for '{0}': {1}" -f $taskName, $helperLocalPath)
@@ -86,12 +129,16 @@ function Apply-AzVmTaskBlockReplacements {
             Script = $taskScript
             RelativePath = $relativePath
             DirectoryPath = $directoryPath
+            TaskRootPath = $taskRootPath
+            TaskMetadataPath = $taskMetadataPath
+            StageRootDirectoryPath = $stageRootDirectoryPath
             AssetCopies = @($assetCopies)
             TimeoutSeconds = [int]$timeoutSeconds
             Priority = if ($taskBlock.PSObject.Properties.Match('Priority').Count -gt 0) { [int]$taskBlock.Priority } else { 0 }
             TaskType = if ($taskBlock.PSObject.Properties.Match('TaskType').Count -gt 0) { [string]$taskBlock.TaskType } else { '' }
             Source = if ($taskBlock.PSObject.Properties.Match('Source').Count -gt 0) { [string]$taskBlock.Source } else { '' }
             TaskNumber = if ($taskBlock.PSObject.Properties.Match('TaskNumber').Count -gt 0) { [int]$taskBlock.TaskNumber } else { 0 }
+            AppStateSpec = if ($taskBlock.PSObject.Properties.Match('AppStateSpec').Count -gt 0) { $taskBlock.AppStateSpec } else { $null }
         }
     }
 

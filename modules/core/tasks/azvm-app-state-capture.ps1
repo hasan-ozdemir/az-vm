@@ -1,5 +1,59 @@
 # Shared app-state capture helpers.
 
+function New-AzVmAppStateCaptureSpec {
+    param(
+        [string]$TaskName,
+        [object[]]$MachineDirectories = @(),
+        [object[]]$MachineFiles = @(),
+        [object[]]$ProfileDirectories = @(),
+        [object[]]$ProfileFiles = @(),
+        [object[]]$MachineRegistryKeys = @(),
+        [object[]]$UserRegistryKeys = @()
+    )
+
+    return [ordered]@{
+        taskName = [string]$TaskName
+        machineDirectories = @($MachineDirectories)
+        machineFiles = @($MachineFiles)
+        profileDirectories = @($ProfileDirectories)
+        profileFiles = @($ProfileFiles)
+        machineRegistryKeys = @($MachineRegistryKeys)
+        userRegistryKeys = @($UserRegistryKeys)
+    }
+}
+
+function New-AzVmAppStatePathCaptureRule {
+    param(
+        [string]$Path,
+        [string[]]$TargetProfiles = @(),
+        [string[]]$ExcludeNames = @(),
+        [string[]]$ExcludePathPatterns = @(),
+        [string[]]$ExcludeFilePatterns = @()
+    )
+
+    return [ordered]@{
+        path = [string]$Path
+        targetProfiles = @($TargetProfiles | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        excludeNames = @($ExcludeNames | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        excludePathPatterns = @($ExcludePathPatterns | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        excludeFilePatterns = @($ExcludeFilePatterns | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    }
+}
+
+function New-AzVmAppStateRegistryCaptureRule {
+    param(
+        [string]$Path,
+        [string[]]$TargetProfiles = @(),
+        [string[]]$DistributionAllowList = @()
+    )
+
+    return [ordered]@{
+        path = [string]$Path
+        targetProfiles = @($TargetProfiles | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+        distributionAllowList = @($DistributionAllowList | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    }
+}
+
 function Ensure-AzVmAppStatePluginDirectory {
     param([string]$Path)
 
@@ -314,7 +368,10 @@ function Get-AzVmTaskAppStateCapturePlan {
         return $null
     }
 
-    $primarySpec = Get-AzVmTaskAppStateCaptureSpec -TaskName $taskName
+    $primarySpec = $null
+    if ($TaskBlock.PSObject.Properties.Match('AppStateSpec').Count -gt 0) {
+        $primarySpec = $TaskBlock.AppStateSpec
+    }
     $legacySpec = $null
     $zipPath = Get-AzVmTaskAppStateZipPath -TaskBlock $TaskBlock
     if (-not [string]::IsNullOrWhiteSpace([string]$zipPath) -and (Test-Path -LiteralPath $zipPath)) {

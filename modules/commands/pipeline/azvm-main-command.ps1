@@ -290,7 +290,7 @@ function Invoke-AzVmMain {
                         }
 
                         if (@($initTaskBlocks).Count -eq 0) {
-                            Write-Host 'Init task catalog is empty; Step 5 vm-init stage is skipped.' -ForegroundColor Yellow
+                            Write-Host 'Init task folder inventory is empty; Step 5 vm-init stage is skipped.' -ForegroundColor Yellow
                         }
                         else {
                             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
@@ -352,7 +352,7 @@ function Invoke-AzVmMain {
                         }
 
                         if (@($updateTaskBlocks).Count -eq 0) {
-                            Write-Host 'Update task catalog is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
+                            Write-Host 'Update task folder inventory is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
                         }
                         else {
                             $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context

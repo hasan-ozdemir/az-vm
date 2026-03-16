@@ -72,8 +72,20 @@ function Get-AzVmAppStateManifestFromExpandedRoot {
 function Get-AzVmAppStateProfileTargets {
     param(
         [string]$ManagerUser,
-        [string]$AssistantUser
+        [string]$AssistantUser,
+        [object[]]$ProfileTargets = @()
     )
+
+    function Convert-AzVmAppStateProfileLabel {
+        param([string]$Value)
+
+        $normalized = if ($null -eq $Value) { '' } else { [string]$Value.Trim() }
+        if ([string]::IsNullOrWhiteSpace([string]$normalized)) {
+            return ''
+        }
+
+        return $normalized.ToLowerInvariant()
+    }
 
     function Convert-AzVmAppStateUserNameToProfileLeaf {
         param([string]$Value)
@@ -93,6 +105,65 @@ function Get-AzVmAppStateProfileTargets {
         }
 
         return [string]$text.Trim()
+    }
+
+    if (@($ProfileTargets).Count -gt 0) {
+        $explicitRows = New-Object 'System.Collections.Generic.List[object]'
+        $explicitSeen = @{}
+        foreach ($target in @($ProfileTargets)) {
+            if ($null -eq $target) {
+                continue
+            }
+
+            $label = ''
+            $userName = ''
+            $profilePath = ''
+            if ($target -is [System.Collections.IDictionary]) {
+                if ($target.Contains('Label')) { $label = [string]$target['Label'] }
+                if ($target.Contains('label')) { $label = [string]$target['label'] }
+                if ($target.Contains('UserName')) { $userName = [string]$target['UserName'] }
+                if ($target.Contains('userName')) { $userName = [string]$target['userName'] }
+                if ($target.Contains('ProfilePath')) { $profilePath = [string]$target['ProfilePath'] }
+                if ($target.Contains('profilePath')) { $profilePath = [string]$target['profilePath'] }
+            }
+            else {
+                if ($target.PSObject.Properties.Match('Label').Count -gt 0) { $label = [string]$target.Label }
+                elseif ($target.PSObject.Properties.Match('label').Count -gt 0) { $label = [string]$target.label }
+                if ($target.PSObject.Properties.Match('UserName').Count -gt 0) { $userName = [string]$target.UserName }
+                elseif ($target.PSObject.Properties.Match('userName').Count -gt 0) { $userName = [string]$target.userName }
+                if ($target.PSObject.Properties.Match('ProfilePath').Count -gt 0) { $profilePath = [string]$target.ProfilePath }
+                elseif ($target.PSObject.Properties.Match('profilePath').Count -gt 0) { $profilePath = [string]$target.profilePath }
+            }
+
+            $profilePath = [string]$profilePath.Trim()
+            if ([string]::IsNullOrWhiteSpace([string]$profilePath) -or -not (Test-Path -LiteralPath $profilePath)) {
+                continue
+            }
+
+            $userName = Convert-AzVmAppStateUserNameToProfileLeaf -Value $userName
+            if ([string]::IsNullOrWhiteSpace([string]$userName)) {
+                $userName = [string](Split-Path -Path $profilePath -Leaf)
+            }
+
+            $label = Convert-AzVmAppStateProfileLabel -Value $label
+            if ([string]::IsNullOrWhiteSpace([string]$label)) {
+                $label = Convert-AzVmAppStateProfileLabel -Value $userName
+            }
+
+            $dedupeKey = $profilePath.TrimEnd('\').ToLowerInvariant()
+            if ($explicitSeen.ContainsKey($dedupeKey)) {
+                continue
+            }
+
+            $explicitRows.Add([pscustomobject]@{
+                Label = [string]$label
+                UserName = [string]$userName
+                ProfilePath = [string]$profilePath
+            }) | Out-Null
+            $explicitSeen[$dedupeKey] = $true
+        }
+
+        return @($explicitRows.ToArray())
     }
 
     $rows = New-Object 'System.Collections.Generic.List[object]'
@@ -831,7 +902,8 @@ function Invoke-AzVmTaskAppStateCapture {
         [string]$PlanPath,
         [string]$OutputZipPath,
         [string]$ManagerUser,
-        [string]$AssistantUser
+        [string]$AssistantUser,
+        [object[]]$ProfileTargets = @()
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$PlanPath) -or -not (Test-Path -LiteralPath $PlanPath)) {
@@ -849,7 +921,7 @@ function Invoke-AzVmTaskAppStateCapture {
     $payloadRoot = Join-Path $scratchRoot 'payload'
     Ensure-AzVmAppStateDirectory -Path $payloadRoot
 
-    $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser)
+    $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser -ProfileTargets @($ProfileTargets))
     $machineRegistryExports = 0
     $userRegistryExports = 0
     $machineDirectoryExports = 0
@@ -859,7 +931,7 @@ function Invoke-AzVmTaskAppStateCapture {
     $skipCount = 0
 
     $manifest = [ordered]@{
-        version = 2
+        version = 3
         taskName = [string]$TaskName
         machineDirectories = @()
         machineFiles = @()
@@ -869,6 +941,7 @@ function Invoke-AzVmTaskAppStateCapture {
     }
 
     try {
+        Remove-Item -LiteralPath $OutputZipPath -Force -ErrorAction SilentlyContinue
         foreach ($entry in @($plan.machineDirectories)) {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.path)) { continue }
             foreach ($matchPath in @(Resolve-AzVmAppStateCapturePathMatches -BasePath '' -RelativeOrAbsolutePath ([string]$entry.path))) {
@@ -950,6 +1023,7 @@ function Invoke-AzVmTaskAppStateCapture {
                 $manifest.registryImports += @{
                     sourcePath = [string]$payloadPath
                     scope = 'machine'
+                    registryPath = [string](Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath ([string]$entry.path))
                 }
                 $machineRegistryExports++
             }
@@ -966,6 +1040,7 @@ function Invoke-AzVmTaskAppStateCapture {
                     $registryEntry = [ordered]@{
                         sourcePath = [string]$payloadPath
                         scope = 'user'
+                        registryPath = [string](Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath ([string]$entry.path))
                         targetProfiles = @([string]$profileTarget.Label)
                     }
                     if (@($entry.distributionAllowList).Count -gt 0) {
@@ -1013,7 +1088,8 @@ function Invoke-AzVmTaskAppStateReplay {
         [string]$ZipPath,
         [string]$TaskName,
         [string]$ManagerUser,
-        [string]$AssistantUser
+        [string]$AssistantUser,
+        [object[]]$ProfileTargets = @()
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$ZipPath) -or -not (Test-Path -LiteralPath $ZipPath)) {
@@ -1041,7 +1117,7 @@ function Invoke-AzVmTaskAppStateReplay {
     try {
         $manifest = Get-AzVmAppStateManifestFromExpandedRoot -ExpandedRoot $scratchRoot -TaskName $TaskName
         Invoke-AzVmTaskAppStateReplayPreflight -TaskName $TaskName
-        $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser)
+        $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser -ProfileTargets @($ProfileTargets))
         Write-Host ("app-state-phase => task={0}; phase=manifest-ready; profiles={1}; elapsed={2:N1}s" -f [string]$TaskName, @($profileTargets).Count, $replayWatch.Elapsed.TotalSeconds)
 
         $machineRegistryImports = 0

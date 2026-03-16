@@ -3,6 +3,24 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.322] - 2026-03-16
+
+### Changed
+- Replaced the old flat stage-root task files plus stage-root catalog JSON files with portable task folders across Windows and Linux init/update stages, so each task now owns one same-named script, one `task.json`, optional helper assets, and its own task-local app-state contract.
+- Renumbered the tracked Windows and Linux task inventories within their stage bands so init and update flows no longer carry numbering gaps after the portable-folder cutover.
+- Reworked task discovery, runtime help, pipeline wording, README guidance, and documentation contracts around the new portable task-folder model, including hot-swap-safe missing-folder handling and task-local `<task-folder>/app-state/app-state.zip` ownership.
+- Extended `task --save-app-state` and `task --restore-app-state` with a split `--source=vm|lm` / `--target=vm|lm` surface, keeping VM behavior as the default while adding Windows local-machine capture and replay through the same task-owned app-state model.
+- Standardized maintained repository time-of-day documentation on UTC, updated the repo rules to require UTC headings in `docs/prompt-history.md`, and converted the existing prompt-history timestamps to UTC.
+
+### Fixed
+- Fixed task-scoped app-state runtime resolution so both VM and local-machine save/restore now read the current task folder manifest, honor the same normalized allow-list, and resolve multi-user local targets consistently from `.all.`, `.current.`, or explicit comma-separated usernames.
+- Fixed local-machine app-state restore safety so the replay path now validates the current `task.json` contract before mutation, writes a lightweight backup plus restore journal per target user, and can roll back the in-flight local user safely on failure.
+- Fixed the remaining runtime and documentation surfaces that still emitted retired stage-root catalog/app-state terminology after the task-folder cutover.
+
+### Tests
+- Revalidated the portable task-folder loader, task-local app-state paths, local-machine app-state capture/restore, and UTC documentation contract non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Deferred live isolated task reruns because the active managed VM target was deleted during this prompt; this change set was validated non-live only.
+
 ## [2026.3.16.321] - 2026-03-16
 
 ### Changed

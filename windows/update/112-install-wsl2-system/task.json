@@ -1,0 +1,29 @@
+{
+  "priority": 112,
+  "enabled": true,
+  "timeout": 137,
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [],
+    "profileFiles": [
+      {
+        "path": ".wslconfig",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      }
+    ],
+    "machineRegistryKeys": [],
+    "userRegistryKeys": [
+      {
+        "path": "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss",
+        "targetProfiles": [],
+        "distributionAllowList": [
+          "docker-desktop"
+        ]
+      }
+    ]
+  }
+}

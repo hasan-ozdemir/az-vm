@@ -1,37 +1,10 @@
-# Shared task catalog and discovery helpers.
+# Shared task discovery helpers for portable task folders.
 
-# Handles Get-AzVmTaskCatalogFileName.
-function Get-AzVmTaskCatalogFileName {
-    param(
-        [ValidateSet('init','update')]
-        [string]$Stage
-    )
-
-    if ($Stage -eq 'init') {
-        return 'vm-init-task-catalog.json'
-    }
-
-    return 'vm-update-task-catalog.json'
-}
-
-# Handles Get-AzVmTaskCatalogPath.
-function Get-AzVmTaskCatalogPath {
-    param(
-        [string]$DirectoryPath,
-        [ValidateSet('init','update')]
-        [string]$Stage
-    )
-
-    $catalogName = Get-AzVmTaskCatalogFileName -Stage $Stage
-    return (Join-Path $DirectoryPath $catalogName)
-}
-
-# Handles Convert-AzVmTaskCatalogPriority.
 function Convert-AzVmTaskCatalogPriority {
     param(
         [AllowNull()]
         [object]$Value,
-        [int]$DefaultValue = 1000
+        [int]$DefaultValue
     )
 
     if ($null -eq $Value) {
@@ -40,17 +13,18 @@ function Convert-AzVmTaskCatalogPriority {
 
     try {
         $priority = [int]$Value
-        if ($priority -lt 1) {
-            return [int]$DefaultValue
-        }
-        return [int]$priority
     }
     catch {
         return [int]$DefaultValue
     }
+
+    if ($priority -lt 1) {
+        return [int]$DefaultValue
+    }
+
+    return [int]$priority
 }
 
-# Handles Convert-AzVmTaskCatalogBool.
 function Convert-AzVmTaskCatalogBool {
     param(
         [AllowNull()]
@@ -67,22 +41,25 @@ function Convert-AzVmTaskCatalogBool {
     }
 
     $text = [string]$Value
-    if ([string]::IsNullOrWhiteSpace($text)) {
+    if ([string]::IsNullOrWhiteSpace([string]$text)) {
         return [bool]$DefaultValue
     }
 
-    $normalized = $text.Trim().ToLowerInvariant()
-    if ($normalized -in @('1', 'true', 'yes', 'y', 'on')) {
-        return $true
+    switch ($text.Trim().ToLowerInvariant()) {
+        '1' { return $true }
+        'true' { return $true }
+        'yes' { return $true }
+        'y' { return $true }
+        'on' { return $true }
+        '0' { return $false }
+        'false' { return $false }
+        'no' { return $false }
+        'n' { return $false }
+        'off' { return $false }
+        default { return [bool]$DefaultValue }
     }
-    if ($normalized -in @('0', 'false', 'no', 'n', 'off')) {
-        return $false
-    }
-
-    return [bool]$DefaultValue
 }
 
-# Handles Convert-AzVmTaskCatalogTimeout.
 function Convert-AzVmTaskCatalogTimeout {
     param(
         [AllowNull()]
@@ -110,34 +87,6 @@ function Convert-AzVmTaskCatalogTimeout {
     return [int]$timeoutSeconds
 }
 
-function Convert-AzVmTaskCatalogType {
-    param(
-        [AllowNull()]
-        [object]$Value,
-        [string]$DefaultValue = ''
-    )
-
-    if ($null -eq $Value) {
-        return [string]$DefaultValue
-    }
-
-    $text = [string]$Value
-    if ([string]::IsNullOrWhiteSpace([string]$text)) {
-        return [string]$DefaultValue
-    }
-
-    $normalized = $text.Trim().ToLowerInvariant()
-    if ($normalized -in @('initial','normal','final')) {
-        return [string]$normalized
-    }
-
-    throw ("Invalid taskType value '{0}'. Expected one of: initial, normal, final." -f $text)
-}
-
-function Get-AzVmTrackedTaskDefaultPriority {
-    return 1000
-}
-
 function Get-AzVmTaskDefaultTimeoutSeconds {
     return 180
 }
@@ -158,9 +107,7 @@ function Test-AzVmTaskPriorityFitsType {
 }
 
 function Test-AzVmTaskNumberFitsLocalBand {
-    param(
-        [int]$TaskNumber
-    )
+    param([int]$TaskNumber)
 
     return ($TaskNumber -ge 1001 -and $TaskNumber -le 9999)
 }
@@ -185,211 +132,456 @@ function Get-AzVmTrackedTaskTypeFromNumber {
     throw ("Tracked task '{0}' must use an initial (01-99), normal (101-999), or final (10001-10099) task number." -f $label)
 }
 
-# Handles Get-AzVmTaskCatalogStateMap.
-function Get-AzVmTaskCatalogStateMap {
-    param(
-        [string]$DirectoryPath,
-        [ValidateSet('init','update')]
-        [string]$Stage
-    )
+function ConvertTo-AzVmTaskFolderStringArray {
+    param([AllowNull()]$InputObject)
 
-    $catalogPath = Get-AzVmTaskCatalogPath -DirectoryPath $DirectoryPath -Stage $Stage
-    $taskMap = @{}
-    if (-not (Test-Path -LiteralPath $catalogPath)) {
-        return [pscustomobject]@{
-            DefaultPriority = (Get-AzVmTrackedTaskDefaultPriority)
-            DefaultTimeoutSeconds = (Get-AzVmTaskDefaultTimeoutSeconds)
-            TaskMap = $taskMap
-        }
-    }
-
-    $catalogText = [string](Get-Content -Path $catalogPath -Raw -ErrorAction Stop)
-    if ([string]::IsNullOrWhiteSpace([string]$catalogText)) {
-        return [pscustomobject]@{
-            DefaultPriority = (Get-AzVmTrackedTaskDefaultPriority)
-            DefaultTimeoutSeconds = (Get-AzVmTaskDefaultTimeoutSeconds)
-            TaskMap = $taskMap
-        }
-    }
-
-    $catalog = $null
-    try {
-        $catalog = ConvertFrom-JsonCompat -InputObject $catalogText
-    }
-    catch {
-        throw ("Task catalog parse failed for '{0}': {1}" -f $catalogPath, $_.Exception.Message)
-    }
-    if ($null -eq $catalog -or $catalog.PSObject.Properties.Match('tasks').Count -eq 0) {
-        return [pscustomobject]@{
-            DefaultPriority = (Get-AzVmTrackedTaskDefaultPriority)
-            DefaultTimeoutSeconds = (Get-AzVmTaskDefaultTimeoutSeconds)
-            TaskMap = $taskMap
-        }
-    }
-
-    $catalogDefaultPriority = Get-AzVmTrackedTaskDefaultPriority
-    $catalogDefaultTimeout = Get-AzVmTaskDefaultTimeoutSeconds
-    if ($catalog.PSObject.Properties.Match('defaults').Count -gt 0 -and $null -ne $catalog.defaults) {
-        $defaults = $catalog.defaults
-        if ($defaults.PSObject.Properties.Match('priority').Count -gt 0) {
-            $catalogDefaultPriority = Convert-AzVmTaskCatalogPriority -Value $defaults.priority -DefaultValue (Get-AzVmTrackedTaskDefaultPriority)
-        }
-        if ($defaults.PSObject.Properties.Match('timeout').Count -gt 0) {
-            $catalogDefaultTimeout = Convert-AzVmTaskCatalogTimeout -Value $defaults.timeout -DefaultValue (Get-AzVmTaskDefaultTimeoutSeconds)
-        }
-    }
-
-    foreach ($entry in @(ConvertTo-ObjectArrayCompat -InputObject $catalog.tasks)) {
-        if ($null -eq $entry) { continue }
-
-        $entryName = ''
-        if ($entry.PSObject.Properties.Match('name').Count -gt 0) {
-            $entryName = [string]$entry.name
-        }
-        if ([string]::IsNullOrWhiteSpace([string]$entryName)) {
+    $values = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($item in @(ConvertTo-ObjectArrayCompat -InputObject $InputObject)) {
+        if ($null -eq $item) {
             continue
         }
 
-        $priorityValue = $null
-        if ($entry.PSObject.Properties.Match('priority').Count -gt 0) {
-            $priorityValue = $entry.priority
+        $text = [string]$item
+        if ([string]::IsNullOrWhiteSpace([string]$text)) {
+            continue
         }
 
-        $enabledValue = $null
-        if ($entry.PSObject.Properties.Match('enabled').Count -gt 0) {
-            $enabledValue = $entry.enabled
+        $values.Add($text) | Out-Null
+    }
+
+    return @($values.ToArray())
+}
+
+function ConvertTo-AzVmTaskFolderAssetSpecs {
+    param(
+        [AllowNull()]$Assets,
+        [string]$TaskLabel
+    )
+
+    $assetSpecs = @()
+    foreach ($asset in @(ConvertTo-ObjectArrayCompat -InputObject $Assets)) {
+        if ($null -eq $asset) {
+            continue
         }
 
-        $timeoutValue = $null
-        if ($entry.PSObject.Properties.Match('timeout').Count -gt 0) {
-            $timeoutValue = $entry.timeout
+        $localPath = ''
+        $remotePath = ''
+        if ($asset -is [System.Collections.IDictionary]) {
+            if ($asset.Contains('local')) { $localPath = [string]$asset['local'] }
+            if ($asset.Contains('remote')) { $remotePath = [string]$asset['remote'] }
+        }
+        else {
+            if ($asset.PSObject.Properties.Match('local').Count -gt 0) { $localPath = [string]$asset.local }
+            if ($asset.PSObject.Properties.Match('remote').Count -gt 0) { $remotePath = [string]$asset.remote }
         }
 
-        $taskTypeValue = ''
-        $hasTaskType = $false
-        if ($entry.PSObject.Properties.Match('taskType').Count -gt 0) {
-            $hasTaskType = $true
-            $taskTypeValue = Convert-AzVmTaskCatalogType -Value $entry.taskType -DefaultValue ''
+        if ([string]::IsNullOrWhiteSpace([string]$localPath) -or [string]::IsNullOrWhiteSpace([string]$remotePath)) {
+            throw ("Invalid task.json assets entry for '{0}': each asset requires non-empty 'local' and 'remote' values." -f [string]$TaskLabel)
         }
 
-        $taskMap[[string]$entryName] = [pscustomobject]@{
-            HasPriority = ($null -ne $priorityValue)
-            Priority = (Convert-AzVmTaskCatalogPriority -Value $priorityValue -DefaultValue $catalogDefaultPriority)
-            HasEnabled = ($null -ne $enabledValue)
-            Enabled = (Convert-AzVmTaskCatalogBool -Value $enabledValue -DefaultValue $true)
-            HasTimeout = ($null -ne $timeoutValue)
-            TimeoutSeconds = (Convert-AzVmTaskCatalogTimeout -Value $timeoutValue -DefaultValue $catalogDefaultTimeout)
-            HasTaskType = [bool]$hasTaskType
-            TaskType = [string]$taskTypeValue
+        $assetSpecs += [pscustomobject]@{
+            LocalPath = [string]$localPath
+            RemotePath = [string]$remotePath
         }
+    }
+
+    return @($assetSpecs)
+}
+
+function ConvertTo-AzVmTaskFolderPathRule {
+    param(
+        [AllowNull()]$Rule,
+        [string]$TaskLabel,
+        [string]$CollectionName
+    )
+
+    if ($null -eq $Rule) {
+        return $null
+    }
+
+    if ($Rule -is [string]) {
+        if ([string]::IsNullOrWhiteSpace([string]$Rule)) {
+            return $null
+        }
+
+        return [ordered]@{
+            path = [string]$Rule
+            targetProfiles = @()
+            excludeNames = @()
+            excludePathPatterns = @()
+            excludeFilePatterns = @()
+        }
+    }
+
+    $path = ''
+    $targetProfiles = @()
+    $excludeNames = @()
+    $excludePathPatterns = @()
+    $excludeFilePatterns = @()
+    if ($Rule -is [System.Collections.IDictionary]) {
+        if ($Rule.Contains('path')) { $path = [string]$Rule['path'] }
+        if ($Rule.Contains('targetProfiles')) { $targetProfiles = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule['targetProfiles'] }
+        if ($Rule.Contains('excludeNames')) { $excludeNames = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule['excludeNames'] }
+        if ($Rule.Contains('excludePathPatterns')) { $excludePathPatterns = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule['excludePathPatterns'] }
+        if ($Rule.Contains('excludeFilePatterns')) { $excludeFilePatterns = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule['excludeFilePatterns'] }
+    }
+    else {
+        if ($Rule.PSObject.Properties.Match('path').Count -gt 0) { $path = [string]$Rule.path }
+        if ($Rule.PSObject.Properties.Match('targetProfiles').Count -gt 0) { $targetProfiles = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule.targetProfiles }
+        if ($Rule.PSObject.Properties.Match('excludeNames').Count -gt 0) { $excludeNames = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule.excludeNames }
+        if ($Rule.PSObject.Properties.Match('excludePathPatterns').Count -gt 0) { $excludePathPatterns = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule.excludePathPatterns }
+        if ($Rule.PSObject.Properties.Match('excludeFilePatterns').Count -gt 0) { $excludeFilePatterns = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule.excludeFilePatterns }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$path)) {
+        throw ("Invalid task.json {0} entry for '{1}': each rule requires a non-empty 'path'." -f [string]$CollectionName, [string]$TaskLabel)
+    }
+
+    return [ordered]@{
+        path = [string]$path
+        targetProfiles = @($targetProfiles)
+        excludeNames = @($excludeNames)
+        excludePathPatterns = @($excludePathPatterns)
+        excludeFilePatterns = @($excludeFilePatterns)
+    }
+}
+
+function ConvertTo-AzVmTaskFolderRegistryRule {
+    param(
+        [AllowNull()]$Rule,
+        [string]$TaskLabel,
+        [string]$CollectionName
+    )
+
+    if ($null -eq $Rule) {
+        return $null
+    }
+
+    if ($Rule -is [string]) {
+        if ([string]::IsNullOrWhiteSpace([string]$Rule)) {
+            return $null
+        }
+
+        return [ordered]@{
+            path = [string]$Rule
+            targetProfiles = @()
+            distributionAllowList = @()
+        }
+    }
+
+    $path = ''
+    $targetProfiles = @()
+    $distributionAllowList = @()
+    if ($Rule -is [System.Collections.IDictionary]) {
+        if ($Rule.Contains('path')) { $path = [string]$Rule['path'] }
+        if ($Rule.Contains('targetProfiles')) { $targetProfiles = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule['targetProfiles'] }
+        if ($Rule.Contains('distributionAllowList')) { $distributionAllowList = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule['distributionAllowList'] }
+    }
+    else {
+        if ($Rule.PSObject.Properties.Match('path').Count -gt 0) { $path = [string]$Rule.path }
+        if ($Rule.PSObject.Properties.Match('targetProfiles').Count -gt 0) { $targetProfiles = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule.targetProfiles }
+        if ($Rule.PSObject.Properties.Match('distributionAllowList').Count -gt 0) { $distributionAllowList = ConvertTo-AzVmTaskFolderStringArray -InputObject $Rule.distributionAllowList }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$path)) {
+        throw ("Invalid task.json {0} entry for '{1}': each rule requires a non-empty 'path'." -f [string]$CollectionName, [string]$TaskLabel)
+    }
+
+    return [ordered]@{
+        path = [string]$path
+        targetProfiles = @($targetProfiles)
+        distributionAllowList = @($distributionAllowList)
+    }
+}
+
+function ConvertTo-AzVmTaskFolderAppStateSpec {
+    param(
+        [AllowNull()]$AppState,
+        [string]$TaskName,
+        [string]$TaskLabel
+    )
+
+    if ($null -eq $AppState) {
+        return $null
+    }
+
+    $spec = [ordered]@{
+        taskName = [string]$TaskName
+        machineDirectories = @()
+        machineFiles = @()
+        profileDirectories = @()
+        profileFiles = @()
+        machineRegistryKeys = @()
+        userRegistryKeys = @()
+    }
+
+    $pathCollections = @('machineDirectories', 'machineFiles', 'profileDirectories', 'profileFiles')
+    foreach ($collectionName in @($pathCollections)) {
+        $rawRules = @()
+        if ($AppState -is [System.Collections.IDictionary]) {
+            if ($AppState.Contains($collectionName)) {
+                $rawRules = @(ConvertTo-ObjectArrayCompat -InputObject $AppState[$collectionName])
+            }
+        }
+        elseif ($AppState.PSObject.Properties.Match($collectionName).Count -gt 0) {
+            $rawRules = @(ConvertTo-ObjectArrayCompat -InputObject $AppState.$collectionName)
+        }
+
+        $normalizedRules = @()
+        foreach ($rawRule in @($rawRules)) {
+            $rule = ConvertTo-AzVmTaskFolderPathRule -Rule $rawRule -TaskLabel $TaskLabel -CollectionName $collectionName
+            if ($null -ne $rule) {
+                $normalizedRules += $rule
+            }
+        }
+        $spec[$collectionName] = @($normalizedRules)
+    }
+
+    $registryCollections = @('machineRegistryKeys', 'userRegistryKeys')
+    foreach ($collectionName in @($registryCollections)) {
+        $rawRules = @()
+        if ($AppState -is [System.Collections.IDictionary]) {
+            if ($AppState.Contains($collectionName)) {
+                $rawRules = @(ConvertTo-ObjectArrayCompat -InputObject $AppState[$collectionName])
+            }
+        }
+        elseif ($AppState.PSObject.Properties.Match($collectionName).Count -gt 0) {
+            $rawRules = @(ConvertTo-ObjectArrayCompat -InputObject $AppState.$collectionName)
+        }
+
+        $normalizedRules = @()
+        foreach ($rawRule in @($rawRules)) {
+            $rule = ConvertTo-AzVmTaskFolderRegistryRule -Rule $rawRule -TaskLabel $TaskLabel -CollectionName $collectionName
+            if ($null -ne $rule) {
+                $normalizedRules += $rule
+            }
+        }
+        $spec[$collectionName] = @($normalizedRules)
+    }
+
+    return [pscustomobject]$spec
+}
+
+function Get-AzVmTaskFolderMetadata {
+    param(
+        [string]$MetadataPath,
+        [string]$TaskName,
+        [int]$TaskNumber
+    )
+
+    $taskLabel = if ([string]::IsNullOrWhiteSpace([string]$TaskName)) { [string]$MetadataPath } else { [string]$TaskName }
+    if (-not (Test-Path -LiteralPath $MetadataPath)) {
+        throw ("task.json was not found: {0}" -f [string]$MetadataPath)
+    }
+
+    $metadataText = [string](Get-Content -LiteralPath $MetadataPath -Raw -ErrorAction Stop)
+    if ([string]::IsNullOrWhiteSpace([string]$metadataText)) {
+        throw ("task.json is empty: {0}" -f [string]$MetadataPath)
+    }
+
+    try {
+        $metadata = ConvertFrom-JsonCompat -InputObject $metadataText
+    }
+    catch {
+        throw ("task.json parse failed for '{0}': {1}" -f [string]$MetadataPath, $_.Exception.Message)
+    }
+
+    $priority = Convert-AzVmTaskCatalogPriority -Value $(if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('priority').Count -gt 0) { $metadata.priority } else { $null }) -DefaultValue $TaskNumber
+    $enabled = Convert-AzVmTaskCatalogBool -Value $(if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('enabled').Count -gt 0) { $metadata.enabled } else { $null }) -DefaultValue $true
+    $timeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $(if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('timeout').Count -gt 0) { $metadata.timeout } else { $null }) -DefaultValue (Get-AzVmTaskDefaultTimeoutSeconds)
+    $assets = @()
+    if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('assets').Count -gt 0 -and $null -ne $metadata.assets) {
+        $assets = @(ConvertTo-AzVmTaskFolderAssetSpecs -Assets $metadata.assets -TaskLabel $taskLabel)
+    }
+
+    $appStateSpec = $null
+    if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('appState').Count -gt 0 -and $null -ne $metadata.appState) {
+        $appStateSpec = ConvertTo-AzVmTaskFolderAppStateSpec -AppState $metadata.appState -TaskName $TaskName -TaskLabel $taskLabel
     }
 
     return [pscustomobject]@{
-        DefaultPriority = [int]$catalogDefaultPriority
-        DefaultTimeoutSeconds = [int]$catalogDefaultTimeout
-        TaskMap = $taskMap
+        Priority = [int]$priority
+        Enabled = [bool]$enabled
+        TimeoutSeconds = [int]$timeoutSeconds
+        AssetSpecs = @($assets)
+        AppStateSpec = $appStateSpec
     }
 }
 
-# Handles Get-AzVmTaskScriptMetadata.
-function Get-AzVmTaskScriptMetadata {
+function Write-AzVmTaskFolderSkipWarning {
     param(
-        [string]$ScriptText,
-        [string]$TaskPath = ''
+        [string]$RelativeFolderPath,
+        [string]$Message
     )
 
-    $result = [ordered]@{
-        Priority = $null
-        Enabled = $null
-        TimeoutSeconds = $null
-        AssetSpecs = @()
-    }
+    $label = if ([string]::IsNullOrWhiteSpace([string]$RelativeFolderPath)) { '(unknown-task-folder)' } else { [string]$RelativeFolderPath }
+    Write-Warning ("Task folder skipped: {0} => {1}" -f $label, [string]$Message)
+}
 
-    if ([string]::IsNullOrWhiteSpace([string]$ScriptText)) {
-        return [pscustomobject]$result
-    }
+function Get-AzVmTaskFolderCandidates {
+    param([string]$DirectoryPath)
 
-    foreach ($lineRaw in @($ScriptText -split "`r?`n")) {
-        $line = [string]$lineRaw
-        if ([string]::IsNullOrWhiteSpace([string]$line)) {
+    $rootPath = (Resolve-Path -LiteralPath $DirectoryPath).Path
+    $candidates = New-Object 'System.Collections.Generic.List[object]'
+
+    foreach ($folder in @(Get-ChildItem -LiteralPath $rootPath -Directory | Sort-Object Name)) {
+        if ($folder.Name.StartsWith('.')) {
+            continue
+        }
+        if ($folder.Name -in @('disabled', 'local', 'app-states')) {
             continue
         }
 
-        $trimmed = $line.Trim()
-        if (-not $trimmed.StartsWith('#')) {
-            return [pscustomobject]$result
-        }
-
-        if ($trimmed -notmatch '^#\s*az-vm-task-meta\s*:\s*(.+)$') {
-            return [pscustomobject]$result
-        }
-
-        $metadataText = [string]$Matches[1]
-        $metadata = $null
-        try {
-            $metadata = ConvertFrom-JsonCompat -InputObject $metadataText
-        }
-        catch {
-            $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata' } else { ("task script metadata for '{0}'" -f $TaskPath) }
-            throw ("Invalid {0}: {1}" -f $label, $_.Exception.Message)
-        }
-
-        if ($null -eq $metadata) {
-            return [pscustomobject]$result
-        }
-
-        if ($metadata.PSObject.Properties.Match('priority').Count -gt 0) {
-            try {
-                $parsedPriority = [int]$metadata.priority
-            }
-            catch {
-                $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata priority' } else { ("task script metadata priority for '{0}'" -f $TaskPath) }
-                throw ("Invalid {0}: priority must be an integer." -f $label)
-            }
-            if ($parsedPriority -lt 1) {
-                $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata priority' } else { ("task script metadata priority for '{0}'" -f $TaskPath) }
-                throw ("Invalid {0}: priority must be >= 1." -f $label)
-            }
-            $result.Priority = [int]$parsedPriority
-        }
-        if ($metadata.PSObject.Properties.Match('enabled').Count -gt 0) {
-            $result.Enabled = Convert-AzVmTaskCatalogBool -Value $metadata.enabled -DefaultValue $true
-        }
-        if ($metadata.PSObject.Properties.Match('timeout').Count -gt 0) {
-            $result.TimeoutSeconds = Convert-AzVmTaskCatalogTimeout -Value $metadata.timeout -DefaultValue 180
-        }
-
-        $assetSpecs = @()
-        if ($metadata.PSObject.Properties.Match('assets').Count -gt 0 -and $null -ne $metadata.assets) {
-            foreach ($asset in @(ConvertTo-ObjectArrayCompat -InputObject $metadata.assets)) {
-                $localPath = ''
-                $remotePath = ''
-                if ($null -ne $asset -and $asset.PSObject.Properties.Match('local').Count -gt 0) {
-                    $localPath = [string]$asset.local
-                }
-                if ($null -ne $asset -and $asset.PSObject.Properties.Match('remote').Count -gt 0) {
-                    $remotePath = [string]$asset.remote
-                }
-                if ([string]::IsNullOrWhiteSpace([string]$localPath) -or [string]::IsNullOrWhiteSpace([string]$remotePath)) {
-                    $label = if ([string]::IsNullOrWhiteSpace([string]$TaskPath)) { 'task script metadata asset' } else { ("task script metadata asset for '{0}'" -f $TaskPath) }
-                    throw ("Invalid {0}: each asset requires non-empty 'local' and 'remote' values." -f $label)
-                }
-
-                $assetSpecs += [pscustomobject]@{
-                    LocalPath = [string]$localPath
-                    RemotePath = [string]$remotePath
-                }
-            }
-        }
-
-        $result.AssetSpecs = @($assetSpecs)
-        return [pscustomobject]$result
+        $candidates.Add([pscustomobject]@{
+            TaskRootPath = [string]$folder.FullName
+            RelativeFolderPath = [string]$folder.Name
+            IsDisabled = $false
+            IsLocalOnly = $false
+            Source = 'tracked'
+        }) | Out-Null
     }
 
-    return [pscustomobject]$result
+    $disabledRoot = Join-Path $rootPath 'disabled'
+    if (Test-Path -LiteralPath $disabledRoot) {
+        foreach ($folder in @(Get-ChildItem -LiteralPath $disabledRoot -Directory | Sort-Object Name)) {
+            if ($folder.Name.StartsWith('.')) {
+                continue
+            }
+
+            $candidates.Add([pscustomobject]@{
+                TaskRootPath = [string]$folder.FullName
+                RelativeFolderPath = ("disabled/{0}" -f [string]$folder.Name)
+                IsDisabled = $true
+                IsLocalOnly = $false
+                Source = 'tracked'
+            }) | Out-Null
+        }
+    }
+
+    $localRoot = Join-Path $rootPath 'local'
+    if (Test-Path -LiteralPath $localRoot) {
+        foreach ($folder in @(Get-ChildItem -LiteralPath $localRoot -Directory | Sort-Object Name)) {
+            if ($folder.Name.StartsWith('.')) {
+                continue
+            }
+            if ([string]::Equals([string]$folder.Name, 'disabled', [System.StringComparison]::OrdinalIgnoreCase)) {
+                continue
+            }
+
+            $candidates.Add([pscustomobject]@{
+                TaskRootPath = [string]$folder.FullName
+                RelativeFolderPath = ("local/{0}" -f [string]$folder.Name)
+                IsDisabled = $false
+                IsLocalOnly = $true
+                Source = 'local'
+            }) | Out-Null
+        }
+
+        $localDisabledRoot = Join-Path $localRoot 'disabled'
+        if (Test-Path -LiteralPath $localDisabledRoot) {
+            foreach ($folder in @(Get-ChildItem -LiteralPath $localDisabledRoot -Directory | Sort-Object Name)) {
+                if ($folder.Name.StartsWith('.')) {
+                    continue
+                }
+
+                $candidates.Add([pscustomobject]@{
+                    TaskRootPath = [string]$folder.FullName
+                    RelativeFolderPath = ("local/disabled/{0}" -f [string]$folder.Name)
+                    IsDisabled = $true
+                    IsLocalOnly = $true
+                    Source = 'local'
+                }) | Out-Null
+            }
+        }
+    }
+
+    return @($candidates.ToArray())
 }
 
-# Handles Get-AzVmTaskBlocksFromDirectory.
+function Read-AzVmTaskFolderRow {
+    param(
+        [psobject]$Candidate,
+        [string]$RootPath,
+        [string]$ExpectedExtension
+    )
+
+    $taskRootPath = [string]$Candidate.TaskRootPath
+    $relativeFolderPath = [string]$Candidate.RelativeFolderPath
+    $folderName = [System.IO.Path]::GetFileName($taskRootPath.TrimEnd('\', '/'))
+    if ([string]::IsNullOrWhiteSpace([string]$folderName)) {
+        Write-AzVmTaskFolderSkipWarning -RelativeFolderPath $relativeFolderPath -Message 'folder name is empty.'
+        return $null
+    }
+
+    $namePattern = '^(?<n>\d{2,5})-(?<words>[a-z0-9]+(?:-[a-z0-9]+){1,4})$'
+    if ($folderName -notmatch $namePattern) {
+        Write-AzVmTaskFolderSkipWarning -RelativeFolderPath $relativeFolderPath -Message ("folder name '{0}' does not match <task-number>-verb-noun-target format." -f [string]$folderName)
+        return $null
+    }
+
+    $taskNumber = [int]$Matches.n
+    $taskName = [string]$folderName
+    $taskType = if ([bool]$Candidate.IsLocalOnly) { 'local' } else { Get-AzVmTrackedTaskTypeFromNumber -TaskNumber $taskNumber -TaskName $taskName }
+    if ([bool]$Candidate.IsLocalOnly -and -not (Test-AzVmTaskNumberFitsLocalBand -TaskNumber $taskNumber)) {
+        Write-AzVmTaskFolderSkipWarning -RelativeFolderPath $relativeFolderPath -Message ("local task '{0}' must use a 1001-9999 task number." -f [string]$taskName)
+        return $null
+    }
+
+    $scriptPath = Join-Path $taskRootPath ("{0}{1}" -f [string]$taskName, [string]$ExpectedExtension)
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        Write-AzVmTaskFolderSkipWarning -RelativeFolderPath $relativeFolderPath -Message ("main task script was not found: {0}" -f [System.IO.Path]::GetFileName($scriptPath))
+        return $null
+    }
+
+    $metadataPath = Join-Path $taskRootPath 'task.json'
+    $metadata = $null
+    try {
+        $metadata = Get-AzVmTaskFolderMetadata -MetadataPath $metadataPath -TaskName $taskName -TaskNumber $taskNumber
+    }
+    catch {
+        Write-AzVmTaskFolderSkipWarning -RelativeFolderPath $relativeFolderPath -Message $_.Exception.Message
+        return $null
+    }
+
+    $priority = [int]$metadata.Priority
+    if (-not (Test-AzVmTaskPriorityFitsType -TaskType $taskType -Priority $priority)) {
+        Write-AzVmTaskFolderSkipWarning -RelativeFolderPath $relativeFolderPath -Message ("priority '{0}' is outside the allowed {1} band." -f $priority, [string]$taskType)
+        return $null
+    }
+
+    $script = [string](Get-Content -LiteralPath $scriptPath -Raw -ErrorAction Stop)
+    $relativeScriptPath = ("{0}/{1}{2}" -f $relativeFolderPath.Trim('/'), [string]$taskName, [string]$ExpectedExtension)
+    $isEnabled = [bool]$metadata.Enabled
+    $disabledReason = ''
+    if ([bool]$Candidate.IsDisabled) {
+        $isEnabled = $false
+        $disabledReason = 'disabled-by-location'
+    }
+    elseif (-not $isEnabled) {
+        $disabledReason = 'disabled-in-task-json'
+    }
+
+    return [pscustomobject]@{
+        Name = [string]$taskName
+        Script = [string]$script
+        Path = [string]$scriptPath
+        TaskRootPath = [string]$taskRootPath
+        TaskMetadataPath = [string]$metadataPath
+        RelativePath = [string]$relativeScriptPath
+        DirectoryPath = [string]$taskRootPath
+        StageRootDirectoryPath = [string]$RootPath
+        TimeoutSeconds = [int]$metadata.TimeoutSeconds
+        Priority = [int]$priority
+        AssetSpecs = @($metadata.AssetSpecs)
+        AppStateSpec = $metadata.AppStateSpec
+        TaskType = [string]$taskType
+        Source = [string]$Candidate.Source
+        TaskNumber = [int]$taskNumber
+        Enabled = [bool]$isEnabled
+        DisabledReason = [string]$disabledReason
+    }
+}
+
 function Get-AzVmTaskBlocksFromDirectory {
     param(
         [string]$DirectoryPath,
@@ -400,282 +592,62 @@ function Get-AzVmTaskBlocksFromDirectory {
         [switch]$SuppressSkipMessages
     )
 
-    if ([string]::IsNullOrWhiteSpace($DirectoryPath)) {
-        throw ("Task directory for stage '{0}' is empty." -f $Stage)
+    if ([string]::IsNullOrWhiteSpace([string]$DirectoryPath)) {
+        throw ("Task directory for stage '{0}' is empty." -f [string]$Stage)
     }
 
     if (-not (Test-Path -LiteralPath $DirectoryPath)) {
-        throw ("Task directory was not found: {0}" -f $DirectoryPath)
+        throw ("Task directory was not found: {0}" -f [string]$DirectoryPath)
     }
 
-    $expectedExt = if ($Platform -eq 'windows') { '.ps1' } else { '.sh' }
-    $namePattern = '^(?<n>\d{2,5})-(?<words>[a-z0-9]+(?:-[a-z0-9]+){1,4})(?<ext>\.(ps1|sh))$'
-
-    $rootPath = (Resolve-Path -LiteralPath $DirectoryPath).Path.TrimEnd('\', '/')
-    $files = @(Get-ChildItem -LiteralPath $DirectoryPath -File -Recurse | Sort-Object FullName)
-
-    $allRows = @()
-    $trackedTaskPathByName = @{}
-    $localTaskPathByName = @{}
-    foreach ($file in $files) {
-        $name = [string]$file.Name
-        if ($name.StartsWith('.')) {
-            continue
-        }
-
-        $fileExt = [System.IO.Path]::GetExtension($name)
-        if (-not [string]::Equals($fileExt, $expectedExt, [System.StringComparison]::OrdinalIgnoreCase)) {
-            continue
-        }
-
-        if (-not ($name -match $namePattern)) {
-            throw ("Invalid task filename '{0}'. Expected 2-5 digit task number plus verb-noun-target format with 2-5 words." -f $name)
-        }
-
-        $taskOrder = [int]$Matches.n
-        $ext = [string]$Matches.ext
-        if (-not [string]::Equals($ext, $expectedExt, [System.StringComparison]::OrdinalIgnoreCase)) {
-            throw ("Task file '{0}' has invalid extension for platform '{1}'. Expected '{2}'." -f $name, $Platform, $expectedExt)
-        }
-
-        $relativePath = [string]$file.FullName
-        if ($relativePath.StartsWith($rootPath, [System.StringComparison]::OrdinalIgnoreCase)) {
-            $relativePath = $relativePath.Substring($rootPath.Length).TrimStart('\', '/')
-        }
-        else {
-            $relativePath = [string]$file.Name
-        }
-        $relativePath = $relativePath.Replace('\', '/')
-        $isDisabled = $false
-        $isLocalOnly = $false
-        if (-not $relativePath.Contains('/')) {
-            $isDisabled = $false
-            $isLocalOnly = $false
-        }
-        elseif ($relativePath.StartsWith('disabled/', [System.StringComparison]::OrdinalIgnoreCase)) {
-            $isDisabled = $true
-            $isLocalOnly = $false
-        }
-        elseif ($relativePath.StartsWith('local/', [System.StringComparison]::OrdinalIgnoreCase)) {
-            $localRelativePath = $relativePath.Substring('local/'.Length)
-            if ([string]::IsNullOrWhiteSpace($localRelativePath)) {
-                throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
-            }
-
-            if ($localRelativePath.StartsWith('disabled/', [System.StringComparison]::OrdinalIgnoreCase)) {
-                $localDisabledRelativePath = $localRelativePath.Substring('disabled/'.Length)
-                if ([string]::IsNullOrWhiteSpace($localDisabledRelativePath) -or $localDisabledRelativePath.Contains('/')) {
-                    throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
-                }
-
-                $isDisabled = $true
-                $isLocalOnly = $true
-            }
-            elseif ($localRelativePath.Contains('/')) {
-                throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
-            }
-            else {
-                $isDisabled = $false
-                $isLocalOnly = $true
+    $expectedExtension = if ([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) { '.ps1' } else { '.sh' }
+    $rootPath = (Resolve-Path -LiteralPath $DirectoryPath).Path
+    $rows = @()
+    foreach ($candidate in @(Get-AzVmTaskFolderCandidates -DirectoryPath $rootPath)) {
+        try {
+            $row = Read-AzVmTaskFolderRow -Candidate $candidate -RootPath $rootPath -ExpectedExtension $expectedExtension
+            if ($null -ne $row) {
+                $rows += $row
             }
         }
-        else {
-            throw ("Task file '{0}' is under unsupported nested directory '{1}'. Only root files, disabled/*, local/*, and local/disabled/* are allowed." -f $name, $relativePath)
-        }
-
-        $content = Get-Content -Path $file.FullName -Raw
-        $metadata = Get-AzVmTaskScriptMetadata -ScriptText ([string]$content) -TaskPath ([string]$relativePath)
-        $taskName = [System.IO.Path]::GetFileNameWithoutExtension($name)
-        $taskType = if ($isLocalOnly) { 'local' } else { Get-AzVmTrackedTaskTypeFromNumber -TaskNumber $taskOrder -TaskName $taskName }
-
-        if ($isLocalOnly) {
-            if ($trackedTaskPathByName.ContainsKey($taskName)) {
-                throw ("Task name '{0}' is duplicated between tracked and local-only scripts ('{1}' and '{2}')." -f $taskName, [string]$trackedTaskPathByName[$taskName], $relativePath)
-            }
-            if ($localTaskPathByName.ContainsKey($taskName)) {
-                throw ("Local-only task name '{0}' is duplicated between '{1}' and '{2}'." -f $taskName, [string]$localTaskPathByName[$taskName], $relativePath)
-            }
-
-            $localTaskPathByName[$taskName] = $relativePath
-        }
-        else {
-            if ($localTaskPathByName.ContainsKey($taskName)) {
-                throw ("Task name '{0}' is duplicated between tracked and local-only scripts ('{1}' and '{2}')." -f $taskName, $relativePath, [string]$localTaskPathByName[$taskName])
-            }
-            if ($trackedTaskPathByName.ContainsKey($taskName)) {
-                throw ("Tracked task name '{0}' is duplicated between '{1}' and '{2}'." -f $taskName, [string]$trackedTaskPathByName[$taskName], $relativePath)
-            }
-
-            $trackedTaskPathByName[$taskName] = $relativePath
-        }
-
-        $row = [pscustomobject]@{
-            Order = [int]$taskOrder
-            Name = [string]$taskName
-            Path = [string]$file.FullName
-            RelativePath = [string]$relativePath
-            Script = [string]$content
-            Metadata = $metadata
-            IsLocalOnly = [bool]$isLocalOnly
-            IsDisabled = [bool]$isDisabled
-            TaskType = [string]$taskType
-            TaskNumber = [int]$taskOrder
-            Source = $(if ($isLocalOnly) { 'local' } else { 'tracked' })
-        }
-
-        $allRows += $row
-    }
-
-    $catalogState = Get-AzVmTaskCatalogStateMap -DirectoryPath $DirectoryPath -Stage $Stage
-    $taskMap = @{}
-    if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('TaskMap').Count -gt 0) {
-        $taskMap = $catalogState.TaskMap
-    }
-    $catalogDefaultPriority = Get-AzVmTrackedTaskDefaultPriority
-    if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('DefaultPriority').Count -gt 0) {
-        $catalogDefaultPriority = [int]$catalogState.DefaultPriority
-    }
-    $catalogDefaultTimeout = Get-AzVmTaskDefaultTimeoutSeconds
-    if ($null -ne $catalogState -and $catalogState.PSObject.Properties.Match('DefaultTimeoutSeconds').Count -gt 0) {
-        $catalogDefaultTimeout = [int]$catalogState.DefaultTimeoutSeconds
-    }
-
-    $localRows = @($allRows | Where-Object { [bool]$_.IsLocalOnly } | Sort-Object RelativePath, Name)
-    $usedLocalPriorities = @{}
-    foreach ($row in @($localRows)) {
-        $metadata = $row.Metadata
-        $localPriority = $null
-        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Priority').Count -gt 0 -and $null -ne $metadata.Priority) {
-            $localPriority = [int]$metadata.Priority
-            if (-not (Test-AzVmTaskPriorityFitsType -TaskType 'local' -Priority $localPriority)) {
-                throw ("Local task '{0}' metadata priority '{1}' must stay in the local band 1001-9999." -f [string]$row.Name, $localPriority)
-            }
-        }
-        elseif (Test-AzVmTaskNumberFitsLocalBand -TaskNumber ([int]$row.TaskNumber)) {
-            $localPriority = [int]$row.TaskNumber
-        }
-
-        if ($null -ne $localPriority) {
-            if ($usedLocalPriorities.ContainsKey([string]$localPriority)) {
-                throw ("Local tasks '{0}' and '{1}' resolve to the same priority '{2}'." -f [string]$usedLocalPriorities[[string]$localPriority], [string]$row.Name, $localPriority)
-            }
-
-            $usedLocalPriorities[[string]$localPriority] = [string]$row.Name
-            Add-Member -InputObject $row -MemberType NoteProperty -Name EffectiveLocalPriority -Value ([int]$localPriority) -Force
+        catch {
+            Write-AzVmTaskFolderSkipWarning -RelativeFolderPath ([string]$candidate.RelativeFolderPath) -Message $_.Exception.Message
         }
     }
 
-    $nextLocalPriority = 1001
-    foreach ($row in @($localRows | Where-Object { $_.PSObject.Properties.Match('EffectiveLocalPriority').Count -eq 0 })) {
-        while ($usedLocalPriorities.ContainsKey([string]$nextLocalPriority)) {
-            $nextLocalPriority++
-            if ($nextLocalPriority -gt 9999) {
-                throw "Local task priority auto-detection exhausted the supported 1001-9999 range."
-            }
+    $nameMap = @{}
+    foreach ($row in @($rows)) {
+        if ($nameMap.ContainsKey([string]$row.Name)) {
+            throw ("Task name '{0}' is duplicated between '{1}' and '{2}'." -f [string]$row.Name, [string]$nameMap[[string]$row.Name], [string]$row.RelativePath)
         }
 
-        $usedLocalPriorities[[string]$nextLocalPriority] = [string]$row.Name
-        Add-Member -InputObject $row -MemberType NoteProperty -Name EffectiveLocalPriority -Value ([int]$nextLocalPriority) -Force
-        $nextLocalPriority++
+        $nameMap[[string]$row.Name] = [string]$row.RelativePath
     }
 
-    $inventoryTasks = @()
-    foreach ($row in @($allRows)) {
-        $taskName = [string]$row.Name
-        $metadata = $row.Metadata
-        $taskType = [string]$row.TaskType
-        $taskPriority = $catalogDefaultPriority
-        $taskTimeoutSeconds = Get-AzVmTaskDefaultTimeoutSeconds
-        $isEnabled = $true
-        $disabledReason = ''
-
-        if ([bool]$row.IsLocalOnly) {
-            $taskPriority = [int]$row.EffectiveLocalPriority
-            $taskTimeoutSeconds = Get-AzVmTaskDefaultTimeoutSeconds
-            if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('TimeoutSeconds').Count -gt 0 -and $null -ne $metadata.TimeoutSeconds) {
-                $taskTimeoutSeconds = [int]$metadata.TimeoutSeconds
-            }
-            if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('Enabled').Count -gt 0 -and $null -ne $metadata.Enabled) {
-                $isEnabled = [bool]$metadata.Enabled
-            }
-        }
-        else {
-            $taskTimeoutSeconds = [int]$catalogDefaultTimeout
-            $hasExplicitTrackedPriority = $false
-            if ($taskMap.ContainsKey($taskName)) {
-                $entry = $taskMap[$taskName]
-                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasTaskType').Count -gt 0 -and [bool]$entry.HasTaskType) {
-                    if (-not [string]::Equals([string]$entry.TaskType, $taskType, [System.StringComparison]::OrdinalIgnoreCase)) {
-                        throw ("Tracked task '{0}' is classified as '{1}' by filename but catalog taskType is '{2}'." -f $taskName, $taskType, [string]$entry.TaskType)
-                    }
-                }
-                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasPriority').Count -gt 0 -and [bool]$entry.HasPriority) {
-                    $taskPriority = [int]$entry.Priority
-                    $hasExplicitTrackedPriority = $true
-                }
-                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasTimeout').Count -gt 0 -and [bool]$entry.HasTimeout) {
-                    $taskTimeoutSeconds = [int]$entry.TimeoutSeconds
-                }
-                if ($null -ne $entry -and $entry.PSObject.Properties.Match('HasEnabled').Count -gt 0 -and [bool]$entry.HasEnabled) {
-                    $isEnabled = [bool]$entry.Enabled
-                }
-            }
-
-            if ($hasExplicitTrackedPriority -and -not (Test-AzVmTaskPriorityFitsType -TaskType $taskType -Priority ([int]$taskPriority))) {
-                throw ("Tracked task '{0}' resolved invalid priority '{1}' for taskType '{2}'." -f $taskName, $taskPriority, $taskType)
-            }
+    $priorityMap = @{}
+    foreach ($row in @($rows)) {
+        $priorityKey = [string]$row.Priority
+        if ($priorityMap.ContainsKey($priorityKey)) {
+            throw ("Tasks '{0}' and '{1}' resolve to the same priority '{2}'." -f [string]$priorityMap[$priorityKey], [string]$row.Name, [int]$row.Priority)
         }
 
-        if ([bool]$row.IsDisabled) {
-            $isEnabled = $false
-            $disabledReason = 'disabled-by-location'
-        }
-        elseif (-not $isEnabled) {
-            if ([bool]$row.IsLocalOnly) {
-                $disabledReason = 'disabled-in-script-metadata'
-            }
-            else {
-                $disabledReason = 'disabled-in-catalog'
-            }
-        }
-
-        $assetSpecs = @()
-        if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('AssetSpecs').Count -gt 0 -and $null -ne $metadata.AssetSpecs) {
-            $assetSpecs = @(ConvertTo-ObjectArrayCompat -InputObject $metadata.AssetSpecs)
-        }
-
-        $inventoryTasks += [pscustomobject]@{
-            Name = [string]$taskName
-            Script = [string]$row.Script
-            RelativePath = [string]$row.RelativePath
-            DirectoryPath = [string](Split-Path -Path $row.Path -Parent)
-            TimeoutSeconds = [int]$taskTimeoutSeconds
-            Priority = [int]$taskPriority
-            AssetSpecs = @($assetSpecs)
-            TaskType = [string]$taskType
-            Source = [string]$row.Source
-            TaskNumber = [int]$row.TaskNumber
-            Enabled = [bool]$isEnabled
-            DisabledReason = [string]$disabledReason
-        }
+        $priorityMap[$priorityKey] = [string]$row.Name
     }
 
-    $sortedInventory = @($inventoryTasks | Sort-Object `
-        @{ Expression = { [int]$_.Priority } }, `
-        @{ Expression = { [int]$_.TaskNumber } }, `
-        @{ Expression = { [string]$_.Name } })
+    $sortedInventory = @(
+        $rows |
+            Sort-Object `
+                @{ Expression = { [int]$_.Priority } }, `
+                @{ Expression = { [int]$_.TaskNumber } }, `
+                @{ Expression = { [string]$_.Name } }
+    )
 
     $activeTasks = @()
     $disabledTasks = @()
     foreach ($task in @($sortedInventory)) {
         if (-not [bool]$task.Enabled) {
-            if (-not $SuppressSkipMessages) {
-                if ([string]::Equals([string]$task.DisabledReason, 'disabled-in-script-metadata', [System.StringComparison]::OrdinalIgnoreCase)) {
-                    Write-Host ("Task skipped (disabled in script metadata): {0}" -f [string]$task.Name) -ForegroundColor DarkYellow
-                }
-                elseif ([string]::Equals([string]$task.DisabledReason, 'disabled-in-catalog', [System.StringComparison]::OrdinalIgnoreCase)) {
-                    Write-Host ("Task skipped (disabled in catalog): {0}" -f [string]$task.Name) -ForegroundColor DarkYellow
-                }
+            if (-not $SuppressSkipMessages -and [string]::Equals([string]$task.DisabledReason, 'disabled-in-task-json', [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Host ("Task skipped (disabled in task.json): {0}" -f [string]$task.Name) -ForegroundColor DarkYellow
             }
 
             $disabledTasks += [pscustomobject]@{
@@ -687,6 +659,8 @@ function Get-AzVmTaskBlocksFromDirectory {
                 Source = [string]$task.Source
                 DisabledReason = [string]$task.DisabledReason
                 TaskNumber = [int]$task.TaskNumber
+                TaskRootPath = [string]$task.TaskRootPath
+                TaskMetadataPath = [string]$task.TaskMetadataPath
             }
             continue
         }
@@ -696,9 +670,13 @@ function Get-AzVmTaskBlocksFromDirectory {
             Script = [string]$task.Script
             RelativePath = [string]$task.RelativePath
             DirectoryPath = [string]$task.DirectoryPath
+            TaskRootPath = [string]$task.TaskRootPath
+            TaskMetadataPath = [string]$task.TaskMetadataPath
+            StageRootDirectoryPath = [string]$task.StageRootDirectoryPath
             TimeoutSeconds = [int]$task.TimeoutSeconds
             Priority = [int]$task.Priority
             AssetSpecs = @($task.AssetSpecs)
+            AppStateSpec = $task.AppStateSpec
             TaskType = [string]$task.TaskType
             Source = [string]$task.Source
             TaskNumber = [int]$task.TaskNumber
@@ -706,8 +684,8 @@ function Get-AzVmTaskBlocksFromDirectory {
     }
 
     return [ordered]@{
-        ActiveTasks = $activeTasks
-        DisabledTasks = $disabledTasks
-        InventoryTasks = $sortedInventory
+        ActiveTasks = @($activeTasks)
+        DisabledTasks = @($disabledTasks)
+        InventoryTasks = @($sortedInventory)
     }
 }

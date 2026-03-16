@@ -19,10 +19,10 @@ function Get-AppStateAuditZipPaths {
     param([string]$RepositoryRoot)
 
     $roots = @(
-        'windows\init\app-states',
-        'windows\update\app-states',
-        'linux\init\app-states',
-        'linux\update\app-states'
+        'windows\init',
+        'windows\update',
+        'linux\init',
+        'linux\update'
     )
 
     foreach ($relativeRoot in @($roots)) {
@@ -31,7 +31,11 @@ function Get-AppStateAuditZipPaths {
             continue
         }
 
-        foreach ($zipPath in @(Get-ChildItem -LiteralPath $fullRoot -Recurse -Filter 'app-state.zip' -File -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+        foreach ($zipPath in @(
+            Get-ChildItem -LiteralPath $fullRoot -Recurse -Filter 'app-state.zip' -File -ErrorAction SilentlyContinue |
+                Where-Object { [string]::Equals([string](Split-Path -Path $_.DirectoryName -Leaf), 'app-state', [System.StringComparison]::OrdinalIgnoreCase) } |
+                Sort-Object FullName
+        )) {
             if ($null -ne $zipPath) {
                 $zipPath.FullName
             }
@@ -87,7 +91,8 @@ function Get-AppStateAuditReport {
             $taskName = [string]$manifest.taskName
         }
         if ([string]::IsNullOrWhiteSpace([string]$taskName)) {
-            $taskName = [System.IO.Path]::GetFileName((Split-Path -Path $ZipPath -Parent))
+            $pluginRoot = [string](Split-Path -Path $ZipPath -Parent)
+            $taskName = [System.IO.Path]::GetFileName((Split-Path -Path $pluginRoot -Parent))
         }
 
         $foreignTargets = New-Object 'System.Collections.Generic.List[string]'

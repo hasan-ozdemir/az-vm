@@ -197,6 +197,141 @@ function Resolve-AzVmTaskStageSelection {
         -Hint "Use --vm-init-task=<task-number|task-name> or --vm-update-task=<task-number|task-name>."
 }
 
+function Resolve-AzVmTaskAppStateSurface {
+    param(
+        [string]$Mode,
+        [hashtable]$Options
+    )
+
+    if ([string]::Equals([string]$Mode, 'save-app-state', [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-AzVmCliOptionPresent -Options $Options -Name 'target') {
+            Throw-FriendlyError `
+                -Detail "Task save-app-state does not support --target." `
+                -Code 2 `
+                -Summary "Task save-app-state surface selection is invalid." `
+                -Hint "Use --source=vm or --source=lm with --save-app-state."
+        }
+
+        $surface = [string](Get-AzVmCliOptionText -Options $Options -Name 'source')
+        if ([string]::IsNullOrWhiteSpace([string]$surface)) {
+            $surface = 'vm'
+        }
+        $surface = $surface.Trim().ToLowerInvariant()
+        if ($surface -notin @('vm', 'lm')) {
+            Throw-FriendlyError `
+                -Detail ("Unsupported --source value '{0}'." -f [string](Get-AzVmCliOptionText -Options $Options -Name 'source')) `
+                -Code 2 `
+                -Summary "Task save-app-state surface selection is invalid." `
+                -Hint "Use --source=vm or --source=lm."
+        }
+
+        return [pscustomobject]@{
+            Surface = [string]$surface
+            OptionName = 'source'
+        }
+    }
+
+    if (Test-AzVmCliOptionPresent -Options $Options -Name 'source') {
+        Throw-FriendlyError `
+            -Detail "Task restore-app-state does not support --source." `
+            -Code 2 `
+            -Summary "Task restore-app-state surface selection is invalid." `
+            -Hint "Use --target=vm or --target=lm with --restore-app-state."
+    }
+
+    $surface = [string](Get-AzVmCliOptionText -Options $Options -Name 'target')
+    if ([string]::IsNullOrWhiteSpace([string]$surface)) {
+        $surface = 'vm'
+    }
+    $surface = $surface.Trim().ToLowerInvariant()
+    if ($surface -notin @('vm', 'lm')) {
+        Throw-FriendlyError `
+            -Detail ("Unsupported --target value '{0}'." -f [string](Get-AzVmCliOptionText -Options $Options -Name 'target')) `
+            -Code 2 `
+            -Summary "Task restore-app-state surface selection is invalid." `
+            -Hint "Use --target=vm or --target=lm."
+    }
+
+    return [pscustomobject]@{
+        Surface = [string]$surface
+        OptionName = 'target'
+    }
+}
+
+function Get-AzVmTaskAppStateRequestedUsersFromOptions {
+    param([hashtable]$Options)
+
+    return @(Resolve-AzVmTaskAppStateRequestedUsers -UserOptionValue ([string](Get-AzVmCliOptionText -Options $Options -Name 'user')))
+}
+
+function Resolve-AzVmTaskVmAppStateSelectedProfiles {
+    param(
+        [pscustomobject]$Runtime,
+        [string[]]$RequestedUsers = @()
+    )
+
+    $tokens = @(Resolve-AzVmTaskAppStateRequestedUsers -UserOptionValue (@($RequestedUsers) -join ','))
+    if (@($tokens).Count -eq 1 -and [string]::Equals([string]$tokens[0], '.all.', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            IsAll = $true
+            SelectedProfiles = @('manager', 'assistant')
+        }
+    }
+
+    $managerUser = ''
+    $assistantUser = ''
+    if ($null -ne $Runtime -and $Runtime.PSObject.Properties.Match('Context').Count -gt 0 -and $null -ne $Runtime.Context) {
+        if ($Runtime.Context.PSObject.Properties.Match('VmUser').Count -gt 0) {
+            $managerUser = [string]$Runtime.Context.VmUser
+        }
+        if ($Runtime.Context.PSObject.Properties.Match('VmAssistantUser').Count -gt 0) {
+            $assistantUser = [string]$Runtime.Context.VmAssistantUser
+        }
+    }
+
+    $canonicalMap = @{
+        'manager' = 'manager'
+        'assistant' = 'assistant'
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$managerUser)) {
+        $canonicalMap[[string]$managerUser.Trim().ToLowerInvariant()] = 'manager'
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$assistantUser)) {
+        $canonicalMap[[string]$assistantUser.Trim().ToLowerInvariant()] = 'assistant'
+    }
+
+    $selectedProfiles = New-Object 'System.Collections.Generic.List[string]'
+    $seen = @{}
+    foreach ($token in @($tokens)) {
+        $lookupKey = [string]$token
+        if ([string]::Equals([string]$lookupKey, '.current.', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $lookupKey = 'manager'
+        }
+
+        $normalizedLookup = if ([string]::IsNullOrWhiteSpace([string]$lookupKey)) { '' } else { $lookupKey.Trim().ToLowerInvariant() }
+        if ([string]::IsNullOrWhiteSpace([string]$normalizedLookup) -or -not $canonicalMap.ContainsKey($normalizedLookup)) {
+            Throw-FriendlyError `
+                -Detail ("VM app-state user '{0}' is invalid for the current managed target." -f [string]$lookupKey) `
+                -Code 67 `
+                -Summary "Task app-state VM user selection is invalid." `
+                -Hint "Use --user=.all., --user=.current., --user=manager, --user=assistant, or the current managed VM usernames."
+        }
+
+        $canonicalLabel = [string]$canonicalMap[$normalizedLookup]
+        if ($seen.ContainsKey($canonicalLabel)) {
+            continue
+        }
+
+        $selectedProfiles.Add($canonicalLabel) | Out-Null
+        $seen[$canonicalLabel] = $true
+    }
+
+    return [pscustomobject]@{
+        IsAll = $false
+        SelectedProfiles = @($selectedProfiles.ToArray())
+    }
+}
+
 function Assert-AzVmTaskCommandOptionScope {
     param(
         [string]$Mode,
@@ -204,7 +339,7 @@ function Assert-AzVmTaskCommandOptionScope {
     )
 
     if ([string]::Equals($Mode, 'list', [System.StringComparison]::OrdinalIgnoreCase)) {
-        foreach ($optionName in @('group', 'vm-name', 'subscription-id', 'vm-init-task', 'vm-update-task', 'run-vm-init', 'run-vm-update')) {
+        foreach ($optionName in @('group', 'vm-name', 'subscription-id', 'vm-init-task', 'vm-update-task', 'run-vm-init', 'run-vm-update', 'source', 'target', 'user')) {
             if (Test-AzVmCliOptionPresent -Options $Options -Name $optionName) {
                 Throw-FriendlyError `
                     -Detail ("Task list mode does not support --{0}." -f [string]$optionName) `
@@ -225,14 +360,14 @@ function Assert-AzVmTaskCommandOptionScope {
                     -Detail ("Task app-state maintenance does not support --{0}." -f [string]$optionName) `
                     -Code 2 `
                     -Summary "Task app-state mode received an unsupported option." `
-                    -Hint "Use --save-app-state or --restore-app-state with --vm-init-task/--vm-update-task plus optional target selectors."
+                    -Hint "Use --save-app-state or --restore-app-state with --vm-init-task/--vm-update-task plus optional --source/--target, --user, and VM selectors."
             }
         }
 
         return
     }
 
-    foreach ($optionName in @('disabled', 'vm-init', 'vm-update', 'vm-init-task', 'vm-update-task', 'save-app-state', 'restore-app-state')) {
+    foreach ($optionName in @('disabled', 'vm-init', 'vm-update', 'vm-init-task', 'vm-update-task', 'save-app-state', 'restore-app-state', 'source', 'target', 'user')) {
         if (Test-AzVmCliOptionPresent -Options $Options -Name $optionName) {
             Throw-FriendlyError `
                 -Detail ("Task run mode does not support --{0}." -f [string]$optionName) `

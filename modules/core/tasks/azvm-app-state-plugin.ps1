@@ -14,47 +14,68 @@ function Get-AzVmTaskStageRootDirectoryPath {
         return ''
     }
 
-    $directoryPath = ''
-    if ($TaskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
-        $directoryPath = [string]$TaskBlock.DirectoryPath
+    if ($TaskBlock.PSObject.Properties.Match('StageRootDirectoryPath').Count -gt 0) {
+        $stageRootPath = [string]$TaskBlock.StageRootDirectoryPath
+        if (-not [string]::IsNullOrWhiteSpace([string]$stageRootPath)) {
+            return [string]$stageRootPath
+        }
     }
+
+    $taskRootPath = ''
+    if ($TaskBlock.PSObject.Properties.Match('TaskRootPath').Count -gt 0) {
+        $taskRootPath = [string]$TaskBlock.TaskRootPath
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$taskRootPath) -and $TaskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
+        $taskRootPath = [string]$TaskBlock.DirectoryPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$taskRootPath)) {
+        return ''
+    }
+
     $relativePath = ''
     if ($TaskBlock.PSObject.Properties.Match('RelativePath').Count -gt 0) {
         $relativePath = [string]$TaskBlock.RelativePath
     }
-
-    if ([string]::IsNullOrWhiteSpace([string]$directoryPath)) {
-        return ''
+    if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
+        return [string](Split-Path -Path $taskRootPath -Parent)
     }
 
-    if ($relativePath.StartsWith('local/', [System.StringComparison]::OrdinalIgnoreCase)) {
-        return [string](Split-Path -Path $directoryPath -Parent)
+    $normalizedRelative = $relativePath.Replace('\', '/')
+    $segments = @($normalizedRelative.Split('/') | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) })
+    if (@($segments).Count -lt 2) {
+        return [string](Split-Path -Path $taskRootPath -Parent)
     }
 
-    return [string]$directoryPath
+    $stageRootPath = [string]$taskRootPath
+    for ($i = 1; $i -lt @($segments).Count; $i++) {
+        $stageRootPath = [string](Split-Path -Path $stageRootPath -Parent)
+    }
+
+    return [string]$stageRootPath
 }
 
 function Get-AzVmTaskAppStateRootDirectoryPath {
     param([psobject]$TaskBlock)
 
-    $stageRoot = Get-AzVmTaskStageRootDirectoryPath -TaskBlock $TaskBlock
-    if ([string]::IsNullOrWhiteSpace([string]$stageRoot)) {
+    $taskRootPath = ''
+    if ($null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('TaskRootPath').Count -gt 0) {
+        $taskRootPath = [string]$TaskBlock.TaskRootPath
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$taskRootPath) -and $null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
+        $taskRootPath = [string]$TaskBlock.DirectoryPath
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$taskRootPath)) {
         return ''
     }
 
-    return (Join-Path $stageRoot 'app-states')
+    return (Join-Path $taskRootPath 'app-state')
 }
 
 function Get-AzVmTaskAppStatePluginDirectoryPath {
     param([psobject]$TaskBlock)
 
-    $appStateRoot = Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $TaskBlock
-    $taskName = if ($null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) { [string]$TaskBlock.Name } else { '' }
-    if ([string]::IsNullOrWhiteSpace([string]$appStateRoot) -or [string]::IsNullOrWhiteSpace([string]$taskName)) {
-        return ''
-    }
-
-    return (Join-Path $appStateRoot $taskName)
+    return (Get-AzVmTaskAppStateRootDirectoryPath -TaskBlock $TaskBlock)
 }
 
 function Get-AzVmTaskAppStateZipPath {
@@ -235,6 +256,160 @@ function Get-AzVmTaskAppStatePluginInfo {
             Message = [string]$_.Exception.Message
             Manifest = $null
         }
+    }
+}
+
+function Get-AzVmTaskAppStateSelectedProfileTokens {
+    param([string[]]$SelectedProfiles = @())
+
+    $tokens = New-Object 'System.Collections.Generic.List[string]'
+    $seen = @{}
+    foreach ($rawProfile in @($SelectedProfiles)) {
+        $value = if ($null -eq $rawProfile) { '' } else { [string]$rawProfile }
+        if ([string]::IsNullOrWhiteSpace([string]$value)) {
+            continue
+        }
+
+        $normalizedValue = $value.Trim().ToLowerInvariant()
+        if ($seen.ContainsKey($normalizedValue)) {
+            continue
+        }
+
+        $tokens.Add($normalizedValue) | Out-Null
+        $seen[$normalizedValue] = $true
+    }
+
+    return @($tokens.ToArray())
+}
+
+function Test-AzVmTaskAppStateManifestEntryMatchesSelectedProfiles {
+    param(
+        [AllowNull()]$Entry,
+        [string[]]$SelectedProfiles = @()
+    )
+
+    $normalizedSelections = @(Get-AzVmTaskAppStateSelectedProfileTokens -SelectedProfiles $SelectedProfiles)
+    if (@($normalizedSelections).Count -lt 1) {
+        return $true
+    }
+
+    if ($null -eq $Entry -or $Entry.PSObject.Properties.Match('targetProfiles').Count -lt 1) {
+        return $false
+    }
+
+    foreach ($rawProfile in @($Entry.targetProfiles)) {
+        $normalizedProfile = if ($null -eq $rawProfile) { '' } else { [string]$rawProfile.Trim().ToLowerInvariant() }
+        if ([string]::IsNullOrWhiteSpace([string]$normalizedProfile)) {
+            continue
+        }
+        if (@($normalizedSelections) -contains $normalizedProfile) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function New-AzVmTaskAppStateFilteredZip {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceZipPath,
+        [Parameter(Mandatory = $true)]
+        [string]$TaskName,
+        [Parameter(Mandatory = $true)]
+        [string[]]$SelectedProfiles,
+        [Parameter(Mandatory = $true)]
+        [string]$DestinationZipPath
+    )
+
+    $normalizedSelections = @(Get-AzVmTaskAppStateSelectedProfileTokens -SelectedProfiles $SelectedProfiles)
+    if (@($normalizedSelections).Count -lt 1) {
+        Copy-Item -LiteralPath $SourceZipPath -Destination $DestinationZipPath -Force
+        return [pscustomobject]@{
+            ZipPath = [string]$DestinationZipPath
+            Filtered = $false
+            SelectionCount = 0
+        }
+    }
+
+    $manifestInfo = Get-AzVmTaskAppStateManifestFromZip -ZipPath $SourceZipPath -ExpectedTaskName $TaskName
+    $scratchRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-filter-{0}' -f ([guid]::NewGuid().ToString('N')))
+    Ensure-AzVmAppStatePluginDirectory -Path $scratchRoot
+    try {
+        Initialize-AzVmAppStateZipSupport
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($SourceZipPath, $scratchRoot)
+
+        $manifest = $manifestInfo.Manifest
+        $profileDirectories = @($manifest.profileDirectories | Where-Object {
+                Test-AzVmTaskAppStateManifestEntryMatchesSelectedProfiles -Entry $_ -SelectedProfiles $normalizedSelections
+            })
+        $profileFiles = @($manifest.profileFiles | Where-Object {
+                Test-AzVmTaskAppStateManifestEntryMatchesSelectedProfiles -Entry $_ -SelectedProfiles $normalizedSelections
+            })
+        $registryImports = @()
+        foreach ($entry in @($manifest.registryImports)) {
+            if ($null -eq $entry) {
+                continue
+            }
+
+            $scope = if ($entry.PSObject.Properties.Match('scope').Count -gt 0) { [string]$entry.scope } else { '' }
+            if ([string]::Equals([string]$scope, 'user', [System.StringComparison]::OrdinalIgnoreCase)) {
+                if (-not (Test-AzVmTaskAppStateManifestEntryMatchesSelectedProfiles -Entry $entry -SelectedProfiles $normalizedSelections)) {
+                    continue
+                }
+            }
+            $registryImports += $entry
+        }
+
+        $pathsToKeep = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        $pathsToKeep.Add('app-state.manifest.json') | Out-Null
+        foreach ($entry in @($manifest.machineDirectories + $manifest.machineFiles + $profileDirectories + $profileFiles + $registryImports)) {
+            if ($null -eq $entry -or $entry.PSObject.Properties.Match('sourcePath').Count -lt 1) {
+                continue
+            }
+            $sourcePath = [string]$entry.sourcePath
+            if ([string]::IsNullOrWhiteSpace([string]$sourcePath)) {
+                continue
+            }
+            $pathsToKeep.Add($sourcePath.Replace('\', '/')) | Out-Null
+        }
+
+        foreach ($path in @(Get-ChildItem -LiteralPath $scratchRoot -Recurse -File | Sort-Object FullName)) {
+            $relativePath = [string]([System.IO.Path]::GetRelativePath($scratchRoot, $path.FullName)).Replace('\', '/')
+            if (-not $pathsToKeep.Contains($relativePath)) {
+                Remove-Item -LiteralPath $path.FullName -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        $updatedManifest = [ordered]@{
+            version = $(if ($manifest.PSObject.Properties.Match('version').Count -gt 0) { [int]$manifest.version } else { 1 })
+            taskName = [string]$manifest.taskName
+            machineDirectories = @($manifest.machineDirectories)
+            machineFiles = @($manifest.machineFiles)
+            profileDirectories = @($profileDirectories)
+            profileFiles = @($profileFiles)
+            registryImports = @($registryImports)
+        }
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value (ConvertTo-JsonCompat -InputObject $updatedManifest -Depth 12) -Encoding UTF8
+
+        Remove-Item -LiteralPath $DestinationZipPath -Force -ErrorAction SilentlyContinue
+        $previousProgressPreference = $global:ProgressPreference
+        try {
+            $global:ProgressPreference = 'SilentlyContinue'
+            Compress-Archive -LiteralPath @(Get-ChildItem -LiteralPath $scratchRoot -Force | Select-Object -ExpandProperty FullName) -DestinationPath $DestinationZipPath -Force
+        }
+        finally {
+            $global:ProgressPreference = $previousProgressPreference
+        }
+
+        return [pscustomobject]@{
+            ZipPath = [string]$DestinationZipPath
+            Filtered = $true
+            SelectionCount = @($normalizedSelections).Count
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 

@@ -2,28 +2,28 @@ $ErrorActionPreference = 'Stop'
 
 $script:TaskMap = @{
     'google-chrome' = '02-check-install-chrome'
-    'microsoft-edge' = '111-install-edge-browser'
-    'vscode' = '110-install-vscode-system'
-    'docker-desktop' = '114-install-docker-desktop'
-    'wsl' = '113-install-wsl2-system'
-    'ollama' = '116-install-ollama-system'
+    'microsoft-edge' = '110-install-edge-browser'
+    'vscode' = '109-install-vscode-system'
+    'docker-desktop' = '113-install-docker-desktop'
+    'wsl' = '112-install-wsl2-system'
+    'ollama' = '115-install-ollama-system'
     'azure-cli' = '105-install-azure-cli'
-    'azd' = '112-install-azd-cli'
+    'azd' = '111-install-azd-cli'
     'gh-cli' = '106-install-gh-cli'
-    'rclone' = '128-install-rclone-system'
-    'google-drive' = '120-install-google-drive'
-    'onedrive' = '119-install-onedrive-system'
-    'vlc' = '124-install-vlc-system'
-    'nvda' = '127-install-nvda-system'
-    'anydesk' = '122-install-anydesk-system'
-    'itunes' = '125-install-itunes-system'
-    'icloud' = '131-install-icloud-system'
-    'teams' = '118-install-teams-system'
-    'whatsapp' = '121-install-whatsapp-system'
-    'codex-app' = '117-install-codex-app'
-    'be-my-eyes' = '126-install-be-my-eyes'
-    'windscribe' = '123-install-windscribe-system'
-    'vs2022community' = '132-install-vs2022community'
+    'rclone' = '127-install-rclone-system'
+    'google-drive' = '119-install-google-drive'
+    'onedrive' = '118-install-onedrive-system'
+    'vlc' = '123-install-vlc-system'
+    'nvda' = '126-install-nvda-system'
+    'anydesk' = '121-install-anydesk-system'
+    'itunes' = '124-install-itunes-system'
+    'icloud' = '129-install-icloud-system'
+    'teams' = '117-install-teams-system'
+    'whatsapp' = '120-install-whatsapp-system'
+    'codex-app' = '116-install-codex-app'
+    'be-my-eyes' = '125-install-be-my-eyes'
+    'windscribe' = '122-install-windscribe-system'
+    'vs2022community' = '130-install-vs2022community'
 }
 
 $script:SourceManifestJson = @'
@@ -86,11 +86,35 @@ function Get-LocalAppStatePluginExportConfig {
     return [ordered]@{
         RepoRoot = [string]$repoRoot
         StageRoot = [string]$stageRoot
-        AppStatesRoot = (Join-Path $stageRoot 'app-states')
         ExportScratchRoot = (Join-Path $env:TEMP 'az-vm-local-app-state-export')
         SourceManifest = (ConvertFrom-Json -InputObject $script:SourceManifestJson -ErrorAction Stop)
         TaskMap = $script:TaskMap.Clone()
     }
+}
+
+function Get-LocalAppStatePluginDirectoryPath {
+    param(
+        [hashtable]$TaskConfig,
+        [string]$TaskName
+    )
+
+    if ($null -eq $TaskConfig -or [string]::IsNullOrWhiteSpace([string]$TaskName)) {
+        return ''
+    }
+
+    $stageRoot = [string]$TaskConfig.StageRoot
+    foreach ($candidate in @(
+        (Join-Path $stageRoot $TaskName),
+        (Join-Path $stageRoot ('disabled\' + $TaskName)),
+        (Join-Path $stageRoot ('local\' + $TaskName)),
+        (Join-Path $stageRoot ('local\disabled\' + $TaskName))
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return (Join-Path $candidate 'app-state')
+        }
+    }
+
+    return (Join-Path (Join-Path $stageRoot $TaskName) 'app-state')
 }
 
 function Resolve-LocalAppStatePathMatches {
@@ -339,11 +363,10 @@ function Export-LocalAppStatePlugins {
     $sourceManifest = $TaskConfig.SourceManifest
     $apps = @($sourceManifest.apps)
     $taskMap = $TaskConfig.TaskMap
-    $appStatesRoot = [string]$TaskConfig.AppStatesRoot
     $scratchRoot = [string]$TaskConfig.ExportScratchRoot
     $currentProfilePath = [Environment]::GetFolderPath('UserProfile')
 
-    Ensure-LocalAppStatePluginDirectory -Path $appStatesRoot
+    Ensure-LocalAppStatePluginDirectory -Path ([string]$TaskConfig.StageRoot)
     Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
     Ensure-LocalAppStatePluginDirectory -Path $scratchRoot
 
@@ -364,7 +387,7 @@ function Export-LocalAppStatePlugins {
         }
 
         $buildRoot = Join-Path $scratchRoot $taskName
-        $pluginDirectory = Join-Path $appStatesRoot $taskName
+        $pluginDirectory = Get-LocalAppStatePluginDirectoryPath -TaskConfig $TaskConfig -TaskName $taskName
         $pluginZipPath = Join-Path $pluginDirectory 'app-state.zip'
         Remove-Item -LiteralPath $buildRoot -Recurse -Force -ErrorAction SilentlyContinue
         Ensure-LocalAppStatePluginDirectory -Path $buildRoot

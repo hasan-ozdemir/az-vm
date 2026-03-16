@@ -15,10 +15,10 @@ tmp/
 tmp-logs/
 
 # Ignore local-only stage task trees
-windows/init/app-states/**
-windows/update/app-states/**
-linux/init/app-states/**
-linux/update/app-states/**
+windows/init/**/app-state/**
+windows/update/**/app-state/**
+linux/init/**/app-state/**
+linux/update/**/app-state/**
 windows/init/local/**
 !windows/init/local/
 !windows/init/local/.gitkeep

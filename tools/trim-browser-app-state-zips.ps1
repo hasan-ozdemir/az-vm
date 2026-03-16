@@ -3,8 +3,8 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $targets = @(
-    'windows/update/app-states/02-check-install-chrome/app-state.zip',
-    'windows/update/app-states/111-install-edge-browser/app-state.zip'
+    'windows/update/02-check-install-chrome/app-state/app-state.zip',
+    'windows/update/110-install-edge-browser/app-state/app-state.zip'
 )
 
 foreach ($target in $targets) {
