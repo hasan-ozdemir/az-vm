@@ -3,6 +3,30 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.331] - 2026-03-16
+
+### Added
+- Added tracked Windows `vm-update` task `132-configure-language-settings`, which installs and verifies the `en-US` plus `tr-TR` language surface, applies English UI with Turkish locale/region/timezone/24-hour formats, forces Turkish Q as the default input method, enables the UTF-8 system code page intent, and copies the final international state to the welcome screen and new-user profile defaults.
+- Added `exec --quiet` / `exec -q` as an explicit one-shot SSH command mode that suppresses banner, diagnostics, and remote information-stream chatter so the command prints only the remote result stream.
+
+### Changed
+- Moved the remaining builtin language, keyboard, locale, timezone, and regional-format ownership out of `10005-copy-settings-user` and into `132-configure-language-settings`, while keeping `10005` responsible only for non-language user-state propagation.
+- Kept both `10005-copy-settings-user` and `10006-capture-snapshot-health` fully on-the-fly by removing their task-local app-state contract and skipping any app-state replay for those tasks.
+- Extended the Windows health snapshot language readback so managed-user status now includes the effective default input method in addition to the language list, keyboard preload, UI language, locale, and format values.
+- Tightened quiet one-shot exec wrapping so Windows remote commands now suppress information-stream `Write-Host` chatter with an encoded PowerShell wrapper that redirects stream `6` to `$null`.
+
+### Fixed
+- Fixed `exec -c "<command>"` parsing at the launcher entrypoint so the short `-c` form survives raw-token forwarding and Windows one-shot commands such as `Get-Date` are wrapped into a PowerShell command instead of being sent raw to `cmd.exe`.
+- Fixed Windows one-shot exec timeout handling so remote command execution now uses `SSH_TASK_TIMEOUT_SECONDS` instead of the shorter SSH connect timeout, avoiding false failures during longer isolated validation commands.
+- Fixed `132-configure-language-settings` user-language assembly by adding the real secondary `WinUserLanguage` entry instead of passing the full secondary list object into `.Add(...)`.
+- Fixed `132-configure-language-settings` welcome-screen and new-user normalization by adding the missing registry hive mount/unmount helpers directly into the task, removing the live failure that occurred at `Dismount-RegistryHive` during the final welcome-screen step.
+
+### Tests
+- Revalidated the parser, quiet exec wrapper, language task contract, and health output non-live with `tests\az-vm-smoke-tests.ps1`.
+- Revalidated `exec --quiet` live with direct one-shot `Get-Date` and interactive helper readback commands on the active managed Windows VM.
+- Revalidated `132-configure-language-settings` live step by step with isolated `exec -q` system, manager, assistant, welcome-screen, and new-user readbacks before rerunning `task --run-vm-update 132 --windows --perf`.
+- Revalidated the final live runner path with isolated `task --run-vm-update 132`, `task --run-vm-update 10005`, and `task --run-vm-update 10006`, followed by direct manager, assistant, welcome-screen, and default-profile readbacks that confirmed English UI, Turkish locale/format state, Turkish Q preload `0000041f`, and default input method `041F:0000041F`.
+
 ## [2026.3.16.330] - 2026-03-16
 
 ### Changed

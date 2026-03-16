@@ -441,6 +441,10 @@ function Get-AzVmConfigureTargetState {
         }
     }
 
+    $platformVmImageKey = Get-AzVmPlatformVmConfigKey -Platform $actualPlatform -BaseKey 'VM_IMAGE'
+    $platformVmSizeKey = Get-AzVmPlatformVmConfigKey -Platform $actualPlatform -BaseKey 'VM_SIZE'
+    $platformVmDiskSizeKey = Get-AzVmPlatformVmConfigKey -Platform $actualPlatform -BaseKey 'VM_DISK_SIZE_GB'
+
     return [pscustomobject]@{
         Platform = [string]$actualPlatform
         PersistMap = $persistMap
@@ -448,25 +452,25 @@ function Get-AzVmConfigureTargetState {
         SkippedFeatureKeys = @($featureSync.SkippedKeys)
         SummaryMap = [ordered]@{
             AzureSubscriptionName = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionName)
-            AzureSubscriptionId = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
-            Platform = [string]$actualPlatform
-            ResourceGroup = [string]$ResourceGroup
-            VmName = [string]$VmName
-            AzLocation = ([string]$vmObject.location).Trim().ToLowerInvariant()
-            VmSize = [string]$vmObject.hardwareProfile.vmSize
-            VmDiskName = [string]$networkDescriptor.OsDiskName
-            VmDiskSizeGb = [string]$diskObject.diskSizeGb
-            VmStorageSku = [string]$diskObject.sku.name
-            VmImage = [string]$marketplaceImage
-            VNET = [string]$networkDescriptor.VnetName
-            SUBNET = [string]$networkDescriptor.SubnetName
-            NSG = [string]$networkDescriptor.NsgName
-            NsgRule = [string]$ruleDescriptor.Name
-            IP = [string]$networkDescriptor.PublicIpName
-            NIC = [string]$networkDescriptor.NicName
-            SshPort = [string]$portDescriptor.SshPort
-            RdpPort = [string]$portDescriptor.RdpPort
-            TcpPorts = [string]$ruleDescriptor.PortsCsv
+            SELECTED_AZURE_SUBSCRIPTION_ID = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
+            SELECTED_VM_OS = [string]$actualPlatform
+            SELECTED_RESOURCE_GROUP = [string]$ResourceGroup
+            SELECTED_VM_NAME = [string]$VmName
+            SELECTED_AZURE_REGION = ([string]$vmObject.location).Trim().ToLowerInvariant()
+            $platformVmSizeKey = [string]$vmObject.hardwareProfile.vmSize
+            VM_DISK_NAME = [string]$networkDescriptor.OsDiskName
+            $platformVmDiskSizeKey = [string]$diskObject.diskSizeGb
+            VM_STORAGE_SKU = [string]$diskObject.sku.name
+            $platformVmImageKey = [string]$marketplaceImage
+            VNET_NAME = [string]$networkDescriptor.VnetName
+            SUBNET_NAME = [string]$networkDescriptor.SubnetName
+            NSG_NAME = [string]$networkDescriptor.NsgName
+            NSG_RULE_NAME = [string]$ruleDescriptor.Name
+            PUBLIC_IP_NAME = [string]$networkDescriptor.PublicIpName
+            NIC_NAME = [string]$networkDescriptor.NicName
+            VM_SSH_PORT = [string]$portDescriptor.SshPort
+            VM_RDP_PORT = [string]$portDescriptor.RdpPort
+            TCP_PORTS = [string]$ruleDescriptor.PortsCsv
         }
     }
 }

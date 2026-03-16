@@ -5043,3 +5043,17 @@ Updated the shared managed shortcut-launcher helper so launcher-backed Public De
 
 I revalidated the change non-live with the smoke and PowerShell compatibility suites, reran `task --run-vm-update 10002 --windows --perf` live in isolation on the active managed Windows VM, and finished with direct `exec` readbacks that confirmed `q2Spotify` now uses `cmd.exe /c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\q2spotify.cmd"` while `z1Google Account Setup` still points directly to `chrome.exe`.
 
+### 2026-03-16 17:50 UTC
+
+**User Prompt**
+
+````text
+Continue the approved main plan from where it was interrupted, fix `exec -c "Get-Date"` so it works correctly, add `exec --quiet` / `-q` so one-shot commands print only the remote result, then return to the main plan and validate `132-configure-language-settings` step by step on the live VM before rerunning the task normally. Keep `10005` and `10006` out of task-local app-state replay, remove the lingering language-state overlap, improve the current operator-facing naming and message cleanup already in progress, and finish the isolated validation cycle.
+````
+
+**Assistant Summary**
+
+Continued the interrupted main-plan work and finished the live language-settings validation loop. I fixed the top-level `exec -c` parsing path so the short `-c` flag survives raw-token forwarding, wrapped Windows one-shot commands into PowerShell so direct commands like `Get-Date` execute correctly, switched one-shot exec timeouts to the task timeout budget instead of the short connect timeout, and added `exec --quiet` / `exec -q` so quiet one-shot commands suppress banner, diagnostics, and remote information-stream chatter. I also kept the current operator-surface cleanup moving forward by preserving the selected-name logging and simpler feature-message contract already introduced in the same working set.
+
+On the language side, I added the new tracked Windows task `132-configure-language-settings`, removed the remaining language overlap from `10005-copy-settings-user`, kept both `10005` and `10006-capture-snapshot-health` out of task-local app-state replay, and then validated the full language configuration on the live VM step by step before returning to the normal task runner. I verified the system leg, the manager leg, the assistant leg, and the welcome-screen plus new-user-default leg separately with isolated `exec -q` and scheduled-task helper readbacks, fixed the broken secondary-language `.Add(...)` path, added the missing registry hive mount/unmount helpers that the final welcome-screen step required, reran `task --run-vm-update 132 --windows --perf`, then reran `10005` and `10006` in isolation. Final live readbacks confirmed English UI, `tr-TR` locale and 24-hour time formats, Turkish Q preload `0000041f`, default input `041F:0000041F`, and matching welcome-screen/new-user defaults on the active managed Windows VM.
+

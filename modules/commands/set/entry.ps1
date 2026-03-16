@@ -79,16 +79,30 @@ function Invoke-AzVmSetCommand {
     try {
         if ($hasHibernation) {
             $hibernationBool = if ([string]::Equals($hibernationTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
+            if ($hibernationBool -eq 'true') {
+                Write-Host 'Hibernation will be enabled.' -ForegroundColor DarkCyan
+            }
+            else {
+                Write-Host 'Hibernation will be disabled.' -ForegroundColor DarkCyan
+            }
+            Write-Host 'Applying hibernation setting...' -ForegroundColor Cyan
             Invoke-TrackedAction -Label ("az vm update -g {0} -n {1} --enable-hibernation {2}" -f $resourceGroup, $vmName, $hibernationBool) -Action {
                 az vm update -g $resourceGroup -n $vmName --enable-hibernation $hibernationBool -o none --only-show-errors
                 Assert-LastExitCode "az vm update --enable-hibernation"
             } | Out-Null
             $persistMap['VM_ENABLE_HIBERNATION'] = $hibernationBool
+            if ($hibernationBool -eq 'true') {
+                Write-Host 'Hibernation was enabled successfully.' -ForegroundColor Green
+            }
+            else {
+                Write-Host 'Hibernation was disabled successfully.' -ForegroundColor Green
+            }
         }
 
         if ($hasNested) {
             $nestedBool = if ([string]::Equals($nestedTarget, 'on', [System.StringComparison]::OrdinalIgnoreCase)) { 'true' } else { 'false' }
             if ($nestedBool -eq 'true') {
+                Write-Host 'Nested virtualization will be enabled.' -ForegroundColor DarkCyan
                 $lifecycleSnapshot = Get-AzVmVmLifecycleSnapshot -ResourceGroup $resourceGroup -VmName $vmName
                 if ([string]$lifecycleSnapshot.NormalizedState -ne 'started') {
                     Throw-FriendlyError `
@@ -118,10 +132,13 @@ function Invoke-AzVmSetCommand {
                         -Hint "Check VM SKU, security type, and guest virtualization readiness, then retry."
                 }
 
-                Write-Host ("Nested virtualization guest validation passed for VM '{0}'. {1}" -f $vmName, ((@($nestedValidation.Evidence) -join '; '))) -ForegroundColor Green
+                Write-Host 'Nested virtualization was enabled successfully.' -ForegroundColor Green
+                if (@($nestedValidation.Evidence).Count -gt 0) {
+                    Write-Host ("Nested virtualization validation details: {0}" -f ((@($nestedValidation.Evidence) -join '; '))) -ForegroundColor DarkCyan
+                }
             }
             else {
-                Write-Host ("Nested virtualization desired-state tracking was set to off for VM '{0}'. Azure does not expose a separate disable toggle for this capability on single VMs." -f $vmName) -ForegroundColor DarkCyan
+                Write-Host 'Nested virtualization will not be changed in Azure because this capability has no separate disable toggle on single VMs.' -ForegroundColor DarkCyan
             }
             $persistMap['VM_ENABLE_NESTED_VIRTUALIZATION'] = $nestedBool
         }

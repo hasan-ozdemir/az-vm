@@ -7,6 +7,7 @@ function Get-AzVmExecOptionSpecifications {
         (Get-AzVmSharedSubscriptionIdOptionSpecification),
         (Get-AzVmExecGroupOptionSpecification),
         (Get-AzVmExecVmNameOptionSpecification),
-        (Get-AzVmExecCommandContentOptionSpecification)
+        (Get-AzVmExecCommandContentOptionSpecification),
+        (Get-AzVmExecQuietOptionSpecification)
     )
 }

@@ -1613,9 +1613,9 @@ function Invoke-AzVmTaskAppStateBrowserPreflight {
         return
     }
 
-    Write-Host ("app-state-phase => task={0}; phase=preflight-start; mode={1}; processes={2}" -f [string]$TaskName, [string]$Mode, (@($processNames) -join ','))
+    Write-Host ("app-state preflight => task={0}; mode={1}; managed-processes={2}" -f [string]$TaskName, [string]$Mode, (@($processNames) -join ','))
     Stop-AzVmManagedProcessesGracefully -ProcessNames @($processNames) -GracefulWaitSeconds 15
-    Write-Host ("app-state-phase => task={0}; phase=preflight-complete; mode={1}; processes={2}" -f [string]$TaskName, [string]$Mode, (@($processNames) -join ','))
+    Write-Host ("app-state preflight done => task={0}; mode={1}" -f [string]$TaskName, [string]$Mode)
 }
 
 function Invoke-AzVmTaskAppStateCapturePreflight {
@@ -2082,18 +2082,15 @@ function Invoke-AzVmTaskAppStateReplay {
     }
 
     $replayWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    Write-Host ("app-state-phase => task={0}; phase=zip-ready-wait-start" -f [string]$TaskName)
+    Write-Host ("app-state start => task={0}; mode=replay" -f [string]$TaskName)
     $zipLength = Wait-AzVmAppStateZipReady -ZipPath $ZipPath -TimeoutSeconds 60
-    Write-Host ("app-state-phase => task={0}; phase=zip-ready; bytes={1}; elapsed={2:N1}s" -f [string]$TaskName, [int64]$zipLength, $replayWatch.Elapsed.TotalSeconds)
 
     $scratchRoot = Get-AzVmAppStateScratchRootPath -Prefix 'azv-replay'
     Ensure-AzVmAppStateDirectory -Path $scratchRoot
     $previousProgressPreference = $global:ProgressPreference
     try {
         $global:ProgressPreference = 'SilentlyContinue'
-        Write-Host ("app-state-phase => task={0}; phase=extract-start; elapsed={1:N1}s" -f [string]$TaskName, $replayWatch.Elapsed.TotalSeconds)
         Expand-Archive -LiteralPath $ZipPath -DestinationPath $scratchRoot -Force
-        Write-Host ("app-state-phase => task={0}; phase=extract-complete; elapsed={1:N1}s" -f [string]$TaskName, $replayWatch.Elapsed.TotalSeconds)
     }
     finally {
         $global:ProgressPreference = $previousProgressPreference
@@ -2103,7 +2100,6 @@ function Invoke-AzVmTaskAppStateReplay {
         $manifest = Get-AzVmAppStateManifestFromExpandedRoot -ExpandedRoot $scratchRoot -TaskName $TaskName
         Invoke-AzVmTaskAppStateReplayPreflight -TaskName $TaskName
         $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser -ProfileTargets @($ProfileTargets))
-        Write-Host ("app-state-phase => task={0}; phase=manifest-ready; profiles={1}; elapsed={2:N1}s" -f [string]$TaskName, @($profileTargets).Count, $replayWatch.Elapsed.TotalSeconds)
         $operations = @(Get-AzVmTaskAppStateReplayOperations -ExpandedRoot $scratchRoot -Manifest $manifest -ProfileTargets @($profileTargets))
         $backupRoot = Get-AzVmAppStateScratchRootPath -Prefix 'azv-rollback'
         Ensure-AzVmAppStateDirectory -Path $backupRoot
@@ -2112,10 +2108,11 @@ function Invoke-AzVmTaskAppStateReplay {
         try {
             $replayResult = Invoke-AzVmTaskAppStateReplayOperations -Operations @($operations)
             $verifyResult = Test-AzVmTaskAppStateOperations -Operations @($operations)
-            Write-Host ("app-state-phase => task={0}; phase=verify-complete; checked={1}; mismatches={2}; elapsed={3:N1}s" -f [string]$TaskName, [int]$verifyResult.CheckedCount, [int]$verifyResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
             if (-not [bool]$verifyResult.Succeeded) {
                 throw ("Task app-state restore verification failed for '{0}'." -f [string]$TaskName)
             }
+
+            Write-Host ("app-state done => task={0}; mode=replay; bytes={1}; profiles={2}; checked={3}; mismatches={4}; elapsed={5:N1}s" -f [string]$TaskName, [int64]$zipLength, @($profileTargets).Count, [int]$verifyResult.CheckedCount, [int]$verifyResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
 
             return [pscustomobject]@{
                 MachineRegistryImports = [int]$replayResult.MachineRegistryImports
@@ -2133,7 +2130,7 @@ function Invoke-AzVmTaskAppStateReplay {
         }
         catch {
             $rollbackResult = Invoke-AzVmTaskAppStateRollback -BackupRecords @($backupRecords)
-            Write-Host ("app-state-phase => task={0}; phase=rollback-complete; checked={1}; mismatches={2}; elapsed={3:N1}s" -f [string]$TaskName, [int]$rollbackResult.CheckedCount, [int]$rollbackResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
+            Write-Host ("app-state rollback => task={0}; checked={1}; mismatches={2}; elapsed={3:N1}s" -f [string]$TaskName, [int]$rollbackResult.CheckedCount, [int]$rollbackResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
             if (-not [bool]$rollbackResult.Succeeded) {
                 throw ("{0} Rollback verification also failed for '{1}'." -f [string]$_.Exception.Message, [string]$TaskName)
             }
@@ -2146,7 +2143,6 @@ function Invoke-AzVmTaskAppStateReplay {
     }
     finally {
         if ($replayWatch.IsRunning) {
-            Write-Host ("app-state-phase => task={0}; phase=cleanup-start; elapsed={1:N1}s" -f [string]$TaskName, $replayWatch.Elapsed.TotalSeconds)
             $replayWatch.Stop()
         }
         Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue

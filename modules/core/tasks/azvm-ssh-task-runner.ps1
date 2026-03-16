@@ -267,9 +267,6 @@ function Invoke-AzVmSshTaskBlocks {
 
             if ($taskWatch.IsRunning) { $taskWatch.Stop() }
             $taskElapsedSeconds = $taskWatch.Elapsed.TotalSeconds
-            if ($script:PerfMode) {
-                Write-AzVmPerfTiming -Category $PerfTaskCategory -Label $taskName -Seconds $taskElapsedSeconds
-            }
 
             if ($null -ne $taskInvocationError) {
                 $failedTasks += $taskName

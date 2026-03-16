@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.331 - 2026-03-16
+
+### Summary
+This release finishes the current Windows language-settings and operator-surface cleanup pass. The repo now ships a dedicated `132-configure-language-settings` update task for English UI plus Turkish locale/region/time formatting and Turkish Q keyboard policy, keeps `10005` and `10006` out of task-local app-state replay, and hardens `exec --quiet` so one-shot remote commands print only the command result without banner or `Write-Host` noise. The release was validated both non-live and live, including step-by-step readback of the language settings on the active managed Windows VM before the final isolated task reruns.
+
+### Highlights
+- Added tracked Windows `vm-update` task `132-configure-language-settings` to install `en-US` and `tr-TR`, enforce English UI with Turkish system locale, Turkish regional formats, Istanbul time zone, UTF-8 code page intent, Turkish Q keyboard, and welcome-screen/new-user propagation.
+- Removed task-local app-state ownership from `10005-copy-settings-user` and `10006-capture-snapshot-health`, keeping both tasks on-the-fly and preventing any language-state replay overlap with the new `132` task.
+- Added `exec --quiet` / `exec -q` so one-shot SSH commands can return only the remote result stream; the Windows wrapper now suppresses information-stream chatter and uses the task timeout budget instead of the short connect timeout.
+- Revalidated the change live on the active managed Windows VM with direct `exec -q` readbacks plus isolated reruns of `132`, `10005`, and `10006`, confirming English UI, `tr-TR` locale and time formats, Turkish Q preload `0000041f`, default input `041F:0000041F`, and matching welcome-screen/new-user defaults.
+
 ## Release 2026.3.16.330 - 2026-03-16
 
 ### Summary

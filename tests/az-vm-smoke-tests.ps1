@@ -451,8 +451,8 @@ Invoke-Test -Name "Shared feature toggles and pyssh path are wired into runtime 
     Assert-True -Condition ($platformDefaultsText -match [regex]::Escape("return 'tools/pyssh/ssh_client.py'")) -Message 'Platform defaults must publish a non-empty PYSSH client path.'
     Assert-True -Condition ($commandContextText -match [regex]::Escape('VM_ENABLE_HIBERNATION')) -Message 'Command context must read VM_ENABLE_HIBERNATION.'
     Assert-True -Condition ($commandContextText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION')) -Message 'Command context must read VM_ENABLE_NESTED_VIRTUALIZATION.'
-    Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_HIBERNATION=false')) -Message 'Feature support must honor disabling hibernation by config.'
-    Assert-True -Condition ($featureSupportText -match [regex]::Escape('disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false')) -Message 'Feature support must honor disabling nested virtualization by config.'
+    Assert-True -Condition ($featureSupportText -match [regex]::Escape('VM_ENABLE_HIBERNATION=false.')) -Message 'Feature support must honor disabling hibernation by config.'
+    Assert-True -Condition ($featureSupportText -match [regex]::Escape('VM_ENABLE_NESTED_VIRTUALIZATION=false.')) -Message 'Feature support must honor disabling nested virtualization by config.'
     Assert-True -Condition ($commandContextText -match [regex]::Escape('nsg-rule-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}')) -Message 'Command context must use the selected VM naming template prefix.'
     Assert-True -Condition ($commandRuntimeText -match [regex]::Escape('Get-AzVmDefaultPySshClientPathText')) -Message 'Shared command runtime must consume the shared PYSSH client default.'
     Assert-True -Condition ($mainText -match [regex]::Escape('Write-AzVmMainBanner')) -Message 'Command main must render the review-first banner helper.'
@@ -603,6 +603,10 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedExecShortCommand = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("-c", "Get-Date")
     Assert-True -Condition ([string]$parsedExecShortCommand.Options['command'] -eq 'Get-Date') -Message "Exec -c <value> parse failed."
 
+    $parsedExecQuiet = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("--quiet", "--command", "Get-Date")
+    Assert-True -Condition ($parsedExecQuiet.Options.ContainsKey('quiet')) -Message "Exec --quiet option was not captured."
+    Assert-True -Condition ([string]$parsedExecQuiet.Options['command'] -eq 'Get-Date') -Message "Exec --quiet must preserve the one-shot command value."
+
     $parsedDoHelp = Parse-AzVmCliArguments -CommandToken "do" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedDoHelp.Command -eq "do") -Message "Do command with --help parse failed."
     Assert-True -Condition ($parsedDoHelp.Options.ContainsKey("help")) -Message "Do command --help option was not captured."
@@ -647,6 +651,25 @@ Invoke-Test -Name "CLI entrypoint prints the unconditional welcome banner" -Acti
     Assert-True -Condition ($entryText -like '*Provision, update, connect, and maintain managed Windows or Linux Azure VMs from one deterministic CLI.*') -Message 'CLI entrypoint banner must print the first descriptive line.'
     Assert-True -Condition ($entryText -like '*Run lifecycle actions, isolated tasks, app-state save/restore, and SSH or RDP access through one repo-driven workflow.*') -Message 'CLI entrypoint banner must print the second descriptive line.'
     Assert-True -Condition ($entryText -match '(?s)if \(\$MyInvocation\.InvocationName -eq ''\.''\) \{\s*return\s*\}\s*Write-AzVmCliBanner\s*try \{') -Message 'CLI entrypoint must print the banner before parsing or dispatching any command.'
+}
+
+Invoke-Test -Name "CLI entrypoint keeps raw token parsing compatible with exec command flags" -Action {
+    $entryText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'az-vm.ps1') -Raw)
+    $expectedReinjectLine = '$rawArgs = @(''-c'', [string]$PassthroughShortCommand) + @($rawArgs)'
+    $expectedPreparsedReinjectLine = '$preParsedRawArgs = @(''-c'', [string]$PassthroughShortCommand) + @($preParsedRawArgs)'
+
+    Assert-True -Condition ($entryText -like '*[CmdletBinding(PositionalBinding = $false)]*') -Message 'CLI entrypoint must disable positional binding so command tokens remain in the raw CLI stream.'
+    Assert-True -Condition ($entryText -like '*[string[]]$CliTokens*') -Message 'CLI entrypoint must keep one raw token array parameter.'
+    Assert-True -Condition ($entryText -like '*[Alias(''c'')]*') -Message 'CLI entrypoint must reserve the short -c token so PowerShell does not reject exec -c at the script boundary.'
+    Assert-True -Condition ($entryText -like '*ValueFromRemainingArguments = $true*') -Message 'CLI entrypoint must capture the full raw token stream.'
+    Assert-True -Condition (-not ($entryText -like '*[string]$Command*')) -Message 'CLI entrypoint must not expose a top-level Command parameter that collides with exec --command.'
+    $commandTokenPatterns = @(
+        '$commandToken = [string]$CliTokens[0]',
+        '$preParsedCommandToken = [string]$CliTokens[0]'
+    )
+    Assert-True -Condition ((@($commandTokenPatterns | Where-Object { $entryText -match [regex]::Escape([string]$_) }).Count) -gt 0) -Message 'CLI entrypoint must derive the command token from the raw token stream.'
+    Assert-True -Condition (($entryText -match [regex]::Escape($expectedReinjectLine)) -or ($entryText -match [regex]::Escape($expectedPreparsedReinjectLine))) -Message 'CLI entrypoint must re-inject the captured short -c option into the raw CLI argument stream.'
+    Assert-True -Condition ($entryText -like '*$parsedCli = Parse-AzVmCliArguments -CommandToken $commandToken -RawArgs $rawArgs*') -Message 'CLI entrypoint must parse CLI options from the reconstructed raw argument stream.'
 }
 
 Invoke-Test -Name "Task folder defaults" -Action {
@@ -3538,8 +3561,8 @@ Invoke-Test -Name "Step first-use values redact sensitive fields" -Action {
         Assert-True -Condition ($outputText -match [regex]::Escape('VmAssistantPass = [redacted]')) -Message 'Step review must redact VmAssistantPass.'
         Assert-True -Condition (-not ($outputText -match [regex]::Escape('<runtime-secret>'))) -Message 'Step review must not print the raw admin password.'
         Assert-True -Condition (-not ($outputText -match [regex]::Escape('<runtime-secret-2>'))) -Message 'Step review must not print the raw assistant password.'
-        Assert-True -Condition ($outputText -match [regex]::Escape('VmUser = manager')) -Message 'Step review must keep VmUser visible.'
-        Assert-True -Condition ($outputText -match [regex]::Escape('VmName = samplevm')) -Message 'Step review must keep VmName visible.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VM_ADMIN_USER = manager')) -Message 'Step review must keep VM_ADMIN_USER visible.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('SELECTED_VM_NAME = samplevm')) -Message 'Step review must keep SELECTED_VM_NAME visible.'
     }
     finally {
         Remove-Item Function:\Write-Host -ErrorAction SilentlyContinue
@@ -4110,6 +4133,7 @@ Invoke-Test -Name "Exec command uses the minimal runtime for remote command exec
                 }
                 ConfiguredPySshClientPath = ''
                 SshConnectTimeoutSeconds = 30
+                SshCommandTimeoutSeconds = 180
             }
         }
         function Resolve-AzVmManagedVmTarget {
@@ -4142,7 +4166,9 @@ Invoke-Test -Name "Exec command uses the minimal runtime for remote command exec
         Invoke-AzVmExecCommand -Options @{ command = 'Get-Date' }
 
         Assert-True -Condition $script:ExecMinimalRuntimeUsed -Message 'Exec must use the minimal exec runtime context.'
-        Assert-True -Condition ((@($script:ExecPythonArgs) -join ' ') -match [regex]::Escape('exec --host samplevm.example --port 444 --user manager --password secret --timeout 30 --command Get-Date')) -Message 'Exec --command must run the pyssh exec path with the provided command.'
+        $pythonArgsText = @($script:ExecPythonArgs) -join ' '
+        Assert-True -Condition ($pythonArgsText -match [regex]::Escape('exec --host samplevm.example --port 444 --user manager --password secret --timeout 180 --command powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ')) -Message 'Windows exec --command must wrap one-shot commands in PowerShell and use the bounded command timeout.'
+        Assert-True -Condition (-not ($pythonArgsText -match [regex]::Escape('--command Get-Date'))) -Message 'Windows exec --command must not send raw PowerShell expressions to cmd.exe.'
     }
     finally {
         foreach ($functionName in @(
@@ -4360,6 +4386,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '129-install-icloud-system' = 120
         '130-install-vs2022community' = 7200
         '131-install-jaws-screen-reader' = 300
+        '132-configure-language-settings' = 2400
         '10001-configure-apps-startup' = 45
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
@@ -4397,6 +4424,99 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     Assert-True -Condition (@($autologonTask).Count -eq 1) -Message 'Windows init catalog must include 102-autologon-manager-user.'
     Assert-True -Condition ([int]$sysinternalsTask[0].TimeoutSeconds -eq 180) -Message 'Windows init catalog must keep 101-install-sysinternals-suite timeout at 180.'
     Assert-True -Condition ([int]$autologonTask[0].TimeoutSeconds -eq 20) -Message 'Windows init catalog must keep 102-autologon-manager-user timeout at 20.'
+}
+
+Invoke-Test -Name "Exec quiet mode suppresses operator chatter for one-shot commands" -Action {
+    $script:ExecQuietPythonArgs = @()
+    $script:CapturedExecQuietHost = @()
+    $previousQuietOutput = [bool]$script:AzVmQuietOutput
+    try {
+        function Write-Host {
+            param([Parameter(ValueFromRemainingArguments = $true)]$Arguments)
+
+            $parts = @()
+            foreach ($argument in @($Arguments)) {
+                if ($argument -is [string]) {
+                    $parts += [string]$argument
+                }
+            }
+
+            if (@($parts).Count -gt 0) {
+                $script:CapturedExecQuietHost += (@($parts) -join ' ')
+            }
+        }
+        function Initialize-AzVmExecCommandRuntimeContext {
+            return [pscustomobject]@{
+                ConfigMap = @{
+                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+                    VM_NAME = 'samplevm'
+                    VM_ADMIN_USER = 'manager'
+                    VM_ADMIN_PASS = 'secret'
+                    VM_SSH_PORT = '444'
+                }
+                ConfiguredPySshClientPath = ''
+                SshConnectTimeoutSeconds = 30
+                SshCommandTimeoutSeconds = 180
+            }
+        }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+            }
+        }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'samplevm.example'
+                PublicIP = ''
+            }
+        }
+        function Ensure-AzVmPySshTools { param([string]$RepoRoot, [string]$ConfiguredPySshClientPath) return @{ PythonPath = 'Invoke-TestPyQuiet'; ClientPath = 'ssh_client.py' } }
+        function Initialize-AzVmSshHostKey { param() return [pscustomobject]@{ Output = 'bootstrap-output' } }
+        function az {
+            $global:LASTEXITCODE = 0
+            return '{"storageProfile":{"osDisk":{"osType":"Windows"}}}'
+        }
+        function Assert-LastExitCode { param([string]$Context) }
+        function Invoke-TestPyQuiet {
+            param([Parameter(ValueFromRemainingArguments = $true)]$Args)
+            $script:ExecQuietPythonArgs = @($Args)
+            $global:LASTEXITCODE = 0
+        }
+
+        Invoke-AzVmExecCommand -Options @{ command = 'Get-Date'; quiet = $true }
+
+        Assert-True -Condition ([bool]$script:AzVmQuietOutput) -Message 'Exec --quiet must enable quiet output mode for the command path.'
+        Assert-True -Condition (@($script:CapturedExecQuietHost).Count -eq 0) -Message 'Exec --quiet must suppress banner/bootstrap/completion chatter on the one-shot command path.'
+        $pythonArgsText = (@($script:ExecQuietPythonArgs) -join ' ')
+        Assert-True -Condition ($pythonArgsText -match [regex]::Escape('exec --host samplevm.example --port 444 --user manager --password secret --timeout 180 --command powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ')) -Message 'Exec --quiet must still invoke the wrapped one-shot command path.'
+        $encodedCommandMatch = [regex]::Match($pythonArgsText, 'EncodedCommand\s+(?<encoded>[A-Za-z0-9+/=]+)')
+        Assert-True -Condition ($encodedCommandMatch.Success) -Message 'Exec --quiet must pass one encoded PowerShell command.'
+        $encodedCommandText = [string]$encodedCommandMatch.Groups['encoded'].Value
+        $decodedCommandText = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String($encodedCommandText))
+        Assert-True -Condition ($decodedCommandText -like '*$InformationPreference = ''SilentlyContinue''*') -Message 'Exec --quiet must suppress information-stream chatter inside the remote wrapper.'
+        Assert-True -Condition ($decodedCommandText -like '*} 6>$null*') -Message 'Exec --quiet must suppress information-stream redirection inside the remote wrapper.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Write-Host',
+            'Initialize-AzVmExecCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmDetails',
+            'Ensure-AzVmPySshTools',
+            'Initialize-AzVmSshHostKey',
+            'az',
+            'Assert-LastExitCode',
+            'Invoke-TestPyQuiet'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        $script:AzVmQuietOutput = $previousQuietOutput
+        Remove-Variable -Name ExecQuietPythonArgs -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name CapturedExecQuietHost -Scope Script -ErrorAction SilentlyContinue
+    }
 }
 
 Invoke-Test -Name "Task json controls local-only task discovery" -Action {
@@ -5362,6 +5482,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $chromeTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '02-check-install-chrome') -Raw)
     $edgeTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '110-install-edge-browser') -Raw)
     $copySettingsTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10005-copy-settings-user') -Raw)
+    $healthTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health') -Raw)
     $dockerTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '114-install-docker-desktop') -Raw)
     $ollamaTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '116-install-ollama-system') -Raw)
     $azdTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '112-install-azd-cli') -Raw)
@@ -5389,8 +5510,8 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateReplayPreflight*') -Message 'Windows app-state guest helpers must preflight replay before restoring browser payloads.'
     Assert-True -Condition ($guestHelperText -like '*chrome*') -Message 'Windows app-state guest helpers must include Chrome process preflight handling.'
     Assert-True -Condition ($guestHelperText -like '*msedge*') -Message 'Windows app-state guest helpers must include Edge process preflight handling.'
-    Assert-True -Condition ($guestHelperText -like '*phase=verify-complete*') -Message 'Windows app-state guest helpers must log restore verification completion.'
-    Assert-True -Condition ($guestHelperText -like '*phase=rollback-complete*') -Message 'Windows app-state guest helpers must log rollback completion.'
+    Assert-True -Condition ($guestHelperText -like '*app-state done => task=*') -Message 'Windows app-state guest helpers must log restore verification completion in the compact success format.'
+    Assert-True -Condition ($guestHelperText -like '*app-state rollback => task=*') -Message 'Windows app-state guest helpers must log rollback completion in the compact failure format.'
     Assert-True -Condition ($captureHelperText -like '*Copy-AzVmAssetToVm*') -Message 'Shared app-state capture must upload capture plans over SSH.'
     Assert-True -Condition (-not ($captureHelperText -like '*plan_b64*')) -Message 'Shared app-state capture must not embed capture plans as base64 blobs.'
     Assert-True -Condition (-not ($captureHelperText -like '*import base64*')) -Message 'Shared app-state capture must not keep the retired base64 decode helper path.'
@@ -5419,7 +5540,8 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
         Assert-True -Condition (-not ($chromeTaskJsonText -like ('*' + [string]$browserDurablePath + '*'))) -Message ("Chrome task-local app-state must not exclude durable browser subtree token '{0}'." -f [string]$browserDurablePath)
         Assert-True -Condition (-not ($edgeTaskJsonText -like ('*' + [string]$browserDurablePath + '*'))) -Message ("Edge task-local app-state must not exclude durable browser subtree token '{0}'." -f [string]$browserDurablePath)
     }
-    Assert-True -Condition ($copySettingsTaskJsonText -like '*SolutionPackages*') -Message 'Task-local Office capture specs must exclude generated offline solution packages.'
+    Assert-True -Condition (-not ($copySettingsTaskJsonText -like '*"appState"*')) -Message '10005-copy-settings-user must stay out of task-local app-state snapshot and restore.'
+    Assert-True -Condition (-not ($healthTaskJsonText -like '*"appState"*')) -Message '10006-capture-snapshot-health must stay out of task-local app-state snapshot and restore.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*updates_v2*') -Message 'Task-local Ollama capture specs must exclude installer update payloads.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*EBWebView*') -Message 'Task-local app-state specs must exclude embedded WebView runtime payloads where they are not durable settings.'
     Assert-True -Condition ($azdTaskJsonText -like '*telemetry*') -Message 'Task-local azd capture specs must exclude telemetry payloads.'
@@ -6276,6 +6398,63 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile and 
     }
     Assert-True -Condition (($healthTaskText.IndexOf('Get-ManagerContext', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must read manager-scope startup locations through the manager hive."
     Assert-True -Condition (($healthTaskText.IndexOf('ollama-api-version-response => {{"version":"{0}"}}', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must escape literal JSON braces when formatting the Ollama API version response."
+}
+
+Invoke-Test -Name "Windows language task and health contract" -Action {
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '132-configure-language-settings'
+    $taskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '132-configure-language-settings'
+    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
+
+    Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Language settings task file was not found.'
+    Assert-True -Condition (Test-Path -LiteralPath $taskJsonPath) -Message 'Language settings task json was not found.'
+
+    $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+    $taskJsonText = [string](Get-Content -LiteralPath $taskJsonPath -Raw)
+    $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+
+    foreach ($fragment in @(
+        'Install-Language',
+        'Set-SystemPreferredUILanguage',
+        'Set-WinUILanguageOverride',
+        'Set-WinUserLanguageList',
+        'Set-WinDefaultInputMethodOverride',
+        'Set-WinCultureFromLanguageListOptOut',
+        'Set-Culture',
+        'Set-WinHomeLocation',
+        'Set-WinSystemLocale',
+        'Set-TimeZone',
+        'Copy-UserInternationalSettingsToSystem',
+        '041F:0000041F',
+        'Turkey Standard Time',
+        'tr-TR',
+        'en-US',
+        'TASK_REBOOT_REQUIRED:configure-language-settings'
+    )) {
+        Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Language settings task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    Assert-True -Condition ($taskJsonText -like '*"timeout": 2400*') -Message 'Language settings task must keep timeout 2400.'
+    Assert-True -Condition (-not ($taskJsonText -like '*"appState"*')) -Message 'Language settings task must stay out of task-local app-state snapshot and restore.'
+
+    foreach ($fragment in @(
+        'LANGUAGE AND REGION STATUS:',
+        'system-preferred-ui-language =>',
+        'system-locale =>',
+        'time-zone =>',
+        'utf8-codepage-acp =>',
+        'utf8-codepage-oemcp =>',
+        'installed-language => {0} =>',
+        'Write-InstalledLanguageStatus -LanguageTag ''en-US''',
+        'Write-InstalledLanguageStatus -LanguageTag ''tr-TR''',
+        'user-language-status => {0} =>',
+        'default-input={7}',
+        'Write-UserLanguageStatus -UserName $managerUser -UserPassword $managerPassword',
+        'Write-UserLanguageStatus -UserName $assistantUser -UserPassword $assistantPassword',
+        'welcome-screen-language =>',
+        'new-user-language =>'
+    )) {
+        Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include language fragment '{0}'." -f [string]$fragment)
+    }
 }
 
 Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoid forceful package reinstalls" -Action {

@@ -90,6 +90,48 @@ function Get-AzVmSafeTrimmedText {
     return $text.Trim()
 }
 
+function Write-AzVmFeatureIntentMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("{0} will be enabled." -f [string]$FeatureLabel) -ForegroundColor DarkCyan
+    }
+}
+
+function Write-AzVmFeatureActionMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("Enabling {0}..." -f ([string]$FeatureLabel).ToLowerInvariant()) -ForegroundColor Cyan
+    }
+}
+
+function Write-AzVmFeatureSuccessMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("{0} was enabled successfully." -f [string]$FeatureLabel) -ForegroundColor Green
+    }
+}
+
+function Write-AzVmFeatureSkipMessage {
+    param(
+        [string]$FeatureLabel,
+        [string]$Reason
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$Reason)) {
+        Write-Host ("{0} will not be changed." -f [string]$FeatureLabel) -ForegroundColor DarkCyan
+        return
+    }
+
+    Write-Host ("{0} will not be changed because {1}" -f [string]$FeatureLabel, [string]$Reason) -ForegroundColor DarkCyan
+}
+
 # Handles Resolve-AzVmFeatureSupportReasonText.
 function Resolve-AzVmFeatureSupportReasonText {
     param(
@@ -106,26 +148,26 @@ function Resolve-AzVmFeatureSupportReasonText {
         'compute-skus-read-failed' { return 'Azure compute SKU metadata could not be read from the REST API.' }
         'compute-skus-parse-failed' { return 'Azure compute SKU metadata could not be parsed.' }
         'vm-size-metadata-not-found' { return 'Azure compute SKU metadata for the selected region and VM size was not found.' }
-        'hibernation-capability-not-advertised' { return ("Azure SKU metadata does not advertise capability '{0}' for this VM size in this region." -f [string]$CapabilityLabel) }
-        'nested-capability-not-advertised' { return ("Azure SKU metadata does not advertise any capability containing 'nested' for this VM size in this region.") }
+        'hibernation-capability-not-advertised' { return ("Azure did not clearly confirm capability '{0}' for this VM size in this region." -f [string]$CapabilityLabel) }
+        'nested-capability-not-advertised' { return 'Azure did not clearly confirm nested virtualization support for this VM size in this region.' }
         'nested-requires-standard-security' { return "Azure nested virtualization on this VM requires security type 'Standard' instead of 'TrustedLaunch'." }
-        'nested-managed-by-security-type' { return 'Azure does not expose a separate nested virtualization toggle for this VM; availability is determined by VM size and security type.' }
-        'nested-capability-inconclusive' { return 'Azure nested virtualization metadata is inconclusive. Guest OS validation is required after deployment.' }
+        'nested-managed-by-security-type' { return 'Nested virtualization depends on VM size and security type for this VM.' }
+        'nested-capability-inconclusive' { return 'Azure did not clearly confirm nested virtualization from metadata. Guest validation is required after deployment.' }
         'hibernation-not-supported' {
-            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure SKU metadata reports hibernation as unsupported.' }
-            return "Azure SKU metadata reports: $evidenceText."
+            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported that hibernation is unsupported.' }
+            return "Azure reported: $evidenceText."
         }
         'nested-not-supported' {
-            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure SKU metadata reports nested virtualization as unsupported.' }
-            return "Azure SKU metadata reports: $evidenceText."
+            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported that nested virtualization is unsupported.' }
+            return "Azure reported: $evidenceText."
         }
         'hibernation-supported' {
-            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure SKU metadata reports hibernation support.' }
-            return "Azure SKU metadata reports: $evidenceText."
+            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported hibernation support.' }
+            return "Azure reported: $evidenceText."
         }
         'nested-supported' {
-            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure SKU metadata reports nested virtualization support.' }
-            return "Azure SKU metadata reports: $evidenceText."
+            if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported nested virtualization support.' }
+            return "Azure reported: $evidenceText."
         }
         default { return ("{0} support metadata returned '{1}'." -f [string]$FeatureLabel, [string]$ReasonCode) }
     }
@@ -328,7 +370,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
         $securityProfileJson = az vm show -g $resourceGroup -n $vmName --query "{securityType:securityProfile.securityType,secureBoot:securityProfile.uefiSettings.secureBootEnabled,vTpm:securityProfile.uefiSettings.vTpmEnabled}" -o json --only-show-errors 2>$null
         if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$securityProfileJson)) {
             $securityProfile = ConvertFrom-JsonCompat -InputObject $securityProfileJson
-            Write-Host ("VM security profile: SecurityType={0}, SecureBoot={1}, vTPM={2}" -f [string]$securityProfile.securityType, [string]$securityProfile.secureBoot, [string]$securityProfile.vTpm) -ForegroundColor DarkCyan
+            Write-Host ("Current VM security settings: SecurityType={0}, SecureBoot={1}, vTPM={2}" -f [string]$securityProfile.securityType, [string]$securityProfile.secureBoot, [string]$securityProfile.vTpm) -ForegroundColor DarkCyan
             $resolvedSecurityType = Get-AzVmSafeTrimmedText -Value $securityProfile.securityType
             if (-not [string]::IsNullOrWhiteSpace([string]$resolvedSecurityType)) {
                 $nestedSecurityState = $resolvedSecurityType
@@ -341,23 +383,24 @@ function Invoke-AzVmPostDeployFeatureEnablement {
     try {
         if (-not $hibernationDesired) {
             $hibernationMessage = 'disabled-by-config'
-            Write-Host ("Hibernation enablement is disabled by VM_ENABLE_HIBERNATION=false for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
+            Write-AzVmFeatureSkipMessage -FeatureLabel 'Hibernation' -Reason 'VM_ENABLE_HIBERNATION=false.'
         }
         else {
             $hibernationAttempted = $true
+            Write-AzVmFeatureIntentMessage -FeatureLabel 'Hibernation'
             $hibernationSupportReason = Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Hibernation' -CapabilityLabel 'HibernationSupported' -ReasonCode ([string]$hibernationSupport.Message) -Evidence @($hibernationSupport.Evidence)
             if ([bool]$hibernationSupport.Known -and [bool]$hibernationSupport.Supported) {
-                Write-Host ("Hibernation is supported for VM size '{0}'. {1}" -f [string]$Context.VmSize, $hibernationSupportReason) -ForegroundColor DarkCyan
+                Write-Host ("Azure confirmed hibernation support for VM size '{0}'." -f [string]$Context.VmSize) -ForegroundColor DarkCyan
             }
             elseif ([bool]$hibernationSupport.Known) {
                 Throw-FriendlyError `
-                    -Detail ("VM_ENABLE_HIBERNATION=true requires Azure hibernation support for VM '{0}', but VM size '{1}' did not advertise support. {2}" -f $vmName, [string]$Context.VmSize, $hibernationSupportReason) `
+                    -Detail ("VM_ENABLE_HIBERNATION=true requires Azure hibernation support for VM '{0}', but VM size '{1}' cannot enable it. {2}" -f $vmName, [string]$Context.VmSize, $hibernationSupportReason) `
                     -Code 66 `
                     -Summary "Hibernation could not be enabled." `
                     -Hint "Use a VM size that supports hibernation, or set VM_ENABLE_HIBERNATION=false before retrying."
             }
             else {
-                Write-Host ("Hibernation capability metadata is inconclusive for VM size '{0}'. Azure verification will be attempted. {1}" -f [string]$Context.VmSize, $hibernationSupportReason) -ForegroundColor Yellow
+                Write-Host 'Azure did not clearly confirm hibernation from metadata; Azure verification will continue.' -ForegroundColor Yellow
             }
 
             $hibernationState = Get-AzVmVmAdditionalCapabilityFlag -ResourceGroup $resourceGroup -VmName $vmName -QueryPath 'additionalCapabilities.hibernationEnabled'
@@ -367,6 +410,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
                 $hibernationMessage = 'already-enabled'
             }
             else {
+                Write-AzVmFeatureActionMessage -FeatureLabel 'Hibernation'
                 Ensure-AzVmDeallocatedForFeatureUpdate -ResourceGroup $resourceGroup -VmName $vmName -DeallocatedFlag ([ref]$deallocated)
 
                 Invoke-TrackedAction -Label ("az disk update -g {0} -n {1} --set supportsHibernation=true" -f $resourceGroup, $vmDiskName) -Action {
@@ -383,7 +427,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
                 if ([bool]$hibernationStateAfter.Enabled) {
                     $hibernationEnabled = $true
                     $hibernationMessage = 'enabled'
-                    Write-Host ("Hibernation was enabled on VM '{0}'." -f $vmName) -ForegroundColor Green
+                    Write-AzVmFeatureSuccessMessage -FeatureLabel 'Hibernation'
                 }
                 else {
                     $hibernationMessage = if ([bool]$hibernationStateAfter.Known) { "Azure reported hibernationEnabled='{0}' after the update command." -f [string]$hibernationStateAfter.RawValue } else { 'Azure could not report hibernationEnabled after the update command.' }
@@ -398,10 +442,11 @@ function Invoke-AzVmPostDeployFeatureEnablement {
 
         if (-not $nestedDesired) {
             $nestedMessage = 'disabled-by-config'
-            Write-Host ("Nested virtualization enablement is disabled by VM_ENABLE_NESTED_VIRTUALIZATION=false for VM '{0}'." -f $vmName) -ForegroundColor DarkCyan
+            Write-AzVmFeatureSkipMessage -FeatureLabel 'Nested virtualization' -Reason 'VM_ENABLE_NESTED_VIRTUALIZATION=false.'
         }
         else {
             $nestedAttempted = $true
+            Write-AzVmFeatureIntentMessage -FeatureLabel 'Nested virtualization'
             if ([string]::Equals([string]$nestedSecurityState, 'TrustedLaunch', [System.StringComparison]::OrdinalIgnoreCase)) {
                 $nestedMessage = 'nested-requires-standard-security'
                 Throw-FriendlyError `
@@ -413,19 +458,19 @@ function Invoke-AzVmPostDeployFeatureEnablement {
 
             $nestedSupportReason = Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode ([string]$nestedSupport.Message) -Evidence @($nestedSupport.Evidence)
             if ([bool]$nestedSupport.Known -and [bool]$nestedSupport.Supported) {
-                Write-Host ("Nested virtualization is supported for VM size '{0}'. {1}" -f [string]$Context.VmSize, $nestedSupportReason) -ForegroundColor DarkCyan
+                Write-Host ("Azure confirmed nested virtualization support for VM size '{0}'." -f [string]$Context.VmSize) -ForegroundColor DarkCyan
             }
             elseif ([bool]$nestedSupport.Known) {
                 $nestedMessage = [string]$nestedSupport.Message
                 Throw-FriendlyError `
-                    -Detail ("VM_ENABLE_NESTED_VIRTUALIZATION=true requires Azure nested virtualization support for VM '{0}', but VM size '{1}' did not advertise support. {2}" -f $vmName, [string]$Context.VmSize, $nestedSupportReason) `
+                    -Detail ("VM_ENABLE_NESTED_VIRTUALIZATION=true requires Azure nested virtualization support for VM '{0}', but VM size '{1}' cannot enable it. {2}" -f $vmName, [string]$Context.VmSize, $nestedSupportReason) `
                     -Code 66 `
                     -Summary "Nested virtualization could not be enabled." `
                     -Hint "Use a VM size that supports nested virtualization, or set VM_ENABLE_NESTED_VIRTUALIZATION=false before retrying."
             }
             else {
                 $nestedMessage = 'nested-capability-inconclusive'
-                Write-Host ("Nested virtualization capability metadata is inconclusive for VM size '{0}'. Guest validation will be attempted. {1}" -f [string]$Context.VmSize, $nestedSupportReason) -ForegroundColor Yellow
+                Write-Host 'Azure did not clearly confirm nested virtualization from metadata; guest validation will be used.' -ForegroundColor Yellow
             }
         }
 
@@ -436,9 +481,10 @@ function Invoke-AzVmPostDeployFeatureEnablement {
                     Assert-LastExitCode "az vm start"
                 } | Out-Null
                 $deallocated = $false
-                Write-Host ("VM '{0}' was started before nested virtualization guest validation." -f $vmName) -ForegroundColor DarkCyan
+                Write-Host 'The VM was started before nested virtualization guest validation.' -ForegroundColor DarkCyan
             }
 
+            Write-AzVmFeatureActionMessage -FeatureLabel 'Nested virtualization'
             $nestedValidation = Get-AzVmNestedVirtualizationGuestValidation `
                 -ResourceGroup $resourceGroup `
                 -VmName $vmName `
@@ -449,7 +495,10 @@ function Invoke-AzVmPostDeployFeatureEnablement {
             if ([bool]$nestedValidation.Known -and [bool]$nestedValidation.Enabled) {
                 $nestedEnabled = $true
                 $nestedMessage = 'guest-validated'
-                Write-Host ("Nested virtualization guest validation passed for VM '{0}'. {1}" -f $vmName, ((@($nestedValidation.Evidence) -join '; '))) -ForegroundColor Green
+                Write-AzVmFeatureSuccessMessage -FeatureLabel 'Nested virtualization'
+                if (@($nestedValidation.Evidence).Count -gt 0) {
+                    Write-Host ("Nested virtualization validation details: {0}" -f ((@($nestedValidation.Evidence) -join '; '))) -ForegroundColor DarkCyan
+                }
             }
             else {
                 $nestedEvidenceText = if (@($nestedValidation.Evidence).Count -gt 0) { (@($nestedValidation.Evidence) -join '; ') } else { [string]$nestedValidation.ErrorMessage }
@@ -468,7 +517,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
                     az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
                     Assert-LastExitCode "az vm start"
                 } | Out-Null
-                Write-Host ("VM '{0}' was started after feature enablement." -f $vmName) -ForegroundColor DarkCyan
+                Write-Host 'The VM was started after feature enablement.' -ForegroundColor DarkCyan
             }
             catch {
                 Write-Warning ("VM '{0}' could not be started after feature enablement: {1}" -f $vmName, $_.Exception.Message)

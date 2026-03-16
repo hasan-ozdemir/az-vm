@@ -39,12 +39,14 @@ function Invoke-Step {
 
     $before = @(Get-Variable)
     $modeLabel = if ($script:AutoMode) { 'auto' } else { 'interactive' }
-    Write-Host ("{0} (mode: {1})" -f $prompt, $modeLabel) -ForegroundColor Cyan
+    if (-not $script:AzVmQuietOutput) {
+        Write-Host ("{0} (mode: {1})" -f $prompt, $modeLabel) -ForegroundColor Cyan
+    }
     $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
     . $Action
     if ($stepWatch.IsRunning) { $stepWatch.Stop() }
-    if ($script:PerfMode) {
-        Write-AzVmPerfTiming -Category "step" -Label ("{0} [mode:{1}]" -f $prompt, $modeLabel) -Seconds $stepWatch.Elapsed.TotalSeconds
+    if (-not $script:AzVmQuietOutput) {
+        Write-Host ("Step completed: {0} ({1:N1}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
     }
     $after = @(Get-Variable)
     Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
@@ -174,7 +176,9 @@ function Invoke-TrackedAction {
     }
 
     $isAzLabel = ([string]$Label).TrimStart().ToLowerInvariant().StartsWith("az ")
-    Write-Host ("running: {0}" -f $Label) -ForegroundColor DarkCyan
+    if (-not $script:AzVmQuietOutput) {
+        Write-Host ("starting: {0}" -f $Label) -ForegroundColor DarkCyan
+    }
     $watch = [System.Diagnostics.Stopwatch]::StartNew()
     if ($isAzLabel) {
         $script:PerfSuppressAzTimingDepth = [int]$script:PerfSuppressAzTimingDepth + 1
@@ -192,10 +196,8 @@ function Invoke-TrackedAction {
         if ($watch.IsRunning) {
             $watch.Stop()
         }
-        Write-Host ("finished: {0} ({1:N1}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
-        if ($script:PerfMode) {
-            $category = if ($isAzLabel) { "az" } else { "action" }
-            Write-AzVmPerfTiming -Category $category -Label $Label -Seconds $watch.Elapsed.TotalSeconds
+        if (-not $script:AzVmQuietOutput) {
+            Write-Host ("completed: {0} ({1:N1}s)" -f $Label, $watch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
         }
     }
 }

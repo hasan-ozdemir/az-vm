@@ -33,7 +33,6 @@ function New-AzVmRunCommandTaskWrapperScript {
         [void]$builder.AppendLine('  local task_timeout="$3"')
         [void]$builder.AppendLine('  local task_name')
         [void]$builder.AppendLine('  task_name=$(printf ''%s'' "$task_name_base64" | base64 -d)')
-        [void]$builder.AppendLine('  echo "TASK started: ${task_name} (max ${task_timeout}s)"')
         [void]$builder.AppendLine('  local start_ts')
         [void]$builder.AppendLine('  start_ts=$(date +%s)')
         [void]$builder.AppendLine('  local task_script')
@@ -46,8 +45,6 @@ function New-AzVmRunCommandTaskWrapperScript {
         [void]$builder.AppendLine('    if [ -n "$task_output" ]; then')
         [void]$builder.AppendLine('      printf ''%s\n'' "$task_output"')
         [void]$builder.AppendLine('    fi')
-        [void]$builder.AppendLine('    echo "TASK completed: ${task_name} (${elapsed}s)"')
-        [void]$builder.AppendLine('    echo "TASK result: success"')
         [void]$builder.AppendLine('    echo "TASK_STATUS:${task_name}:success"')
         [void]$builder.AppendLine('    success_count=$(( success_count + 1 ))')
         [void]$builder.AppendLine('  else')
@@ -57,12 +54,6 @@ function New-AzVmRunCommandTaskWrapperScript {
         [void]$builder.AppendLine('    local elapsed=$(( end_ts - start_ts ))')
         [void]$builder.AppendLine('    if [ -n "$task_output" ]; then')
         [void]$builder.AppendLine('      printf ''%s\n'' "$task_output"')
-        [void]$builder.AppendLine('    fi')
-        [void]$builder.AppendLine('    echo "TASK completed: ${task_name} (${elapsed}s)"')
-        [void]$builder.AppendLine('    if [ "$exit_code" -eq 124 ] || [ "$exit_code" -eq 137 ]; then')
-        [void]$builder.AppendLine('      echo "TASK result: timeout (${task_name})"')
-        [void]$builder.AppendLine('    else')
-        [void]$builder.AppendLine('      echo "TASK result: failure (${task_name})"')
         [void]$builder.AppendLine('    fi')
         [void]$builder.AppendLine('    echo "TASK_STATUS:${task_name}:error"')
         [void]$builder.AppendLine('    error_count=$(( error_count + 1 ))')
@@ -87,9 +78,7 @@ function New-AzVmRunCommandTaskWrapperScript {
     [void]$builder.AppendLine('function Invoke-RunCommandTaskBlock {')
     [void]$builder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64,[int]$TimeoutSeconds)')
     [void]$builder.AppendLine('    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }')
-    [void]$builder.AppendLine('    Write-Host ("TASK started: {0} (max {1}s)" -f $TaskName, $TimeoutSeconds)')
     [void]$builder.AppendLine('    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()')
-    [void]$builder.AppendLine('    $completionWritten = $false')
     [void]$builder.AppendLine('    $job = $null')
     [void]$builder.AppendLine('    $tempPath = $null')
     [void]$builder.AppendLine('    try {')
@@ -127,19 +116,12 @@ function New-AzVmRunCommandTaskWrapperScript {
     [void]$builder.AppendLine('            }')
     [void]$builder.AppendLine('        }')
     [void]$builder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
-    [void]$builder.AppendLine('        Write-Host ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
-    [void]$builder.AppendLine('        $completionWritten = $true')
     [void]$builder.AppendLine('        if ($jobExitCode -ne 0) { throw ("Task exited with code {0}." -f $jobExitCode) }')
-    [void]$builder.AppendLine('        Write-Host "TASK result: success"')
     [void]$builder.AppendLine('        Write-Host ("TASK_STATUS:{0}:success" -f $TaskName)')
     [void]$builder.AppendLine('        $script:SuccessCount++')
     [void]$builder.AppendLine('    }')
     [void]$builder.AppendLine('    catch {')
     [void]$builder.AppendLine('        if ($taskWatch.IsRunning) { $taskWatch.Stop() }')
-    [void]$builder.AppendLine('        if (-not $completionWritten) {')
-    [void]$builder.AppendLine('            Write-Host ("TASK completed: {0} ({1:N1}s)" -f $TaskName, $taskWatch.Elapsed.TotalSeconds)')
-    [void]$builder.AppendLine('        }')
-    [void]$builder.AppendLine('        Write-Host ("TASK result: failure ({0})" -f $TaskName)')
     [void]$builder.AppendLine('        Write-Host ("TASK_STATUS:{0}:error" -f $TaskName)')
     [void]$builder.AppendLine('        $script:ErrorCount++')
     [void]$builder.AppendLine('    }')
@@ -197,16 +179,20 @@ function Invoke-AzVmSingleRunCommandTask {
     }
 
     $messageText = Get-AzVmRunCommandResultMessage -TaskName $taskName -RawJson $rawJson -ModeLabel 'task-run'
-    if (-not [string]::IsNullOrWhiteSpace([string]$messageText)) {
-        Write-Host ([string]$messageText)
-    }
-
     $marker = Parse-AzVmRunCommandBatchMarkers -MessageText $messageText
-    $taskDurations = @(Get-AzVmTaskDurationsFromMessageText -MessageText $messageText)
-    if ($script:PerfMode -and $taskDurations.Count -gt 0) {
-        foreach ($taskDuration in $taskDurations) {
-            Write-AzVmPerfTiming -Category $PerfTaskCategory -Label ([string]$taskDuration.Name) -Seconds ([double]$taskDuration.Seconds)
+    $displayLines = @()
+    foreach ($lineRaw in @([string]$messageText -split "`r?`n")) {
+        $line = [string]$lineRaw
+        if ([string]::IsNullOrWhiteSpace([string]$line)) {
+            continue
         }
+        if ($line -match '^TASK_STATUS:' -or $line -match '^RUN_COMMAND_SUMMARY:') {
+            continue
+        }
+        $displayLines += [string]$line
+    }
+    if (@($displayLines).Count -gt 0) {
+        Write-Host ((@($displayLines) -join "`n"))
     }
 
     return [pscustomobject]@{
@@ -216,7 +202,7 @@ function Invoke-AzVmSingleRunCommandTask {
         WarningCount = [int]$marker.WarningCount
         ErrorCount = [int]$marker.ErrorCount
         RebootRequired = ([bool]$marker.RebootRequired -or (Test-AzVmOutputIndicatesRebootRequired -MessageText $messageText))
-        TaskDurations = @($taskDurations)
+        TaskDurations = @()
     }
 }
 

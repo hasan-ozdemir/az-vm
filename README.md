@@ -300,7 +300,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `exec` | Open direct remote shell path or run one remote command | Azure-touching and guest-touching | Interactive shell work or one-shot remote command execution | One direct shell or command result |
 | `move` | Move a managed VM to another region | Azure-mutating | Planned cutover or regional relocation | Health-gated regional move |
 | `resize` | Change VM SKU or expand OS disk | Azure-mutating | Compute sizing change or safe disk growth | Resized VM or grown OS disk |
-| `set` | Apply hibernation and desired nested virtualization state | Azure-mutating plus guest validation | Feature-state management | Updated feature intent and VM state |
+| `set` | Apply hibernation and validate or store nested virtualization settings | Azure-mutating plus guest validation | Feature-state management | Updated feature settings and VM state |
 | `delete` | Purge a selected managed scope | Azure-mutating | Controlled cleanup | Deleted selected target scope |
 | `help` | Print the command catalog or one command's details | Local/read-only | Operator discovery and reference | Command documentation |
 
@@ -382,6 +382,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd exec --group <resource-group> --vm-name <vm-name>` | target selectors | Opens the interactive remote-shell path | Manual guest work | Interactive shell mode is used when no `--command` is provided. |
 | `.\az-vm.cmd exec --command "Get-Date" --group <resource-group> --vm-name <vm-name>` | `--command`, target selectors | Runs one remote command over SSH | One-shot diagnosis or manual admin action | Uses PowerShell on Windows and bash on Linux. |
+| `.\az-vm.cmd exec --quiet --command "Get-Date" --group <resource-group> --vm-name <vm-name>` | `--quiet`, `--command`, target selectors | Runs one remote command and prints only its result | Script-friendly automation | Suppresses banner, progress, and completion chatter. |
 | `.\az-vm.cmd exec -c "uname -a" --group <resource-group> --vm-name <vm-name>` | `-c`, target selectors | Same one-shot remote command path with short syntax | Operator convenience | `-c` and `--command` are equivalent. |
 
 #### `connect`
@@ -415,7 +416,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=off -s <subscription-guid>` | `--hibernation` | Changes hibernation state | Feature-state management | Syncs the successful change into `.env`. |
-| `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off` | `--nested-virtualization` | Updates desired nested virtualization state | Repo intent tracking | Azure single-VM APIs do not expose a separate nested-virtualization toggle |
+| `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --nested-virtualization=off` | `--nested-virtualization` | Saves the requested nested virtualization setting | Repo setting sync | Azure single-VM APIs do not expose a separate nested-virtualization toggle |
 | `.\az-vm.cmd set --group=<resource-group> --vm-name=<vm-name> --hibernation=on --nested-virtualization=off` | both flags | Applies both feature controls | Coordinated feature changes | Partial success still updates local state for the successful part. |
 
 #### `delete`
@@ -623,6 +624,7 @@ Behavior notes:
 - ideal for isolated diagnosis or manual guest work
 - resolves only the selected VM plus SSH context
 - `--command` / `-c` runs one remote PowerShell or bash snippet without opening the interactive shell
+- `--quiet` / `-q` is valid only with `--command` / `-c` and prints only the remote command result
 
 ### `connect`
 Purpose: launch the local Windows OpenSSH client or Remote Desktop client for a managed VM, or run connection tests without opening the client.
@@ -650,7 +652,7 @@ Behavior notes:
 - `--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity
 
 ### `set`
-Purpose: apply hibernation and sync nested-virtualization desired state.
+Purpose: apply hibernation and validate or store nested-virtualization settings.
 
 Behavior notes:
 - Hibernation is changed through Azure.

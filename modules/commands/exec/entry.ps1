@@ -7,6 +7,19 @@ function Invoke-AzVmExecCommand {
     )
 
     $runtime = Initialize-AzVmExecCommandRuntimeContext
+    $commandText = [string](Get-AzVmCliOptionText -Options $Options -Name 'command')
+    $quietRequested = (Test-AzVmCliOptionPresent -Options $Options -Name 'quiet')
+    if ($quietRequested -and [string]::IsNullOrWhiteSpace([string]$commandText)) {
+        Throw-FriendlyError `
+            -Detail "exec --quiet requires --command or -c." `
+            -Code 61 `
+            -Summary "Quiet exec requires one remote command." `
+            -Hint 'Use az-vm exec --quiet --command "<remote-command>".'
+    }
+    if ($quietRequested) {
+        $script:AzVmQuietOutput = $true
+    }
+
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $runtime.ConfigMap -OperationName 'exec'
     $selectedResourceGroup = [string]$target.ResourceGroup
     $selectedVmName = [string]$target.VmName
@@ -60,15 +73,17 @@ function Invoke-AzVmExecCommand {
         -Port ([string]$vmDetailContext.SshPort) `
         -ConnectTimeoutSeconds ([int]$runtime.SshConnectTimeoutSeconds)
     if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
-        Write-Host ([string]$bootstrap.Output)
+        if (-not $quietRequested) {
+            Write-Host ([string]$bootstrap.Output)
+        }
     }
 
-    $commandText = [string](Get-AzVmCliOptionText -Options $Options -Name 'command')
     if (-not [string]::IsNullOrWhiteSpace([string]$commandText)) {
         $commandWatch = $null
-        if ($script:PerfMode) {
+        if ($script:PerfMode -and -not $quietRequested) {
             $commandWatch = [System.Diagnostics.Stopwatch]::StartNew()
         }
+        $remoteCommandText = ConvertTo-AzVmExecRemoteCommandText -CommandText $commandText -Platform $replPlatform -Quiet:$quietRequested
 
         $execArgs = @(
             [string]$pySsh.ClientPath,
@@ -77,8 +92,8 @@ function Invoke-AzVmExecCommand {
             '--port', [string]$vmDetailContext.SshPort,
             '--user', $vmUser,
             '--password', $vmPass,
-            '--timeout', [string]$runtime.SshConnectTimeoutSeconds,
-            '--command', [string]$commandText
+            '--timeout', [string]$runtime.SshCommandTimeoutSeconds,
+            '--command', [string]$remoteCommandText
         )
 
         & ([string]$pySsh.PythonPath) @execArgs
@@ -97,7 +112,9 @@ function Invoke-AzVmExecCommand {
                 -Hint "Review remote command output and retry. Ensure SSH access remains healthy on the VM."
         }
 
-        Write-Host ("Exec completed on VM '{0}'." -f $selectedVmName) -ForegroundColor Green
+        if (-not $quietRequested) {
+            Write-Host ("Exec completed on VM '{0}'." -f $selectedVmName) -ForegroundColor Green
+        }
         return
     }
 

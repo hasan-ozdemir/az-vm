@@ -511,6 +511,71 @@ function Get-AzVmInteractiveScheduledTaskSnapshot {
     }
 }
 
+function Get-AzVmInteractiveWorkerProcesses {
+    param(
+        [string]$WorkerPath
+    )
+
+    $workerPathText = [string]$WorkerPath
+    if ([string]::IsNullOrWhiteSpace([string]$workerPathText)) {
+        return @()
+    }
+
+    return @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                $commandLine = [string]$_.CommandLine
+                -not [string]::IsNullOrWhiteSpace([string]$commandLine) -and
+                $commandLine.IndexOf($workerPathText, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+            }
+    )
+}
+
+function Stop-AzVmInteractiveWorkerProcesses {
+    param(
+        [string]$WorkerPath
+    )
+
+    $stoppedProcessIds = New-Object 'System.Collections.Generic.List[int]'
+    foreach ($process in @(Get-AzVmInteractiveWorkerProcesses -WorkerPath $WorkerPath)) {
+        $processId = 0
+        try {
+            $processId = [int]$process.ProcessId
+        }
+        catch {
+            $processId = 0
+        }
+
+        if ($processId -le 0) {
+            continue
+        }
+
+        try {
+            Stop-Process -Id $processId -Force -ErrorAction Stop
+            [void]$stoppedProcessIds.Add($processId)
+        }
+        catch {
+        }
+    }
+
+    return @($stoppedProcessIds.ToArray())
+}
+
+function Get-AzVmInteractiveScheduledTaskStateLabel {
+    param(
+        [int]$State
+    )
+
+    switch ([int]$State) {
+        0 { return 'unknown' }
+        1 { return 'disabled' }
+        2 { return 'queued' }
+        3 { return 'ready' }
+        4 { return 'running' }
+        default { return ('state-{0}' -f [int]$State) }
+    }
+}
+
 function Invoke-AzVmInteractiveDesktopAutomation {
     param(
         [string]$TaskName,
@@ -534,6 +599,11 @@ function Invoke-AzVmInteractiveDesktopAutomation {
     $paths = Get-AzVmInteractivePaths -TaskName $TaskName
     Ensure-AzVmDirectory -Path $paths.RootPath
 
+    $staleProcessIds = @(Stop-AzVmInteractiveWorkerProcesses -WorkerPath $paths.WorkerPath)
+    if (@($staleProcessIds).Count -gt 0) {
+        Write-Host ("Stopped stale interactive worker process(es) for '{0}': {1}" -f [string]$paths.TaskName, ((@($staleProcessIds) | ForEach-Object { [string]$_ }) -join ', ')) -ForegroundColor DarkCyan
+    }
+
     if (Test-Path -LiteralPath $paths.ResultPath) {
         Remove-Item -LiteralPath $paths.ResultPath -Force -ErrorAction SilentlyContinue
     }
@@ -543,10 +613,53 @@ function Invoke-AzVmInteractiveDesktopAutomation {
 
     [System.IO.File]::WriteAllText($paths.WorkerPath, [string]$WorkerScriptText, (New-Object System.Text.UTF8Encoding($false)))
     try {
+        $modeLabel = 'password-logon'
+        if ($isServiceAccount) {
+            $modeLabel = 'service-account'
+        }
+        elseif ($useInteractiveToken) {
+            $modeLabel = 'interactive-token'
+        }
+
+        Write-Host ("Interactive task '{0}' will run for {1} using {2}." -f [string]$paths.TaskName, [string]$RunAsUser, $modeLabel) -ForegroundColor DarkCyan
         Register-AzVmInteractiveScheduledTask -TaskName $paths.ScheduledTaskName -RunAsUser $RunAsUser -WorkerPath $paths.WorkerPath -RunAsPassword $RunAsPassword -RunAsMode $RunAsMode
         Start-AzVmInteractiveScheduledTask -TaskName $paths.ScheduledTaskName
+        Write-Host ("Running interactive task '{0}'..." -f [string]$paths.TaskName) -ForegroundColor Cyan
 
-        $completed = Wait-AzVmFileReady -Path $paths.ResultPath -TimeoutSeconds $WaitTimeoutSeconds -PollSeconds 2
+        $pollSeconds = 2
+        $heartbeatSeconds = 15
+        if ($WaitTimeoutSeconds -ge 1800) {
+            $heartbeatSeconds = 30
+        }
+        $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, [int]$WaitTimeoutSeconds))
+        $startTime = [DateTime]::UtcNow
+        $nextHeartbeatUtc = $startTime.AddSeconds($heartbeatSeconds)
+        $completed = $false
+        while ([DateTime]::UtcNow -lt $deadline) {
+            if (Test-Path -LiteralPath $paths.ResultPath) {
+                $fileInfo = Get-Item -LiteralPath $paths.ResultPath -ErrorAction SilentlyContinue
+                if ($null -ne $fileInfo -and [int64]$fileInfo.Length -gt 0) {
+                    $completed = $true
+                    break
+                }
+            }
+
+            if ([DateTime]::UtcNow -ge $nextHeartbeatUtc) {
+                $elapsedSeconds = [Math]::Round(([DateTime]::UtcNow - $startTime).TotalSeconds, 0)
+                $snapshot = Get-AzVmInteractiveScheduledTaskSnapshot -TaskName $paths.ScheduledTaskName
+                if ($null -eq $snapshot) {
+                    Write-Host ("Waiting for interactive task '{0}'... elapsed={1}s; state=not-found" -f [string]$paths.TaskName, [int]$elapsedSeconds) -ForegroundColor DarkCyan
+                }
+                else {
+                    $stateLabel = Get-AzVmInteractiveScheduledTaskStateLabel -State ([int]$snapshot.State)
+                    Write-Host ("Waiting for interactive task '{0}'... elapsed={1}s; state={2}; last-task-result={3}" -f [string]$paths.TaskName, [int]$elapsedSeconds, [string]$stateLabel, [int]$snapshot.LastTaskResult) -ForegroundColor DarkCyan
+                }
+
+                $nextHeartbeatUtc = [DateTime]::UtcNow.AddSeconds($heartbeatSeconds)
+            }
+
+            Start-Sleep -Seconds $pollSeconds
+        }
         if (-not $completed) {
             $snapshot = Get-AzVmInteractiveScheduledTaskSnapshot -TaskName $paths.ScheduledTaskName
             if ($null -eq $snapshot) {
@@ -569,15 +682,8 @@ function Invoke-AzVmInteractiveDesktopAutomation {
             throw $summary
         }
 
-        $modeLabel = 'password-logon'
-        if ($isServiceAccount) {
-            $modeLabel = 'service-account'
-        }
-        elseif ($useInteractiveToken) {
-            $modeLabel = 'interactive-token'
-        }
-
-        Write-Host ("interactive-session-bootstrap: {0} scheduled task completed for {1}" -f $modeLabel, [string]$RunAsUser)
+        Write-Host ("Interactive task '{0}' completed successfully for {1} using {2}." -f [string]$paths.TaskName, [string]$RunAsUser, $modeLabel) -ForegroundColor Green
+        return $result
     }
     finally {
         try {
@@ -585,6 +691,10 @@ function Invoke-AzVmInteractiveDesktopAutomation {
         }
         catch {
             Write-Warning ("interactive-task-cleanup-warning: {0}" -f $_.Exception.Message)
+        }
+        $stoppedProcessIds = @(Stop-AzVmInteractiveWorkerProcesses -WorkerPath $paths.WorkerPath)
+        if (@($stoppedProcessIds).Count -gt 0) {
+            Write-Host ("Stopped lingering interactive worker process(es) for '{0}': {1}" -f [string]$paths.TaskName, ((@($stoppedProcessIds) | ForEach-Object { [string]$_ }) -join ', ')) -ForegroundColor DarkCyan
         }
         Remove-Item -LiteralPath $paths.WorkerPath -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $paths.ResultPath -Force -ErrorAction SilentlyContinue

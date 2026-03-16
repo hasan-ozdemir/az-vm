@@ -6,7 +6,9 @@ $companyWebAddress = "__SELECTED_COMPANY_WEB_ADDRESS__"
 $employeeEmailAddress = "__SELECTED_EMPLOYEE_EMAIL_ADDRESS__"
 $employeeFullName = "__SELECTED_EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
+$managerPassword = "__VM_ADMIN_PASS__"
 $assistantUser = "__ASSISTANT_USER__"
+$assistantPassword = "__ASSISTANT_PASS__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = 'C:\Users\Public\AppData\Local\Google\Chrome\UserData'
@@ -20,12 +22,16 @@ $unresolvedEmployeeEmailAddressToken = ('__' + 'SELECTED_EMPLOYEE_EMAIL_ADDRESS'
 $unresolvedEmployeeFullNameToken = ('__' + 'SELECTED_EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
 $launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
+$interactiveHelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
 
 if (Test-Path -LiteralPath $storeHelperPath) {
     Import-Module $storeHelperPath -Force -DisableNameChecking
 }
 if (Test-Path -LiteralPath $launcherHelperPath) {
     Import-Module $launcherHelperPath -Force -DisableNameChecking
+}
+if (Test-Path -LiteralPath $interactiveHelperPath) {
+    . $interactiveHelperPath
 }
 
 function Invoke-CommandWithTimeout {
@@ -908,6 +914,313 @@ function Get-ManagerContext {
     }
 }
 
+function Get-InstalledLanguageSafe {
+    param([string]$LanguageTag)
+
+    if ([string]::IsNullOrWhiteSpace([string]$LanguageTag) -or -not (Get-Command Get-InstalledLanguage -ErrorAction SilentlyContinue)) {
+        return @()
+    }
+
+    return @(
+        Get-InstalledLanguage -Language $LanguageTag -ErrorAction SilentlyContinue |
+            Where-Object { $_ -ne $null }
+    )
+}
+
+function Get-LanguageFeatureSummary {
+    param([AllowNull()]$InstalledLanguage)
+
+    if ($null -eq $InstalledLanguage) {
+        return 'metadata-unavailable'
+    }
+
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($propertyName in @('LanguageFeatures', 'InstalledLanguageFeatures', 'Features')) {
+        if ($InstalledLanguage.PSObject.Properties.Match($propertyName).Count -lt 1) {
+            continue
+        }
+
+        $value = $InstalledLanguage.$propertyName
+        if ($null -eq $value) {
+            continue
+        }
+
+        foreach ($entry in @($value)) {
+            $text = [string]$entry
+            if ([string]::IsNullOrWhiteSpace([string]$text)) {
+                continue
+            }
+
+            if (-not $parts.Contains($text)) {
+                $parts.Add($text) | Out-Null
+            }
+        }
+    }
+
+    if ($parts.Count -eq 0) {
+        foreach ($propertyName in @('BasicTyping', 'Handwriting', 'Ocr', 'Speech', 'TextToSpeech')) {
+            if ($InstalledLanguage.PSObject.Properties.Match($propertyName).Count -lt 1) {
+                continue
+            }
+
+            $parts.Add(("{0}={1}" -f $propertyName, [string]$InstalledLanguage.$propertyName)) | Out-Null
+        }
+    }
+
+    if ($parts.Count -eq 0) {
+        return 'metadata-unavailable'
+    }
+
+    return (@($parts.ToArray()) -join ', ')
+}
+
+function Get-TimeZoneIdSafe {
+    try {
+        $timeZone = Get-TimeZone -ErrorAction Stop
+        if ($null -ne $timeZone -and $timeZone.PSObject.Properties.Match('Id').Count -gt 0) {
+            return [string]$timeZone.Id
+        }
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Get-RegistryPreloadSummary {
+    param([string]$RootPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
+        return ''
+    }
+
+    $preloadPath = Join-Path $RootPath 'Keyboard Layout\Preload'
+    if (-not (Test-Path -LiteralPath $preloadPath)) {
+        return ''
+    }
+
+    $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction SilentlyContinue
+    if ($null -eq $preloadItem) {
+        return ''
+    }
+
+    $pairs = @()
+    foreach ($propertyName in @($preloadItem.Property | Sort-Object)) {
+        $propertyValue = Get-RegistryValueText -Path $preloadPath -ValueName ([string]$propertyName)
+        if ([string]::IsNullOrWhiteSpace([string]$propertyValue)) {
+            continue
+        }
+        $pairs += ("{0}={1}" -f [string]$propertyName, [string]$propertyValue)
+    }
+
+    return (@($pairs) -join '; ')
+}
+
+function Get-RegistryLanguageSummary {
+    param([string]$RootPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
+        return ''
+    }
+
+    $internationalPath = Join-Path $RootPath 'Control Panel\International'
+    if (-not (Test-Path -LiteralPath $internationalPath)) {
+        return ''
+    }
+
+    $localeName = Get-RegistryValueText -Path $internationalPath -ValueName 'LocaleName'
+    $shortTime = Get-RegistryValueText -Path $internationalPath -ValueName 'sShortTime'
+    $timeFormat = Get-RegistryValueText -Path $internationalPath -ValueName 'sTimeFormat'
+    return ("locale={0}; short-time={1}; time-format={2}; keyboard={3}" -f [string]$localeName, [string]$shortTime, [string]$timeFormat, (Get-RegistryPreloadSummary -RootPath $RootPath))
+}
+
+function Get-UserLanguageReadback {
+    param(
+        [string]$UserName,
+        [string]$UserPassword
+    )
+
+    if (-not (Test-Path -LiteralPath $interactiveHelperPath)) {
+        return $null
+    }
+
+    $interactiveTaskName = ('10006-language-readback-{0}' -f [string]$UserName)
+    $paths = Get-AzVmInteractivePaths -TaskName $interactiveTaskName
+    $payloadPath = Join-Path $paths.RootPath 'language-readback.json'
+    Remove-Item -LiteralPath $payloadPath -Force -ErrorAction SilentlyContinue
+
+    $workerScript = @'
+$ErrorActionPreference = "Stop"
+$helperPath = "__HELPER_PATH__"
+$resultPath = "__RESULT_PATH__"
+$taskName = "__TASK_NAME__"
+$payloadPath = "__PAYLOAD_PATH__"
+
+. $helperPath
+
+function Write-JsonPayload {
+    param(
+        [string]$Path,
+        [object]$Value
+    )
+
+    $parentPath = Split-Path -Path $Path -Parent
+    Ensure-AzVmDirectory -Path $parentPath
+    [System.IO.File]::WriteAllText($Path, ([string]($Value | ConvertTo-Json -Depth 8)), (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Get-RegistryValueString {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or [string]::IsNullOrWhiteSpace([string]$Name) -or -not (Test-Path -LiteralPath $Path)) {
+        return ''
+    }
+
+    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return ''
+    }
+
+    return [string]$item.$Name
+}
+
+try {
+    $languageListSummary = @(
+        Get-WinUserLanguageList |
+            ForEach-Object {
+                $tips = if ($_.PSObject.Properties.Match('InputMethodTips').Count -gt 0 -and $null -ne $_.InputMethodTips) { (@($_.InputMethodTips) -join ',') } else { '' }
+                ("{0}:{1}" -f [string]$_.LanguageTag, [string]$tips)
+            }
+    ) -join '; '
+
+    $defaultInputMethodSummary = ''
+    try {
+        $defaultInputMethod = Get-WinDefaultInputMethodOverride
+        if ($null -ne $defaultInputMethod -and $defaultInputMethod.PSObject.Properties.Match('InputMethodTip').Count -gt 0) {
+            $defaultInputMethodSummary = [string]$defaultInputMethod.InputMethodTip
+        }
+    }
+    catch {
+    }
+
+    $preloadPath = 'HKCU:\Keyboard Layout\Preload'
+    $preloadSummary = ''
+    if (Test-Path -LiteralPath $preloadPath) {
+        $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction SilentlyContinue
+        $preloadSummary = @(
+            @($preloadItem.Property | Sort-Object) |
+                ForEach-Object {
+                    ("{0}={1}" -f [string]$_, (Get-RegistryValueString -Path $preloadPath -Name ([string]$_)))
+                }
+        ) -join '; '
+    }
+
+    $payload = [ordered]@{
+        UserName = [Environment]::UserName
+        LanguageList = [string]$languageListSummary
+        UiLanguage = [string](Get-WinUILanguageOverride)
+        Culture = [string](Get-Culture).Name
+        GeoId = [string](Get-WinHomeLocation).GeoId
+        LocaleName = [string](Get-RegistryValueString -Path 'HKCU:\Control Panel\International' -Name 'LocaleName')
+        ShortTime = [string](Get-RegistryValueString -Path 'HKCU:\Control Panel\International' -Name 'sShortTime')
+        TimeFormat = [string](Get-RegistryValueString -Path 'HKCU:\Control Panel\International' -Name 'sTimeFormat')
+        DefaultInputMethod = [string]$defaultInputMethodSummary
+        KeyboardPreload = [string]$preloadSummary
+    }
+
+    Write-JsonPayload -Path $payloadPath -Value $payload
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Language readback collected.' -Details @($payload.LanguageList)
+}
+catch {
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Language readback failed.' -Details @([string]$_.Exception.Message)
+    throw
+}
+'@
+
+    $workerScript = $workerScript.Replace('__HELPER_PATH__', $interactiveHelperPath)
+    $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
+    $workerScript = $workerScript.Replace('__TASK_NAME__', $interactiveTaskName)
+    $workerScript = $workerScript.Replace('__PAYLOAD_PATH__', [string]$payloadPath)
+
+    try {
+        $null = Invoke-AzVmInteractiveDesktopAutomation `
+            -TaskName $interactiveTaskName `
+            -RunAsUser $UserName `
+            -RunAsPassword $UserPassword `
+            -WorkerScriptText $workerScript `
+            -WaitTimeoutSeconds 300
+
+        if (-not (Test-Path -LiteralPath $payloadPath)) {
+            return $null
+        }
+
+        return (ConvertFrom-Json -InputObject ([string](Get-Content -LiteralPath $payloadPath -Raw -ErrorAction Stop)) -ErrorAction Stop)
+    }
+    catch {
+        Write-Warning ("language-readback-failed => {0} => {1}" -f [string]$UserName, $_.Exception.Message)
+        return $null
+    }
+    finally {
+        Remove-Item -LiteralPath $payloadPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Write-InstalledLanguageStatus {
+    param([string]$LanguageTag)
+
+    $rows = @(Get-InstalledLanguageSafe -LanguageTag $LanguageTag)
+    if (@($rows).Count -lt 1) {
+        Write-Host ("installed-language => {0} => installed=false" -f [string]$LanguageTag)
+        return
+    }
+
+    Write-Host ("installed-language => {0} => installed=true; features={1}" -f [string]$LanguageTag, (Get-LanguageFeatureSummary -InstalledLanguage $rows[0]))
+}
+
+function Write-UserLanguageStatus {
+    param(
+        [string]$UserName,
+        [string]$UserPassword
+    )
+
+    $readback = Get-UserLanguageReadback -UserName $UserName -UserPassword $UserPassword
+    if ($null -eq $readback) {
+        Write-Host ("user-language-status => {0} => unavailable" -f [string]$UserName)
+        return
+    }
+
+    Write-Host ("user-language-status => {0} => ui-language={1}; culture={2}; geo-id={3}; locale={4}; short-time={5}; time-format={6}; default-input={7}; keyboard={8}; languages={9}" -f [string]$UserName, [string]$readback.UiLanguage, [string]$readback.Culture, [string]$readback.GeoId, [string]$readback.LocaleName, [string]$readback.ShortTime, [string]$readback.TimeFormat, [string]$readback.DefaultInputMethod, [string]$readback.KeyboardPreload, [string]$readback.LanguageList)
+}
+
+function Write-DefaultLanguageStatus {
+    $defaultRoot = 'Registry::HKEY_USERS\.DEFAULT'
+    Write-Host ("welcome-screen-language => {0}" -f (Get-RegistryLanguageSummary -RootPath $defaultRoot))
+
+    $defaultProfileHive = 'C:\Users\Default\NTUSER.DAT'
+    if (-not (Test-Path -LiteralPath $defaultProfileHive)) {
+        Write-Host 'new-user-language => unavailable'
+        return
+    }
+
+    $mountName = 'AzVm10006Default'
+    $mountedRoot = $null
+    try {
+        $mountedRoot = Mount-RegistryHive -MountName $mountName -HiveFilePath $defaultProfileHive
+        Write-Host ("new-user-language => {0}" -f (Get-RegistryLanguageSummary -RootPath $mountedRoot))
+    }
+    catch {
+        Write-Warning ("new-user-language-readback-failed => {0}" -f $_.Exception.Message)
+    }
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace([string]$mountName)) {
+            Dismount-RegistryHive -MountName $mountName
+        }
+    }
+}
+
 function Resolve-StartupDisplayName {
     param([string]$Key)
 
@@ -1668,6 +1981,40 @@ finally {
         Dismount-RegistryHive -MountName ([string]$managerContext.MountName)
     }
 }
+
+Write-Host "LANGUAGE AND REGION STATUS:"
+$systemPreferredUiLanguage = ''
+if (Get-Command Get-SystemPreferredUILanguage -ErrorAction SilentlyContinue) {
+    try {
+        $systemPreferredUiLanguage = [string](Get-SystemPreferredUILanguage)
+    }
+    catch {
+    }
+}
+$systemLocaleName = ''
+if (Get-Command Get-WinSystemLocale -ErrorAction SilentlyContinue) {
+    try {
+        $systemLocale = Get-WinSystemLocale
+        if ($null -ne $systemLocale -and $systemLocale.PSObject.Properties.Match('Name').Count -gt 0) {
+            $systemLocaleName = [string]$systemLocale.Name
+        }
+        else {
+            $systemLocaleName = [string]$systemLocale
+        }
+    }
+    catch {
+    }
+}
+Write-Host ("system-preferred-ui-language => {0}" -f [string]$systemPreferredUiLanguage)
+Write-Host ("system-locale => {0}" -f [string]$systemLocaleName)
+Write-Host ("time-zone => {0}" -f (Get-TimeZoneIdSafe))
+Write-Host ("utf8-codepage-acp => {0}" -f (Get-RegistryValueText -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -ValueName 'ACP'))
+Write-Host ("utf8-codepage-oemcp => {0}" -f (Get-RegistryValueText -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -ValueName 'OEMCP'))
+Write-InstalledLanguageStatus -LanguageTag 'en-US'
+Write-InstalledLanguageStatus -LanguageTag 'tr-TR'
+Write-UserLanguageStatus -UserName $managerUser -UserPassword $managerPassword
+Write-UserLanguageStatus -UserName $assistantUser -UserPassword $assistantPassword
+Write-DefaultLanguageStatus
 
 Write-Host "STORE INSTALL STATE:"
 Write-StoreInstallStateReadback -TaskName '116-install-codex-app' -Label 'Codex App'

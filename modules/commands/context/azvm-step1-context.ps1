@@ -58,32 +58,38 @@ function New-AzVmStep1ConfigDisplayMap {
         [string]$OperationName
     )
 
+    $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey 'VM_IMAGE'
+    $vmSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey 'VM_SIZE'
+    $vmDiskSizeConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey 'VM_DISK_SIZE_GB'
+    $platformInitDirKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'init'
+    $platformUpdateDirKey = Get-AzVmPlatformTaskCatalogConfigKey -Platform $Platform -Stage 'update'
+
     $values = [ordered]@{
-        Operation = [string]$OperationName
-        Platform = [string]$Platform
+        OPERATION = [string]$OperationName
+        SELECTED_VM_OS = [string]$Platform
         AzureSubscriptionName = [string]$Context.AzureSubscriptionName
-        AzureSubscriptionId = [string]$Context.AzureSubscriptionId
-        ResourceGroup = [string]$Context.ResourceGroup
-        AzLocation = [string]$Context.AzLocation
-        VmName = [string]$Context.VmName
-        VmImage = [string]$Context.VmImage
-        VmStorageSku = [string]$Context.VmStorageSku
-        VmSize = [string]$Context.VmSize
-        VmDiskName = [string]$Context.VmDiskName
-        VmDiskSize = [string]$Context.VmDiskSize
-        VNET = [string]$Context.VNET
-        SUBNET = [string]$Context.SUBNET
-        NSG = [string]$Context.NSG
-        NsgRule = [string]$Context.NsgRule
-        IP = [string]$Context.IP
-        NIC = [string]$Context.NIC
-        VmUser = [string]$Context.VmUser
-        VmAssistantUser = [string]$Context.VmAssistantUser
-        SshPort = [string]$Context.SshPort
-        RdpPort = [string]$Context.RdpPort
-        TcpPorts = @($Context.TcpPorts)
-        VmInitTaskDir = [string]$Context.VmInitTaskDir
-        VmUpdateTaskDir = [string]$Context.VmUpdateTaskDir
+        SELECTED_AZURE_SUBSCRIPTION_ID = [string]$Context.AzureSubscriptionId
+        SELECTED_RESOURCE_GROUP = [string]$Context.ResourceGroup
+        SELECTED_AZURE_REGION = [string]$Context.AzLocation
+        SELECTED_VM_NAME = [string]$Context.VmName
+        $vmImageConfigKey = [string]$Context.VmImage
+        VM_STORAGE_SKU = [string]$Context.VmStorageSku
+        $vmSizeConfigKey = [string]$Context.VmSize
+        VM_DISK_NAME = [string]$Context.VmDiskName
+        $vmDiskSizeConfigKey = [string]$Context.VmDiskSize
+        VNET_NAME = [string]$Context.VNET
+        SUBNET_NAME = [string]$Context.SUBNET
+        NSG_NAME = [string]$Context.NSG
+        NSG_RULE_NAME = [string]$Context.NsgRule
+        PUBLIC_IP_NAME = [string]$Context.IP
+        NIC_NAME = [string]$Context.NIC
+        VM_ADMIN_USER = [string]$Context.VmUser
+        VM_ASSISTANT_USER = [string]$Context.VmAssistantUser
+        VM_SSH_PORT = [string]$Context.SshPort
+        VM_RDP_PORT = [string]$Context.RdpPort
+        TCP_PORTS = @($Context.TcpPorts)
+        $platformInitDirKey = [string]$Context.VmInitTaskDir
+        $platformUpdateDirKey = [string]$Context.VmUpdateTaskDir
     }
 
     return $values
@@ -132,7 +138,7 @@ function Invoke-AzVmInteractiveStep1Editor {
     Show-AzVmKeyValueList -Title "VM configuration review (leave blank to keep current value):" -Values (New-AzVmStep1ConfigDisplayMap -Platform $Platform -Context $Context -OperationName $OperationName)
 
     if ([string]::Equals([string]$OperationName, 'update', [System.StringComparison]::OrdinalIgnoreCase)) {
-        Write-Host "Locked target values: ResourceGroup, AzLocation, VmName, VNET, SUBNET, NSG, IP, NIC, and VmDiskName are taken from the existing managed VM target." -ForegroundColor Yellow
+        Write-Host "Locked target values: SELECTED_RESOURCE_GROUP, SELECTED_AZURE_REGION, SELECTED_VM_NAME, VNET_NAME, SUBNET_NAME, NSG_NAME, PUBLIC_IP_NAME, NIC_NAME, and VM_DISK_NAME are taken from the existing managed VM target." -ForegroundColor Yellow
     }
 
     $vmImageConfigKey = Get-AzVmPlatformVmConfigKey -Platform $Platform -BaseKey "VM_IMAGE"

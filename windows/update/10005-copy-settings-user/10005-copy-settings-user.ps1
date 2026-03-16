@@ -1155,9 +1155,8 @@ function Invoke-RepresentativeRegistryCopy {
     )
 
     $mainBranches = @(
-        'Control Panel',
+        'Control Panel\Keyboard',
         'Environment',
-        'Keyboard Layout',
         'Software\Microsoft\Notepad',
         'Software\Microsoft\Windows\CurrentVersion\Explorer',
         'Software\Microsoft\Windows\CurrentVersion\Search'
@@ -1181,9 +1180,8 @@ function Invoke-LogonScreenRegistryCopy {
     $defaultRoot = 'Registry::HKEY_USERS\.DEFAULT'
 
     $mainBranches = @(
-        'Control Panel',
+        'Control Panel\Keyboard',
         'Environment',
-        'Keyboard Layout',
         'Software\Microsoft\Windows\CurrentVersion\Explorer',
         'Software\Microsoft\Windows\CurrentVersion\Search'
     )
@@ -1268,9 +1266,8 @@ function Invoke-MainHiveRegCopy {
 
     try {
         foreach ($branch in @(
-            'Control Panel',
+            'Control Panel\Keyboard',
             'Environment',
-            'Keyboard Layout',
             'Software\Microsoft\Notepad',
             'Software\Microsoft\Windows\CurrentVersion\Explorer',
             'Software\Microsoft\Windows\CurrentVersion\Search'

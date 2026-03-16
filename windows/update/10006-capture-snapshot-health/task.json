@@ -10,6 +10,10 @@
     {
       "local": "../../../modules/core/tasks/azvm-shortcut-launcher.psm1",
       "remote": "C:/Windows/Temp/az-vm-shortcut-launcher.psm1"
+    },
+    {
+      "local": "../../../tools/scripts/az-vm-interactive-session-helper.ps1",
+      "remote": "C:/Windows/Temp/az-vm-interactive-session-helper.ps1"
     }
   ]
 }

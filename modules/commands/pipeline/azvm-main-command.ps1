@@ -108,6 +108,9 @@ function Invoke-AzVmMain {
         $sshTaskTimeoutSeconds = [int]$runtime.SshTaskTimeoutSeconds
         $sshConnectTimeoutSeconds = [int]$runtime.SshConnectTimeoutSeconds
         $modeLabel = if ($script:AutoMode) { 'auto' } else { 'interactive' }
+        $platformVmImageKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_IMAGE'
+        $platformVmSizeKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_SIZE'
+        $platformVmDiskSizeKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_DISK_SIZE_GB'
 
         Write-AzVmMainBanner `
             -CommandName $CommandName `
@@ -158,10 +161,10 @@ function Invoke-AzVmMain {
                 -StageName 'resource group step' `
                 -Values ([ordered]@{
                     AzureSubscriptionName = [string]$step1Context.AzureSubscriptionName
-                    AzureSubscriptionId = [string]$step1Context.AzureSubscriptionId
-                    ResourceGroup = [string]$step1Context.ResourceGroup
-                    AzLocation = [string]$step1Context.AzLocation
-                    ExecutionMode = [string]$script:ExecutionMode
+                    SELECTED_AZURE_SUBSCRIPTION_ID = [string]$step1Context.AzureSubscriptionId
+                    SELECTED_RESOURCE_GROUP = [string]$step1Context.ResourceGroup
+                    SELECTED_AZURE_REGION = [string]$step1Context.AzLocation
+                    EXECUTION_MODE = [string]$script:ExecutionMode
                 }) `
                 -TaskTitle '' `
                 -TaskBlocks @() `
@@ -206,16 +209,16 @@ function Invoke-AzVmMain {
                 -StageName 'vm deploy step' `
                 -Values ([ordered]@{
                     AzureSubscriptionName = [string]$step1Context.AzureSubscriptionName
-                    AzureSubscriptionId = [string]$step1Context.AzureSubscriptionId
-                    ResourceGroup = [string]$step1Context.ResourceGroup
-                    VmName = [string]$step1Context.VmName
-                    VmImage = [string]$step1Context.VmImage
-                    VmSize = [string]$step1Context.VmSize
-                    VmStorageSku = [string]$step1Context.VmStorageSku
-                    VmDiskName = [string]$step1Context.VmDiskName
-                    VmDiskSize = [string]$step1Context.VmDiskSize
-                    NIC = [string]$step1Context.NIC
-                    ExecutionMode = [string]$script:ExecutionMode
+                    SELECTED_AZURE_SUBSCRIPTION_ID = [string]$step1Context.AzureSubscriptionId
+                    SELECTED_RESOURCE_GROUP = [string]$step1Context.ResourceGroup
+                    SELECTED_VM_NAME = [string]$step1Context.VmName
+                    $platformVmImageKey = [string]$step1Context.VmImage
+                    $platformVmSizeKey = [string]$step1Context.VmSize
+                    VM_STORAGE_SKU = [string]$step1Context.VmStorageSku
+                    VM_DISK_NAME = [string]$step1Context.VmDiskName
+                    $platformVmDiskSizeKey = [string]$step1Context.VmDiskSize
+                    NIC_NAME = [string]$step1Context.NIC
+                    EXECUTION_MODE = [string]$script:ExecutionMode
                 }) `
                 -TaskTitle '' `
                 -TaskBlocks @() `

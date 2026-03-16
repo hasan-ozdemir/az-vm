@@ -42,7 +42,7 @@ function Show-AzVmCommandHelpOverview {
         '  connect    Launch SSH or RDP client/test for a managed VM.'
         '  move       Move an existing VM to another Azure region.'
         '  resize     Change VM size or expand the managed OS disk for an existing VM.'
-        '  set        Apply hibernation and sync nested virtualization desired state.'
+        '  set        Apply hibernation and validate or store nested virtualization settings.'
         '  exec       Open an interactive SSH shell or run one remote command.'
         '  delete     Purge selected resources from a resource group.'
         '  help       Show detailed docs (all commands or one command).'
@@ -55,6 +55,7 @@ function Show-AzVmCommandHelpOverview {
         '  -v, --vm-name               Target VM name where required.'
         '  -s, --subscription-id       Target Azure subscription for Azure-touching commands.'
         '  -c, --command               Remote one-shot command text for exec.'
+        '  -q, --quiet                 Exec-only quiet output mode for one-shot commands.'
         '  -h, --help                  Show this overview or command-specific help.'
         "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
         ''
@@ -111,7 +112,7 @@ function Show-AzVmCommandHelpDetailed {
             '  connect    : connect --ssh / connect --rdp plus --test'
             '  move       : managed region move'
             '  resize     : VM-size or disk expand guidance'
-            '  set        : hibernation and nested virtualization intent'
+            '  set        : hibernation and nested virtualization settings'
             '  exec       : remote command or interactive shell only'
             '  delete     : resource deletion by target scope'
             ''
@@ -299,7 +300,7 @@ function Show-AzVmCommandHelpDetailed {
         'set' {
             Write-AzVmHelpLines @(
                 'Command: set'
-                'Description: apply hibernation changes and sync nested virtualization desired-state values back to .env.'
+                'Description: apply hibernation changes and validate or store nested virtualization settings in .env.'
                 'Usage:'
                 '  az-vm set --group <resource-group> --vm-name <vm-name> --hibernation on|off [--subscription-id <subscription-id>]'
                 '  az-vm set --group <resource-group> --vm-name <vm-name> --nested-virtualization on|off [--subscription-id <subscription-id>]'
@@ -307,7 +308,7 @@ function Show-AzVmCommandHelpDetailed {
                 'Examples:'
                 '  az-vm set --group <resource-group> --vm-name <vm-name> --hibernation off'
                 '  az-vm set --group <resource-group> --vm-name <vm-name> --nested-virtualization off'
-                'Notes: hibernation is changed through Azure. Nested virtualization is governed by VM size and security type, so --nested-virtualization on validates guest readiness on a running VM and --nested-virtualization off only updates repo desired state.'
+                'Notes: hibernation is changed through Azure. Nested virtualization is governed by VM size and security type, so --nested-virtualization on validates guest readiness on a running VM and --nested-virtualization off saves the requested setting in .env because Azure does not expose a separate single-VM disable toggle.'
             )
             return
         }
@@ -317,13 +318,14 @@ function Show-AzVmCommandHelpDetailed {
                 'Description: open an interactive SSH shell on the target VM, or run one remote command over SSH.'
                 'Usage:'
                 '  az-vm exec [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
-                '  az-vm exec --command "<remote-command>" [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
-                '  az-vm exec -c "<remote-command>" [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm exec --command "<remote-command>" [--quiet] [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm exec -c "<remote-command>" [-q] [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
                 'Examples:'
                 '  az-vm exec --group <resource-group> --vm-name <vm-name>'
                 '  az-vm exec --command "Get-Date" --group <resource-group> --vm-name <vm-name>'
+                '  az-vm exec --quiet --command "Get-Date" --group <resource-group> --vm-name <vm-name>'
                 '  az-vm exec -c "uname -a" --group <resource-group> --vm-name <vm-name>'
-                'Notes: exec is SSH-only. When no --command is provided, it opens the interactive SSH shell for the actual target VM OS. When --command is provided, it runs one one-shot remote command and returns the exit result.'
+                'Notes: exec is SSH-only. When no --command is provided, it opens the interactive SSH shell for the actual target VM OS. When --command is provided, it runs one one-shot remote command and returns the exit result. --quiet / -q is valid only together with --command / -c and prints only the remote command result.'
             )
             return
         }

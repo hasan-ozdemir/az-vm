@@ -247,8 +247,8 @@ if ([string]::IsNullOrWhiteSpace([string]$TestHost)) {
         $TestHost = [string]$hostCandidates[0]
     }
     else {
-        $vmName = Get-MapValue -Map $envMap -Key "VM_NAME" -DefaultValue ""
-        $azLocation = Get-MapValue -Map $envMap -Key "AZ_LOCATION" -DefaultValue ""
+        $vmName = Get-MapValue -Map $envMap -Key "SELECTED_VM_NAME" -DefaultValue ""
+        $azLocation = Get-MapValue -Map $envMap -Key "SELECTED_AZURE_REGION" -DefaultValue ""
         if (-not [string]::IsNullOrWhiteSpace([string]$vmName) -and -not [string]::IsNullOrWhiteSpace([string]$azLocation)) {
             $TestHost = ("{0}.{1}.cloudapp.azure.com" -f $vmName, $azLocation)
         }

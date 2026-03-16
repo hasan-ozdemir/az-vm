@@ -32,7 +32,7 @@ function Write-AzVmPerfTiming {
         [double]$Seconds
     )
 
-    if (-not $script:PerfMode) {
+    if (-not $script:PerfMode -or $script:AzVmQuietOutput) {
         return
     }
 
@@ -96,8 +96,9 @@ function Invoke-AzVmAzCliCommand {
 
     $perfWatch = $null
     $perfLabel = ''
-    $shouldEmitPerf = $script:PerfMode -and ([int]$script:PerfSuppressAzTimingDepth -le 0)
-    if ($shouldEmitPerf) {
+    $shouldEmitHeartbeat = $script:PerfMode -and ([int]$script:PerfSuppressAzTimingDepth -le 0)
+    $lastHeartbeatSeconds = 0
+    if ($shouldEmitHeartbeat) {
         $perfLabel = "az " + ($argValues -join " ")
         $perfWatch = [System.Diagnostics.Stopwatch]::StartNew()
     }
@@ -143,12 +144,19 @@ function Invoke-AzVmAzCliCommand {
         $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
         $stderrTask = $proc.StandardError.ReadToEndAsync()
         $waitMs = [int][Math]::Min([double][int]::MaxValue, [double]$timeoutSeconds * 1000.0)
-        $completed = $proc.WaitForExit($waitMs)
-        if (-not $completed) {
-            try { $proc.Kill() } catch { }
-            try { [void]$proc.WaitForExit() } catch { }
-            $global:LASTEXITCODE = 124
-            throw ("az command timed out after {0} second(s)." -f $timeoutSeconds)
+        $elapsedSeconds = 0.0
+        while (-not $proc.WaitForExit(1000)) {
+            $elapsedSeconds += 1.0
+            if ($shouldEmitHeartbeat -and -not $script:AzVmQuietOutput -and $elapsedSeconds -ge 30 -and (($elapsedSeconds - $lastHeartbeatSeconds) -ge 30)) {
+                $lastHeartbeatSeconds = $elapsedSeconds
+                Write-Host ("progress: {0} ({1})" -f $perfLabel, (Convert-AzVmPerfSecondsText -Seconds $elapsedSeconds)) -ForegroundColor DarkGray
+            }
+            if ($elapsedSeconds -ge $timeoutSeconds) {
+                try { $proc.Kill() } catch { }
+                try { [void]$proc.WaitForExit() } catch { }
+                $global:LASTEXITCODE = 124
+                throw ("az command timed out after {0} second(s)." -f $timeoutSeconds)
+            }
         }
 
         [void]$proc.WaitForExit()
@@ -162,7 +170,7 @@ function Invoke-AzVmAzCliCommand {
         if ($script:SuppressAzCliStderrEcho) {
             $suppressAzStderrEcho = $true
         }
-        if ((-not $suppressAzStderrEcho) -and -not [string]::IsNullOrWhiteSpace($stderrText)) {
+        if ((-not $suppressAzStderrEcho) -and -not $script:AzVmQuietOutput -and -not [string]::IsNullOrWhiteSpace($stderrText)) {
             Write-Host ($stderrText.TrimEnd())
         }
 
@@ -183,9 +191,6 @@ function Invoke-AzVmAzCliCommand {
     finally {
         if ($null -ne $perfWatch -and $perfWatch.IsRunning) {
             $perfWatch.Stop()
-        }
-        if ($null -ne $perfWatch -and $shouldEmitPerf) {
-            Write-AzVmPerfTiming -Category "az" -Label $perfLabel -Seconds $perfWatch.Elapsed.TotalSeconds
         }
     }
 }

@@ -9,7 +9,7 @@ function Get-AzVmVmDetails {
     Show-AzVmStepFirstUseValues `
         -StepLabel "VM details lookup" `
         -Context $Context `
-        -Keys @("ResourceGroup", "VmName", "AzLocation", "SshPort")
+        -Keys @("SELECTED_RESOURCE_GROUP", "SELECTED_VM_NAME", "SELECTED_AZURE_REGION", "VM_SSH_PORT")
 
     $vmDetailsJson = Invoke-TrackedAction -Label "az vm show -g $($Context.ResourceGroup) -n $($Context.VmName) -d" -Action {
         $result = az vm show -g $Context.ResourceGroup -n $Context.VmName -d -o json --only-show-errors 2>$null

@@ -115,6 +115,113 @@ function Test-AzVmSensitiveDisplayKey {
     return $false
 }
 
+function Resolve-AzVmObservationDisplayKey {
+    param([string]$Key)
+
+    $normalizedKey = [string]$Key
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedKey)) {
+        return ''
+    }
+
+    switch -Regex ($normalizedKey.Trim()) {
+        '^(ResourceGroup|SELECTED_RESOURCE_GROUP)$' { return 'SELECTED_RESOURCE_GROUP' }
+        '^(AzLocation|SELECTED_AZURE_REGION)$' { return 'SELECTED_AZURE_REGION' }
+        '^(VmName|SELECTED_VM_NAME)$' { return 'SELECTED_VM_NAME' }
+        '^(VmImage|VM_IMAGE|WIN_VM_IMAGE|LIN_VM_IMAGE)$' { return 'VM_IMAGE' }
+        '^(VmSize|VM_SIZE|WIN_VM_SIZE|LIN_VM_SIZE)$' { return 'VM_SIZE' }
+        '^(VmDiskSize|VmDiskSizeGb|VM_DISK_SIZE_GB|WIN_VM_DISK_SIZE_GB|LIN_VM_DISK_SIZE_GB)$' { return 'VM_DISK_SIZE_GB' }
+        '^(VmDiskName|VM_DISK_NAME)$' { return 'VM_DISK_NAME' }
+        '^(VmStorageSku|VM_STORAGE_SKU)$' { return 'VM_STORAGE_SKU' }
+        '^(VNET|VNET_NAME)$' { return 'VNET_NAME' }
+        '^(SUBNET|SUBNET_NAME)$' { return 'SUBNET_NAME' }
+        '^(NSG|NSG_NAME)$' { return 'NSG_NAME' }
+        '^(NsgRule|NSG_RULE_NAME)$' { return 'NSG_RULE_NAME' }
+        '^(IP|PUBLIC_IP_NAME)$' { return 'PUBLIC_IP_NAME' }
+        '^(NIC|NIC_NAME)$' { return 'NIC_NAME' }
+        '^(SshPort|VM_SSH_PORT)$' { return 'VM_SSH_PORT' }
+        '^(RdpPort|VM_RDP_PORT)$' { return 'VM_RDP_PORT' }
+        '^(TcpPorts|TCP_PORTS)$' { return 'TCP_PORTS' }
+        '^(VmUser|VM_ADMIN_USER)$' { return 'VM_ADMIN_USER' }
+        '^(VmAssistantUser|VM_ASSISTANT_USER)$' { return 'VM_ASSISTANT_USER' }
+        default { return [string]$normalizedKey }
+    }
+}
+
+function Get-AzVmObservationLookupCandidates {
+    param([string]$Key)
+
+    $displayKey = Resolve-AzVmObservationDisplayKey -Key $Key
+    switch ([string]$displayKey) {
+        'SELECTED_RESOURCE_GROUP' { return @($Key, 'SELECTED_RESOURCE_GROUP', 'ResourceGroup') }
+        'SELECTED_AZURE_REGION' { return @($Key, 'SELECTED_AZURE_REGION', 'AzLocation') }
+        'SELECTED_VM_NAME' { return @($Key, 'SELECTED_VM_NAME', 'VmName') }
+        'VM_IMAGE' { return @($Key, 'WIN_VM_IMAGE', 'LIN_VM_IMAGE', 'VM_IMAGE', 'VmImage') }
+        'VM_SIZE' { return @($Key, 'WIN_VM_SIZE', 'LIN_VM_SIZE', 'VM_SIZE', 'VmSize') }
+        'VM_DISK_SIZE_GB' { return @($Key, 'WIN_VM_DISK_SIZE_GB', 'LIN_VM_DISK_SIZE_GB', 'VM_DISK_SIZE_GB', 'VmDiskSize', 'VmDiskSizeGb') }
+        'VM_DISK_NAME' { return @($Key, 'VM_DISK_NAME', 'VmDiskName') }
+        'VM_STORAGE_SKU' { return @($Key, 'VM_STORAGE_SKU', 'VmStorageSku') }
+        'VNET_NAME' { return @($Key, 'VNET_NAME', 'VNET') }
+        'SUBNET_NAME' { return @($Key, 'SUBNET_NAME', 'SUBNET') }
+        'NSG_NAME' { return @($Key, 'NSG_NAME', 'NSG') }
+        'NSG_RULE_NAME' { return @($Key, 'NSG_RULE_NAME', 'NsgRule') }
+        'PUBLIC_IP_NAME' { return @($Key, 'PUBLIC_IP_NAME', 'IP') }
+        'NIC_NAME' { return @($Key, 'NIC_NAME', 'NIC') }
+        'VM_SSH_PORT' { return @($Key, 'VM_SSH_PORT', 'SshPort') }
+        'VM_RDP_PORT' { return @($Key, 'VM_RDP_PORT', 'RdpPort') }
+        'TCP_PORTS' { return @($Key, 'TCP_PORTS', 'TcpPortsConfiguredCsv', 'TcpPorts') }
+        'VM_ADMIN_USER' { return @($Key, 'VM_ADMIN_USER', 'VmUser') }
+        'VM_ASSISTANT_USER' { return @($Key, 'VM_ASSISTANT_USER', 'VmAssistantUser') }
+        default { return @($Key) }
+    }
+}
+
+function Test-AzVmContainerHasKey {
+    param(
+        [AllowNull()]$Container,
+        [string]$Key
+    )
+
+    if ($null -eq $Container -or [string]::IsNullOrWhiteSpace([string]$Key)) {
+        return $false
+    }
+
+    if ($Container -is [System.Collections.IDictionary]) {
+        if ($Container.PSObject.Methods.Match('ContainsKey').Count -gt 0) {
+            return $Container.ContainsKey([string]$Key)
+        }
+        if ($Container.PSObject.Methods.Match('Contains').Count -gt 0) {
+            return $Container.Contains([string]$Key)
+        }
+    }
+
+    return ($Container.PSObject.Properties.Match([string]$Key).Count -gt 0)
+}
+
+function Get-AzVmContainerValue {
+    param(
+        [AllowNull()]$Container,
+        [string]$Key
+    )
+
+    if ($null -eq $Container -or [string]::IsNullOrWhiteSpace([string]$Key)) {
+        return $null
+    }
+
+    if ($Container -is [System.Collections.IDictionary]) {
+        foreach ($candidateKey in @($Container.Keys)) {
+            if ([string]::Equals([string]$candidateKey, [string]$Key, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $Container[$candidateKey]
+            }
+        }
+    }
+
+    if ($Container.PSObject.Properties.Match([string]$Key).Count -gt 0) {
+        return $Container.([string]$Key)
+    }
+
+    return $null
+}
+
 # Handles Get-AzVmFirstUseTracker.
 function Get-AzVmFirstUseTracker {
     if (-not $script:AzVmFirstUseTracker) {
@@ -354,6 +461,10 @@ function Show-AzVmStepFirstUseValues {
         [hashtable]$ExtraValues
     )
 
+    if ($script:AzVmQuietOutput) {
+        return
+    }
+
     $rows = @()
     $processed = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 
@@ -363,26 +474,32 @@ function Show-AzVmStepFirstUseValues {
         }
 
         $normalizedKey = [string]$key
-        if (-not $processed.Add($normalizedKey)) {
+        $displayKey = Resolve-AzVmObservationDisplayKey -Key $normalizedKey
+        if (-not $processed.Add($displayKey)) {
             continue
         }
 
         $value = $null
         $hasValue = $false
-        if ($Context -and $Context.ContainsKey($normalizedKey)) {
-            $value = $Context[$normalizedKey]
-            $hasValue = $true
-        }
-        elseif ($ExtraValues -and $ExtraValues.ContainsKey($normalizedKey)) {
-            $value = $ExtraValues[$normalizedKey]
-            $hasValue = $true
+        foreach ($candidateKey in @(Get-AzVmObservationLookupCandidates -Key $normalizedKey)) {
+            if (-not $hasValue -and (Test-AzVmContainerHasKey -Container $Context -Key $candidateKey)) {
+                $value = Get-AzVmContainerValue -Container $Context -Key $candidateKey
+                $hasValue = $true
+            }
+            if (-not $hasValue -and (Test-AzVmContainerHasKey -Container $ExtraValues -Key $candidateKey)) {
+                $value = Get-AzVmContainerValue -Container $ExtraValues -Key $candidateKey
+                $hasValue = $true
+            }
+            if ($hasValue) {
+                break
+            }
         }
 
         if (-not $hasValue) {
             continue
         }
 
-        $observed = Register-AzVmValueObservation -Key $normalizedKey -Value $value
+        $observed = Register-AzVmValueObservation -Key $displayKey -Value $value
         if ($observed.ShouldPrint) {
             $rows += [pscustomobject]@{
                 Key = $observed.Key
@@ -395,14 +512,15 @@ function Show-AzVmStepFirstUseValues {
     if ($ExtraValues) {
         foreach ($extraKey in @($ExtraValues.Keys | Sort-Object)) {
             $normalizedKey = [string]$extraKey
-            if ([string]::IsNullOrWhiteSpace($normalizedKey)) {
+            $displayKey = Resolve-AzVmObservationDisplayKey -Key $normalizedKey
+            if ([string]::IsNullOrWhiteSpace($displayKey)) {
                 continue
             }
-            if (-not $processed.Add($normalizedKey)) {
+            if (-not $processed.Add($displayKey)) {
                 continue
             }
 
-            $observed = Register-AzVmValueObservation -Key $normalizedKey -Value $ExtraValues[$extraKey]
+            $observed = Register-AzVmValueObservation -Key $displayKey -Value $ExtraValues[$extraKey]
             if ($observed.ShouldPrint) {
                 $rows += [pscustomobject]@{
                     Key = $observed.Key
@@ -591,6 +709,10 @@ function Show-AzVmRuntimeConfigurationSnapshot {
         [hashtable]$ConfigOverrides,
         [hashtable]$Context
     )
+
+    if ($script:AzVmQuietOutput) {
+        return
+    }
 
     Write-Host ""
     Write-Host "Configuration Snapshot ($ScriptName / platform=$Platform):" -ForegroundColor DarkCyan

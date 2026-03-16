@@ -7,11 +7,12 @@ Script Description:
 - Update tasks run task-by-task over the active platform SSH transport.
 #>
 
+[CmdletBinding(PositionalBinding = $false)]
 param(
-    [Parameter(Position = 0)]
-    [string]$Command,
+    [Alias('c')]
+    [string]$PassthroughShortCommand = '',
     [Parameter(ValueFromRemainingArguments = $true)]
-    [string[]]$CliArgs
+    [string[]]$CliTokens
 )
 
 $script:ActiveCommand = ''
@@ -28,6 +29,7 @@ $script:ExecutionMode = if ($script:UpdateMode) { 'update' } else { 'default' }
 $script:AzCommandTimeoutSeconds = 1800
 $script:SshTaskTimeoutSeconds = 180
 $script:SshConnectTimeoutSeconds = 30
+$script:AzVmQuietOutput = $false
 $script:AzCliExecutable = $null
 $script:RetailPricingCacheByLocation = @{}
 $script:RetailPricingMaxRetries = 4
@@ -55,6 +57,10 @@ function Get-AzVmCliVersionInfo {
 }
 
 function Write-AzVmCliBanner {
+    if ($script:AzVmQuietOutput) {
+        return
+    }
+
     $versionInfo = Get-AzVmCliVersionInfo
     Write-Host ("AZ-VM CLI V{0}" -f [string]$versionInfo) -ForegroundColor Cyan
     Write-Host 'Provision, update, connect, and maintain managed Windows or Linux Azure VMs from one deterministic CLI.' -ForegroundColor DarkCyan
@@ -82,6 +88,42 @@ foreach ($moduleFile in @($moduleFiles)) {
     . $modulePath
 }
 
+$preParsedCommandToken = ''
+$preParsedRawArgs = @()
+if ($null -ne $CliTokens -and @($CliTokens).Count -gt 0) {
+    $preParsedCommandToken = [string]$CliTokens[0]
+    if (@($CliTokens).Count -gt 1) {
+        $preParsedRawArgs = @($CliTokens[1..(@($CliTokens).Count - 1)])
+    }
+}
+if (-not [string]::IsNullOrWhiteSpace([string]$PassthroughShortCommand)) {
+    $preParsedRawArgs = @('-c', [string]$PassthroughShortCommand) + @($preParsedRawArgs)
+}
+if ([string]::Equals([string]$preParsedCommandToken, 'exec', [System.StringComparison]::OrdinalIgnoreCase)) {
+    $hasQuietFlag = $false
+    $hasCommandFlag = $false
+    foreach ($rawArg in @($preParsedRawArgs)) {
+        $rawArgText = [string]$rawArg
+        if ($rawArgText -in @('-q', '--quiet')) {
+            $hasQuietFlag = $true
+        }
+        elseif ($rawArgText -match '^(?i)(-q|--quiet)=(true|1|yes|on)?$') {
+            $hasQuietFlag = $true
+        }
+
+        if ($rawArgText -in @('-c', '--command')) {
+            $hasCommandFlag = $true
+        }
+        elseif ($rawArgText -match '^(?i)(-c|--command)=') {
+            $hasCommandFlag = $true
+        }
+    }
+
+    if ($hasQuietFlag -and $hasCommandFlag) {
+        $script:AzVmQuietOutput = $true
+    }
+}
+
 if ($MyInvocation.InvocationName -eq '.') {
     return
 }
@@ -89,11 +131,17 @@ if ($MyInvocation.InvocationName -eq '.') {
 Write-AzVmCliBanner
 
 try {
-    $parsedCli = Parse-AzVmCliArguments -CommandToken $Command -RawArgs $CliArgs
+    $commandToken = [string]$preParsedCommandToken
+    $rawArgs = @($preParsedRawArgs)
+
+    $parsedCli = Parse-AzVmCliArguments -CommandToken $commandToken -RawArgs $rawArgs
     Invoke-AzVmCommandDispatcher -CommandName ([string]$parsedCli.Command) -Options $parsedCli.Options -HelpTopic ([string]$parsedCli.HelpTopic)
 }
 catch {
     $resolvedError = Resolve-AzVmFriendlyError -ErrorRecord $_ -DefaultErrorSummary $script:DefaultErrorSummary -DefaultErrorHint $script:DefaultErrorHint
+    if ($script:AzVmQuietOutput) {
+        exit ([int]$resolvedError.Code)
+    }
     Write-Host ''
     Write-Host 'Script exited gracefully.' -ForegroundColor Yellow
     Write-Host ("Reason: {0}" -f $resolvedError.Summary) -ForegroundColor Red
