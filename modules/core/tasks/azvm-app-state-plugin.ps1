@@ -72,6 +72,81 @@ function Get-AzVmTaskAppStateRootDirectoryPath {
     return (Join-Path $taskRootPath 'app-state')
 }
 
+function Get-AzVmTaskAppStateBackupScopeDirectoryPath {
+    param([psobject]$TaskBlock)
+
+    if ($null -eq $TaskBlock) {
+        return ''
+    }
+
+    $stageRootPath = Get-AzVmTaskStageRootDirectoryPath -TaskBlock $TaskBlock
+    if ([string]::IsNullOrWhiteSpace([string]$stageRootPath)) {
+        $taskRootPath = ''
+        if ($TaskBlock.PSObject.Properties.Match('TaskRootPath').Count -gt 0) {
+            $taskRootPath = [string]$TaskBlock.TaskRootPath
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$taskRootPath) -and $TaskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
+            $taskRootPath = [string]$TaskBlock.DirectoryPath
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$taskRootPath)) {
+            return ''
+        }
+
+        return [string](Split-Path -Path $taskRootPath -Parent)
+    }
+
+    $relativePath = ''
+    if ($TaskBlock.PSObject.Properties.Match('RelativePath').Count -gt 0) {
+        $relativePath = [string]$TaskBlock.RelativePath
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$relativePath)) {
+        $normalizedRelative = $relativePath.Replace('\', '/').TrimStart('/')
+        if ($normalizedRelative.StartsWith('local/', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return (Join-Path $stageRootPath 'local')
+        }
+    }
+
+    $taskRootPath = ''
+    if ($TaskBlock.PSObject.Properties.Match('TaskRootPath').Count -gt 0) {
+        $taskRootPath = [string]$TaskBlock.TaskRootPath
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$taskRootPath) -and $TaskBlock.PSObject.Properties.Match('DirectoryPath').Count -gt 0) {
+        $taskRootPath = [string]$TaskBlock.DirectoryPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$taskRootPath)) {
+        $taskParentPath = [string](Split-Path -Path $taskRootPath -Parent)
+        if ([string]::Equals([string](Split-Path -Path $taskParentPath -Leaf), 'local', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return (Join-Path $stageRootPath 'local')
+        }
+    }
+
+    return [string]$stageRootPath
+}
+
+function Get-AzVmTaskAppStateBackupRootDirectoryPath {
+    param([psobject]$TaskBlock)
+
+    if ($null -eq $TaskBlock) {
+        return ''
+    }
+
+    $taskName = ''
+    if ($TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) {
+        $taskName = [string]$TaskBlock.Name
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$taskName)) {
+        return ''
+    }
+
+    $scopeDirectory = Get-AzVmTaskAppStateBackupScopeDirectoryPath -TaskBlock $TaskBlock
+    if ([string]::IsNullOrWhiteSpace([string]$scopeDirectory)) {
+        return ''
+    }
+
+    return (Join-Path (Join-Path $scopeDirectory 'backup-app-states') $taskName)
+}
+
 function Get-AzVmTaskAppStatePluginDirectoryPath {
     param([psobject]$TaskBlock)
 
@@ -621,7 +696,7 @@ if (-not (Test-Path -LiteralPath `$modulePath)) {
 }
 Import-Module `$modulePath -Force -DisableNameChecking
 `$result = Invoke-AzVmTaskAppStateReplay -ZipPath '$remoteZipPathSafe' -TaskName '$taskNameSafe' -ManagerUser '$managerUserSafe' -AssistantUser '$assistantUserSafe'
-Write-Host ('app-state-summary => task={0}; machine-registry={1}; user-registry={2}; machine-directories={3}; machine-files={4}; profile-directories={5}; profile-files={6}' -f '$taskNameSafe', [int]`$result.MachineRegistryImports, [int]`$result.UserRegistryImports, [int]`$result.MachineDirectoryCopies, [int]`$result.MachineFileCopies, [int]`$result.ProfileDirectoryCopies, [int]`$result.ProfileFileCopies)
+Write-Host ('app-state-summary => task={0}; machine-registry={1}; user-registry={2}; machine-directories={3}; machine-files={4}; profile-directories={5}; profile-files={6}; verified={7}; verify-checked={8}; verify-mismatches={9}; rollback-performed={10}; rollback-succeeded={11}' -f '$taskNameSafe', [int]`$result.MachineRegistryImports, [int]`$result.UserRegistryImports, [int]`$result.MachineDirectoryCopies, [int]`$result.MachineFileCopies, [int]`$result.ProfileDirectoryCopies, [int]`$result.ProfileFileCopies, [bool]`$result.Verified, [int]`$result.VerifyCheckedCount, [int]`$result.VerifyMismatchCount, [bool]`$result.RollbackPerformed, [bool]`$result.RollbackSucceeded)
 Write-Host 'app-state-replay-completed'
 "@
 }

@@ -493,6 +493,7 @@ function Get-AzVmTaskAppStateLocalRestoreOperations {
         if ($null -eq $entry) { continue }
         $scope = if ($entry.PSObject.Properties.Match('scope').Count -gt 0) { [string]$entry.scope } else { '' }
         $registryPath = if ($entry.PSObject.Properties.Match('registryPath').Count -gt 0) { [string]$entry.registryPath } else { '' }
+        $sourcePath = Join-Path $ExpandedRoot ([string]$entry.sourcePath)
         if ([string]::IsNullOrWhiteSpace([string]$registryPath)) { continue }
         if ([string]::Equals([string]$scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
             $key = ('registry|machine|{0}' -f $registryPath.ToLowerInvariant())
@@ -500,7 +501,7 @@ function Get-AzVmTaskAppStateLocalRestoreOperations {
             $operations.Add([pscustomobject]@{
                 Kind = 'registry'
                 Scope = 'machine'
-                SourcePath = ''
+                SourcePath = [string]$sourcePath
                 DestinationPath = ''
                 RegistryPath = [string]$registryPath
                 ProfileLabel = ''
@@ -517,7 +518,7 @@ function Get-AzVmTaskAppStateLocalRestoreOperations {
             $operations.Add([pscustomobject]@{
                 Kind = 'registry'
                 Scope = 'profile'
-                SourcePath = ''
+                SourcePath = [string]$sourcePath
                 DestinationPath = ''
                 RegistryPath = [string]$registryPath
                 ProfileLabel = [string]$profileTarget.Label
@@ -531,14 +532,139 @@ function Get-AzVmTaskAppStateLocalRestoreOperations {
     return @($operations.ToArray())
 }
 function Get-AzVmTaskAppStateLocalBackupRootPath {
-    param([string]$TaskName)
+    param(
+        [psobject]$TaskBlock,
+        [string]$TaskName = ''
+    )
+
+    $resolvedPath = Get-AzVmTaskAppStateBackupRootDirectoryPath -TaskBlock $TaskBlock
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+        return [string]$resolvedPath
+    }
 
     $safeTaskName = (([string]$TaskName -replace '[^A-Za-z0-9\-]', '-').Trim('-'))
+    if ([string]::IsNullOrWhiteSpace([string]$safeTaskName) -and $null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) {
+        $safeTaskName = (([string]$TaskBlock.Name -replace '[^A-Za-z0-9\-]', '-').Trim('-'))
+    }
     if ([string]::IsNullOrWhiteSpace([string]$safeTaskName)) {
         $safeTaskName = 'task'
     }
 
-    return (Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-local-{0}-{1}' -f $safeTaskName, ([guid]::NewGuid().ToString('N'))))
+    return (Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-local-{0}' -f $safeTaskName))
+}
+
+function Reset-AzVmTaskAppStateLocalBackupRoot {
+    param([string]$BackupRoot)
+
+    if ([string]::IsNullOrWhiteSpace([string]$BackupRoot)) {
+        return
+    }
+
+    Remove-Item -LiteralPath $BackupRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Ensure-AzVmAppStatePluginDirectory -Path $BackupRoot
+}
+
+function Get-AzVmTaskAppStateLocalJournalPath {
+    param([string]$BackupRoot)
+
+    if ([string]::IsNullOrWhiteSpace([string]$BackupRoot)) {
+        return ''
+    }
+
+    return (Join-Path $BackupRoot 'restore-journal.json')
+}
+
+function Get-AzVmTaskAppStateLocalVerifyReportPath {
+    param([string]$BackupRoot)
+
+    if ([string]::IsNullOrWhiteSpace([string]$BackupRoot)) {
+        return ''
+    }
+
+    return (Join-Path $BackupRoot 'verify-report.json')
+}
+
+function Get-AzVmTaskAppStateLocalStagingRootPath {
+    param([string]$BackupRoot)
+
+    if ([string]::IsNullOrWhiteSpace([string]$BackupRoot)) {
+        return ''
+    }
+
+    return (Join-Path $BackupRoot 'staging')
+}
+
+function Get-AzVmTaskAppStateLocalFileHashValue {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return ''
+    }
+
+    try {
+        $hash = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
+        if ($null -eq $hash -or $hash.PSObject.Properties.Match('Hash').Count -lt 1) {
+            return ''
+        }
+
+        return ([string]$hash.Hash).Trim().ToLowerInvariant()
+    }
+    catch {
+        return ''
+    }
+}
+
+function Get-AzVmTaskAppStateLocalNormalizedRegLines {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return @()
+    }
+
+    $content = [string](Get-Content -LiteralPath $Path -Raw -Encoding Unicode -ErrorAction SilentlyContinue)
+    if ([string]::IsNullOrWhiteSpace([string]$content)) {
+        $content = [string](Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue)
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$content)) {
+        return @()
+    }
+
+    $logicalLines = New-Object 'System.Collections.Generic.List[string]'
+    $buffer = ''
+    foreach ($rawLine in @($content -split "`r?`n")) {
+        $trimmedEnd = [string]$rawLine.TrimEnd()
+        if ([string]::IsNullOrWhiteSpace([string]$buffer)) {
+            $buffer = [string]$trimmedEnd
+        }
+        else {
+            $buffer = ('{0}{1}' -f [string]$buffer, [string]$trimmedEnd.TrimStart())
+        }
+
+        if ($buffer.EndsWith('\')) {
+            $buffer = $buffer.Substring(0, ($buffer.Length - 1))
+            continue
+        }
+
+        $line = [string]$buffer.Trim()
+        $buffer = ''
+        if ([string]::IsNullOrWhiteSpace([string]$line)) {
+            continue
+        }
+        if ([string]::Equals([string]$line, 'Windows Registry Editor Version 5.00', [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        $logicalLines.Add($line) | Out-Null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$buffer)) {
+        $line = [string]$buffer.Trim()
+        if (-not [string]::IsNullOrWhiteSpace([string]$line) -and -not [string]::Equals([string]$line, 'Windows Registry Editor Version 5.00', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $logicalLines.Add($line) | Out-Null
+        }
+    }
+
+    return @($logicalLines.ToArray())
 }
 
 function ConvertTo-AzVmTaskAppStateLocalSafeName {
@@ -772,6 +898,290 @@ function Remove-AzVmTaskLocalRegistryPath {
         Close-AzVmTaskLocalMountedUserHive -MountInfo $mountInfo
     }
 }
+
+function Test-AzVmTaskAppStateLocalDirectoryMatches {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$SourcePath) -or -not (Test-Path -LiteralPath $SourcePath -PathType Container)) {
+        return [pscustomobject]@{ Success = $false; Reason = 'source-missing' }
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$DestinationPath) -or -not (Test-Path -LiteralPath $DestinationPath -PathType Container)) {
+        return [pscustomobject]@{ Success = $false; Reason = 'destination-missing' }
+    }
+
+    $normalizedSourceRoot = [string](Normalize-AzVmLocalAppStateComparablePath -Path $SourcePath)
+    foreach ($directory in @(Get-ChildItem -LiteralPath $SourcePath -Recurse -Directory -Force -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+        $relativePath = [string](Normalize-AzVmLocalAppStateComparablePath -Path ([string]$directory.FullName))
+        if ($relativePath.StartsWith($normalizedSourceRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $relativePath.Substring($normalizedSourceRoot.Length).TrimStart('\')
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
+            continue
+        }
+
+        $destinationChild = Join-Path $DestinationPath $relativePath
+        if (-not (Test-Path -LiteralPath $destinationChild -PathType Container)) {
+            return [pscustomobject]@{ Success = $false; Reason = ('missing-directory:{0}' -f [string]$relativePath) }
+        }
+    }
+
+    foreach ($file in @(Get-ChildItem -LiteralPath $SourcePath -Recurse -File -Force -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+        $relativePath = [string](Normalize-AzVmLocalAppStateComparablePath -Path ([string]$file.FullName))
+        if ($relativePath.StartsWith($normalizedSourceRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $relativePath.Substring($normalizedSourceRoot.Length).TrimStart('\')
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
+            continue
+        }
+
+        $destinationChild = Join-Path $DestinationPath $relativePath
+        if (-not (Test-Path -LiteralPath $destinationChild -PathType Leaf)) {
+            return [pscustomobject]@{ Success = $false; Reason = ('missing-file:{0}' -f [string]$relativePath) }
+        }
+
+        $sourceHash = Get-AzVmTaskAppStateLocalFileHashValue -Path ([string]$file.FullName)
+        $destinationHash = Get-AzVmTaskAppStateLocalFileHashValue -Path $destinationChild
+        if ([string]::IsNullOrWhiteSpace([string]$sourceHash) -or -not [string]::Equals([string]$sourceHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return [pscustomobject]@{ Success = $false; Reason = ('hash-mismatch:{0}' -f [string]$relativePath) }
+        }
+    }
+
+    return [pscustomobject]@{ Success = $true; Reason = '' }
+}
+
+function Test-AzVmTaskAppStateLocalRegistryMatches {
+    param(
+        [string]$SourcePath,
+        [string]$RegistryPath,
+        [string]$Scope,
+        [psobject]$ProfileTarget
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$SourcePath) -or -not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        return [pscustomobject]@{ Success = $false; Reason = 'source-missing' }
+    }
+
+    $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-reg-verify-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+    $exported = $false
+    try {
+        if ([string]::Equals([string]$Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRootLocal -RegistryPath $RegistryPath
+            $providerPath = ConvertTo-AzVmLocalAppStateRegistryProviderPath -RegistryPath $canonicalRegistryPath
+            if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+                $exported = Invoke-AzVmTaskLocalRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $tempExportPath
+            }
+        }
+        else {
+            $exported = Backup-AzVmTaskLocalUserRegistry -RegistryPath $RegistryPath -ProfileTarget $ProfileTarget -BackupPath $tempExportPath
+        }
+
+        if (-not $exported) {
+            return [pscustomobject]@{ Success = $false; Reason = 'registry-export-failed' }
+        }
+
+        $expectedLines = @(Get-AzVmTaskAppStateLocalNormalizedRegLines -Path $SourcePath)
+        $actualLines = @(Get-AzVmTaskAppStateLocalNormalizedRegLines -Path $tempExportPath)
+        $actualSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($line in @($actualLines)) {
+            [void]$actualSet.Add([string]$line)
+        }
+
+        foreach ($line in @($expectedLines)) {
+            if (-not $actualSet.Contains([string]$line)) {
+                return [pscustomobject]@{ Success = $false; Reason = ('registry-line-missing:{0}' -f [string]$line) }
+            }
+        }
+
+        return [pscustomobject]@{ Success = $true; Reason = '' }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-AzVmTaskAppStateLocalRestoreOperations {
+    param([object[]]$Operations = @())
+
+    $items = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($operation in @($Operations)) {
+        if ($null -eq $operation) {
+            continue
+        }
+
+        $status = 'verified'
+        $reason = ''
+        switch ([string]$operation.Kind) {
+            'file' {
+                if (-not (Test-Path -LiteralPath ([string]$operation.DestinationPath) -PathType Leaf)) {
+                    $status = 'mismatch'
+                    $reason = 'destination-missing'
+                }
+                else {
+                    $sourceHash = Get-AzVmTaskAppStateLocalFileHashValue -Path ([string]$operation.SourcePath)
+                    $destinationHash = Get-AzVmTaskAppStateLocalFileHashValue -Path ([string]$operation.DestinationPath)
+                    if ([string]::IsNullOrWhiteSpace([string]$sourceHash) -or -not [string]::Equals([string]$sourceHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $status = 'mismatch'
+                        $reason = 'hash-mismatch'
+                    }
+                }
+            }
+            'directory' {
+                $directoryMatch = Test-AzVmTaskAppStateLocalDirectoryMatches -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)
+                if (-not [bool]$directoryMatch.Success) {
+                    $status = 'mismatch'
+                    $reason = [string]$directoryMatch.Reason
+                }
+            }
+            'registry' {
+                $profileTarget = [pscustomobject]@{
+                    Label = [string]$operation.ProfileLabel
+                    UserName = [string]$operation.UserName
+                    ProfilePath = [string]$operation.ProfilePath
+                }
+                $registryMatch = Test-AzVmTaskAppStateLocalRegistryMatches -SourcePath ([string]$operation.SourcePath) -RegistryPath ([string]$operation.RegistryPath) -Scope ([string]$operation.Scope) -ProfileTarget $profileTarget
+                if (-not [bool]$registryMatch.Success) {
+                    $status = 'mismatch'
+                    $reason = [string]$registryMatch.Reason
+                }
+            }
+            default {
+                $status = 'skipped'
+                $reason = 'unsupported-kind'
+            }
+        }
+
+        $items.Add([pscustomobject]@{
+            Kind = [string]$operation.Kind
+            Scope = [string]$operation.Scope
+            DestinationPath = [string]$operation.DestinationPath
+            RegistryPath = [string]$operation.RegistryPath
+            ProfileLabel = [string]$operation.ProfileLabel
+            UserName = [string]$operation.UserName
+            Status = [string]$status
+            Reason = [string]$reason
+        }) | Out-Null
+    }
+
+    $rows = @($items.ToArray())
+    $mismatches = @($rows | Where-Object { [string]$_.Status -eq 'mismatch' })
+    return [pscustomobject]@{
+        CheckedCount = @($rows).Count
+        MismatchCount = @($mismatches).Count
+        Succeeded = (@($mismatches).Count -eq 0)
+        Items = $rows
+    }
+}
+
+function Test-AzVmTaskAppStateLocalRollbackState {
+    param([object[]]$BackupRecords = @())
+
+    $items = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($record in @($BackupRecords)) {
+        if ($null -eq $record) {
+            continue
+        }
+
+        $status = 'verified'
+        $reason = ''
+        switch ([string]$record.Kind) {
+            'file' {
+                if ([bool]$record.Existed) {
+                    if (-not (Test-Path -LiteralPath ([string]$record.DestinationPath) -PathType Leaf)) {
+                        $status = 'mismatch'
+                        $reason = 'destination-missing'
+                    }
+                    else {
+                        $backupHash = Get-AzVmTaskAppStateLocalFileHashValue -Path ([string]$record.BackupPath)
+                        $destinationHash = Get-AzVmTaskAppStateLocalFileHashValue -Path ([string]$record.DestinationPath)
+                        if ([string]::IsNullOrWhiteSpace([string]$backupHash) -or -not [string]::Equals([string]$backupHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $status = 'mismatch'
+                            $reason = 'hash-mismatch'
+                        }
+                    }
+                }
+                elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
+                    $status = 'mismatch'
+                    $reason = 'path-still-present'
+                }
+            }
+            'directory' {
+                if ([bool]$record.Existed) {
+                    $directoryMatch = Test-AzVmTaskAppStateLocalDirectoryMatches -SourcePath ([string]$record.BackupPath) -DestinationPath ([string]$record.DestinationPath)
+                    if (-not [bool]$directoryMatch.Success) {
+                        $status = 'mismatch'
+                        $reason = [string]$directoryMatch.Reason
+                    }
+                }
+                elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
+                    $status = 'mismatch'
+                    $reason = 'path-still-present'
+                }
+            }
+            'registry' {
+                $profileTarget = [pscustomobject]@{
+                    Label = [string]$record.ProfileLabel
+                    UserName = [string]$record.UserName
+                    ProfilePath = [string]$record.ProfilePath
+                }
+                if ([bool]$record.Existed) {
+                    $registryMatch = Test-AzVmTaskAppStateLocalRegistryMatches -SourcePath ([string]$record.BackupPath) -RegistryPath ([string]$record.RegistryPath) -Scope ([string]$record.Scope) -ProfileTarget $profileTarget
+                    if (-not [bool]$registryMatch.Success) {
+                        $status = 'mismatch'
+                        $reason = [string]$registryMatch.Reason
+                    }
+                }
+                else {
+                    $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-reg-rollback-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+                    $exported = $false
+                    try {
+                        if ([string]::Equals([string]$record.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRootLocal -RegistryPath ([string]$record.RegistryPath)
+                            $providerPath = ConvertTo-AzVmLocalAppStateRegistryProviderPath -RegistryPath $canonicalRegistryPath
+                            if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+                                $exported = Invoke-AzVmTaskLocalRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $tempExportPath
+                            }
+                        }
+                        else {
+                            $exported = Backup-AzVmTaskLocalUserRegistry -RegistryPath ([string]$record.RegistryPath) -ProfileTarget $profileTarget -BackupPath $tempExportPath
+                        }
+                    }
+                    finally {
+                        Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
+                    }
+
+                    if ($exported) {
+                        $status = 'mismatch'
+                        $reason = 'registry-still-present'
+                    }
+                }
+            }
+        }
+
+        $items.Add([pscustomobject]@{
+            Kind = [string]$record.Kind
+            Scope = [string]$record.Scope
+            DestinationPath = [string]$record.DestinationPath
+            RegistryPath = [string]$record.RegistryPath
+            ProfileLabel = [string]$record.ProfileLabel
+            UserName = [string]$record.UserName
+            Status = [string]$status
+            Reason = [string]$reason
+        }) | Out-Null
+    }
+
+    $rows = @($items.ToArray())
+    $mismatches = @($rows | Where-Object { [string]$_.Status -eq 'mismatch' })
+    return [pscustomobject]@{
+        CheckedCount = @($rows).Count
+        MismatchCount = @($mismatches).Count
+        Succeeded = (@($mismatches).Count -eq 0)
+        Items = $rows
+    }
+}
+
 function Backup-AzVmTaskAppStateLocalOperations {
     param(
         [object[]]$Operations = @(),
@@ -908,6 +1318,8 @@ function Invoke-AzVmTaskAppStateLocalRollback {
         catch {
         }
     }
+
+    return (Test-AzVmTaskAppStateLocalRollbackState -BackupRecords @($BackupRecords))
 }
 
 function Save-AzVmTaskAppStateFromLocalMachine {
@@ -983,14 +1395,15 @@ function Restore-AzVmTaskAppStateToLocalMachine {
     $manifestInfo = Get-AzVmTaskAppStateManifestFromZip -ZipPath ([string]$pluginInfo.ZipPath) -ExpectedTaskName $taskName
     Assert-AzVmTaskAppStateManifestAllowedForLocalRestore -TaskBlock $TaskBlock -Manifest $manifestInfo.Manifest
 
-    $scratchRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-restore-{0}' -f ([guid]::NewGuid().ToString('N')))
-    Ensure-AzVmAppStatePluginDirectory -Path $scratchRoot
-    $backupRoot = Get-AzVmTaskAppStateLocalBackupRootPath -TaskName $taskName
-    $journalPath = Join-Path $backupRoot 'restore-journal.json'
-    Ensure-AzVmAppStatePluginDirectory -Path $backupRoot
+    $backupRoot = Get-AzVmTaskAppStateLocalBackupRootPath -TaskBlock $TaskBlock -TaskName $taskName
+    Reset-AzVmTaskAppStateLocalBackupRoot -BackupRoot $backupRoot
+    $journalPath = Get-AzVmTaskAppStateLocalJournalPath -BackupRoot $backupRoot
+    $verifyReportPath = Get-AzVmTaskAppStateLocalVerifyReportPath -BackupRoot $backupRoot
+    $stagingRoot = Get-AzVmTaskAppStateLocalStagingRootPath -BackupRoot $backupRoot
+    Ensure-AzVmAppStatePluginDirectory -Path $stagingRoot
 
-    $expandedRoot = Join-Path $scratchRoot 'expanded'
-    $workingZipPath = Join-Path $scratchRoot 'app-state.zip'
+    $expandedRoot = Join-Path $stagingRoot 'expanded'
+    $workingZipPath = Join-Path $stagingRoot 'app-state.zip'
     Copy-Item -LiteralPath ([string]$pluginInfo.ZipPath) -Destination $workingZipPath -Force
     Expand-Archive -LiteralPath $workingZipPath -DestinationPath $expandedRoot -Force
 
@@ -1004,10 +1417,13 @@ function Restore-AzVmTaskAppStateToLocalMachine {
         createdAtUtc = [string][DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
         status = 'backed-up'
         backupRoot = [string]$backupRoot
+        verifyReportPath = [string]$verifyReportPath
+        selectedUsers = @($profileTargets | ForEach-Object { [string]$_.UserName })
         operations = @($backupRecords)
     }
     Set-Content -LiteralPath $journalPath -Value (ConvertTo-JsonCompat -InputObject $journal -Depth 10) -Encoding UTF8
 
+    $verifyReport = $null
     try {
         $replayResult = Invoke-AzVmTaskAppStateReplay `
             -ZipPath $workingZipPath `
@@ -1016,8 +1432,28 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             -AssistantUser '' `
             -ProfileTargets @($profileTargets)
 
-        $journal.status = 'completed'
+        $verifyReport = Test-AzVmTaskAppStateLocalRestoreOperations -Operations @($operations)
+        $verifyReportDocument = [ordered]@{
+            taskName = [string]$taskName
+            checkedAtUtc = [string][DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
+            phase = 'post-restore'
+            succeeded = [bool]$verifyReport.Succeeded
+            checkedCount = [int]$verifyReport.CheckedCount
+            mismatchCount = [int]$verifyReport.MismatchCount
+            items = @($verifyReport.Items)
+        }
+        Set-Content -LiteralPath $verifyReportPath -Value (ConvertTo-JsonCompat -InputObject $verifyReportDocument -Depth 10) -Encoding UTF8
+        if (-not [bool]$verifyReport.Succeeded) {
+            throw ("Task app-state restore verification failed for '{0}'." -f [string]$taskName)
+        }
+
+        $journal.status = 'verified'
         $journal.completedAtUtc = [string][DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
+        $journal.verify = [ordered]@{
+            succeeded = $true
+            checkedCount = [int]$verifyReport.CheckedCount
+            mismatchCount = [int]$verifyReport.MismatchCount
+        }
         Set-Content -LiteralPath $journalPath -Value (ConvertTo-JsonCompat -InputObject $journal -Depth 10) -Encoding UTF8
 
         return [pscustomobject]@{
@@ -1026,19 +1462,47 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             Warning = $false
             BackupRoot = [string]$backupRoot
             JournalPath = [string]$journalPath
+            VerifyReportPath = [string]$verifyReportPath
             SelectedUsers = @($profileTargets | ForEach-Object { [string]$_.UserName })
             Result = $replayResult
         }
     }
     catch {
-        Invoke-AzVmTaskAppStateLocalRollback -BackupRecords @($backupRecords)
-        $journal.status = 'rolled-back'
+        $rollbackResult = Invoke-AzVmTaskAppStateLocalRollback -BackupRecords @($backupRecords)
+        $verifyReportDocument = [ordered]@{
+            taskName = [string]$taskName
+            checkedAtUtc = [string][DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
+            phase = $(if ($null -ne $verifyReport) { 'post-restore' } else { 'restore-exception' })
+            succeeded = $(if ($null -ne $verifyReport) { [bool]$verifyReport.Succeeded } else { $false })
+            checkedCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.CheckedCount } else { 0 })
+            mismatchCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.MismatchCount } else { 0 })
+            error = [string]$_.Exception.Message
+            rollbackAttempted = $true
+            rollbackSucceeded = [bool]$rollbackResult.Succeeded
+            rollbackCheckedCount = [int]$rollbackResult.CheckedCount
+            rollbackMismatchCount = [int]$rollbackResult.MismatchCount
+            items = $(if ($null -ne $verifyReport) { @($verifyReport.Items) } else { @() })
+            rollbackItems = @($rollbackResult.Items)
+        }
+        Set-Content -LiteralPath $verifyReportPath -Value (ConvertTo-JsonCompat -InputObject $verifyReportDocument -Depth 10) -Encoding UTF8
+
+        $journal.status = $(if ([bool]$rollbackResult.Succeeded) { 'rolled-back' } else { 'rollback-failed' })
         $journal.failedAtUtc = [string][DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
         $journal.error = [string]$_.Exception.Message
+        $journal.verify = [ordered]@{
+            succeeded = $(if ($null -ne $verifyReport) { [bool]$verifyReport.Succeeded } else { $false })
+            checkedCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.CheckedCount } else { 0 })
+            mismatchCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.MismatchCount } else { 0 })
+        }
+        $journal.rollback = [ordered]@{
+            succeeded = [bool]$rollbackResult.Succeeded
+            checkedCount = [int]$rollbackResult.CheckedCount
+            mismatchCount = [int]$rollbackResult.MismatchCount
+        }
         Set-Content -LiteralPath $journalPath -Value (ConvertTo-JsonCompat -InputObject $journal -Depth 10) -Encoding UTF8
+        if (-not [bool]$rollbackResult.Succeeded) {
+            throw ("{0} Rollback verification also failed for '{1}'." -f [string]$_.Exception.Message, [string]$taskName)
+        }
         throw
-    }
-    finally {
-        Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }

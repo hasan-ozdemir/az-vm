@@ -372,9 +372,9 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd task --run-vm-init 01 --group <resource-group> --vm-name <vm-name>` | `--run-vm-init`, target selectors | Runs one init task directly | Isolated bootstrap rerun | Uses Azure run-command against one managed VM. |
 | `.\az-vm.cmd task --run-vm-update 10002 --group <resource-group> --vm-name <vm-name> --windows` | `--run-vm-update`, platform | Runs one update task directly | Isolated guest fix | Uses the SSH task runner against one managed VM. |
 | `.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--save-app-state`, `--vm-update-task`, target selectors | Captures one live task-owned app-state payload into the task-local `<task-folder>/app-state/app-state.zip` | Refreshing an operator-owned payload from the active VM | Cleanly skips when no capture coverage exists. |
-| `.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--restore-app-state`, `--vm-update-task`, target selectors | Replays one saved task-owned app-state payload to the active VM | Targeted state restore after reinstall or cleanup | Fails cleanly when the requested zip is missing or invalid. |
+| `.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--restore-app-state`, `--vm-update-task`, target selectors | Replays one saved task-owned app-state payload to the active VM | Targeted state restore after reinstall or cleanup | Fails cleanly when the requested zip is missing or invalid, and otherwise verifies the guest replayed content and rolls back from guest-side backup staging on mismatch. |
 | `.\az-vm.cmd task --save-app-state --source=lm --user=.current. --vm-update-task=115 --windows` | `--save-app-state`, `--source=lm`, `--user=.current.` | Captures one local-machine task payload into the same task-local zip path | Refreshing a portable app-state payload from the operator machine | Windows-host-only. |
-| `.\az-vm.cmd task --restore-app-state --target=lm --user=.current. --vm-update-task=115 --windows` | `--restore-app-state`, `--target=lm`, `--user=.current.` | Restores one task-local payload back onto the operator machine | Safe local replay and troubleshooting | Validates `task.json`, writes a backup root plus restore journal, and rolls back on failure. |
+| `.\az-vm.cmd task --restore-app-state --target=lm --user=.current. --vm-update-task=115 --windows` | `--restore-app-state`, `--target=lm`, `--user=.current.` | Restores one task-local payload back onto the operator machine | Safe local replay and troubleshooting | Validates `task.json`, writes task-adjacent `backup-app-states/<task-name>/` snapshots plus `restore-journal.json` and `verify-report.json`, and rolls back on verification failure. |
 
 #### `exec`
 
@@ -609,10 +609,11 @@ Behavior notes:
 - `--save-app-state` defaults to `--source=vm`; `--restore-app-state` defaults to `--target=vm`; both default to `--user=.all.`
 - `--user` accepts `.all.`, `.current.`, one explicit user, or a comma-separated user list such as `--user=operator,assistant`
 - managed VM app-state reads or writes the task-local payload at `<task-folder>/app-state/app-state.zip`
+- VM restore uses guest-side temporary backup staging, verifies restored files and registry after replay, and rolls back automatically if verification fails
 - local-machine save/restore is Windows-host-only and reuses the same task-local payload path
 - init and update restore flows both reuse the same shared per-task app-state post-process; init routes it through Azure Run Command and update routes it through SSH
 - task-owned app-state payloads target only the managed `manager` and `assistant` OS profiles on VM paths; missing zips skip cleanly, and broad generated caches, installers, models, and telemetry payloads are pruned from the managed capture contract
-- local restore validates the current `task.json` allow-list, writes a backup root plus restore journal first, and rolls back the current target user if replay fails mid-flight
+- local restore validates the current `task.json` allow-list, writes task-adjacent `backup-app-states/<task-name>/` snapshots plus `restore-journal.json` and `verify-report.json` first, verifies the replayed content, and rolls back the current target user if replay or verification fails
 - useful before isolated reruns or when checking timeout and enable-state behavior
 
 ### `exec`
@@ -702,7 +703,7 @@ Direct `task --run-vm-init` and `task --run-vm-update` are the main diagnosis pa
 
 Current task template replacement uses the public selected-value placeholders: `__SELECTED_VM_NAME__`, `__SELECTED_AZURE_REGION__`, `__SELECTED_RESOURCE_GROUP__`, `__SELECTED_COMPANY_NAME__`, `__SELECTED_COMPANY_WEB_ADDRESS__`, `__SELECTED_COMPANY_EMAIL_ADDRESS__`, `__SELECTED_EMPLOYEE_EMAIL_ADDRESS__`, and `__SELECTED_EMPLOYEE_FULL_NAME__`.
 
-Task-scoped app-state capture and replay use the same portable task folder contract. The current task-local zip path is always `<task-folder>/app-state/app-state.zip`, and the current app-state allow-list lives beside it in the same folder's `task.json`.
+Task-scoped app-state capture and replay use the same portable task folder contract. The current task-local zip path is always `<task-folder>/app-state/app-state.zip`, and the current app-state allow-list lives beside it in the same folder's `task.json`. Local-machine restore snapshots live beside the stage as `backup-app-states/<task-name>/`, or `local/backup-app-states/<task-name>/` for local-only tasks, and those roots carry both `restore-journal.json` and `verify-report.json`.
 
 ## Configuration Guide
 
@@ -871,7 +872,7 @@ Each task directory is self-contained. The folder holds one same-named script, o
 - Check `task.json` timeout and enabled state.
 - Vm-init and vm-update app-state replay are post-task and plug-in based. If `<task-folder>/app-state/app-state.zip` is absent, the task logs a skip and continues; if it exists, the shared post-process deploys it without requiring a dedicated restore task.
 - Managed app-state save and restore target only the `manager` and `assistant` OS profiles. Large generated payloads such as installers, models, telemetry trees, and low-value caches are intentionally pruned so the zips stay operator-owned and reusable instead of drifting into machine-image snapshots.
-- Local-machine app-state restore validates the current `task.json` allow-list and writes a backup root plus restore journal before replaying onto the operator machine.
+- Local-machine app-state restore validates the current `task.json` allow-list and writes task-adjacent `backup-app-states/<task-name>/` snapshots plus `restore-journal.json` and `verify-report.json` before replaying onto the operator machine.
 - Windows public desktop shortcut validation names the exact missing `.env` keys, for example `SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow.` and `SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow.`
 - Use `VM_TASK_OUTCOME_MODE=strict` when you want the stage to stop at the first failure.
 

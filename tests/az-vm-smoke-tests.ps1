@@ -4814,6 +4814,10 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition ($gitignoreText -like '*windows/init/**/app-state/***') -Message '.gitignore must ignore Windows init task-local app-state payloads.'
     Assert-True -Condition ($gitignoreText -like '*linux/update/**/app-state/***') -Message '.gitignore must ignore Linux update task-local app-state payloads.'
     Assert-True -Condition ($gitignoreText -like '*linux/init/**/app-state/***') -Message '.gitignore must ignore Linux init task-local app-state payloads.'
+    Assert-True -Condition ($gitignoreText -like '*windows/update/**/backup-app-states/***') -Message '.gitignore must ignore Windows update backup-app-states snapshots.'
+    Assert-True -Condition ($gitignoreText -like '*windows/init/**/backup-app-states/***') -Message '.gitignore must ignore Windows init backup-app-states snapshots.'
+    Assert-True -Condition ($gitignoreText -like '*linux/update/**/backup-app-states/***') -Message '.gitignore must ignore Linux update backup-app-states snapshots.'
+    Assert-True -Condition ($gitignoreText -like '*linux/init/**/backup-app-states/***') -Message '.gitignore must ignore Linux init backup-app-states snapshots.'
     Assert-True -Condition (-not ($gitignoreText -like '*windows/update/app-states/***')) -Message '.gitignore must not keep the retired Windows update shared app-states root ignore.'
     Assert-True -Condition (-not ($gitignoreText -like '*windows/init/app-states/***')) -Message '.gitignore must not keep the retired Windows init shared app-states root ignore.'
     Assert-True -Condition (-not ($gitignoreText -like '*linux/update/app-states/***')) -Message '.gitignore must not keep the retired Linux update shared app-states root ignore.'
@@ -5267,8 +5271,16 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition (-not ($captureHelperText -like '*glob.glob(''/home/*'')*')) -Message 'Linux app-state capture must not enumerate arbitrary /home/* users for replay targeting.'
     Assert-True -Condition ($captureHelperText -like '*Get-AzVmAllowedAppStateProfileLabels*') -Message 'Shared app-state capture must keep one explicit allowlist for replayable profile targets.'
     Assert-True -Condition ($guestHelperText -like '*$ProfileTargets = @()*') -Message 'Windows app-state guest helpers must accept explicit local profile target descriptors.'
+    Assert-True -Condition ($guestHelperText -like '*Get-AzVmTaskAppStateReplayOperations*') -Message 'Windows app-state guest helpers must materialize restore operations before replay.'
+    Assert-True -Condition ($guestHelperText -like '*Backup-AzVmTaskAppStateOperations*') -Message 'Windows app-state guest helpers must back up touched targets before replay.'
+    Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateRollback*') -Message 'Windows app-state guest helpers must support rollback after restore verification failures.'
+    Assert-True -Condition ($guestHelperText -like '*phase=verify-complete*') -Message 'Windows app-state guest helpers must log restore verification completion.'
+    Assert-True -Condition ($guestHelperText -like '*phase=rollback-complete*') -Message 'Windows app-state guest helpers must log rollback completion.'
     Assert-True -Condition ($localAppStateText -like '*Resolve-AzVmLocalAppStateProfileTargets*') -Message 'Local app-state helpers must resolve explicit Windows profile targets.'
     Assert-True -Condition ($localAppStateText -like '*restore-journal.json*') -Message 'Local app-state helpers must write a restore journal.'
+    Assert-True -Condition ($localAppStateText -like '*verify-report.json*') -Message 'Local app-state helpers must write a verify report.'
+    Assert-True -Condition ($localAppStateText -like '*Get-AzVmTaskAppStateBackupRootDirectoryPath*') -Message 'Local app-state helpers must resolve task-adjacent backup-app-states roots.'
+    Assert-True -Condition ($localAppStateText -like '*rolled-back*') -Message 'Local app-state helpers must mark rollback outcomes in the restore journal.'
     Assert-True -Condition ($dockerTaskJsonText -like '*DawnWebGPUCache*') -Message 'Task-local app-state specs must exclude low-value WebGPU cache payloads.'
     Assert-True -Condition ($copySettingsTaskJsonText -like '*SolutionPackages*') -Message 'Task-local Office capture specs must exclude generated offline solution packages.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*updates_v2*') -Message 'Task-local Ollama capture specs must exclude installer update payloads.'
@@ -5318,7 +5330,10 @@ Invoke-Test -Name "Task command surface supports save and restore app-state main
 Invoke-Test -Name "Local-machine app-state helpers resolve task users and preserve restore journals" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-app-state-test-' + [Guid]::NewGuid().ToString('N'))
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
-    $taskRoot = Join-Path $tempRoot '101-local-app-state'
+    $stageRoot = Join-Path $tempRoot 'windows\update'
+    $taskRoot = Join-Path $stageRoot '101-local-app-state'
+    $localStageRoot = Join-Path $stageRoot 'local'
+    $localTaskRoot = Join-Path $localStageRoot '1001-local-app-state'
     $profileRoot = Join-Path $tempRoot 'profiles'
     $currentUserAlias = [string][System.Environment]::UserName
     $operatorProfile = Join-Path $profileRoot 'operator'
@@ -5332,6 +5347,8 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
         Name = '101-local-app-state'
         TaskRootPath = [string]$taskRoot
         DirectoryPath = [string]$taskRoot
+        StageRootDirectoryPath = [string]$stageRoot
+        RelativePath = '101-local-app-state\101-local-app-state.ps1'
         AppStateSpec = ConvertTo-AzVmTaskFolderAppStateSpec -TaskName '101-local-app-state' -TaskLabel '101-local-app-state' -AppState ([ordered]@{
             machineDirectories = @()
             machineFiles = @()
@@ -5341,11 +5358,21 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
             userRegistryKeys = @()
         })
     }
+    $localTaskBlock = [pscustomobject]@{
+        Name = '1001-local-app-state'
+        TaskRootPath = [string]$localTaskRoot
+        DirectoryPath = [string]$localTaskRoot
+        StageRootDirectoryPath = [string]$stageRoot
+        RelativePath = 'local\1001-local-app-state\1001-local-app-state.ps1'
+        AppStateSpec = $taskBlock.AppStateSpec
+    }
 
     $originalCatalogCommand = Get-Command Get-AzVmLocalAppStateProfileCatalog -CommandType Function -ErrorAction Stop
     $originalCaptureCommand = Get-Command Invoke-AzVmTaskAppStateCapture -CommandType Function -ErrorAction SilentlyContinue
     $originalReplayCommand = Get-Command Invoke-AzVmTaskAppStateReplay -CommandType Function -ErrorAction SilentlyContinue
     try {
+        New-Item -Path $taskRoot -ItemType Directory -Force | Out-Null
+        New-Item -Path $localTaskRoot -ItemType Directory -Force | Out-Null
         foreach ($profilePath in @($operatorProfile, $assistantProfile)) {
             New-Item -Path $profilePath -ItemType Directory -Force | Out-Null
             Set-Content -LiteralPath (Join-Path $profilePath 'NTUSER.DAT') -Value 'stub' -Encoding UTF8
@@ -5366,6 +5393,10 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
         Assert-True -Condition (@($selectedCurrent).Count -eq 1) -Message 'Local app-state .current. must resolve to one profile target.'
         $selectedExplicit = @(Resolve-AzVmLocalAppStateProfileTargets -RequestedUsers @('assistant,operator'))
         Assert-True -Condition (@($selectedExplicit).Count -eq 2) -Message 'Local app-state explicit user lists must resolve multiple profile targets.'
+        $expectedTrackedBackupRoot = Join-Path (Join-Path $stageRoot 'backup-app-states') '101-local-app-state'
+        $expectedLocalBackupRoot = Join-Path (Join-Path $localStageRoot 'backup-app-states') '1001-local-app-state'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStateLocalBackupRootPath -TaskBlock $taskBlock) -eq $expectedTrackedBackupRoot) -Message 'Tracked local restore backups must resolve under the stage backup-app-states root.'
+        Assert-True -Condition ([string](Get-AzVmTaskAppStateLocalBackupRootPath -TaskBlock $localTaskBlock) -eq $expectedLocalBackupRoot) -Message 'Local-only restore backups must resolve under the local backup-app-states root.'
 
         Set-Item -Path Function:Invoke-AzVmTaskAppStateCapture -Value {
             param([string]$TaskName,[string]$PlanPath,[string]$OutputZipPath,[string]$ManagerUser,[string]$AssistantUser,[object[]]$ProfileTargets=@())
@@ -5414,6 +5445,12 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
         Assert-True -Condition ((Get-Content -LiteralPath (Join-Path $operatorProfile 'AppData\Roaming\TestApp\settings.json') -Raw) -match '"saved"') -Message 'Local app-state restore must return the selected profile file to the saved value.'
         Assert-True -Condition (Test-Path -LiteralPath ([string]$restoreResult.BackupRoot)) -Message 'Local app-state restore must publish the backup root.'
         Assert-True -Condition (Test-Path -LiteralPath ([string]$restoreResult.JournalPath)) -Message 'Local app-state restore must publish the restore journal.'
+        Assert-True -Condition ([string]$restoreResult.BackupRoot -eq $expectedTrackedBackupRoot) -Message 'Local app-state restore must use the task-adjacent backup-app-states root.'
+        Assert-True -Condition (Test-Path -LiteralPath ([string]$restoreResult.VerifyReportPath)) -Message 'Local app-state restore must publish the verify report.'
+        $restoreJournal = ConvertFrom-JsonCompat -InputObject ([string](Get-Content -LiteralPath ([string]$restoreResult.JournalPath) -Raw))
+        $verifyReport = ConvertFrom-JsonCompat -InputObject ([string](Get-Content -LiteralPath ([string]$restoreResult.VerifyReportPath) -Raw))
+        Assert-True -Condition ([string]$restoreJournal.status -eq 'verified') -Message 'Local app-state restore journal must record verified completion.'
+        Assert-True -Condition ([bool]$verifyReport.succeeded) -Message 'Local app-state verify report must record a successful restore verification.'
     }
     finally {
         Set-Item -Path Function:Get-AzVmLocalAppStateProfileCatalog -Value $originalCatalogCommand.ScriptBlock
@@ -5423,6 +5460,109 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
         else {
             Remove-Item -Path Function:Invoke-AzVmTaskAppStateCapture -ErrorAction SilentlyContinue
         }
+        if ($null -ne $originalReplayCommand) {
+            Set-Item -Path Function:Invoke-AzVmTaskAppStateReplay -Value $originalReplayCommand.ScriptBlock
+        }
+        else {
+            Remove-Item -Path Function:Invoke-AzVmTaskAppStateReplay -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Local-machine app-state restore rolls back when verification fails" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-app-state-rollback-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+    $stageRoot = Join-Path $tempRoot 'windows\update'
+    $taskRoot = Join-Path $stageRoot '101-local-app-state'
+    $profileRoot = Join-Path $tempRoot 'profiles'
+    $operatorProfile = Join-Path $profileRoot 'operator'
+    $taskBlock = [pscustomobject]@{
+        Name = '101-local-app-state'
+        TaskRootPath = [string]$taskRoot
+        DirectoryPath = [string]$taskRoot
+        StageRootDirectoryPath = [string]$stageRoot
+        RelativePath = '101-local-app-state\101-local-app-state.ps1'
+        AppStateSpec = ConvertTo-AzVmTaskFolderAppStateSpec -TaskName '101-local-app-state' -TaskLabel '101-local-app-state' -AppState ([ordered]@{
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @()
+            profileFiles = @(@{ path = 'AppData\Roaming\TestApp\settings.json' })
+            machineRegistryKeys = @()
+            userRegistryKeys = @()
+        })
+    }
+
+    $originalCatalogCommand = Get-Command Get-AzVmLocalAppStateProfileCatalog -CommandType Function -ErrorAction Stop
+    $originalReplayCommand = Get-Command Invoke-AzVmTaskAppStateReplay -CommandType Function -ErrorAction SilentlyContinue
+    try {
+        New-Item -Path $taskRoot -ItemType Directory -Force | Out-Null
+        New-Item -Path $operatorProfile -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $operatorProfile 'NTUSER.DAT') -Value 'stub' -Encoding UTF8
+        New-Item -Path (Join-Path $operatorProfile 'AppData\Roaming\TestApp') -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $operatorProfile 'AppData\Roaming\TestApp\settings.json') -Value '{"theme":"saved"}' -Encoding UTF8
+
+        Set-Item -Path Function:Get-AzVmLocalAppStateProfileCatalog -Value {
+            return @(
+                [pscustomobject]@{ Label = 'operator'; UserName = 'operator'; ProfilePath = $operatorProfile; NtUserDatPath = (Join-Path $operatorProfile 'NTUSER.DAT') }
+            )
+        }.GetNewClosure()
+
+        $pluginDir = Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $taskBlock
+        New-Item -Path $pluginDir -ItemType Directory -Force | Out-Null
+        $scratchRoot = Join-Path $tempRoot 'payload'
+        New-Item -Path (Join-Path $scratchRoot 'payload\\profile-files\\operator') -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'payload\\profile-files\\operator\\settings.json') -Value '{"theme":"saved"}' -Encoding UTF8
+        $manifest = [ordered]@{
+            version = 3
+            taskName = '101-local-app-state'
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @()
+            profileFiles = @(
+                [ordered]@{
+                    sourcePath = 'payload/profile-files/operator/settings.json'
+                    relativeDestinationPath = 'AppData\\Roaming\\TestApp\\settings.json'
+                    targetProfiles = @('operator')
+                }
+            )
+            registryImports = @()
+        }
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value ($manifest | ConvertTo-Json -Depth 8) -Encoding UTF8
+        Compress-Archive -LiteralPath @(
+            (Join-Path $scratchRoot 'app-state.manifest.json'),
+            (Join-Path $scratchRoot 'payload')
+        ) -DestinationPath (Join-Path $pluginDir 'app-state.zip') -Force
+
+        Set-Content -LiteralPath (Join-Path $operatorProfile 'AppData\Roaming\TestApp\settings.json') -Value '{"theme":"drift"}' -Encoding UTF8
+
+        Set-Item -Path Function:Invoke-AzVmTaskAppStateReplay -Value {
+            param([string]$ZipPath,[string]$TaskName,[string]$ManagerUser,[string]$AssistantUser,[object[]]$ProfileTargets=@())
+            Set-Content -LiteralPath (Join-Path $operatorProfile 'AppData\Roaming\TestApp\settings.json') -Value '{"theme":"broken"}' -Encoding UTF8
+            return [pscustomobject]@{ MachineRegistryImports = 0; UserRegistryImports = 0; MachineDirectoryCopies = 0; MachineFileCopies = 0; ProfileDirectoryCopies = 0; ProfileFileCopies = 1 }
+        }.GetNewClosure()
+
+        $restoreFailed = $false
+        try {
+            [void](Restore-AzVmTaskAppStateToLocalMachine -TaskBlock $taskBlock -RequestedUsers @('operator'))
+        }
+        catch {
+            $restoreFailed = $true
+        }
+
+        $backupRoot = Get-AzVmTaskAppStateLocalBackupRootPath -TaskBlock $taskBlock
+        $journalPath = Join-Path $backupRoot 'restore-journal.json'
+        $verifyReportPath = Join-Path $backupRoot 'verify-report.json'
+        $restoreJournal = ConvertFrom-JsonCompat -InputObject ([string](Get-Content -LiteralPath $journalPath -Raw))
+        $verifyReport = ConvertFrom-JsonCompat -InputObject ([string](Get-Content -LiteralPath $verifyReportPath -Raw))
+
+        Assert-True -Condition $restoreFailed -Message 'Local app-state restore must fail when post-restore verification detects drift.'
+        Assert-True -Condition ((Get-Content -LiteralPath (Join-Path $operatorProfile 'AppData\Roaming\TestApp\settings.json') -Raw) -match '"drift"') -Message 'Rollback must restore the pre-restore local file content when verification fails.'
+        Assert-True -Condition ([string]$restoreJournal.status -eq 'rolled-back') -Message 'Local app-state restore journal must record rollback when verification fails.'
+        Assert-True -Condition ([bool]$verifyReport.rollbackSucceeded) -Message 'Verify report must record a successful rollback after verification failure.'
+    }
+    finally {
+        Set-Item -Path Function:Get-AzVmLocalAppStateProfileCatalog -Value $originalCatalogCommand.ScriptBlock
         if ($null -ne $originalReplayCommand) {
             Set-Item -Path Function:Invoke-AzVmTaskAppStateReplay -Value $originalReplayCommand.ScriptBlock
         }

@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.324] - 2026-03-16
+
+### Changed
+- Reworked `task --restore-app-state` safety so local-machine restore no longer stages backups under temp-only paths; it now writes task-adjacent snapshots under `backup-app-states/<task-name>/` or `local/backup-app-states/<task-name>/`, alongside `restore-journal.json` and `verify-report.json`.
+- Extended local-machine restore to verify every restored file, directory, and declared registry subtree after replay, and to roll back automatically from the task-adjacent backup root when replay or verification fails.
+- Extended Windows guest VM restore to back up touched files and registry paths in guest-side temporary staging, verify the replayed content after restore, and roll back automatically when verification detects drift.
+
+### Fixed
+- Fixed local restore bookkeeping so tracked and local-only task folders now resolve their backup roots deterministically from the portable task folder location instead of using opaque temp-only directories.
+- Fixed restore verification visibility so smoke coverage, README guidance, and AGENTS rules now describe the current `backup-app-states`, `restore-journal.json`, and `verify-report.json` contract without colliding with the retired stage-local `app-states/` wording.
+
+### Tests
+- Revalidated the app-state restore backup, verify, and rollback contract non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+
 ## [2026.3.16.323] - 2026-03-16
 
 ### Added

@@ -60,7 +60,7 @@ Use these sources in this order when maintaining the repo:
 - `task` owns task inventory, isolated `vm-init` / `vm-update` task runs, and task-scoped app-state save/restore.
 - `task --save-app-state` defaults to `--source=vm`; `task --restore-app-state` defaults to `--target=vm`; both default to `--user=.all.`.
 - `task --save-app-state` / `--restore-app-state` accept `--user=.all.`, `--user=.current.`, one explicit user, or a comma-separated user list.
-- Local-machine task app-state save/restore is Windows-host-only, must validate the current `task.json` allow-list before local restore, and must write a lightweight backup plus restore journal before mutating the operator machine.
+- Local-machine task app-state save/restore is Windows-host-only, must validate the current `task.json` allow-list before local restore, and must write task-adjacent backup snapshots plus both `restore-journal.json` and `verify-report.json` before mutating the operator machine.
 - `exec` is SSH-only: it may open an interactive shell or run one remote command through `--command` / `-c`, but it must not own isolated task execution.
 - `connect` owns interactive/test connection flows and requires exactly one transport flag: `--ssh` or `--rdp`.
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
@@ -117,6 +117,7 @@ Use these sources in this order when maintaining the repo:
 - The only allowed task app-state source is the task-local plugin zip `<task-folder>/app-state/app-state.zip`.
 - Builtin and local-only init/update task folders must use the same post-process app-state contract and the same exact task-local plugin path rule.
 - Task-local `app-state/` folders are untracked and git-ignored; missing task plugins must log a skip and continue instead of failing the stage.
+- Task-adjacent `backup-app-states/` folders are untracked and git-ignored; local-machine restore must write backups under `<stage-root>/backup-app-states/<task-name>` or `<stage-root>/local/backup-app-states/<task-name>`, verify the restored content, and roll back from that backup root if verification fails.
 - Stage-root shared `app-states/`, task-side helper folders outside the owning task folder, and any legacy overlay paths must not be used as alternate app-state storage locations.
 - Managed app-state save and restore must target only the `manager` and `assistant` OS profiles. Do not capture or replay `default` or arbitrary local user profiles.
 - App-state capture is settings-first. Exclude generated installers, models, telemetry trees, caches, and other low-value runtime artifacts unless a task explicitly proves they are durable required state.

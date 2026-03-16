@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.324 - 2026-03-16
+
+### Summary
+This release hardens `task --restore-app-state` around real backup, verification, and rollback behavior. Local-machine restore now writes task-adjacent `backup-app-states/<task-name>/` snapshots plus `restore-journal.json` and `verify-report.json`, verifies the replayed files and registry before declaring success, and rolls back automatically if replay or verification fails. The Windows VM restore path now follows the same safety model on the guest side with temporary backup staging and post-restore verification.
+
+### Highlights
+- Moved local-machine restore backups from temp-only roots to task-adjacent `backup-app-states/<task-name>/` and `local/backup-app-states/<task-name>/`, keeping the restore journal and verify report beside the active snapshot.
+- Added post-restore verification for local-machine replay so declared files, directories, and registry payloads are checked after restore and automatically rolled back when drift remains.
+- Added Windows guest-side backup, verification, and rollback to the shared VM restore helper so direct VM app-state replay no longer assumes restore success after import/copy alone.
+- Revalidated the backup/verify/rollback contract non-live with the smoke, documentation-contract, and PowerShell compatibility gates.
+
 ## Release 2026.3.16.323 - 2026-03-16
 
 ### Summary

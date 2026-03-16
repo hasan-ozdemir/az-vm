@@ -600,6 +600,879 @@ function Get-AzVmAppStateScratchRootPath {
     return (Join-Path $env:TEMP ('{0}-{1}' -f $normalizedPrefix, ([guid]::NewGuid().ToString('N'))))
 }
 
+function Normalize-AzVmAppStateComparablePath {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path)) {
+        return ''
+    }
+
+    $normalizedPath = ([string]$Path).Trim().Replace('/', '\')
+    $uncPrefix = ''
+    if ($normalizedPath.StartsWith('\\')) {
+        $uncPrefix = '\\'
+        $normalizedPath = $normalizedPath.TrimStart('\')
+    }
+
+    $normalizedPath = [regex]::Replace($normalizedPath, '\\{2,}', '\')
+    return ($uncPrefix + $normalizedPath).TrimEnd('\')
+}
+
+function Get-AzVmAppStateFileHashValue {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return ''
+    }
+
+    try {
+        $hash = Get-FileHash -LiteralPath $Path -Algorithm SHA256 -ErrorAction Stop
+        if ($null -eq $hash -or $hash.PSObject.Properties.Match('Hash').Count -lt 1) {
+            return ''
+        }
+
+        return ([string]$hash.Hash).Trim().ToLowerInvariant()
+    }
+    catch {
+        return ''
+    }
+}
+
+function Get-AzVmAppStateNormalizedRegLines {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        return @()
+    }
+
+    $content = [string](Get-Content -LiteralPath $Path -Raw -Encoding Unicode -ErrorAction SilentlyContinue)
+    if ([string]::IsNullOrWhiteSpace([string]$content)) {
+        $content = [string](Get-Content -LiteralPath $Path -Raw -ErrorAction SilentlyContinue)
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$content)) {
+        return @()
+    }
+
+    $logicalLines = New-Object 'System.Collections.Generic.List[string]'
+    $buffer = ''
+    foreach ($rawLine in @($content -split "`r?`n")) {
+        $trimmedEnd = [string]$rawLine.TrimEnd()
+        if ([string]::IsNullOrWhiteSpace([string]$buffer)) {
+            $buffer = [string]$trimmedEnd
+        }
+        else {
+            $buffer = ('{0}{1}' -f [string]$buffer, [string]$trimmedEnd.TrimStart())
+        }
+
+        if ($buffer.EndsWith('\')) {
+            $buffer = $buffer.Substring(0, ($buffer.Length - 1))
+            continue
+        }
+
+        $line = [string]$buffer.Trim()
+        $buffer = ''
+        if ([string]::IsNullOrWhiteSpace([string]$line)) {
+            continue
+        }
+        if ([string]::Equals([string]$line, 'Windows Registry Editor Version 5.00', [System.StringComparison]::OrdinalIgnoreCase)) {
+            continue
+        }
+
+        $logicalLines.Add($line) | Out-Null
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$buffer)) {
+        $line = [string]$buffer.Trim()
+        if (-not [string]::IsNullOrWhiteSpace([string]$line) -and -not [string]::Equals([string]$line, 'Windows Registry Editor Version 5.00', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $logicalLines.Add($line) | Out-Null
+        }
+    }
+
+    return @($logicalLines.ToArray())
+}
+
+function Backup-AzVmTaskUserRegistry {
+    param(
+        [string]$RegistryPath,
+        [psobject]$ProfileTarget,
+        [string]$BackupPath
+    )
+
+    $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$ProfileTarget.ProfilePath) -PreferredLabel ([string]$ProfileTarget.UserName)
+    if ($null -eq $mountInfo) {
+        return $false
+    }
+
+    try {
+        $canonicalPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath $RegistryPath
+        if ([string]::IsNullOrWhiteSpace([string]$canonicalPath) -or
+            -not $canonicalPath.StartsWith('HKEY_CURRENT_USER', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $false
+        }
+
+        $mountedRoot = $canonicalPath -replace '^HKEY_CURRENT_USER', ([string]$mountInfo.Root)
+        $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-reg-export-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+        try {
+            if (-not (Invoke-AzVmRegExport -RegistryPath $mountedRoot -DestinationPath $tempExportPath)) {
+                return $false
+            }
+
+            return (Convert-AzVmAppStateRegRoot -SourcePath $tempExportPath -SourceRoot ([string]$mountInfo.Root) -DestinationRoot 'HKEY_CURRENT_USER' -DestinationPath $BackupPath)
+        }
+        finally {
+            Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    finally {
+        Close-AzVmMountedUserHive -MountInfo $mountInfo
+    }
+}
+
+function Restore-AzVmTaskUserRegistryFromBackup {
+    param(
+        [string]$BackupPath,
+        [string]$RegistryPath,
+        [psobject]$ProfileTarget
+    )
+
+    $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$ProfileTarget.ProfilePath) -PreferredLabel ([string]$ProfileTarget.UserName)
+    if ($null -eq $mountInfo) {
+        return $false
+    }
+
+    try {
+        $tempImportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-reg-import-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+        try {
+            if (-not (Convert-AzVmAppStateRegRoot -SourcePath $BackupPath -SourceRoot 'HKEY_CURRENT_USER' -DestinationRoot ([string]$mountInfo.Root) -DestinationPath $tempImportPath)) {
+                return $false
+            }
+
+            cmd.exe /d /c ('reg import "{0}" >nul 2>&1' -f $tempImportPath) | Out-Null
+            return ([int]$LASTEXITCODE -eq 0)
+        }
+        finally {
+            Remove-Item -LiteralPath $tempImportPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+    finally {
+        Close-AzVmMountedUserHive -MountInfo $mountInfo
+    }
+}
+
+function Remove-AzVmTaskRegistryPath {
+    param(
+        [string]$RegistryPath,
+        [string]$Scope,
+        [psobject]$ProfileTarget
+    )
+
+    if ([string]::Equals([string]$Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $providerPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath $RegistryPath
+        if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+            Remove-Item -LiteralPath $providerPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        return
+    }
+
+    $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$ProfileTarget.ProfilePath) -PreferredLabel ([string]$ProfileTarget.UserName)
+    if ($null -eq $mountInfo) {
+        return
+    }
+
+    try {
+        $canonicalPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath $RegistryPath
+        if ([string]::IsNullOrWhiteSpace([string]$canonicalPath) -or
+            -not $canonicalPath.StartsWith('HKEY_CURRENT_USER', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return
+        }
+
+        $mountedProviderPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath ($canonicalPath -replace '^HKEY_CURRENT_USER', ([string]$mountInfo.Root))
+        if (-not [string]::IsNullOrWhiteSpace([string]$mountedProviderPath) -and (Test-Path -LiteralPath $mountedProviderPath)) {
+            Remove-Item -LiteralPath $mountedProviderPath -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+    finally {
+        Close-AzVmMountedUserHive -MountInfo $mountInfo
+    }
+}
+
+function Get-AzVmTaskAppStateReplayOperations {
+    param(
+        [string]$ExpandedRoot,
+        [psobject]$Manifest,
+        [object[]]$ProfileTargets = @()
+    )
+
+    $operations = New-Object 'System.Collections.Generic.List[object]'
+    $seen = @{}
+
+    foreach ($entry in @($Manifest.machineDirectories)) {
+        if ($null -eq $entry) { continue }
+        $sourcePath = Join-Path $ExpandedRoot ([string]$entry.sourcePath)
+        $destinationPath = [string]$entry.destinationPath
+        if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$destinationPath)) { continue }
+        $key = ('directory|machine|{0}' -f $destinationPath.TrimEnd('\').ToLowerInvariant())
+        if ($seen.ContainsKey($key)) { continue }
+        $operations.Add([pscustomobject]@{
+            Kind = 'directory'
+            Scope = 'machine'
+            SourcePath = [string]$sourcePath
+            DestinationPath = [string]$destinationPath
+            RegistryPath = ''
+            ProfileLabel = ''
+            UserName = ''
+            ProfilePath = ''
+            DistributionAllowList = @()
+        }) | Out-Null
+        $seen[$key] = $true
+    }
+
+    foreach ($entry in @($Manifest.machineFiles)) {
+        if ($null -eq $entry) { continue }
+        $sourcePath = Join-Path $ExpandedRoot ([string]$entry.sourcePath)
+        $destinationPath = [string]$entry.destinationPath
+        if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$destinationPath)) { continue }
+        $key = ('file|machine|{0}' -f $destinationPath.ToLowerInvariant())
+        if ($seen.ContainsKey($key)) { continue }
+        $operations.Add([pscustomobject]@{
+            Kind = 'file'
+            Scope = 'machine'
+            SourcePath = [string]$sourcePath
+            DestinationPath = [string]$destinationPath
+            RegistryPath = ''
+            ProfileLabel = ''
+            UserName = ''
+            ProfilePath = ''
+            DistributionAllowList = @()
+        }) | Out-Null
+        $seen[$key] = $true
+    }
+
+    foreach ($entry in @($Manifest.profileDirectories)) {
+        if ($null -eq $entry) { continue }
+        $sourcePath = Join-Path $ExpandedRoot ([string]$entry.sourcePath)
+        $relativeDestinationPath = [string]$entry.relativeDestinationPath
+        if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) { continue }
+
+        foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $ProfileTargets -Entry $entry)) {
+            $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
+            $key = ('directory|profile|{0}|{1}' -f [string]$profileTarget.Label, $destinationPath.TrimEnd('\').ToLowerInvariant())
+            if ($seen.ContainsKey($key)) { continue }
+            $operations.Add([pscustomobject]@{
+                Kind = 'directory'
+                Scope = 'profile'
+                SourcePath = [string]$sourcePath
+                DestinationPath = [string]$destinationPath
+                RegistryPath = ''
+                ProfileLabel = [string]$profileTarget.Label
+                UserName = [string]$profileTarget.UserName
+                ProfilePath = [string]$profileTarget.ProfilePath
+                DistributionAllowList = @()
+            }) | Out-Null
+            $seen[$key] = $true
+        }
+    }
+
+    foreach ($entry in @($Manifest.profileFiles)) {
+        if ($null -eq $entry) { continue }
+        $sourcePath = Join-Path $ExpandedRoot ([string]$entry.sourcePath)
+        $relativeDestinationPath = [string]$entry.relativeDestinationPath
+        if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) { continue }
+
+        foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $ProfileTargets -Entry $entry)) {
+            $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
+            $key = ('file|profile|{0}|{1}' -f [string]$profileTarget.Label, $destinationPath.ToLowerInvariant())
+            if ($seen.ContainsKey($key)) { continue }
+            $operations.Add([pscustomobject]@{
+                Kind = 'file'
+                Scope = 'profile'
+                SourcePath = [string]$sourcePath
+                DestinationPath = [string]$destinationPath
+                RegistryPath = ''
+                ProfileLabel = [string]$profileTarget.Label
+                UserName = [string]$profileTarget.UserName
+                ProfilePath = [string]$profileTarget.ProfilePath
+                DistributionAllowList = @()
+            }) | Out-Null
+            $seen[$key] = $true
+        }
+    }
+
+    foreach ($entry in @($Manifest.registryImports)) {
+        if ($null -eq $entry) { continue }
+        $scope = if ($entry.PSObject.Properties.Match('scope').Count -gt 0) { [string]$entry.scope } else { '' }
+        $registryPath = if ($entry.PSObject.Properties.Match('registryPath').Count -gt 0) { [string]$entry.registryPath } else { '' }
+        $sourcePath = Join-Path $ExpandedRoot ([string]$entry.sourcePath)
+        $distributionAllowList = @(
+            @($entry.distributionAllowList) |
+                ForEach-Object { [string]$_ } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+        )
+        if ([string]::IsNullOrWhiteSpace([string]$registryPath) -or -not (Test-Path -LiteralPath $sourcePath)) { continue }
+        if ([string]::Equals([string]$scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $key = ('registry|machine|{0}' -f $registryPath.ToLowerInvariant())
+            if ($seen.ContainsKey($key)) { continue }
+            $operations.Add([pscustomobject]@{
+                Kind = 'registry'
+                Scope = 'machine'
+                SourcePath = [string]$sourcePath
+                DestinationPath = ''
+                RegistryPath = [string]$registryPath
+                ProfileLabel = ''
+                UserName = ''
+                ProfilePath = ''
+                DistributionAllowList = @($distributionAllowList)
+            }) | Out-Null
+            $seen[$key] = $true
+            continue
+        }
+
+        foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $ProfileTargets -Entry $entry)) {
+            $key = ('registry|profile|{0}|{1}' -f [string]$profileTarget.Label, $registryPath.ToLowerInvariant())
+            if ($seen.ContainsKey($key)) { continue }
+            $operations.Add([pscustomobject]@{
+                Kind = 'registry'
+                Scope = 'profile'
+                SourcePath = [string]$sourcePath
+                DestinationPath = ''
+                RegistryPath = [string]$registryPath
+                ProfileLabel = [string]$profileTarget.Label
+                UserName = [string]$profileTarget.UserName
+                ProfilePath = [string]$profileTarget.ProfilePath
+                DistributionAllowList = @($distributionAllowList)
+            }) | Out-Null
+            $seen[$key] = $true
+        }
+    }
+
+    return @($operations.ToArray())
+}
+
+function Invoke-AzVmTaskAppStateReplayOperations {
+    param([object[]]$Operations = @())
+
+    $machineRegistryImports = 0
+    $userRegistryImports = 0
+    $machineDirectoryCopies = 0
+    $machineFileCopies = 0
+    $profileDirectoryCopies = 0
+    $profileFileCopies = 0
+
+    foreach ($operation in @($Operations)) {
+        if ($null -eq $operation) {
+            continue
+        }
+
+        switch ([string]$operation.Kind) {
+            'directory' {
+                if (-not (Test-Path -LiteralPath ([string]$operation.SourcePath) -PathType Container)) {
+                    Write-Warning ("app-state-directory-skip => {0}" -f [string]$operation.SourcePath)
+                    continue
+                }
+
+                if (Copy-AzVmAppStateDirectoryContents -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)) {
+                    if ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $machineDirectoryCopies++
+                    }
+                    else {
+                        $profileDirectoryCopies++
+                    }
+                }
+            }
+            'file' {
+                if (-not (Test-Path -LiteralPath ([string]$operation.SourcePath) -PathType Leaf)) {
+                    Write-Warning ("app-state-file-skip => {0}" -f [string]$operation.SourcePath)
+                    continue
+                }
+
+                if (Copy-AzVmAppStateFile -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)) {
+                    if ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $machineFileCopies++
+                    }
+                    else {
+                        $profileFileCopies++
+                    }
+                }
+            }
+            'registry' {
+                if (-not (Test-Path -LiteralPath ([string]$operation.SourcePath) -PathType Leaf)) {
+                    Write-Warning ("app-state-registry-skip => {0}" -f [string]$operation.SourcePath)
+                    continue
+                }
+
+                if ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    if (Invoke-AzVmRegImport -SourcePath ([string]$operation.SourcePath)) {
+                        $machineRegistryImports++
+                    }
+                    else {
+                        Write-Warning ("app-state-machine-registry-import-failed => {0}" -f [string]$operation.SourcePath)
+                    }
+                    continue
+                }
+
+                $profileTarget = [pscustomobject]@{
+                    Label = [string]$operation.ProfileLabel
+                    UserName = [string]$operation.UserName
+                    ProfilePath = [string]$operation.ProfilePath
+                }
+                $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$profileTarget.ProfilePath) -PreferredLabel ([string]$profileTarget.UserName)
+                if ($null -eq $mountInfo) {
+                    Write-Warning ("app-state-user-registry-skip => {0} => hive-unavailable" -f [string]$profileTarget.Label)
+                    continue
+                }
+
+                $rewrittenPath = Join-Path ([System.IO.Path]::GetTempPath()) (('az-vm-reg-rewrite-{0}-{1}.reg' -f ([guid]::NewGuid().ToString('N')), ([string]$profileTarget.UserName -replace '[^A-Za-z0-9]', '_')))
+                try {
+                    if (@($operation.DistributionAllowList).Count -gt 0) {
+                        Invoke-AzVmAppStateWslRegistryPurge -MountedUserRegistryRoot ([string]$mountInfo.Root) -RegistryPath 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' -DistributionAllowList @($operation.DistributionAllowList)
+                    }
+                    if (-not (Convert-AzVmAppStateRegRoot -SourcePath ([string]$operation.SourcePath) -SourceRoot 'HKEY_CURRENT_USER' -DestinationRoot ([string]$mountInfo.Root) -DestinationPath $rewrittenPath)) {
+                        Write-Warning ("app-state-user-registry-skip => {0} => rewrite-failed" -f [string]$profileTarget.Label)
+                        continue
+                    }
+
+                    if (Invoke-AzVmRegImport -SourcePath $rewrittenPath) {
+                        $userRegistryImports++
+                    }
+                    else {
+                        Write-Warning ("app-state-user-registry-import-failed => {0} => {1}" -f [string]$profileTarget.Label, [string]$operation.SourcePath)
+                    }
+                }
+                finally {
+                    Remove-Item -LiteralPath $rewrittenPath -Force -ErrorAction SilentlyContinue
+                    Close-AzVmMountedUserHive -MountInfo $mountInfo
+                }
+            }
+        }
+    }
+
+    return [pscustomobject]@{
+        MachineRegistryImports = [int]$machineRegistryImports
+        UserRegistryImports = [int]$userRegistryImports
+        MachineDirectoryCopies = [int]$machineDirectoryCopies
+        MachineFileCopies = [int]$machineFileCopies
+        ProfileDirectoryCopies = [int]$profileDirectoryCopies
+        ProfileFileCopies = [int]$profileFileCopies
+    }
+}
+
+function Backup-AzVmTaskAppStateOperations {
+    param(
+        [object[]]$Operations = @(),
+        [string]$BackupRoot
+    )
+
+    Ensure-AzVmAppStateDirectory -Path $BackupRoot
+    $records = New-Object 'System.Collections.Generic.List[object]'
+    $index = 0
+    foreach ($operation in @($Operations)) {
+        if ($null -eq $operation) {
+            continue
+        }
+
+        $index++
+        $backupBaseName = ('{0:D3}-{1}-{2}' -f $index, [string]$operation.Scope, [string]$operation.Kind)
+        $record = [ordered]@{
+            Kind = [string]$operation.Kind
+            Scope = [string]$operation.Scope
+            DestinationPath = [string]$operation.DestinationPath
+            RegistryPath = [string]$operation.RegistryPath
+            ProfileLabel = [string]$operation.ProfileLabel
+            UserName = [string]$operation.UserName
+            ProfilePath = [string]$operation.ProfilePath
+            BackupPath = ''
+            Existed = $false
+        }
+
+        switch ([string]$operation.Kind) {
+            'file' {
+                $destinationPath = [string]$operation.DestinationPath
+                if (Test-Path -LiteralPath $destinationPath -PathType Leaf) {
+                    $backupPath = Join-Path (Join-Path $BackupRoot 'files') ((ConvertTo-AzVmAppStateCaptureSafeName -Value $backupBaseName) + [System.IO.Path]::GetExtension($destinationPath))
+                    Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $backupPath -Parent)
+                    Copy-Item -LiteralPath $destinationPath -Destination $backupPath -Force -ErrorAction Stop
+                    $record.BackupPath = [string]$backupPath
+                    $record.Existed = $true
+                }
+            }
+            'directory' {
+                $destinationPath = [string]$operation.DestinationPath
+                if (Test-Path -LiteralPath $destinationPath -PathType Container) {
+                    $backupPath = Join-Path (Join-Path $BackupRoot 'directories') (ConvertTo-AzVmAppStateCaptureSafeName -Value $backupBaseName)
+                    Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $backupPath -Parent)
+                    Copy-Item -LiteralPath $destinationPath -Destination $backupPath -Recurse -Force -ErrorAction Stop
+                    $record.BackupPath = [string]$backupPath
+                    $record.Existed = $true
+                }
+            }
+            'registry' {
+                $backupPath = Join-Path (Join-Path $BackupRoot 'registry') ((ConvertTo-AzVmAppStateCaptureSafeName -Value ($backupBaseName + '-' + [string]$operation.RegistryPath)) + '.reg')
+                $exported = $false
+                if ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath ([string]$operation.RegistryPath)
+                    $providerPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath $canonicalRegistryPath
+                    if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+                        $exported = Invoke-AzVmRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $backupPath
+                    }
+                }
+                else {
+                    $profileTarget = [pscustomobject]@{
+                        Label = [string]$operation.ProfileLabel
+                        UserName = [string]$operation.UserName
+                        ProfilePath = [string]$operation.ProfilePath
+                    }
+                    $exported = Backup-AzVmTaskUserRegistry -RegistryPath ([string]$operation.RegistryPath) -ProfileTarget $profileTarget -BackupPath $backupPath
+                }
+
+                if ($exported) {
+                    $record.BackupPath = [string]$backupPath
+                    $record.Existed = $true
+                }
+            }
+        }
+
+        $records.Add([pscustomobject]$record) | Out-Null
+    }
+
+    return @($records.ToArray())
+}
+
+function Test-AzVmTaskAppStateDirectoryMatches {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$SourcePath) -or -not (Test-Path -LiteralPath $SourcePath -PathType Container)) {
+        return [pscustomobject]@{ Success = $false; Reason = 'source-missing' }
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$DestinationPath) -or -not (Test-Path -LiteralPath $DestinationPath -PathType Container)) {
+        return [pscustomobject]@{ Success = $false; Reason = 'destination-missing' }
+    }
+
+    $normalizedSourceRoot = [string](Normalize-AzVmAppStateComparablePath -Path $SourcePath)
+    foreach ($directory in @(Get-ChildItem -LiteralPath $SourcePath -Recurse -Directory -Force -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+        $relativePath = [string](Normalize-AzVmAppStateComparablePath -Path ([string]$directory.FullName))
+        if ($relativePath.StartsWith($normalizedSourceRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $relativePath.Substring($normalizedSourceRoot.Length).TrimStart('\')
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
+            continue
+        }
+
+        $destinationChild = Join-Path $DestinationPath $relativePath
+        if (-not (Test-Path -LiteralPath $destinationChild -PathType Container)) {
+            return [pscustomobject]@{ Success = $false; Reason = ('missing-directory:{0}' -f [string]$relativePath) }
+        }
+    }
+
+    foreach ($file in @(Get-ChildItem -LiteralPath $SourcePath -Recurse -File -Force -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+        $relativePath = [string](Normalize-AzVmAppStateComparablePath -Path ([string]$file.FullName))
+        if ($relativePath.StartsWith($normalizedSourceRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $relativePath = $relativePath.Substring($normalizedSourceRoot.Length).TrimStart('\')
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
+            continue
+        }
+
+        $destinationChild = Join-Path $DestinationPath $relativePath
+        if (-not (Test-Path -LiteralPath $destinationChild -PathType Leaf)) {
+            return [pscustomobject]@{ Success = $false; Reason = ('missing-file:{0}' -f [string]$relativePath) }
+        }
+
+        $sourceHash = Get-AzVmAppStateFileHashValue -Path ([string]$file.FullName)
+        $destinationHash = Get-AzVmAppStateFileHashValue -Path $destinationChild
+        if ([string]::IsNullOrWhiteSpace([string]$sourceHash) -or -not [string]::Equals([string]$sourceHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return [pscustomobject]@{ Success = $false; Reason = ('hash-mismatch:{0}' -f [string]$relativePath) }
+        }
+    }
+
+    return [pscustomobject]@{ Success = $true; Reason = '' }
+}
+
+function Test-AzVmTaskAppStateRegistryMatches {
+    param(
+        [string]$SourcePath,
+        [string]$RegistryPath,
+        [string]$Scope,
+        [psobject]$ProfileTarget
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$SourcePath) -or -not (Test-Path -LiteralPath $SourcePath -PathType Leaf)) {
+        return [pscustomobject]@{ Success = $false; Reason = 'source-missing' }
+    }
+
+    $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-reg-verify-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+    $exported = $false
+    try {
+        if ([string]::Equals([string]$Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath $RegistryPath
+            $providerPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath $canonicalRegistryPath
+            if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+                $exported = Invoke-AzVmRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $tempExportPath
+            }
+        }
+        else {
+            $exported = Backup-AzVmTaskUserRegistry -RegistryPath $RegistryPath -ProfileTarget $ProfileTarget -BackupPath $tempExportPath
+        }
+
+        if (-not $exported) {
+            return [pscustomobject]@{ Success = $false; Reason = 'registry-export-failed' }
+        }
+
+        $expectedLines = @(Get-AzVmAppStateNormalizedRegLines -Path $SourcePath)
+        $actualLines = @(Get-AzVmAppStateNormalizedRegLines -Path $tempExportPath)
+        $actualSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+        foreach ($line in @($actualLines)) {
+            [void]$actualSet.Add([string]$line)
+        }
+
+        foreach ($line in @($expectedLines)) {
+            if (-not $actualSet.Contains([string]$line)) {
+                return [pscustomobject]@{ Success = $false; Reason = ('registry-line-missing:{0}' -f [string]$line) }
+            }
+        }
+
+        return [pscustomobject]@{ Success = $true; Reason = '' }
+    }
+    finally {
+        Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Test-AzVmTaskAppStateOperations {
+    param([object[]]$Operations = @())
+
+    $items = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($operation in @($Operations)) {
+        if ($null -eq $operation) {
+            continue
+        }
+
+        $status = 'verified'
+        $reason = ''
+        switch ([string]$operation.Kind) {
+            'file' {
+                if (-not (Test-Path -LiteralPath ([string]$operation.DestinationPath) -PathType Leaf)) {
+                    $status = 'mismatch'
+                    $reason = 'destination-missing'
+                }
+                else {
+                    $sourceHash = Get-AzVmAppStateFileHashValue -Path ([string]$operation.SourcePath)
+                    $destinationHash = Get-AzVmAppStateFileHashValue -Path ([string]$operation.DestinationPath)
+                    if ([string]::IsNullOrWhiteSpace([string]$sourceHash) -or -not [string]::Equals([string]$sourceHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $status = 'mismatch'
+                        $reason = 'hash-mismatch'
+                    }
+                }
+            }
+            'directory' {
+                $directoryMatch = Test-AzVmTaskAppStateDirectoryMatches -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)
+                if (-not [bool]$directoryMatch.Success) {
+                    $status = 'mismatch'
+                    $reason = [string]$directoryMatch.Reason
+                }
+            }
+            'registry' {
+                $profileTarget = [pscustomobject]@{
+                    Label = [string]$operation.ProfileLabel
+                    UserName = [string]$operation.UserName
+                    ProfilePath = [string]$operation.ProfilePath
+                }
+                $registryMatch = Test-AzVmTaskAppStateRegistryMatches -SourcePath ([string]$operation.SourcePath) -RegistryPath ([string]$operation.RegistryPath) -Scope ([string]$operation.Scope) -ProfileTarget $profileTarget
+                if (-not [bool]$registryMatch.Success) {
+                    $status = 'mismatch'
+                    $reason = [string]$registryMatch.Reason
+                }
+            }
+        }
+
+        $items.Add([pscustomobject]@{
+            Kind = [string]$operation.Kind
+            Scope = [string]$operation.Scope
+            DestinationPath = [string]$operation.DestinationPath
+            RegistryPath = [string]$operation.RegistryPath
+            ProfileLabel = [string]$operation.ProfileLabel
+            UserName = [string]$operation.UserName
+            Status = [string]$status
+            Reason = [string]$reason
+        }) | Out-Null
+    }
+
+    $rows = @($items.ToArray())
+    $mismatches = @($rows | Where-Object { [string]$_.Status -eq 'mismatch' })
+    return [pscustomobject]@{
+        CheckedCount = @($rows).Count
+        MismatchCount = @($mismatches).Count
+        Succeeded = (@($mismatches).Count -eq 0)
+        Items = $rows
+    }
+}
+
+function Test-AzVmTaskAppStateRollbackState {
+    param([object[]]$BackupRecords = @())
+
+    $items = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($record in @($BackupRecords)) {
+        if ($null -eq $record) {
+            continue
+        }
+
+        $status = 'verified'
+        $reason = ''
+        switch ([string]$record.Kind) {
+            'file' {
+                if ([bool]$record.Existed) {
+                    if (-not (Test-Path -LiteralPath ([string]$record.DestinationPath) -PathType Leaf)) {
+                        $status = 'mismatch'
+                        $reason = 'destination-missing'
+                    }
+                    else {
+                        $backupHash = Get-AzVmAppStateFileHashValue -Path ([string]$record.BackupPath)
+                        $destinationHash = Get-AzVmAppStateFileHashValue -Path ([string]$record.DestinationPath)
+                        if ([string]::IsNullOrWhiteSpace([string]$backupHash) -or -not [string]::Equals([string]$backupHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $status = 'mismatch'
+                            $reason = 'hash-mismatch'
+                        }
+                    }
+                }
+                elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
+                    $status = 'mismatch'
+                    $reason = 'path-still-present'
+                }
+            }
+            'directory' {
+                if ([bool]$record.Existed) {
+                    $directoryMatch = Test-AzVmTaskAppStateDirectoryMatches -SourcePath ([string]$record.BackupPath) -DestinationPath ([string]$record.DestinationPath)
+                    if (-not [bool]$directoryMatch.Success) {
+                        $status = 'mismatch'
+                        $reason = [string]$directoryMatch.Reason
+                    }
+                }
+                elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
+                    $status = 'mismatch'
+                    $reason = 'path-still-present'
+                }
+            }
+            'registry' {
+                $profileTarget = [pscustomobject]@{
+                    Label = [string]$record.ProfileLabel
+                    UserName = [string]$record.UserName
+                    ProfilePath = [string]$record.ProfilePath
+                }
+                if ([bool]$record.Existed) {
+                    $registryMatch = Test-AzVmTaskAppStateRegistryMatches -SourcePath ([string]$record.BackupPath) -RegistryPath ([string]$record.RegistryPath) -Scope ([string]$record.Scope) -ProfileTarget $profileTarget
+                    if (-not [bool]$registryMatch.Success) {
+                        $status = 'mismatch'
+                        $reason = [string]$registryMatch.Reason
+                    }
+                }
+                else {
+                    $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-reg-rollback-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+                    $exported = $false
+                    try {
+                        if ([string]::Equals([string]$record.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath ([string]$record.RegistryPath)
+                            $providerPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath $canonicalRegistryPath
+                            if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+                                $exported = Invoke-AzVmRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $tempExportPath
+                            }
+                        }
+                        else {
+                            $exported = Backup-AzVmTaskUserRegistry -RegistryPath ([string]$record.RegistryPath) -ProfileTarget $profileTarget -BackupPath $tempExportPath
+                        }
+                    }
+                    finally {
+                        Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
+                    }
+
+                    if ($exported) {
+                        $status = 'mismatch'
+                        $reason = 'registry-still-present'
+                    }
+                }
+            }
+        }
+
+        $items.Add([pscustomobject]@{
+            Kind = [string]$record.Kind
+            Scope = [string]$record.Scope
+            DestinationPath = [string]$record.DestinationPath
+            RegistryPath = [string]$record.RegistryPath
+            ProfileLabel = [string]$record.ProfileLabel
+            UserName = [string]$record.UserName
+            Status = [string]$status
+            Reason = [string]$reason
+        }) | Out-Null
+    }
+
+    $rows = @($items.ToArray())
+    $mismatches = @($rows | Where-Object { [string]$_.Status -eq 'mismatch' })
+    return [pscustomobject]@{
+        CheckedCount = @($rows).Count
+        MismatchCount = @($mismatches).Count
+        Succeeded = (@($mismatches).Count -eq 0)
+        Items = $rows
+    }
+}
+
+function Invoke-AzVmTaskAppStateRollback {
+    param([object[]]$BackupRecords = @())
+
+    $records = @($BackupRecords)
+    [array]::Reverse($records)
+    foreach ($record in @($records)) {
+        if ($null -eq $record) {
+            continue
+        }
+
+        try {
+            switch ([string]$record.Kind) {
+                'file' {
+                    $destinationPath = [string]$record.DestinationPath
+                    if ([bool]$record.Existed -and -not [string]::IsNullOrWhiteSpace([string]$record.BackupPath) -and (Test-Path -LiteralPath ([string]$record.BackupPath))) {
+                        Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $destinationPath -Parent)
+                        Copy-Item -LiteralPath ([string]$record.BackupPath) -Destination $destinationPath -Force -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        Remove-Item -LiteralPath $destinationPath -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                'directory' {
+                    $destinationPath = [string]$record.DestinationPath
+                    Remove-Item -LiteralPath $destinationPath -Recurse -Force -ErrorAction SilentlyContinue
+                    if ([bool]$record.Existed -and -not [string]::IsNullOrWhiteSpace([string]$record.BackupPath) -and (Test-Path -LiteralPath ([string]$record.BackupPath))) {
+                        Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $destinationPath -Parent)
+                        Copy-Item -LiteralPath ([string]$record.BackupPath) -Destination $destinationPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
+                }
+                'registry' {
+                    $profileTarget = [pscustomobject]@{
+                        Label = [string]$record.ProfileLabel
+                        UserName = [string]$record.UserName
+                        ProfilePath = [string]$record.ProfilePath
+                    }
+                    if ([bool]$record.Existed -and -not [string]::IsNullOrWhiteSpace([string]$record.BackupPath) -and (Test-Path -LiteralPath ([string]$record.BackupPath))) {
+                        if ([string]::Equals([string]$record.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                            cmd.exe /d /c ('reg import "{0}" >nul 2>&1' -f ([string]$record.BackupPath)) | Out-Null
+                        }
+                        else {
+                            [void](Restore-AzVmTaskUserRegistryFromBackup -BackupPath ([string]$record.BackupPath) -RegistryPath ([string]$record.RegistryPath) -ProfileTarget $profileTarget)
+                        }
+                    }
+                    else {
+                        Remove-AzVmTaskRegistryPath -RegistryPath ([string]$record.RegistryPath) -Scope ([string]$record.Scope) -ProfileTarget $profileTarget
+                    }
+                }
+            }
+        }
+        catch {
+        }
+    }
+
+    return (Test-AzVmTaskAppStateRollbackState -BackupRecords @($BackupRecords))
+}
+
 function Stop-AzVmManagedProcessesGracefully {
     param(
         [string[]]$ProcessNames = @(),
@@ -1119,139 +1992,44 @@ function Invoke-AzVmTaskAppStateReplay {
         Invoke-AzVmTaskAppStateReplayPreflight -TaskName $TaskName
         $profileTargets = @(Get-AzVmAppStateProfileTargets -ManagerUser $ManagerUser -AssistantUser $AssistantUser -ProfileTargets @($ProfileTargets))
         Write-Host ("app-state-phase => task={0}; phase=manifest-ready; profiles={1}; elapsed={2:N1}s" -f [string]$TaskName, @($profileTargets).Count, $replayWatch.Elapsed.TotalSeconds)
+        $operations = @(Get-AzVmTaskAppStateReplayOperations -ExpandedRoot $scratchRoot -Manifest $manifest -ProfileTargets @($profileTargets))
+        $backupRoot = Get-AzVmAppStateScratchRootPath -Prefix 'azv-rollback'
+        Ensure-AzVmAppStateDirectory -Path $backupRoot
+        $backupRecords = @(Backup-AzVmTaskAppStateOperations -Operations @($operations) -BackupRoot $backupRoot)
 
-        $machineRegistryImports = 0
-        $userRegistryImports = 0
-        $machineDirectoryCopies = 0
-        $machineFileCopies = 0
-        $profileDirectoryCopies = 0
-        $profileFileCopies = 0
-
-        foreach ($entry in @($manifest.machineDirectories)) {
-            if ($null -eq $entry) { continue }
-            $sourcePath = Join-Path $scratchRoot ([string]$entry.sourcePath)
-            $destinationPath = [string]$entry.destinationPath
-            if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$destinationPath)) {
-                Write-Warning ("app-state-machine-directory-skip => {0}" -f [string]$sourcePath)
-                continue
+        try {
+            $replayResult = Invoke-AzVmTaskAppStateReplayOperations -Operations @($operations)
+            $verifyResult = Test-AzVmTaskAppStateOperations -Operations @($operations)
+            Write-Host ("app-state-phase => task={0}; phase=verify-complete; checked={1}; mismatches={2}; elapsed={3:N1}s" -f [string]$TaskName, [int]$verifyResult.CheckedCount, [int]$verifyResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
+            if (-not [bool]$verifyResult.Succeeded) {
+                throw ("Task app-state restore verification failed for '{0}'." -f [string]$TaskName)
             }
 
-            if (Copy-AzVmAppStateDirectoryContents -SourcePath $sourcePath -DestinationPath $destinationPath) {
-                $machineDirectoryCopies++
-            }
-        }
-
-        foreach ($entry in @($manifest.machineFiles)) {
-            if ($null -eq $entry) { continue }
-            $sourcePath = Join-Path $scratchRoot ([string]$entry.sourcePath)
-            $destinationPath = [string]$entry.destinationPath
-            if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$destinationPath)) {
-                Write-Warning ("app-state-machine-file-skip => {0}" -f [string]$sourcePath)
-                continue
-            }
-
-            if (Copy-AzVmAppStateFile -SourcePath $sourcePath -DestinationPath $destinationPath) {
-                $machineFileCopies++
+            return [pscustomobject]@{
+                MachineRegistryImports = [int]$replayResult.MachineRegistryImports
+                UserRegistryImports = [int]$replayResult.UserRegistryImports
+                MachineDirectoryCopies = [int]$replayResult.MachineDirectoryCopies
+                MachineFileCopies = [int]$replayResult.MachineFileCopies
+                ProfileDirectoryCopies = [int]$replayResult.ProfileDirectoryCopies
+                ProfileFileCopies = [int]$replayResult.ProfileFileCopies
+                Verified = $true
+                VerifyCheckedCount = [int]$verifyResult.CheckedCount
+                VerifyMismatchCount = [int]$verifyResult.MismatchCount
+                RollbackPerformed = $false
+                RollbackSucceeded = $false
             }
         }
-
-        foreach ($entry in @($manifest.profileDirectories)) {
-            if ($null -eq $entry) { continue }
-            $sourcePath = Join-Path $scratchRoot ([string]$entry.sourcePath)
-            $relativeDestinationPath = [string]$entry.relativeDestinationPath
-            if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) {
-                Write-Warning ("app-state-profile-directory-skip => {0}" -f [string]$sourcePath)
-                continue
+        catch {
+            $rollbackResult = Invoke-AzVmTaskAppStateRollback -BackupRecords @($backupRecords)
+            Write-Host ("app-state-phase => task={0}; phase=rollback-complete; checked={1}; mismatches={2}; elapsed={3:N1}s" -f [string]$TaskName, [int]$rollbackResult.CheckedCount, [int]$rollbackResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
+            if (-not [bool]$rollbackResult.Succeeded) {
+                throw ("{0} Rollback verification also failed for '{1}'." -f [string]$_.Exception.Message, [string]$TaskName)
             }
 
-            foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $profileTargets -Entry $entry)) {
-                $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
-                if (Copy-AzVmAppStateDirectoryContents -SourcePath $sourcePath -DestinationPath $destinationPath) {
-                    $profileDirectoryCopies++
-                }
-            }
+            throw
         }
-
-        foreach ($entry in @($manifest.profileFiles)) {
-            if ($null -eq $entry) { continue }
-            $sourcePath = Join-Path $scratchRoot ([string]$entry.sourcePath)
-            $relativeDestinationPath = [string]$entry.relativeDestinationPath
-            if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) {
-                Write-Warning ("app-state-profile-file-skip => {0}" -f [string]$sourcePath)
-                continue
-            }
-
-            foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $profileTargets -Entry $entry)) {
-                $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
-                if (Copy-AzVmAppStateFile -SourcePath $sourcePath -DestinationPath $destinationPath) {
-                    $profileFileCopies++
-                }
-            }
-        }
-
-        foreach ($entry in @($manifest.registryImports)) {
-            if ($null -eq $entry) { continue }
-            $sourcePath = Join-Path $scratchRoot ([string]$entry.sourcePath)
-            $scope = [string]$entry.scope
-            if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$scope)) {
-                Write-Warning ("app-state-registry-skip => {0}" -f [string]$sourcePath)
-                continue
-            }
-
-            if ([string]::Equals([string]$scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
-                if (Invoke-AzVmRegImport -SourcePath $sourcePath) {
-                    $machineRegistryImports++
-                }
-                else {
-                    Write-Warning ("app-state-machine-registry-import-failed => {0}" -f [string]$sourcePath)
-                }
-                continue
-            }
-
-            if ([string]::Equals([string]$scope, 'user', [System.StringComparison]::OrdinalIgnoreCase)) {
-                $distributionAllowList = @(
-                    @($entry.distributionAllowList) |
-                        ForEach-Object { [string]$_ } |
-                        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
-                )
-                foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $profileTargets -Entry $entry)) {
-                    $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$profileTarget.ProfilePath) -PreferredLabel ([string]$profileTarget.UserName)
-                    if ($null -eq $mountInfo) {
-                        Write-Warning ("app-state-user-registry-skip => {0} => hive-unavailable" -f [string]$profileTarget.Label)
-                        continue
-                    }
-
-                    try {
-                        $rewrittenPath = Join-Path $scratchRoot (('tmp-reg-{0}-{1}.reg' -f [string]$TaskName, ([string]$profileTarget.UserName -replace '[^A-Za-z0-9]', '_')))
-                        if (@($distributionAllowList).Count -gt 0) {
-                            Invoke-AzVmAppStateWslRegistryPurge -MountedUserRegistryRoot ([string]$mountInfo.Root) -RegistryPath 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' -DistributionAllowList @($distributionAllowList)
-                        }
-                        if (-not (Convert-AzVmAppStateRegRoot -SourcePath $sourcePath -SourceRoot 'HKEY_CURRENT_USER' -DestinationRoot ([string]$mountInfo.Root) -DestinationPath $rewrittenPath)) {
-                            Write-Warning ("app-state-user-registry-skip => {0} => rewrite-failed" -f [string]$profileTarget.Label)
-                            continue
-                        }
-
-                        if (Invoke-AzVmRegImport -SourcePath $rewrittenPath) {
-                            $userRegistryImports++
-                        }
-                        else {
-                            Write-Warning ("app-state-user-registry-import-failed => {0} => {1}" -f [string]$profileTarget.Label, [string]$sourcePath)
-                        }
-                    }
-                    finally {
-                        Close-AzVmMountedUserHive -MountInfo $mountInfo
-                    }
-                }
-            }
-        }
-
-        return [pscustomobject]@{
-            MachineRegistryImports = [int]$machineRegistryImports
-            UserRegistryImports = [int]$userRegistryImports
-            MachineDirectoryCopies = [int]$machineDirectoryCopies
-            MachineFileCopies = [int]$machineFileCopies
-            ProfileDirectoryCopies = [int]$profileDirectoryCopies
-            ProfileFileCopies = [int]$profileFileCopies
+        finally {
+            Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
     finally {

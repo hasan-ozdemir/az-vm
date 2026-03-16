@@ -4945,3 +4945,17 @@ Added tracked Windows update task `131-install-jaws-screen-reader` with bounded 
 
 On the Windows UX side, I extended `10001-configure-apps-startup` with one explicit managed JAWS exception that always writes the machine `Run` entry `JAWS="C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe" /run`, matching the local-machine contract that was inspected during planning instead of relying on host startup-profile mirroring. I also added the managed Public Desktop shortcut `j0Jaws` with hotkey `Ctrl+Shift+J`, wired JAWS into the health snapshot, updated README plus release docs, refreshed the sensitive-content audit so this newly intentional vendor/product surface is allowed, and revalidated the change set non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
 
+### 2026-03-16 03:59 UTC
+
+**User Prompt**
+
+````text
+Update and implement the task app-state restore safety plan: when `task --restore-app-state` copies `app-state.zip` content to the target computer, back up the current files and registry first under task-adjacent `backup-app-states/<task-name>/` roots for `windows/init`, `windows/update`, and their `local/` counterparts, then verify the restored files and registry after replay and roll back from that backup root if verification finds inconsistency or corruption.
+````
+
+**Assistant Summary**
+
+Reworked task-scoped app-state restore so local-machine replay now writes task-adjacent `backup-app-states/<task-name>/` snapshots instead of temp-only backup roots, and each restore keeps both `restore-journal.json` and `verify-report.json` beside the active snapshot. The local restore path now validates the payload, backs up the touched files and registry, verifies every restored file, directory, and declared registry subtree after replay, and automatically rolls back from the task-adjacent backup root if replay or verification fails.
+
+I also extended the shared Windows guest VM restore helper with the same safety model using guest-side temporary backup staging, post-restore verification, and automatic rollback on mismatch. I updated `.gitignore`, AGENTS, README, changelog, release notes, and the smoke/documentation contract checks to document the new `backup-app-states` plus verify-report contract, then revalidated the change non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1` before the final release-doc and quality gates.
+
