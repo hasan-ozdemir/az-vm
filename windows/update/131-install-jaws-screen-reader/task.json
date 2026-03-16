@@ -3,30 +3,16 @@
   "enabled": true,
   "timeout": 300,
   "appState": {
+    "portableProfilePayload": true,
     "machineDirectories": [],
     "machineFiles": [],
     "profileDirectories": [
       {
         "path": "AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings",
         "targetProfiles": [],
-        "excludeNames": [
-          "Cache",
-          "Code Cache",
-          "GPUCache",
-          "DawnCache",
-          "Crashpad",
-          "CrashDumps",
-          "Temp",
-          "tmp",
-          "Logs"
-        ],
+        "excludeNames": [],
         "excludePathPatterns": [],
-        "excludeFilePatterns": [
-          "*.lock",
-          "*.tmp",
-          "*.etl",
-          "*.log"
-        ]
+        "excludeFilePatterns": []
       }
     ],
     "profileFiles": [],

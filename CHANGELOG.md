@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.327] - 2026-03-16
+
+### Changed
+- Moved the builtin JAWS settings replay ownership fully onto `131-install-jaws-screen-reader`, so the task-local app-state payload now carries the full `Freedom Scientific` machine and user registry surface plus the full JAWS 2025 settings tree, while JAWS auto-start remains isolated in `10001-configure-apps-startup`.
+- Marked the JAWS task payload as a portable profile snapshot and normalized local-machine saves to one canonical managed-profile shape, rewriting task-local app-state source paths, payload folder names, and user-registry profile path markers from the local source profile to `manager`.
+- Extended the Windows health snapshot readback with explicit JAWS settings and registry presence checks for both managed profiles plus the HKLM and WOW6432 `Freedom Scientific` trees.
+
+### Fixed
+- Fixed portable task-local app-state saves so a JAWS payload captured from the local operator machine no longer preserves the source profile token such as `hasan` inside the zip manifest, profile payload folders, or HKCU registry export paths.
+- Fixed the portable payload normalization contract by carrying the `portableProfilePayload` flag through task discovery/runtime materialization and by validating the `manager` canonicalization path with dedicated smoke coverage.
+
+### Tests
+- Revalidated the portable JAWS payload normalization non-live with `tests\az-vm-smoke-tests.ps1` and `tests\powershell-compatibility-check.ps1`.
+- Regenerated `windows/update/131-install-jaws-screen-reader/app-state/app-state.zip` from the local machine with `task --save-app-state --source=lm --user=.current. --vm-update-task=131 --windows --perf` and verified that the task-local zip now uses `manager` instead of the local source profile token.
+- Revalidated the shipped JAWS replay path live in isolation on `rg-bizyum-ate1-g1 | bizyum` with `task --run-vm-update 131 --windows --perf`, `task --run-vm-update 10006 --windows --perf`, and direct `exec` readbacks that confirmed manager/assistant settings plus HKLM/HKCU `Freedom Scientific` presence on the target VM.
+
 ## [2026.3.16.326] - 2026-03-16
 
 ### Changed

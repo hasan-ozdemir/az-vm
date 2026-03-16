@@ -4987,3 +4987,17 @@ Completed the full live publish loop against the active Azure subscription. I fi
 
 The next live attempt surfaced a real task-runtime issue: `103-install-python-system` completed just beyond its too-short timeout and was recorded as a warning. I raised the Python timeout ceiling, kept the related short Windows task timeouts aligned, revalidated non-live, reran task `103` in isolation on the partial VM, then deleted the partial group and restarted the exact same create command again. The final live run completed successfully, the only stage warning was the expected deferred reboot request from the WSL2 install task, I executed the restart explicitly, and the resulting managed Windows VM passed `show`, `do --vm-action=status`, `connect --ssh --test`, and `connect --rdp --test`.
 
+### 2026-03-16 12:07 UTC
+
+**User Prompt**
+
+````text
+Move the full JAWS settings copy responsibility onto the builtin `131-install-jaws-screen-reader` vm-update task. Seed that task-local payload from the local machine using `C:\Users\hasan\AppData\Roaming\Freedom Scientific\JAWS\2025\Settings` plus the full `Freedom Scientific` HKLM and HKCU trees, keep only JAWS auto-start in its own startup task, run an isolated live validation on the active managed VM so future `create` runs will replay the same payload automatically, and then normalize the saved `app-state.zip` so internal user folders and user expressions use `manager` instead of the local source profile token such as `hasan`.
+````
+
+**Assistant Summary**
+
+Completed the JAWS task-state handoff around builtin task `131-install-jaws-screen-reader`. The task-local app-state contract now keeps the full JAWS 2025 settings tree plus the full `Freedom Scientific` HKLM/HKCU/WOW6432 registry surface, while `10001-configure-apps-startup` remains the sole owner of JAWS auto-start. I also extended the Windows health snapshot with JAWS settings and registry readback for both managed profiles and for the machine registry trees, and carried the `portableProfilePayload` flag through runtime materialization so portable task-local payloads are recognized consistently during local save.
+
+I regenerated `windows/update/131-install-jaws-screen-reader/app-state/app-state.zip` from the local machine with `task --save-app-state --source=lm --user=.current. --vm-update-task=131 --windows --perf`, then normalized the reusable payload so its manifest source paths, payload folder names, and HKCU registry export now use the canonical managed profile token `manager` instead of the local source profile name. I revalidated the normalization non-live with the smoke and PowerShell compatibility suites, reran `task --run-vm-update 131 --group rg-bizyum-ate1-g1 --vm-name bizyum --windows --perf` live in isolation, reran `task --run-vm-update 10006 --group rg-bizyum-ate1-g1 --vm-name bizyum --windows --perf`, and finished with direct `exec` readbacks that confirmed JAWS settings and `Freedom Scientific` registry presence for both `manager` and `assistant` on the active VM.
+

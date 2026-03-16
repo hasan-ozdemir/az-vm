@@ -1110,6 +1110,55 @@ function Write-DesktopState {
     }
 }
 
+function Get-DirectoryFileCount {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return 0
+    }
+
+    return @(
+        Get-ChildItem -LiteralPath $Path -Recurse -Force -File -ErrorAction SilentlyContinue
+    ).Count
+}
+
+function Write-JawsSettingsStatus {
+    param(
+        [string]$Label,
+        [string]$ProfilePath
+    )
+
+    $settingsPath = Join-Path ([string]$ProfilePath) 'AppData\Roaming\Freedom Scientific\JAWS\2025\Settings'
+    $exists = Test-Path -LiteralPath $settingsPath
+    $fileCount = if ($exists) { Get-DirectoryFileCount -Path $settingsPath } else { 0 }
+    Write-Host ("jaws-settings => {0} => exists={1}; file-count={2}; path={3}" -f [string]$Label, [bool]$exists, [int]$fileCount, [string]$settingsPath)
+}
+
+function Write-JawsMachineRegistryStatus {
+    param([string]$RegistryPath)
+
+    Write-Host ("jaws-machine-registry => {0} => exists={1}" -f [string]$RegistryPath.Replace('Registry::HKEY_LOCAL_MACHINE\', 'HKLM\'), [bool](Test-Path -LiteralPath $RegistryPath))
+}
+
+function Write-JawsUserRegistryStatus {
+    param([string]$UserName)
+
+    $userContext = $null
+    try {
+        $userContext = Get-ManagerContext -UserName $UserName
+        $registryPath = ("{0}\Software\Freedom Scientific" -f [string]$userContext.MainRoot)
+        Write-Host ("jaws-user-registry => {0} => exists={1}; path={2}" -f [string]$UserName, [bool](Test-Path -LiteralPath $registryPath), [string]$registryPath)
+    }
+    catch {
+        Write-Warning ("jaws-user-registry-readback-failed => {0} => {1}" -f [string]$UserName, $_.Exception.Message)
+    }
+    finally {
+        if ($null -ne $userContext -and -not [string]::IsNullOrWhiteSpace([string]$userContext.MountName)) {
+            Dismount-RegistryHive -MountName ([string]$userContext.MountName)
+        }
+    }
+}
+
 $resolvedCompanyName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { $companyName.Trim() }
 $resolvedCompanyDisplayName = if (Test-InvalidCompanyName -Value $companyName) { $unresolvedCompanyNameToken } else { ConvertTo-TitleCaseShortcutText -Value $companyName.Trim() }
 $resolvedEmployeeEmailAddress = if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) { $unresolvedEmployeeEmailAddressToken } else { $employeeEmailAddress.Trim() }
@@ -1548,6 +1597,12 @@ Write-Host ("jaws-exe-present => {0}" -f [bool](Test-Path -LiteralPath $jawsExpe
 Write-Host ("jaws-exe-path-match => {0}" -f [string]::Equals([string]$jawsExe, $jawsExpectedExe, [System.StringComparison]::OrdinalIgnoreCase))
 $jawsProcesses = @(Get-Process -Name 'jfw' -ErrorAction SilentlyContinue)
 Write-Host ("jaws-process-count => {0}" -f @($jawsProcesses).Count)
+Write-JawsSettingsStatus -Label 'manager' -ProfilePath ("C:\Users\{0}" -f $managerUser)
+Write-JawsSettingsStatus -Label 'assistant' -ProfilePath ("C:\Users\{0}" -f $assistantUser)
+Write-JawsMachineRegistryStatus -RegistryPath 'Registry::HKEY_LOCAL_MACHINE\Software\Freedom Scientific'
+Write-JawsMachineRegistryStatus -RegistryPath 'Registry::HKEY_LOCAL_MACHINE\Software\WOW6432Node\Freedom Scientific'
+Write-JawsUserRegistryStatus -UserName $managerUser
+Write-JawsUserRegistryStatus -UserName $assistantUser
 $wingetExe = Resolve-CommandPath -CommandName 'winget' -FallbackCandidates @('C:\ProgramData\az-vm\tools\winget-x64\winget.exe')
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     Write-Host 'jaws-winget-probe => success=False; timed-out=False; exit-code=1'

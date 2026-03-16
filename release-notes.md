@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.327 - 2026-03-16
+
+### Summary
+This release finishes the JAWS task-state handoff by making `131-install-jaws-screen-reader` the sole builtin owner of JAWS settings replay. The task-local payload now captures the full JAWS 2025 settings tree plus the full `Freedom Scientific` HKLM/HKCU surface, local-machine saves normalize the portable payload to the canonical managed profile token `manager` instead of preserving the operator's local profile name, and the Windows health snapshot now reports JAWS settings and registry presence for both managed profiles. The release was validated non-live and again live with isolated JAWS task reruns on the active managed VM.
+
+### Highlights
+- Kept JAWS auto-start isolated in `10001-configure-apps-startup` but moved all other builtin JAWS settings replay responsibility onto `131-install-jaws-screen-reader`, which now owns the full task-local settings and registry payload.
+- Normalized portable local JAWS app-state saves so the task-local zip rewrites profile payload folders, manifest source paths, and HKCU registry path markers to `manager`, eliminating source-machine user tokens such as `hasan` from the reusable payload.
+- Extended `10006-capture-snapshot-health` with JAWS settings and registry readback for `manager`, `assistant`, `HKLM\Software\Freedom Scientific`, and `HKLM\Software\WOW6432Node\Freedom Scientific`.
+- Revalidated the change non-live with the smoke and PowerShell compatibility gates, regenerated the live task-local JAWS payload from the local machine, reran `task --run-vm-update 131` in isolation on `bizyum`, and confirmed the expected settings and registry surface on the target VM with isolated readback commands.
+
 ## Release 2026.3.16.326 - 2026-03-16
 
 ### Summary

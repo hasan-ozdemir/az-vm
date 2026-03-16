@@ -307,12 +307,22 @@ function ConvertTo-AzVmTaskFolderAppStateSpec {
 
     $spec = [ordered]@{
         taskName = [string]$TaskName
+        portableProfilePayload = $false
         machineDirectories = @()
         machineFiles = @()
         profileDirectories = @()
         profileFiles = @()
         machineRegistryKeys = @()
         userRegistryKeys = @()
+    }
+
+    if ($AppState -is [System.Collections.IDictionary]) {
+        if ($AppState.Contains('portableProfilePayload')) {
+            $spec.portableProfilePayload = Convert-AzVmTaskCatalogBool -Value $AppState['portableProfilePayload'] -DefaultValue $false
+        }
+    }
+    elseif ($AppState.PSObject.Properties.Match('portableProfilePayload').Count -gt 0) {
+        $spec.portableProfilePayload = Convert-AzVmTaskCatalogBool -Value $AppState.portableProfilePayload -DefaultValue $false
     }
 
     $pathCollections = @('machineDirectories', 'machineFiles', 'profileDirectories', 'profileFiles')

@@ -5371,12 +5371,95 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($whatsAppTaskJsonText -like '*rotatedLogs*') -Message 'WhatsApp task-local app-state must exclude rotated log trees.'
     Assert-True -Condition ($whatsAppTaskJsonText -like '**\\transfers\\**') -Message 'WhatsApp task-local app-state must exclude transferred-file payloads.'
     Assert-True -Condition ($whatsAppTaskJsonText -like '*.db-wal*') -Message 'WhatsApp task-local app-state must exclude SQLite WAL payloads.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*portableProfilePayload*') -Message 'JAWS task-local app-state must mark the local payload as portable across managed profiles.'
     Assert-True -Condition ($jawsTaskJsonText -like '*AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings*') -Message 'JAWS task-local app-state must capture the 2025 settings directory.'
     Assert-True -Condition ($jawsTaskJsonText -like '*HKLM\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the machine Freedom Scientific subtree.'
     Assert-True -Condition ($jawsTaskJsonText -like '*HKLM\\Software\\WOW6432Node\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the WOW6432 Freedom Scientific subtree.'
     Assert-True -Condition ($jawsTaskJsonText -like '*HKCU\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the user Freedom Scientific subtree.'
+    Assert-True -Condition (-not ($jawsTaskJsonText -like '*Crashpad*')) -Message 'JAWS task-local app-state must not keep the old trimmed Settings exclusions.'
+    Assert-True -Condition (-not ($jawsTaskJsonText -like '*GPUCache*')) -Message 'JAWS task-local app-state must now allow the full Settings subtree.'
+    Assert-True -Condition (-not ($jawsTaskJsonText -like '*.log*')) -Message 'JAWS task-local app-state must not keep the old log-file exclusions.'
+    Assert-True -Condition ($localAppStateText -like '*Convert-AzVmTaskAppStateZipToPortableProfilePayload*') -Message 'Local app-state save must support portable profile payload normalization for task-owned zips.'
     Assert-True -Condition (Test-Path -LiteralPath $auditScriptPath) -Message 'The manual app-state audit helper must exist under tools/scripts.'
     Assert-True -Condition ($auditScriptText -like '*foreign-targets*') -Message 'The manual app-state audit helper must report foreign profile targets when present.'
+}
+
+Invoke-Test -Name "Portable app-state normalization rewrites local user markers to manager" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-portable-payload-smoke-' + [Guid]::NewGuid().ToString('N'))
+    $sourceSettingsRoot = Join-Path $tempRoot 'payload\profile-directories\hasan\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings'
+    $sourceRegistryRoot = Join-Path $tempRoot 'payload\registry\user\hasan'
+    $manifestPath = Join-Path $tempRoot 'app-state.manifest.json'
+    $zipPath = Join-Path $tempRoot 'portable-test.zip'
+    $expandedRoot = Join-Path $tempRoot 'expanded'
+
+    try {
+        New-Item -Path $sourceSettingsRoot -ItemType Directory -Force | Out-Null
+        New-Item -Path $sourceRegistryRoot -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $sourceSettingsRoot 'DEFAULT.JCF') -Value 'sample-settings' -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $sourceRegistryRoot 'HKCU_Software_Freedom_Scientific.reg') -Value @"
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Freedom Scientific\JAWS\2025\Settings\Scripts]
+"File1"="C:\\Users\\hasan\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM"
+"@ -Encoding Unicode
+
+        $manifest = [ordered]@{
+            version = 3
+            taskName = 'portable-test'
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @(
+                [ordered]@{
+                    sourcePath = 'payload\profile-directories\hasan\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings'
+                    relativeDestinationPath = 'AppData\Roaming\Freedom Scientific\JAWS\2025\Settings'
+                    targetProfiles = @('hasan')
+                }
+            )
+            profileFiles = @()
+            registryImports = @(
+                [ordered]@{
+                    sourcePath = 'payload\registry\user\hasan\HKCU_Software_Freedom_Scientific.reg'
+                    scope = 'user'
+                    registryPath = 'HKEY_CURRENT_USER\Software\Freedom Scientific'
+                    targetProfiles = @('hasan')
+                }
+            )
+        }
+        Set-Content -LiteralPath $manifestPath -Value ($manifest | ConvertTo-Json -Depth 12) -Encoding UTF8
+
+        Compress-Archive -LiteralPath @(
+            (Join-Path $tempRoot 'payload'),
+            $manifestPath
+        ) -DestinationPath $zipPath -Force
+
+        Convert-AzVmTaskAppStateZipToPortableProfilePayload -ZipPath $zipPath -TaskName 'portable-test' -ProfileTargets @(
+            [pscustomobject]@{
+                Label = 'hasan'
+                UserName = 'hasan'
+                ProfilePath = 'C:\Users\hasan'
+            }
+        )
+
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $expandedRoot -Force
+        $normalizedManifest = Get-Content -LiteralPath (Join-Path $expandedRoot 'app-state.manifest.json') -Raw | ConvertFrom-Json
+        $profileEntry = @($normalizedManifest.profileDirectories)[0]
+        $registryEntry = @($normalizedManifest.registryImports)[0]
+        $normalizedRegistryText = [string](Get-Content -LiteralPath (Join-Path $expandedRoot 'payload\registry\user\manager\HKCU_Software_Freedom_Scientific.reg') -Raw)
+
+        Assert-True -Condition ($null -ne $profileEntry) -Message 'Portable payload smoke manifest must keep one profile directory entry.'
+        Assert-True -Condition ($null -ne $registryEntry) -Message 'Portable payload smoke manifest must keep one user registry entry.'
+        Assert-True -Condition ([string]$profileEntry.sourcePath -eq 'payload\profile-directories\manager\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings') -Message 'Portable payload normalization must rewrite profile source paths to manager.'
+        Assert-True -Condition ([string]$registryEntry.sourcePath -eq 'payload\registry\user\manager\HKCU_Software_Freedom_Scientific.reg') -Message 'Portable payload normalization must rewrite user registry source paths to manager.'
+        Assert-True -Condition (@($profileEntry.targetProfiles).Count -eq 0) -Message 'Portable payload normalization must clear profile targetProfiles.'
+        Assert-True -Condition (@($registryEntry.targetProfiles).Count -eq 0) -Message 'Portable payload normalization must clear user-registry targetProfiles.'
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRoot 'payload\profile-directories\manager\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings') -PathType Container) -Message 'Portable payload normalization must rename the profile payload folder to manager.'
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRoot 'payload\registry\user\manager\HKCU_Software_Freedom_Scientific.reg') -PathType Leaf) -Message 'Portable payload normalization must rename the user registry payload folder to manager.'
+        Assert-True -Condition ($normalizedRegistryText -like '*C:\\Users\\manager\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM*') -Message 'Portable payload normalization must rewrite user-profile registry paths to manager.'
+        Assert-True -Condition (-not ($normalizedRegistryText -like '*C:\\Users\\hasan\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM*')) -Message 'Portable payload normalization must remove the original local user path from registry exports.'
+    }
+    finally {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Invoke-Test -Name "Guest app-state capture resolves wildcard profile paths to concrete destinations" -Action {
@@ -5950,6 +6033,12 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile and 
         'Teams',
         'iTunesHelper',
         'JAWS',
+        'Write-JawsSettingsStatus -Label ''manager''',
+        'Write-JawsSettingsStatus -Label ''assistant''',
+        'Registry::HKEY_LOCAL_MACHINE\Software\Freedom Scientific',
+        'Registry::HKEY_LOCAL_MACHINE\Software\WOW6432Node\Freedom Scientific',
+        'Write-JawsUserRegistryStatus -UserName $managerUser',
+        'Write-JawsUserRegistryStatus -UserName $assistantUser',
         'jaws-winget-probe =>',
         'jaws-exe-present =>'
     )) {

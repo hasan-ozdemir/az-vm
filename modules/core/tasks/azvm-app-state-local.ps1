@@ -1357,6 +1357,269 @@ function Invoke-AzVmTaskAppStateLocalRollback {
     return (Test-AzVmTaskAppStateLocalRollbackState -BackupRecords @($BackupRecords))
 }
 
+function Test-AzVmTaskPortableProfilePayload {
+    param([psobject]$TaskBlock)
+
+    if ($null -eq $TaskBlock -or $TaskBlock.PSObject.Properties.Match('AppStateSpec').Count -lt 1 -or $null -eq $TaskBlock.AppStateSpec) {
+        return $false
+    }
+
+    $appStateSpec = $TaskBlock.AppStateSpec
+    if ($appStateSpec.PSObject.Properties.Match('portableProfilePayload').Count -lt 1) {
+        return $false
+    }
+
+    return [bool]$appStateSpec.portableProfilePayload
+}
+
+function Get-AzVmTaskPortableProfilePayloadCanonicalProfileTarget {
+    return [pscustomobject]@{
+        Label = 'manager'
+        UserName = 'manager'
+        ProfilePath = 'C:\Users\manager'
+    }
+}
+
+function Get-AzVmTaskPortableProfilePayloadSourceProfileTarget {
+    param([object[]]$ProfileTargets = @())
+
+    $rows = New-Object 'System.Collections.Generic.List[object]'
+    $seen = @{}
+    foreach ($profileTarget in @($ProfileTargets)) {
+        if ($null -eq $profileTarget) {
+            continue
+        }
+
+        $profilePath = if ($profileTarget.PSObject.Properties.Match('ProfilePath').Count -gt 0) { [string]$profileTarget.ProfilePath } else { '' }
+        $userName = if ($profileTarget.PSObject.Properties.Match('UserName').Count -gt 0) { [string]$profileTarget.UserName } else { '' }
+        $label = if ($profileTarget.PSObject.Properties.Match('Label').Count -gt 0) { [string]$profileTarget.Label } else { '' }
+        if ([string]::IsNullOrWhiteSpace([string]$profilePath)) {
+            continue
+        }
+
+        $normalizedKey = $profilePath.TrimEnd('\').ToLowerInvariant()
+        if ($seen.ContainsKey($normalizedKey)) {
+            continue
+        }
+
+        $rows.Add([pscustomobject]@{
+            Label = [string]$label
+            UserName = [string]$userName
+            ProfilePath = [string]$profilePath.TrimEnd('\')
+        }) | Out-Null
+        $seen[$normalizedKey] = $true
+    }
+
+    $targets = @($rows.ToArray())
+    if (@($targets).Count -lt 1) {
+        return $null
+    }
+    if (@($targets).Count -gt 1) {
+        throw 'Portable app-state payload normalization requires exactly one source profile target.'
+    }
+
+    return $targets[0]
+}
+
+function Rename-AzVmTaskPortableProfilePayloadUserFolder {
+    param(
+        [string]$ScratchRoot,
+        [string]$RelativeRootPath,
+        [string]$SourceUserToken,
+        [string]$CanonicalUserToken
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ScratchRoot) -or
+        [string]::IsNullOrWhiteSpace([string]$RelativeRootPath) -or
+        [string]::IsNullOrWhiteSpace([string]$SourceUserToken) -or
+        [string]::IsNullOrWhiteSpace([string]$CanonicalUserToken)) {
+        return
+    }
+
+    if ([string]::Equals([string]$SourceUserToken, [string]$CanonicalUserToken, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return
+    }
+
+    $rootPath = Join-Path $ScratchRoot $RelativeRootPath
+    if (-not (Test-Path -LiteralPath $rootPath -PathType Container)) {
+        return
+    }
+
+    $sourcePath = Join-Path $rootPath $SourceUserToken
+    if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) {
+        return
+    }
+
+    $destinationPath = Join-Path $rootPath $CanonicalUserToken
+    if (Test-Path -LiteralPath $destinationPath) {
+        throw ("Portable app-state payload destination already exists: {0}" -f [string]$destinationPath)
+    }
+
+    Move-Item -LiteralPath $sourcePath -Destination $destinationPath -Force -ErrorAction Stop
+}
+
+function Normalize-AzVmTaskPortableProfilePayloadSourcePath {
+    param(
+        [string]$SourcePath,
+        [string]$CanonicalUserToken
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$SourcePath) -or [string]::IsNullOrWhiteSpace([string]$CanonicalUserToken)) {
+        return [string]$SourcePath
+    }
+
+    $parts = @(([string]$SourcePath).Replace('/', '\').Split('\'))
+    if (@($parts).Count -lt 3) {
+        return [string]$SourcePath
+    }
+
+    if ([string]::Equals([string]$parts[0], 'payload', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$parts[1], 'profile-directories', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $parts[2] = [string]$CanonicalUserToken
+        return ($parts -join '\')
+    }
+
+    if ([string]::Equals([string]$parts[0], 'payload', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$parts[1], 'profile-files', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $parts[2] = [string]$CanonicalUserToken
+        return ($parts -join '\')
+    }
+
+    if (@($parts).Count -ge 4 -and
+        [string]::Equals([string]$parts[0], 'payload', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$parts[1], 'registry', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$parts[2], 'user', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $parts[3] = [string]$CanonicalUserToken
+        return ($parts -join '\')
+    }
+
+    return [string]$SourcePath
+}
+
+function Normalize-AzVmTaskPortableProfilePayloadUserRegistryExports {
+    param(
+        [string]$ScratchRoot,
+        [string]$SourceProfilePath,
+        [string]$CanonicalProfilePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ScratchRoot) -or
+        [string]::IsNullOrWhiteSpace([string]$SourceProfilePath) -or
+        [string]::IsNullOrWhiteSpace([string]$CanonicalProfilePath)) {
+        return
+    }
+
+    $registryRoot = Join-Path $ScratchRoot 'payload\registry\user'
+    if (-not (Test-Path -LiteralPath $registryRoot -PathType Container)) {
+        return
+    }
+
+    $escapedSourceProfilePath = $SourceProfilePath.Replace('\', '\\')
+    $escapedCanonicalProfilePath = $CanonicalProfilePath.Replace('\', '\\')
+    foreach ($registryFile in @(Get-ChildItem -LiteralPath $registryRoot -Recurse -File -Filter *.reg -Force -ErrorAction SilentlyContinue | Sort-Object FullName)) {
+        $content = Get-Content -LiteralPath $registryFile.FullName -Raw
+        if ([string]::IsNullOrWhiteSpace([string]$content)) {
+            continue
+        }
+
+        $updatedContent = $content.Replace($SourceProfilePath, $CanonicalProfilePath).Replace($escapedSourceProfilePath, $escapedCanonicalProfilePath)
+        if (-not [string]::Equals([string]$updatedContent, [string]$content, [System.StringComparison]::Ordinal)) {
+            Set-Content -LiteralPath $registryFile.FullName -Value $updatedContent -Encoding Unicode
+        }
+    }
+}
+
+function Convert-AzVmTaskAppStateZipToPortableProfilePayload {
+    param(
+        [string]$ZipPath,
+        [string]$TaskName,
+        [object[]]$ProfileTargets = @()
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ZipPath) -or -not (Test-Path -LiteralPath $ZipPath)) {
+        throw ("Portable app-state zip was not found: {0}" -f [string]$ZipPath)
+    }
+
+    $manifestInfo = Get-AzVmTaskAppStateManifestFromZip -ZipPath $ZipPath -ExpectedTaskName $TaskName
+    $scratchRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-portable-app-state-{0}' -f ([guid]::NewGuid().ToString('N')))
+    Ensure-AzVmAppStatePluginDirectory -Path $scratchRoot
+
+    try {
+        Expand-Archive -LiteralPath $ZipPath -DestinationPath $scratchRoot -Force
+        $manifest = $manifestInfo.Manifest
+        $canonicalProfileTarget = Get-AzVmTaskPortableProfilePayloadCanonicalProfileTarget
+        $sourceProfileTarget = Get-AzVmTaskPortableProfilePayloadSourceProfileTarget -ProfileTargets @($ProfileTargets)
+        $sourceUserToken = if ($null -ne $sourceProfileTarget -and -not [string]::IsNullOrWhiteSpace([string]$sourceProfileTarget.UserName)) { [string]$sourceProfileTarget.UserName } else { '' }
+        $canonicalUserToken = [string]$canonicalProfileTarget.UserName
+
+        foreach ($entry in @($manifest.profileDirectories)) {
+            if ($null -eq $entry) {
+                continue
+            }
+
+            if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
+                $entry.targetProfiles = @()
+            }
+            if ($entry.PSObject.Properties.Match('sourcePath').Count -gt 0) {
+                $entry.sourcePath = Normalize-AzVmTaskPortableProfilePayloadSourcePath -SourcePath ([string]$entry.sourcePath) -CanonicalUserToken $canonicalUserToken
+            }
+        }
+        foreach ($entry in @($manifest.profileFiles)) {
+            if ($null -eq $entry) {
+                continue
+            }
+
+            if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
+                $entry.targetProfiles = @()
+            }
+            if ($entry.PSObject.Properties.Match('sourcePath').Count -gt 0) {
+                $entry.sourcePath = Normalize-AzVmTaskPortableProfilePayloadSourcePath -SourcePath ([string]$entry.sourcePath) -CanonicalUserToken $canonicalUserToken
+            }
+        }
+        foreach ($entry in @($manifest.registryImports)) {
+            if ($null -eq $entry) {
+                continue
+            }
+
+            $scope = if ($entry.PSObject.Properties.Match('scope').Count -gt 0) { [string]$entry.scope } else { '' }
+            if ([string]::Equals([string]$scope, 'user', [System.StringComparison]::OrdinalIgnoreCase)) {
+                if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
+                    $entry.targetProfiles = @()
+                }
+                if ($entry.PSObject.Properties.Match('sourcePath').Count -gt 0) {
+                    $entry.sourcePath = Normalize-AzVmTaskPortableProfilePayloadSourcePath -SourcePath ([string]$entry.sourcePath) -CanonicalUserToken $canonicalUserToken
+                }
+            }
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace([string]$sourceUserToken)) {
+            Rename-AzVmTaskPortableProfilePayloadUserFolder -ScratchRoot $scratchRoot -RelativeRootPath 'payload\profile-directories' -SourceUserToken $sourceUserToken -CanonicalUserToken $canonicalUserToken
+            Rename-AzVmTaskPortableProfilePayloadUserFolder -ScratchRoot $scratchRoot -RelativeRootPath 'payload\profile-files' -SourceUserToken $sourceUserToken -CanonicalUserToken $canonicalUserToken
+            Rename-AzVmTaskPortableProfilePayloadUserFolder -ScratchRoot $scratchRoot -RelativeRootPath 'payload\registry\user' -SourceUserToken $sourceUserToken -CanonicalUserToken $canonicalUserToken
+        }
+
+        if ($null -ne $sourceProfileTarget -and
+            -not [string]::IsNullOrWhiteSpace([string]$sourceProfileTarget.ProfilePath) -and
+            -not [string]::Equals([string]$sourceProfileTarget.ProfilePath, [string]$canonicalProfileTarget.ProfilePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Normalize-AzVmTaskPortableProfilePayloadUserRegistryExports -ScratchRoot $scratchRoot -SourceProfilePath ([string]$sourceProfileTarget.ProfilePath) -CanonicalProfilePath ([string]$canonicalProfileTarget.ProfilePath)
+        }
+
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value (ConvertTo-JsonCompat -InputObject $manifest -Depth 12) -Encoding UTF8
+        Remove-Item -LiteralPath $ZipPath -Force -ErrorAction SilentlyContinue
+        $previousProgressPreference = $global:ProgressPreference
+        try {
+            $global:ProgressPreference = 'SilentlyContinue'
+            Compress-Archive -LiteralPath @(Get-ChildItem -LiteralPath $scratchRoot -Force | Select-Object -ExpandProperty FullName) -DestinationPath $ZipPath -Force
+        }
+        finally {
+            $global:ProgressPreference = $previousProgressPreference
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Save-AzVmTaskAppStateFromLocalMachine {
     param(
         [psobject]$TaskBlock,
@@ -1399,6 +1662,11 @@ function Save-AzVmTaskAppStateFromLocalMachine {
                 Warning = $false
                 SelectedUsers = @($profileTargets | ForEach-Object { [string]$_.UserName })
             }
+        }
+
+        if (Test-AzVmTaskPortableProfilePayload -TaskBlock $TaskBlock) {
+            Convert-AzVmTaskAppStateZipToPortableProfilePayload -ZipPath $zipPath -TaskName $taskName -ProfileTargets @($profileTargets)
+            Write-Host ("App-state portable profile payload normalized: {0}" -f [string]$taskName)
         }
 
         return [pscustomobject]@{
