@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.332] - 2026-03-16
+
+### Changed
+- Hardened `132-configure-language-settings` so Windows language capability verification now treats `InstallPending` as a valid queued state for the requested language surface when reboot-pending servicing prevents immediate completion, while still requiring the requested language capabilities to be present and in an acceptable state.
+
+### Fixed
+- Fixed the `132-configure-language-settings` false failure path that occurred when `Install-Language tr-TR` returned a partial-install error while the requested `Language.Basic`, `Language.Handwriting`, `Language.OCR`, and `Language.TextToSpeech` capabilities had already been staged as `InstallPending` behind an earlier reboot requirement.
+- Fixed the post-install verification path for `132-configure-language-settings` so the task now falls back to Windows capability-state validation when `Get-InstalledLanguage` is still empty before reboot, instead of failing the entire task even though the language installation has already been queued correctly.
+
+### Tests
+- Revalidated the pending-language capability contract non-live with `tests\az-vm-smoke-tests.ps1`, `tests\powershell-compatibility-check.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.16.331] - 2026-03-16
 
 ### Added

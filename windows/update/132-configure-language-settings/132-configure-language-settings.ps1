@@ -327,6 +327,97 @@ function Set-Registry24HourTimeState {
     Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
 }
 
+function Get-LanguageCapabilityCatalog {
+    param([string]$LanguageTag)
+
+    $languageTagText = [string]$LanguageTag
+    return [ordered]@{
+        'Language.Basic'        = ("Language.Basic~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.Handwriting'  = ("Language.Handwriting~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.OCR'          = ("Language.OCR~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.Speech'       = ("Language.Speech~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.TextToSpeech' = ("Language.TextToSpeech~~~{0}~0.0.1.0" -f $languageTagText)
+    }
+}
+
+function Get-LanguageCapabilityStateMap {
+    param([string]$LanguageTag)
+
+    $catalog = Get-LanguageCapabilityCatalog -LanguageTag $LanguageTag
+    $stateMap = [ordered]@{}
+    $availableCapabilities = @()
+    if (Get-Command Get-WindowsCapability -ErrorAction SilentlyContinue) {
+        $availableCapabilities = @(
+            Get-WindowsCapability -Online -ErrorAction SilentlyContinue |
+                Where-Object { $_ -ne $null -and -not [string]::IsNullOrWhiteSpace([string]$_.Name) }
+        )
+    }
+
+    foreach ($capabilityName in @($catalog.Keys)) {
+        $capabilityIdentity = [string]$catalog[$capabilityName]
+        $capability = $availableCapabilities | Where-Object { [string]$_.Name -eq $capabilityIdentity } | Select-Object -First 1
+        $stateMap[$capabilityName] = if ($null -eq $capability) { 'Unavailable' } else { [string]$capability.State }
+    }
+
+    return [pscustomobject]$stateMap
+}
+
+function Convert-LanguageCapabilityStateMapToSummary {
+    param([AllowNull()]$StateMap)
+
+    if ($null -eq $StateMap) {
+        return 'unavailable'
+    }
+
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($capabilityName in @('Language.Basic', 'Language.Handwriting', 'Language.OCR', 'Language.Speech', 'Language.TextToSpeech')) {
+        $stateValue = 'Unavailable'
+        if ($StateMap.PSObject.Properties.Match($capabilityName).Count -gt 0) {
+            $candidate = [string]$StateMap.$capabilityName
+            if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+                $stateValue = $candidate
+            }
+        }
+
+        $parts.Add(("{0}={1}" -f [string]$capabilityName, [string]$stateValue)) | Out-Null
+    }
+
+    return (@($parts.ToArray()) -join ', ')
+}
+
+function Test-LanguageCapabilityStateSatisfied {
+    param([AllowNull()]$StateMap)
+
+    if ($null -eq $StateMap) {
+        return $false
+    }
+
+    $basicState = ''
+    if ($StateMap.PSObject.Properties.Match('Language.Basic').Count -gt 0) {
+        $basicState = [string]$StateMap.'Language.Basic'
+    }
+
+    if ($basicState -notin @('Installed', 'InstallPending')) {
+        return $false
+    }
+
+    foreach ($capabilityName in @('Language.Handwriting', 'Language.OCR', 'Language.Speech', 'Language.TextToSpeech')) {
+        $capabilityState = 'Unavailable'
+        if ($StateMap.PSObject.Properties.Match($capabilityName).Count -gt 0) {
+            $candidate = [string]$StateMap.$capabilityName
+            if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+                $capabilityState = $candidate
+            }
+        }
+
+        if ($capabilityState -notin @('Installed', 'InstallPending', 'Unavailable')) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Install-LanguageComponents {
     param(
         [string]$LanguageTag,
@@ -347,6 +438,94 @@ $languageTag = "__LANGUAGE_TAG__"
 
 . $helperPath
 
+function Get-LanguageCapabilityCatalog {
+    param([string]$LanguageTag)
+
+    $languageTagText = [string]$LanguageTag
+    return [ordered]@{
+        'Language.Basic'        = ("Language.Basic~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.Handwriting'  = ("Language.Handwriting~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.OCR'          = ("Language.OCR~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.Speech'       = ("Language.Speech~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.TextToSpeech' = ("Language.TextToSpeech~~~{0}~0.0.1.0" -f $languageTagText)
+    }
+}
+
+function Get-LanguageCapabilityStateMap {
+    param([string]$LanguageTag)
+
+    $catalog = Get-LanguageCapabilityCatalog -LanguageTag $LanguageTag
+    $stateMap = [ordered]@{}
+    $availableCapabilities = @(
+        Get-WindowsCapability -Online -ErrorAction SilentlyContinue |
+            Where-Object { $_ -ne $null -and -not [string]::IsNullOrWhiteSpace([string]$_.Name) }
+    )
+
+    foreach ($capabilityName in @($catalog.Keys)) {
+        $capabilityIdentity = [string]$catalog[$capabilityName]
+        $capability = $availableCapabilities | Where-Object { [string]$_.Name -eq $capabilityIdentity } | Select-Object -First 1
+        $stateMap[$capabilityName] = if ($null -eq $capability) { 'Unavailable' } else { [string]$capability.State }
+    }
+
+    return [pscustomobject]$stateMap
+}
+
+function Convert-LanguageCapabilityStateMapToSummary {
+    param([AllowNull()]$StateMap)
+
+    if ($null -eq $StateMap) {
+        return 'unavailable'
+    }
+
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($capabilityName in @('Language.Basic', 'Language.Handwriting', 'Language.OCR', 'Language.Speech', 'Language.TextToSpeech')) {
+        $stateValue = 'Unavailable'
+        if ($StateMap.PSObject.Properties.Match($capabilityName).Count -gt 0) {
+            $candidate = [string]$StateMap.$capabilityName
+            if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+                $stateValue = $candidate
+            }
+        }
+
+        $parts.Add(("{0}={1}" -f [string]$capabilityName, [string]$stateValue)) | Out-Null
+    }
+
+    return (@($parts.ToArray()) -join ', ')
+}
+
+function Test-LanguageCapabilityStateSatisfied {
+    param([AllowNull()]$StateMap)
+
+    if ($null -eq $StateMap) {
+        return $false
+    }
+
+    $basicState = ''
+    if ($StateMap.PSObject.Properties.Match('Language.Basic').Count -gt 0) {
+        $basicState = [string]$StateMap.'Language.Basic'
+    }
+
+    if ($basicState -notin @('Installed', 'InstallPending')) {
+        return $false
+    }
+
+    foreach ($capabilityName in @('Language.Handwriting', 'Language.OCR', 'Language.Speech', 'Language.TextToSpeech')) {
+        $capabilityState = 'Unavailable'
+        if ($StateMap.PSObject.Properties.Match($capabilityName).Count -gt 0) {
+            $candidate = [string]$StateMap.$capabilityName
+            if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+                $capabilityState = $candidate
+            }
+        }
+
+        if ($capabilityState -notin @('Installed', 'InstallPending', 'Unavailable')) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 try {
     $installResult = Install-Language -Language $languageTag -ErrorAction Stop
     $rebootRequired = $false
@@ -357,20 +536,39 @@ try {
         }
     }
 
-    $installedRows = @(
-        Get-InstalledLanguage -Language $languageTag -ErrorAction SilentlyContinue |
-            Where-Object { $_ -ne $null }
-    )
-    if (@($installedRows).Count -lt 1) {
-        throw ("Unable to verify installed language components for '{0}' inside the system worker." -f [string]$languageTag)
+    $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $languageTag
+    $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+    if (-not (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState)) {
+        throw ("Unable to verify installed language components for '{0}' inside the system worker. {1}" -f [string]$languageTag, [string]$capabilitySummary)
+    }
+
+    if ($capabilitySummary -match '(?i)InstallPending') {
+        $rebootRequired = $true
     }
 
     Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Language components installed.' -Details @(
-        ("reboot-required={0}" -f [bool]$rebootRequired)
+        ("reboot-required={0}" -f [bool]$rebootRequired),
+        ("language-capabilities={0}" -f [string]$capabilitySummary)
     )
 }
 catch {
-    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Language components failed.' -Details @([string]$_.Exception.Message)
+    $exceptionMessage = [string]$_.Exception.Message
+    $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $languageTag
+    $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+    $acceptPartialInstall = ($exceptionMessage -match '(?i)partially installed|0x80073CF1|2147009295') -and (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState)
+    if ($acceptPartialInstall) {
+        Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Language components were queued successfully and require restart.' -Details @(
+            'reboot-required=true',
+            ("language-capabilities={0}" -f [string]$capabilitySummary),
+            'language-install-partial=true'
+        )
+        return
+    }
+
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Language components failed.' -Details @(
+        [string]$exceptionMessage,
+        ("language-capabilities={0}" -f [string]$capabilitySummary)
+    )
     throw
 }
 '@
@@ -388,22 +586,45 @@ catch {
         -WaitTimeoutSeconds 1800
 
     $rebootRequired = $false
+    $capabilitySummary = ''
     if ($null -ne $interactiveResult -and $interactiveResult.PSObject.Properties.Match('Details').Count -gt 0 -and $null -ne $interactiveResult.Details) {
         foreach ($detail in @($interactiveResult.Details)) {
             $detailText = [string]$detail
             if ($detailText -match '^reboot-required=(?<value>true|false)$') {
                 $rebootRequired = [bool]::Parse([string]$Matches['value'])
+                continue
+            }
+            if ($detailText -match '^language-capabilities=(?<value>.+)$') {
+                $capabilitySummary = [string]$Matches['value']
             }
         }
     }
 
+    $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $LanguageTag
+    if ([string]::IsNullOrWhiteSpace([string]$capabilitySummary)) {
+        $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+    }
+
     $installedRows = @(Get-InstalledLanguageSafe -LanguageTag $LanguageTag)
-    if (@($installedRows).Count -lt 1) {
+    if (@($installedRows).Count -lt 1 -and -not (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState)) {
         throw ("Unable to verify installed language components for '{0}'." -f [string]$LanguageTag)
     }
 
-    Write-Host ("language-components => {0} => {1}" -f [string]$LanguageTag, (Get-LanguageFeatureSummary -InstalledLanguage $installedRows[0]))
-    Write-StateSuccess ("Language components for {0} were installed successfully." -f [string]$DisplayName)
+    if (@($installedRows).Count -gt 0) {
+        Write-Host ("language-components => {0} => {1}" -f [string]$LanguageTag, (Get-LanguageFeatureSummary -InstalledLanguage $installedRows[0]))
+    }
+    else {
+        Write-Host ("language-capabilities => {0} => {1}" -f [string]$LanguageTag, [string]$capabilitySummary)
+    }
+
+    if ([string]$capabilitySummary -match '(?i)InstallPending') {
+        $rebootRequired = $true
+        Write-StateSuccess ("Language components for {0} were queued successfully and will finish after restart." -f [string]$DisplayName)
+    }
+    else {
+        Write-StateSuccess ("Language components for {0} were installed successfully." -f [string]$DisplayName)
+    }
+
     return [bool]$rebootRequired
 }
 

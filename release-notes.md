@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.332 - 2026-03-16
+
+### Summary
+This release hardens the new Windows language-settings task so reboot-pending language servicing no longer produces a false task failure. When Windows queues the requested Turkish language capabilities as `InstallPending` behind an earlier restart requirement, `132-configure-language-settings` now treats that as a valid success path, records the restart requirement explicitly, and continues with capability-aware verification instead of failing on an empty pre-reboot `Get-InstalledLanguage` result.
+
+### Highlights
+- Added capability-aware verification to `132-configure-language-settings`, covering `Language.Basic`, `Language.Handwriting`, `Language.OCR`, `Language.Speech`, and `Language.TextToSpeech` for the requested language tags.
+- Accepted `InstallPending` as a valid queued completion state for the requested language surface when Windows servicing has already staged the requested capabilities behind a reboot.
+- Revalidated the updated task contract non-live with the smoke, PowerShell compatibility, code-quality, documentation-contract, and release-doc gates so the repo is ready for the next live publish cycle.
+
 ## Release 2026.3.16.331 - 2026-03-16
 
 ### Summary

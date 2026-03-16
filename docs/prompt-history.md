@@ -5057,3 +5057,45 @@ Continued the interrupted main-plan work and finished the live language-settings
 
 On the language side, I added the new tracked Windows task `132-configure-language-settings`, removed the remaining language overlap from `10005-copy-settings-user`, kept both `10005` and `10006-capture-snapshot-health` out of task-local app-state replay, and then validated the full language configuration on the live VM step by step before returning to the normal task runner. I verified the system leg, the manager leg, the assistant leg, and the welcome-screen plus new-user-default leg separately with isolated `exec -q` and scheduled-task helper readbacks, fixed the broken secondary-language `.Add(...)` path, added the missing registry hive mount/unmount helpers that the final welcome-screen step required, reran `task --run-vm-update 132 --windows --perf`, then reran `10005` and `10006` in isolation. Final live readbacks confirmed English UI, `tr-TR` locale and 24-hour time formats, Turkish Q preload `0000041f`, default input `041F:0000041F`, and matching welcome-screen/new-user defaults on the active managed Windows VM.
 
+### 2026-03-16 18:01 UTC
+
+**User Prompt**
+
+````text
+Publish to production again: first delete all az-vm-managed resource groups, then run `az-vm create --auto --windows --perf`, and if the command fails at any point stop there, fix the code, return to the beginning, and rerun the exact same create command with the same parameters until the new VM is successfully live.
+````
+
+**Assistant Summary**
+
+I restarted the live publish loop by deleting the active managed resource group and rerunning the exact Windows create command. The new create run completed VM deployment, hibernation and nested-virtualization enablement, the full `vm-init` stage, and almost the entire `vm-update` stage, but `132-configure-language-settings` reported a failure after spending about eighteen minutes inside `Install-Language tr-TR`.
+
+I paused the publish loop at the first real blocker and traced the failure on the live VM. The root cause was not a missing Turkish language pack; Windows servicing had already queued the requested Turkish language capabilities as `InstallPending`, but an earlier restart request from `112-install-wsl2-system` prevented immediate completion and caused `Install-Language` to return a partial-install error. That diagnosis became the basis for the next repo fix instead of continuing with another blind create retry.
+
+### 2026-03-16 19:16 UTC
+
+**User Prompt**
+
+````text
+Before you continue, did you find why the configure-language task gave a warning, and how did you fix it?
+````
+
+**Assistant Summary**
+
+I explained the exact failure mode behind `132-configure-language-settings`. The task had been treating `Install-Language tr-TR` as a hard failure whenever Windows returned a partial-install error, even when the requested Turkish capabilities had already been staged successfully as `InstallPending` behind an earlier reboot requirement. The live VM showed that the Turkish `Language.Basic`, `Language.Handwriting`, `Language.OCR`, and `Language.TextToSpeech` capabilities were already queued correctly and only needed reboot completion.
+
+I then described the fix: `132-configure-language-settings` now validates the requested language surface through `Get-WindowsCapability` instead of relying only on `Get-InstalledLanguage`, accepts `InstallPending` as a valid queued state for the requested capabilities, and records the reboot requirement explicitly instead of failing the task. I also noted that the post-install verification path now falls back to capability-state verification when the pre-reboot `Get-InstalledLanguage` result is still empty.
+
+### 2026-03-16 19:58 UTC
+
+**User Prompt**
+
+````text
+Finish all of the fixes, improvements, and changes we have made under the latest plan using non-live tests, then proceed through the usual release wrap-up: create the necessary git commits, update the required documents, align the `dev` and `main` branches, push everything, and make this a published new version. Also summarize our most recent missing dialog and record it in `docs/prompt-history.md`; I will handle the rest afterward.
+````
+
+**Assistant Summary**
+
+I closed the remaining repo work around the language-settings issue without asking the live publish loop to continue. The `132-configure-language-settings` task now uses capability-aware verification, accepts a reboot-pending `InstallPending` language surface as a successful queued state, and no longer fails just because `Get-InstalledLanguage` is still empty before reboot. I revalidated the shipped behavior non-live with the smoke, PowerShell compatibility, code-quality, documentation-contract, and release-doc gates, then updated the changelog, release notes, and prompt-history ledger for the new release cut.
+
+I also prepared the repository for handoff by keeping the release work on `dev`, summarizing the missing production-publish diagnosis and the later question-and-answer about the warning root cause in this prompt-history file, and then fast-forwarding `main` to the same release commit so both long-lived branches point to the same published version before push.
+

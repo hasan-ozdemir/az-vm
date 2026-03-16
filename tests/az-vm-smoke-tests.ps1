@@ -6414,6 +6414,9 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
 
     foreach ($fragment in @(
         'Install-Language',
+        'Get-WindowsCapability',
+        'Language.Basic',
+        'InstallPending',
         'Set-SystemPreferredUILanguage',
         'Set-WinUILanguageOverride',
         'Set-WinUserLanguageList',
