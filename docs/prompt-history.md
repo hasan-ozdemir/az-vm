@@ -5029,3 +5029,17 @@ Completed the Public Desktop shortcut cleanup around `10002-create-shortcuts-pub
 
 I revalidated the task non-live with the smoke, documentation, code-quality, PowerShell compatibility, and release-doc checks, then reran `task --run-vm-update 10002 --windows --perf` live in isolation on the active managed Windows VM. Final `exec` readbacks on the live VM confirmed that direct-safe entries such as `z1Google Account Setup`, `i1Internet Business`, and `a11MS Edge` now resolve directly to `chrome.exe` or `msedge.exe`, while a truly over-limit entry such as `q2Spotify` still routes through a managed launcher `.cmd` because its effective invocation length is 265 characters.
 
+### 2026-03-16 14:53 UTC
+
+**User Prompt**
+
+````text
+As an additional update to the last task, make every Public Desktop shortcut that needs a launcher `.cmd` use `call` in the shortcut target command line. Apply this to every launcher-backed shortcut target, for example: `C:\Windows\System32\cmd.exe /c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\r20ozon-personal.cmd"`.
+````
+
+**Assistant Summary**
+
+Updated the shared managed shortcut-launcher helper so launcher-backed Public Desktop shortcuts now invoke their generated `.cmd` files through `cmd.exe /c call "<launcher-path>"` instead of the previous direct launcher invocation. The 259-character direct-vs-launcher threshold stayed unchanged, so only over-limit shortcuts picked up the new `call` form while direct-safe entries remained direct browser shortcuts.
+
+I revalidated the change non-live with the smoke and PowerShell compatibility suites, reran `task --run-vm-update 10002 --windows --perf` live in isolation on the active managed Windows VM, and finished with direct `exec` readbacks that confirmed `q2Spotify` now uses `cmd.exe /c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\q2spotify.cmd"` while `z1Google Account Setup` still points directly to `chrome.exe`.
+

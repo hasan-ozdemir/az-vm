@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.330 - 2026-03-16
+
+### Summary
+This release tightens the managed shortcut-launcher invocation shape for over-limit Windows Public Desktop shortcuts. Launcher-backed entries still appear only above the combined `TargetPath + Arguments` boundary, but they now invoke their generated `.cmd` launchers through the explicit `cmd.exe /c call "<launcher-path>"` form you requested.
+
+### Highlights
+- Updated the shared launcher helper so every managed launcher-backed Public Desktop shortcut now uses `cmd.exe /c call "<launcher-path>"`.
+- Kept the direct path untouched for shorter entries, so direct-safe shortcuts still point straight to `chrome.exe` or `msedge.exe` without any launcher indirection.
+- Revalidated the change live on the active managed Windows VM: `q2Spotify` now reads back as `cmd.exe /c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\q2spotify.cmd"`, while `z1Google Account Setup` still reads back as a direct `chrome.exe` shortcut.
+
 ## Release 2026.3.16.329 - 2026-03-16
 
 ### Summary

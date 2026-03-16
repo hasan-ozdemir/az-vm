@@ -6085,6 +6085,7 @@ Invoke-Test -Name "Shortcut launcher threshold uses combined target and argument
     Import-Module (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1') -Force -DisableNameChecking
     $shortcutTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10002-create-shortcuts-public-desktop'
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
+    $shortcutLauncherModuleText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1') -Raw)
     $targetPath = 'C:\Program Files\Test App\launcher.exe'
     $argumentsAtLimit = 'a' * (259 - $targetPath.Length - 1)
     $argumentsAboveLimit = 'a' * (260 - $targetPath.Length - 1)
@@ -6093,8 +6094,10 @@ Invoke-Test -Name "Shortcut launcher threshold uses combined target and argument
     Assert-True -Condition (-not (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $targetPath -Arguments $argumentsAtLimit -Threshold 259)) -Message 'Shortcut launcher helper must keep direct shortcut targets when the combined invocation length is 259.'
     Assert-True -Condition ((Get-AzVmShortcutManagedInvocationLength -TargetPath $targetPath -Arguments $argumentsAboveLimit) -eq 260) -Message 'Shortcut launcher helper must measure combined target and arguments length past the direct-write boundary.'
     Assert-True -Condition (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $targetPath -Arguments $argumentsAboveLimit -Threshold 259) -Message 'Shortcut launcher helper must require a managed launcher when the combined invocation length exceeds 259.'
+    Assert-True -Condition ([string]::Equals((Get-AzVmShortcutLauncherInvocationArguments -LauncherPath 'C:\ProgramData\az-vm\shortcut-launchers\public-desktop\r20ozon-personal.cmd'), '/c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\r20ozon-personal.cmd"', [System.StringComparison]::Ordinal)) -Message 'Managed launcher shortcuts must invoke the launcher script through cmd.exe /c call "<path>".'
     Assert-True -Condition ($shortcutTaskScript -like '*$managedShortcutInvocationThreshold = 259*') -Message 'Public desktop shortcut task must keep the managed-launcher threshold as an explicit 259-character contract.'
     Assert-True -Condition ($shortcutTaskScript -like '*Test-AzVmShortcutNeedsManagedLauncher -TargetPath $effectiveTargetPath -Arguments $effectiveArguments -Threshold $managedShortcutInvocationThreshold*') -Message 'Public desktop shortcut task must apply the 259-character rule to the combined target and arguments invocation.'
+    Assert-True -Condition ($shortcutLauncherModuleText -like '*/c call "{0}"*') -Message 'Shared shortcut launcher helper must generate cmd.exe launcher invocations with call.'
 }
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {

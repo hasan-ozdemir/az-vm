@@ -101,7 +101,7 @@ function Get-AzVmShortcutLauncherInvocationArguments {
         return ''
     }
 
-    return ('/c "{0}"' -f [string]$LauncherPath)
+    return ('/c call "{0}"' -f [string]$LauncherPath)
 }
 
 function Write-AzVmShortcutLauncherFile {

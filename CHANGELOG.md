@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.330] - 2026-03-16
+
+### Changed
+- Updated the Windows managed shortcut-launcher invocation contract so launcher-backed Public Desktop shortcuts now call their generated `.cmd` files through `cmd.exe /c call "<launcher-path>"` instead of invoking the launcher path directly.
+
+### Fixed
+- Fixed launcher-backed Public Desktop shortcut targets so long browser entries such as `q2Spotify` now use the explicit `call` form requested for every over-limit launcher-backed shortcut, while direct-safe entries continue to bypass the launcher path entirely.
+
+### Tests
+- Revalidated the launcher invocation contract non-live with `tests\az-vm-smoke-tests.ps1` and `tests\powershell-compatibility-check.ps1`.
+- Revalidated the updated invocation shape live in isolation on the active managed Windows VM with `task --run-vm-update 10002 --windows --perf` plus `exec` readbacks that confirmed `q2Spotify` now points to `cmd.exe /c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\q2spotify.cmd"` while `z1Google Account Setup` remains a direct `chrome.exe` shortcut.
+
 ## [2026.3.16.329] - 2026-03-16
 
 ### Changed
