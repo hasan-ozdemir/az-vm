@@ -42,7 +42,8 @@ function Invoke-AzVmSshTaskBlocks {
         [int]$SshMaxRetries = 3,
         [int]$SshTaskTimeoutSeconds = 180,
         [int]$SshConnectTimeoutSeconds = 30,
-        [string]$ConfiguredPySshClientPath = ''
+        [string]$ConfiguredPySshClientPath = '',
+        [switch]$SuppressDeferredRestartHint
     )
 
     if (-not $TaskBlocks -or @($TaskBlocks).Count -eq 0) {
@@ -331,7 +332,8 @@ function Invoke-AzVmSshTaskBlocks {
             }
             else {
                 $failedTasks += $taskName
-                if ($taskResult.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
+                $taskOutputWasRelayedLive = ($taskResult.PSObject.Properties.Match('OutputRelayedLive').Count -gt 0 -and [bool]$taskResult.OutputRelayedLive)
+                if (-not $taskOutputWasRelayedLive -and $taskResult.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
                     Write-Host ([string]$taskResult.Output)
                 }
                 if ($TaskOutcomeMode -eq 'continue') {
@@ -399,7 +401,10 @@ function Invoke-AzVmSshTaskBlocks {
             foreach ($rebootTaskName in @($rebootTaskList)) {
                 Write-Host ("- {0}" -f [string]$rebootTaskName) -ForegroundColor Yellow
             }
-            if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+            if ($SuppressDeferredRestartHint) {
+                Write-Host 'The workflow will apply the required restart automatically before vm-summary.' -ForegroundColor Cyan
+            }
+            elseif (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
                 Write-Host ("Hint: restart the VM after step 6 finishes: az vm restart --resource-group {0} --name {1}" -f $ResourceGroup, $VmName) -ForegroundColor Cyan
             }
             else {

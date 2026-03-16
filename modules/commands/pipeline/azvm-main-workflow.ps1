@@ -175,17 +175,51 @@ function Invoke-AzVmPersistPendingSelections {
     Write-Host "Saved selected configuration values to .env." -ForegroundColor Green
 }
 
-function Invoke-AzVmWindowsRestartBarrier {
+function Invoke-AzVmWorkflowRestartBarrier {
     param(
         [hashtable]$Context,
-        [string]$RepoRoot,
+        [ValidateSet('before-vm-update','after-vm-update')]
+        [string]$Reason,
         [int]$SshConnectTimeoutSeconds = 5
     )
 
     $resourceGroup = [string]$Context.ResourceGroup
     $vmName = [string]$Context.VmName
     $sshPort = [int]$Context.SshPort
-    Write-Host "Windows init/update barrier: restarting VM before vm-update..." -ForegroundColor Cyan
+
+    $startMessage = ''
+    $successMessage = ''
+    $runningFailureSummary = ''
+    $runningFailureHint = ''
+    $hostFailureSummary = ''
+    $hostFailureHint = ''
+    $sshFailureSummary = ''
+    $sshFailureHint = ''
+
+    switch ($Reason) {
+        'before-vm-update' {
+            $startMessage = 'Restarting VM before vm-update...'
+            $successMessage = 'VM restart before vm-update completed successfully.'
+            $runningFailureSummary = 'VM could not be restarted before vm-update.'
+            $runningFailureHint = 'Check the VM in Azure Portal and rerun create/update after the guest returns to running state.'
+            $hostFailureSummary = 'VM restart before vm-update could not resolve SSH host.'
+            $hostFailureHint = 'Verify the managed VM still has a public IP or FQDN.'
+            $sshFailureSummary = 'VM restart before vm-update did not restore SSH connectivity.'
+            $sshFailureHint = 'Verify guest startup health and rerun create/update after SSH becomes reachable.'
+        }
+        'after-vm-update' {
+            $startMessage = 'VM update requested a restart. Restarting VM before vm-summary...'
+            $successMessage = 'VM restart after vm-update completed successfully.'
+            $runningFailureSummary = 'VM could not be restarted after vm-update.'
+            $runningFailureHint = 'Check the VM in Azure Portal and rerun update after the guest returns to running state.'
+            $hostFailureSummary = 'VM restart after vm-update could not resolve SSH host.'
+            $hostFailureHint = 'Verify the managed VM still has a public IP or FQDN.'
+            $sshFailureSummary = 'VM restart after vm-update did not restore SSH connectivity.'
+            $sshFailureHint = 'Verify guest startup health and rerun update after SSH becomes reachable.'
+        }
+    }
+
+    Write-Host $startMessage -ForegroundColor Cyan
     Invoke-TrackedAction -Label ("az vm restart -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
         az vm restart -g $resourceGroup -n $vmName -o none --only-show-errors
         Assert-LastExitCode "az vm restart"
@@ -194,10 +228,10 @@ function Invoke-AzVmWindowsRestartBarrier {
     $running = Wait-AzVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM running" -MaxAttempts 36 -DelaySeconds 10
     if (-not $running) {
         Throw-FriendlyError `
-            -Detail ("VM '{0}' did not return to running state after the init/update restart barrier." -f $vmName) `
+            -Detail ("VM '{0}' did not return to running state after the workflow restart barrier." -f $vmName) `
             -Code 62 `
-            -Summary "VM restart barrier did not recover to running state." `
-            -Hint "Check the VM in Azure Portal and rerun update after the guest returns to running state."
+            -Summary $runningFailureSummary `
+            -Hint $runningFailureHint
     }
 
     $vmRuntimeDetails = Get-AzVmVmDetails -Context $Context
@@ -207,20 +241,20 @@ function Invoke-AzVmWindowsRestartBarrier {
     }
     if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
         Throw-FriendlyError `
-            -Detail "SSH host could not be resolved after the VM restart barrier." `
+            -Detail "SSH host could not be resolved after the workflow restart barrier." `
             -Code 62 `
-            -Summary "VM restart barrier could not resolve SSH host." `
-            -Hint "Verify the managed VM still has a public IP or FQDN."
+            -Summary $hostFailureSummary `
+            -Hint $hostFailureHint
     }
 
     $sshReady = Wait-AzVmTcpPortReachable -HostName $sshHost -Port $sshPort -MaxAttempts 30 -DelaySeconds 10 -TimeoutSeconds $SshConnectTimeoutSeconds -Label 'ssh'
     if (-not $sshReady) {
         Throw-FriendlyError `
-            -Detail ("SSH port {0} on '{1}' did not become reachable after the init/update restart barrier." -f $sshPort, $sshHost) `
+            -Detail ("SSH port {0} on '{1}' did not become reachable after the workflow restart barrier." -f $sshPort, $sshHost) `
             -Code 62 `
-            -Summary "VM restart barrier did not restore SSH connectivity." `
-            -Hint "Verify guest startup health and rerun update after SSH becomes reachable."
+            -Summary $sshFailureSummary `
+            -Hint $sshFailureHint
     }
 
-    Write-Host "Windows init/update barrier completed successfully." -ForegroundColor Green
+    Write-Host $successMessage -ForegroundColor Green
 }

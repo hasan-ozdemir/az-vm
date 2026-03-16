@@ -28,8 +28,8 @@ function Test-AzVmBenignRunCommandStdErr {
     return $false
 }
 
-# Handles Get-AzVmRunCommandResultMessage.
-function Get-AzVmRunCommandResultMessage {
+# Handles Get-AzVmRunCommandResultEnvelope.
+function Get-AzVmRunCommandResultEnvelope {
     param(
         [string]$TaskName,
         [object]$RawJson,
@@ -79,12 +79,34 @@ function Get-AzVmRunCommandResultMessage {
         }
     }
 
+    $messageText = ($messages -join "`n")
+    $errorMessage = ''
     if ($hasError) {
         $joinedMessages = ($messages -join " | ")
-        throw "VM $ModeLabel task '$TaskName' reported error: $joinedMessages"
+        $errorMessage = "VM $ModeLabel task '$TaskName' reported error: $joinedMessages"
     }
 
-    return ($messages -join "`n")
+    return [pscustomobject]@{
+        MessageText = [string]$messageText
+        HasError = [bool]$hasError
+        ErrorMessage = [string]$errorMessage
+    }
+}
+
+# Handles Get-AzVmRunCommandResultMessage.
+function Get-AzVmRunCommandResultMessage {
+    param(
+        [string]$TaskName,
+        [object]$RawJson,
+        [string]$ModeLabel
+    )
+
+    $envelope = Get-AzVmRunCommandResultEnvelope -TaskName $TaskName -RawJson $RawJson -ModeLabel $ModeLabel
+    if ([bool]$envelope.HasError) {
+        throw [string]$envelope.ErrorMessage
+    }
+
+    return [string]$envelope.MessageText
 }
 
 # Handles Parse-AzVmRunCommandBatchMarkers.

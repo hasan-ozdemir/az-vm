@@ -68,26 +68,6 @@ function Write-AzVmCliBanner {
     Write-Host ''
 }
 
-# Load modular function files in deterministic order from the leaf-file manifest.
-$moduleManifestPath = Join-Path $PSScriptRoot 'modules/azvm-runtime-manifest.ps1'
-if (-not (Test-Path -LiteralPath $moduleManifestPath)) {
-    throw ("Required module manifest was not found: {0}" -f $moduleManifestPath)
-}
-
-$moduleFiles = @(& $moduleManifestPath)
-if (@($moduleFiles).Count -eq 0) {
-    throw "Module manifest returned no module files."
-}
-
-foreach ($moduleFile in @($moduleFiles)) {
-    $modulePath = Join-Path $PSScriptRoot $moduleFile
-    if (-not (Test-Path -LiteralPath $modulePath)) {
-        throw ("Required module file was not found: {0}" -f $modulePath)
-    }
-
-    . $modulePath
-}
-
 $preParsedCommandToken = ''
 $preParsedRawArgs = @()
 if ($null -ne $CliTokens -and @($CliTokens).Count -gt 0) {
@@ -122,6 +102,34 @@ if ([string]::Equals([string]$preParsedCommandToken, 'exec', [System.StringCompa
     if ($hasQuietFlag -and $hasCommandFlag) {
         $script:AzVmQuietOutput = $true
     }
+}
+
+if ($MyInvocation.InvocationName -ne '.' -and @($preParsedRawArgs).Count -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$preParsedCommandToken)) {
+    $versionToken = [string]$preParsedCommandToken
+    if ($versionToken -match '^(?i)--version(?:=(?:1|true|yes|on)?)?$') {
+        Write-Host ("az-vm version {0}" -f (Get-AzVmCliVersionInfo))
+        return
+    }
+}
+
+# Load modular function files in deterministic order from the leaf-file manifest.
+$moduleManifestPath = Join-Path $PSScriptRoot 'modules/azvm-runtime-manifest.ps1'
+if (-not (Test-Path -LiteralPath $moduleManifestPath)) {
+    throw ("Required module manifest was not found: {0}" -f $moduleManifestPath)
+}
+
+$moduleFiles = @(& $moduleManifestPath)
+if (@($moduleFiles).Count -eq 0) {
+    throw "Module manifest returned no module files."
+}
+
+foreach ($moduleFile in @($moduleFiles)) {
+    $modulePath = Join-Path $PSScriptRoot $moduleFile
+    if (-not (Test-Path -LiteralPath $modulePath)) {
+        throw ("Required module file was not found: {0}" -f $modulePath)
+    }
+
+    . $modulePath
 }
 
 if ($MyInvocation.InvocationName -eq '.') {

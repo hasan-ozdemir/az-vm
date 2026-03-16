@@ -284,13 +284,15 @@ function Invoke-AzVmOneShotSshTask {
             ) `
             -Label ("pyssh one-shot task -> {0}" -f [string]$TaskName) `
             -MaxAttempts 1 `
-            -AllowFailure
+            -AllowFailure `
+            -RelayOutput
 
         return [pscustomobject]@{
             ExitCode = [int]$result.ExitCode
             Output = [string]$result.Output
             DurationSeconds = 0.0
             ExecutionMode = 'one-shot'
+            OutputRelayedLive = ($result.PSObject.Properties.Match('OutputRelayedLive').Count -gt 0 -and [bool]$result.OutputRelayedLive)
         }
     }
     finally {

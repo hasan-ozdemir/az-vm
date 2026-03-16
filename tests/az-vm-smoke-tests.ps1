@@ -642,7 +642,7 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     Assert-True -Condition ($parsedResizeDiskSize.Options.ContainsKey('expand')) -Message "Resize --expand option was not captured."
 }
 
-Invoke-Test -Name "CLI entrypoint prints the unconditional welcome banner" -Action {
+Invoke-Test -Name "CLI entrypoint keeps a normal banner path and a pre-banner version fast path" -Action {
     $entryText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'az-vm.ps1') -Raw)
 
     Assert-True -Condition ($entryText -like '*function Get-AzVmCliVersionInfo*') -Message 'CLI entrypoint must resolve the displayed CLI version info.'
@@ -650,7 +650,64 @@ Invoke-Test -Name "CLI entrypoint prints the unconditional welcome banner" -Acti
     Assert-True -Condition ($entryText -like '*AZ-VM CLI V{0}*') -Message 'CLI entrypoint banner must print the AZ-VM CLI version header.'
     Assert-True -Condition ($entryText -like '*Provision, update, connect, and maintain managed Windows or Linux Azure VMs from one deterministic CLI.*') -Message 'CLI entrypoint banner must print the first descriptive line.'
     Assert-True -Condition ($entryText -like '*Run lifecycle actions, isolated tasks, app-state save/restore, and SSH or RDP access through one repo-driven workflow.*') -Message 'CLI entrypoint banner must print the second descriptive line.'
-    Assert-True -Condition ($entryText -match '(?s)if \(\$MyInvocation\.InvocationName -eq ''\.''\) \{\s*return\s*\}\s*Write-AzVmCliBanner\s*try \{') -Message 'CLI entrypoint must print the banner before parsing or dispatching any command.'
+    Assert-True -Condition ($entryText -match '(?s)if \(\$MyInvocation\.InvocationName -ne ''\.'' -and \@\(\$preParsedRawArgs\)\.Count -eq 0 .*?Write-Host \("az-vm version \{0\}" -f \(Get-AzVmCliVersionInfo\)\)\s*return\s*\}.*?# Load modular function files') -Message 'CLI entrypoint must handle --version before module loading and banner output.'
+    Assert-True -Condition ($entryText -match '(?s)# Load modular function files.*?if \(\$MyInvocation\.InvocationName -eq ''\.''\) \{\s*return\s*\}\s*Write-AzVmCliBanner\s*try \{') -Message 'CLI entrypoint must still load modules when dot-sourced and print the banner only for normal command dispatch.'
+}
+
+Invoke-Test -Name "Workflow pipeline wraps Windows vm-update with planned and conditional restart barriers" -Action {
+    $pipelineText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1') -Raw)
+    $workflowText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-workflow.ps1') -Raw)
+
+    foreach ($stepLabel in @(
+        'Step 1/7 - Configuration review',
+        'Step 2/7 - Resource group',
+        'Step 3/7 - Network',
+        'Step 4/7 - VM deploy',
+        'Step 5/7 - VM init',
+        'Step 6/7 - VM update',
+        'Step 7/7 - VM summary'
+    )) {
+        Assert-True -Condition ($pipelineText -match [regex]::Escape([string]$stepLabel)) -Message ("Pipeline must use the step label '{0}'." -f [string]$stepLabel)
+    }
+
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('VM update will begin after one planned restart.')) -Message 'Pipeline must announce the planned Windows restart before vm-update.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowRestartBarrier -Context $step1Context')) -Message 'Pipeline must call the shared restart barrier.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape("-Reason 'before-vm-update'")) -Message 'Pipeline must call the pre-vm-update restart barrier.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('$vmUpdateStageResult = Invoke-AzVmSshTaskBlocks')) -Message 'Pipeline must capture the vm-update stage result.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('-SuppressDeferredRestartHint')) -Message 'Pipeline must suppress the manual deferred restart hint during orchestrated vm-update.'
+    Assert-True -Condition ($pipelineText -match '(?s)if \(\$null -ne \$vmUpdateStageResult -and \[bool\]\$vmUpdateStageResult\.RebootRequired\) \{\s*Invoke-AzVmWorkflowRestartBarrier -Context \$step1Context -Reason ''after-vm-update''') -Message 'Pipeline must restart automatically after vm-update when reboot is required.'
+
+    Assert-True -Condition ($workflowText -match [regex]::Escape("function Invoke-AzVmWorkflowRestartBarrier")) -Message 'Workflow helper must expose the shared restart barrier.'
+    Assert-True -Condition ($workflowText -match [regex]::Escape('Restarting VM before vm-update...')) -Message 'Workflow helper must announce the pre-vm-update restart action.'
+    Assert-True -Condition ($workflowText -match [regex]::Escape('VM restart before vm-update completed successfully.')) -Message 'Workflow helper must report successful pre-vm-update restart.'
+    Assert-True -Condition ($workflowText -match [regex]::Escape('VM update requested a restart. Restarting VM before vm-summary...')) -Message 'Workflow helper must announce the post-vm-update restart action.'
+    Assert-True -Condition ($workflowText -match [regex]::Escape('VM restart after vm-update completed successfully.')) -Message 'Workflow helper must report successful post-vm-update restart.'
+}
+
+Invoke-Test -Name "Guest task output relay is enabled for vm-init and vm-update transports" -Action {
+    $sshProcessText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\process.ps1') -Raw)
+    $sshSessionText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\session.ps1') -Raw)
+    $sshRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\runner.ps1') -Raw)
+    $sshTaskRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-ssh-task-runner.ps1') -Raw)
+    $appStatePluginText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-plugin.ps1') -Raw)
+    $appStateCaptureText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-capture.ps1') -Raw)
+    $runCommandParserText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\run-command\parser.ps1') -Raw)
+    $runCommandRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\run-command\runner.ps1') -Raw)
+
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('function Invoke-AzVmStreamingCapturedProcess')) -Message 'SSH process helpers must define the streaming capture path.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Write-Host $lineText')) -Message 'Streaming SSH capture must mirror stdout lines live.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Write-Warning $lineText')) -Message 'Streaming SSH capture must mirror stderr lines live.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('[switch]$RelayOutput')) -Message 'SSH process retry helper must accept live output relay.'
+    Assert-True -Condition ($sshSessionText -match [regex]::Escape('-RelayOutput')) -Message 'One-shot SSH task execution must enable live output relay.'
+    Assert-True -Condition ($sshRunnerText -match [regex]::Escape('OutputRelayedLive = $true')) -Message 'Persistent SSH task execution must mark output as already relayed.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('The workflow will apply the required restart automatically before vm-summary.')) -Message 'SSH task runner must switch to the automatic restart hint for orchestrated vm-update.'
+    Assert-True -Condition ($appStatePluginText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state replay must avoid re-printing live-relayed task output.'
+    Assert-True -Condition ($appStateCaptureText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state capture must avoid re-printing live-relayed task output.'
+    Assert-True -Condition ($runCommandParserText -match [regex]::Escape('function Get-AzVmRunCommandResultEnvelope')) -Message 'Run-command parsing must expose a non-throwing envelope helper.'
+    Assert-True -Condition ($runCommandRunnerText -match [regex]::Escape('Get-AzVmRunCommandResultEnvelope')) -Message 'Run-command task runner must consume the envelope helper.'
+    Assert-True -Condition ($runCommandRunnerText -match [regex]::Escape('Guest output relay:')) -Message 'Run-command task runner must label relayed guest output.'
+    Assert-True -Condition ($runCommandRunnerText -match [regex]::Escape('Task started:')) -Message 'Run-command task runner must announce task start.'
+    Assert-True -Condition ($runCommandRunnerText -match [regex]::Escape('Task completed:')) -Message 'Run-command task runner must announce task completion.'
 }
 
 Invoke-Test -Name "CLI entrypoint keeps raw token parsing compatible with exec command flags" -Action {

@@ -3,6 +3,25 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.333] - 2026-03-16
+
+### Added
+- Added a commandless global `az-vm --version` fast path that prints only `az-vm version <current-release>` and exits before the normal banner and runtime-dispatch workflow.
+- Added operator-visible guest output relay for task execution: Windows `vm-update` now streams guest stdout and stderr live over SSH, while `vm-init` now replays the full guest transcript immediately after each Azure Run Command task completes.
+
+### Changed
+- Changed the Windows `create` and `update` workflow so `vm-update` now begins after one planned restart at the start of Step 6, and any reboot request raised by an update task now triggers one automatic workflow-owned restart before `vm-summary`.
+- Changed top-level step labels and feature-enablement messaging so create/update progress now reads as stable step names and plain action/result messages instead of future-tense or ambiguous nested-virtualization wording.
+- Changed the operator and documentation surface so `README.md` and CLI help now document `--version`, the wrapped `vm-update` restart behavior, guest output relay, and the requirement that the pushed `main` SHA must complete the GitHub Actions quality gate green before a release push is considered done.
+
+### Fixed
+- Fixed the CLI entrypoint so `az-vm.ps1` still loads the full runtime manifest when dot-sourced while also keeping the new `--version` path banner-free and pre-dispatch.
+- Fixed Windows-friendly prompt-history UTC heading validation in `tests\documentation-contract-check.ps1` by accepting `CRLF` line endings instead of falsely failing on valid `### YYYY-MM-DD HH:MM UTC` headings.
+- Fixed run-command task failure reporting so guest output is relayed before the task throws, and a clear `Task completed ... - error` line is emitted for the failing task.
+
+### Tests
+- Revalidated the release non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.16.332] - 2026-03-16
 
 ### Changed

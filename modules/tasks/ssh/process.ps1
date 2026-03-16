@@ -47,6 +47,114 @@ function Invoke-AzVmCapturedProcess {
         return [pscustomobject]@{
             ExitCode = [int]$proc.ExitCode
             Output = (($outputParts | ForEach-Object { [string]$_ }) -join "`n").Trim()
+            OutputRelayedLive = $false
+        }
+    }
+    finally {
+        try { $proc.Dispose() } catch { }
+    }
+}
+
+function Invoke-AzVmStreamingCapturedProcess {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments
+    )
+
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = [string]$FilePath
+    $psi.Arguments = ((@($Arguments) | ForEach-Object { Convert-AzVmProcessArgument -Value ([string]$_) }) -join ' ')
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $psiType = $psi.GetType()
+    if ($psiType.GetProperty('StandardOutputEncoding')) {
+        try { $psi.StandardOutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+    }
+    if ($psiType.GetProperty('StandardErrorEncoding')) {
+        try { $psi.StandardErrorEncoding = [System.Text.Encoding]::UTF8 } catch { }
+    }
+    $null = $psi.EnvironmentVariables
+    $psi.EnvironmentVariables['PYTHONDONTWRITEBYTECODE'] = '1'
+
+    $proc = New-Object System.Diagnostics.Process
+    $proc.StartInfo = $psi
+
+    if (-not $proc.Start()) {
+        throw ("Process could not be started: {0}" -f [string]$FilePath)
+    }
+
+    try {
+        $stdoutReader = $proc.StandardOutput
+        $stderrReader = $proc.StandardError
+        $stdoutClosed = $false
+        $stderrClosed = $false
+        $stdoutTask = $stdoutReader.ReadLineAsync()
+        $stderrTask = $stderrReader.ReadLineAsync()
+        $outputLines = New-Object 'System.Collections.Generic.List[string]'
+
+        while (-not ($proc.HasExited -and $stdoutClosed -and $stderrClosed)) {
+            $activeTasks = @()
+            if (-not $stdoutClosed) { $activeTasks += $stdoutTask }
+            if (-not $stderrClosed) { $activeTasks += $stderrTask }
+
+            if (@($activeTasks).Count -eq 0) {
+                break
+            }
+
+            $completedIndex = [System.Threading.Tasks.Task]::WaitAny(@($activeTasks), 250)
+            if ($completedIndex -lt 0) {
+                continue
+            }
+
+            $completedTask = $activeTasks[$completedIndex]
+            $isStdoutTask = (-not $stdoutClosed) -and ($completedTask -eq $stdoutTask)
+            $line = $completedTask.Result
+            if ($null -eq $line) {
+                if ($isStdoutTask) {
+                    $stdoutClosed = $true
+                }
+                else {
+                    $stderrClosed = $true
+                }
+                continue
+            }
+
+            $lineText = [string]$line
+            [void]$outputLines.Add($lineText)
+            if ($isStdoutTask) {
+                Write-Host $lineText
+                $stdoutTask = $stdoutReader.ReadLineAsync()
+            }
+            else {
+                Write-Warning $lineText
+                $stderrTask = $stderrReader.ReadLineAsync()
+            }
+        }
+
+        if ($proc.HasExited -and -not $stdoutClosed) {
+            $stdoutTail = [string]$stdoutReader.ReadToEnd()
+            foreach ($tailLine in @($stdoutTail -split "`r?`n")) {
+                if ([string]::IsNullOrWhiteSpace([string]$tailLine)) { continue }
+                [void]$outputLines.Add([string]$tailLine)
+                Write-Host ([string]$tailLine)
+            }
+        }
+        if ($proc.HasExited -and -not $stderrClosed) {
+            $stderrTail = [string]$stderrReader.ReadToEnd()
+            foreach ($tailLine in @($stderrTail -split "`r?`n")) {
+                if ([string]::IsNullOrWhiteSpace([string]$tailLine)) { continue }
+                [void]$outputLines.Add([string]$tailLine)
+                Write-Warning ([string]$tailLine)
+            }
+        }
+
+        $proc.WaitForExit()
+        return [pscustomobject]@{
+            ExitCode = [int]$proc.ExitCode
+            Output = ((@($outputLines) | ForEach-Object { [string]$_ }) -join "`n").Trim()
+            OutputRelayedLive = $true
         }
     }
     finally {
@@ -63,7 +171,8 @@ function Invoke-AzVmProcessWithRetry {
         [int]$MaxAttempts = 3,
         [switch]$AllowFailure,
         [switch]$SuppressTrackedLogging,
-        [switch]$SkipPythonBytecodeFlag
+        [switch]$SkipPythonBytecodeFlag,
+        [switch]$RelayOutput
     )
 
     if ($MaxAttempts -lt 1) {
@@ -79,11 +188,21 @@ function Invoke-AzVmProcessWithRetry {
         $attemptLabel = if ($MaxAttempts -gt 1) { ("{0} (attempt {1}/{2})" -f $Label, $attempt, $MaxAttempts) } else { $Label }
         $effectiveArguments = if ($SkipPythonBytecodeFlag) { @($Arguments) } else { @('-B') + @($Arguments) }
         if ($SuppressTrackedLogging) {
-            $processResult = Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
+            $processResult = if ($RelayOutput) {
+                Invoke-AzVmStreamingCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
+            }
+            else {
+                Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
+            }
         }
         else {
             $processResult = Invoke-TrackedAction -Label $attemptLabel -Action {
-                Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
+                if ($RelayOutput) {
+                    Invoke-AzVmStreamingCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
+                }
+                else {
+                    Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
+                }
             }
         }
         $lastExit = [int]$processResult.ExitCode
@@ -93,6 +212,7 @@ function Invoke-AzVmProcessWithRetry {
             return [pscustomobject]@{
                 ExitCode = $lastExit
                 Output = $lastOutput
+                OutputRelayedLive = [bool]$RelayOutput
             }
         }
 

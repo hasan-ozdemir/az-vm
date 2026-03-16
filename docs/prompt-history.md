@@ -5099,3 +5099,17 @@ I closed the remaining repo work around the language-settings issue without aski
 
 I also prepared the repository for handoff by keeping the release work on `dev`, summarizing the missing production-publish diagnosis and the later question-and-answer about the warning root cause in this prompt-history file, and then fast-forwarding `main` to the same release commit so both long-lived branches point to the same published version before push.
 
+### 2026-03-16 20:54 UTC
+
+**User Prompt**
+
+````text
+Add and ship these feature updates non-live: introduce a global `az-vm --version` fast path, make `create` and `update` restart automatically after `vm-update` when any update task requests reboot, require the pushed `main` branch GitHub Actions workflow to pass cleanly, clean up the create/update and nested-virtualization UI messaging, and relay guest console output from `vm-init` and `vm-update` tasks back into the local az-vm console and logs.
+````
+
+**Assistant Summary**
+
+I implemented the new commandless `az-vm --version` path so the launcher can print only `az-vm version <current-release>` without the normal banner or runtime dispatch. I also wrapped the Windows `vm-update` stage with one planned restart at the start of Step 6 plus one workflow-owned restart before `vm-summary` whenever any update task records a reboot request, and I tightened the create/update plus nested-virtualization feature messaging so the operator sees clearer current-operation start/result lines instead of future-tense or ambiguous phrasing.
+
+I made guest task output visible as part of the normal operator transcript: Windows `vm-update` now streams guest stdout and stderr live over SSH, and `vm-init` now relays the full guest transcript immediately after each Azure Run Command task completes, including clearer failure framing for run-command errors. I updated CLI help, README, smoke and documentation-contract tests, corrected the Windows-friendly UTC heading regex in the documentation contract check, and revalidated the shipped behavior non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates before preparing the release documents for the new version.
+

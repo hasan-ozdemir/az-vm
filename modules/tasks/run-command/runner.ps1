@@ -172,13 +172,16 @@ function Invoke-AzVmSingleRunCommandTask {
     $azArgs += $scriptArgs
     $azArgs += @('-o', 'json')
     $invokeLabel = ("az vm run-command invoke ({0})" -f [string]$taskName)
+    Write-Host ("Task started: {0} (max {1}s)" -f [string]$taskName, [int]$taskTimeoutSeconds)
+    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $rawJson = Invoke-TrackedAction -Label $invokeLabel -Action {
         $invokeResult = az @azArgs
         Assert-LastExitCode $invokeLabel
         $invokeResult
     }
 
-    $messageText = Get-AzVmRunCommandResultMessage -TaskName $taskName -RawJson $rawJson -ModeLabel 'task-run'
+    $parsedResult = Get-AzVmRunCommandResultEnvelope -TaskName $taskName -RawJson $rawJson -ModeLabel 'task-run'
+    $messageText = [string]$parsedResult.MessageText
     $marker = Parse-AzVmRunCommandBatchMarkers -MessageText $messageText
     $displayLines = @()
     foreach ($lineRaw in @([string]$messageText -split "`r?`n")) {
@@ -191,9 +194,18 @@ function Invoke-AzVmSingleRunCommandTask {
         }
         $displayLines += [string]$line
     }
+    if ($taskWatch.IsRunning) { $taskWatch.Stop() }
     if (@($displayLines).Count -gt 0) {
+        Write-Host ("Guest output relay: {0}" -f [string]$taskName) -ForegroundColor DarkCyan
         Write-Host ((@($displayLines) -join "`n"))
     }
+    if ([bool]$parsedResult.HasError) {
+        Write-Host ("Task completed: {0} ({1:N1}s) - error" -f [string]$taskName, $taskWatch.Elapsed.TotalSeconds) -ForegroundColor Red
+        throw [string]$parsedResult.ErrorMessage
+    }
+
+    $taskStateLabel = if ([int]$marker.ErrorCount -gt 0) { 'warning' } else { 'success' }
+    Write-Host ("Task completed: {0} ({1:N1}s) - {2}" -f [string]$taskName, $taskWatch.Elapsed.TotalSeconds, [string]$taskStateLabel)
 
     return [pscustomobject]@{
         TaskName = [string]$taskName
@@ -203,6 +215,7 @@ function Invoke-AzVmSingleRunCommandTask {
         ErrorCount = [int]$marker.ErrorCount
         RebootRequired = ([bool]$marker.RebootRequired -or (Test-AzVmOutputIndicatesRebootRequired -MessageText $messageText))
         TaskDurations = @()
+        DurationSeconds = [double]$taskWatch.Elapsed.TotalSeconds
     }
 }
 

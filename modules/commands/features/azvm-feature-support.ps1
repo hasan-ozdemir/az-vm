@@ -132,6 +132,38 @@ function Write-AzVmFeatureSkipMessage {
     Write-Host ("{0} will not be changed because {1}" -f [string]$FeatureLabel, [string]$Reason) -ForegroundColor DarkCyan
 }
 
+function Write-AzVmFeatureValidationMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("{0} will be validated on the guest." -f [string]$FeatureLabel) -ForegroundColor DarkCyan
+    }
+}
+
+function Write-AzVmFeatureValidationVmStartMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("Starting VM for {0} validation..." -f ([string]$FeatureLabel).ToLowerInvariant()) -ForegroundColor Cyan
+    }
+}
+
+function Write-AzVmFeatureValidationVmStartedMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("VM was started successfully for {0} validation." -f ([string]$FeatureLabel).ToLowerInvariant()) -ForegroundColor Green
+    }
+}
+
+function Write-AzVmFeatureMetadataFallbackMessage {
+    param([string]$FeatureLabel)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
+        Write-Host ("Azure metadata did not confirm {0}. Guest validation will be used." -f ([string]$FeatureLabel).ToLowerInvariant()) -ForegroundColor Yellow
+    }
+}
+
 # Handles Resolve-AzVmFeatureSupportReasonText.
 function Resolve-AzVmFeatureSupportReasonText {
     param(
@@ -148,11 +180,11 @@ function Resolve-AzVmFeatureSupportReasonText {
         'compute-skus-read-failed' { return 'Azure compute SKU metadata could not be read from the REST API.' }
         'compute-skus-parse-failed' { return 'Azure compute SKU metadata could not be parsed.' }
         'vm-size-metadata-not-found' { return 'Azure compute SKU metadata for the selected region and VM size was not found.' }
-        'hibernation-capability-not-advertised' { return ("Azure did not clearly confirm capability '{0}' for this VM size in this region." -f [string]$CapabilityLabel) }
-        'nested-capability-not-advertised' { return 'Azure did not clearly confirm nested virtualization support for this VM size in this region.' }
+        'hibernation-capability-not-advertised' { return ("Azure metadata did not confirm capability '{0}' for this VM size in this region." -f [string]$CapabilityLabel) }
+        'nested-capability-not-advertised' { return 'Azure metadata did not confirm nested virtualization support for this VM size in this region.' }
         'nested-requires-standard-security' { return "Azure nested virtualization on this VM requires security type 'Standard' instead of 'TrustedLaunch'." }
         'nested-managed-by-security-type' { return 'Nested virtualization depends on VM size and security type for this VM.' }
-        'nested-capability-inconclusive' { return 'Azure did not clearly confirm nested virtualization from metadata. Guest validation is required after deployment.' }
+        'nested-capability-inconclusive' { return 'Azure metadata did not confirm nested virtualization. Guest validation will be used after deployment.' }
         'hibernation-not-supported' {
             if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported that hibernation is unsupported.' }
             return "Azure reported: $evidenceText."
@@ -352,7 +384,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
     $nestedSupport = Get-AzVmNestedVirtualizationSupportInfo -Location ([string]$Context.AzLocation) -VmSize ([string]$Context.VmSize)
     $nestedSecurityState = Get-AzVmSafeTrimmedText -Value $Context.VmSecurityType
     $vmLifecycleLabel = if ($VmCreatedThisRun) { 'newly created' } else { 'existing' }
-    Write-Host ("Post-deploy feature verification will run for the {0} VM '{1}'." -f $vmLifecycleLabel, $vmName) -ForegroundColor DarkCyan
+    Write-Host ("Post-deploy feature configuration started for the {0} VM '{1}'." -f $vmLifecycleLabel, $vmName) -ForegroundColor DarkCyan
 
     try {
         $provisioningWaitResult = Wait-AzVmProvisioningSucceeded -ResourceGroup $resourceGroup -VmName $vmName -MaxAttempts 30 -DelaySeconds 10
@@ -400,7 +432,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
                     -Hint "Use a VM size that supports hibernation, or set VM_ENABLE_HIBERNATION=false before retrying."
             }
             else {
-                Write-Host 'Azure did not clearly confirm hibernation from metadata; Azure verification will continue.' -ForegroundColor Yellow
+                Write-AzVmFeatureMetadataFallbackMessage -FeatureLabel 'Hibernation'
             }
 
             $hibernationState = Get-AzVmVmAdditionalCapabilityFlag -ResourceGroup $resourceGroup -VmName $vmName -QueryPath 'additionalCapabilities.hibernationEnabled'
@@ -470,20 +502,22 @@ function Invoke-AzVmPostDeployFeatureEnablement {
             }
             else {
                 $nestedMessage = 'nested-capability-inconclusive'
-                Write-Host 'Azure did not clearly confirm nested virtualization from metadata; guest validation will be used.' -ForegroundColor Yellow
+                Write-AzVmFeatureMetadataFallbackMessage -FeatureLabel 'Nested virtualization'
             }
         }
 
         if ($nestedAttempted) {
             if ($deallocated) {
+                Write-AzVmFeatureValidationVmStartMessage -FeatureLabel 'Nested virtualization'
                 Invoke-TrackedAction -Label ("az vm start -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
                     az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
                     Assert-LastExitCode "az vm start"
                 } | Out-Null
                 $deallocated = $false
-                Write-Host 'The VM was started before nested virtualization guest validation.' -ForegroundColor DarkCyan
+                Write-AzVmFeatureValidationVmStartedMessage -FeatureLabel 'Nested virtualization'
             }
 
+            Write-AzVmFeatureValidationMessage -FeatureLabel 'Nested virtualization'
             Write-AzVmFeatureActionMessage -FeatureLabel 'Nested virtualization'
             $nestedValidation = Get-AzVmNestedVirtualizationGuestValidation `
                 -ResourceGroup $resourceGroup `
@@ -517,7 +551,7 @@ function Invoke-AzVmPostDeployFeatureEnablement {
                     az vm start -g $resourceGroup -n $vmName -o none --only-show-errors
                     Assert-LastExitCode "az vm start"
                 } | Out-Null
-                Write-Host 'The VM was started after feature enablement.' -ForegroundColor DarkCyan
+                Write-Host 'VM was started successfully after feature configuration.' -ForegroundColor Green
             }
             catch {
                 Write-Warning ("VM '{0}' could not be started after feature enablement: {1}" -f $vmName, $_.Exception.Message)

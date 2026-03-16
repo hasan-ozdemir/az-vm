@@ -40,13 +40,13 @@ function Invoke-Step {
     $before = @(Get-Variable)
     $modeLabel = if ($script:AutoMode) { 'auto' } else { 'interactive' }
     if (-not $script:AzVmQuietOutput) {
-        Write-Host ("{0} (mode: {1})" -f $prompt, $modeLabel) -ForegroundColor Cyan
+        Write-Host ("Starting {0} (mode: {1})" -f $prompt, $modeLabel) -ForegroundColor Cyan
     }
     $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
     . $Action
     if ($stepWatch.IsRunning) { $stepWatch.Stop() }
     if (-not $script:AzVmQuietOutput) {
-        Write-Host ("Step completed: {0} ({1:N1}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
+        Write-Host ("Completed {0} ({1:N1}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
     }
     $after = @(Get-Variable)
     Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after

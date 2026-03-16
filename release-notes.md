@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.333 - 2026-03-16
+
+### Summary
+This release finishes the current operator-surface and workflow-wrap pass. `az-vm` now exposes a commandless `--version` fast path, treats the Windows `vm-update` step as a fully wrapped restart-aware stage, relays guest task output back into the local console and transcript, and presents clearer top-level step and feature-enablement messaging during create and update runs. The same release also documents the post-push GitHub Actions quality gate as part of release completion.
+
+### Highlights
+- Added `az-vm --version`, which prints exactly `az-vm version <current-release>` without the normal banner or command workflow.
+- Wrapped Windows `vm-update` with one planned restart at the start of Step 6 plus one automatic restart before `vm-summary` when any update task requests reboot.
+- Streamed guest task output back to the operator: `vm-update` now relays stdout/stderr live over SSH, and `vm-init` now replays the full guest transcript immediately after each task completes.
+- Refined create/update and feature-enablement messaging so step start/end lines and nested-virtualization validation messages read as clear current operations instead of future-tense or ambiguous status prose.
+- Revalidated the shipped behavior non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+
 ## Release 2026.3.16.332 - 2026-03-16
 
 ### Summary

@@ -811,8 +811,9 @@ function Invoke-AzVmTaskAppStatePostProcess {
             -TaskScript $scriptText `
             -TimeoutSeconds $scriptTimeout `
             -SkipRemoteCleanup
+        $outputWasRelayedLive = ($null -ne $result -and $result.PSObject.Properties.Match('OutputRelayedLive').Count -gt 0 -and [bool]$result.OutputRelayedLive)
         if ($null -eq $result -or [int]$result.ExitCode -ne 0) {
-            if ($null -ne $result -and $result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
+            if (-not $outputWasRelayedLive -and $null -ne $result -and $result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
                 Write-Host ([string]$result.Output)
             }
             $exitCode = if ($null -ne $result -and $result.PSObject.Properties.Match('ExitCode').Count -gt 0) { [int]$result.ExitCode } else { -1 }
@@ -820,7 +821,7 @@ function Invoke-AzVmTaskAppStatePostProcess {
             return [pscustomobject]@{ Status = 'warning'; Warning = $true; Message = ("replay exited with code {0}" -f $exitCode) }
         }
 
-        if ($result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
+        if (-not $outputWasRelayedLive -and $result.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
             Write-Host ([string]$result.Output)
         }
         Write-Host ("App-state deployed: {0}" -f [string]$taskName)

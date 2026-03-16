@@ -191,5 +191,6 @@ function Invoke-AzVmPersistentSshTask {
         ExitCode = [int]$exitCode
         Output = ($outputLines -join "`n")
         DurationSeconds = [double]$taskWatch.Elapsed.TotalSeconds
+        OutputRelayedLive = $true
     }
 }

@@ -139,7 +139,7 @@ function Invoke-AzVmMain {
         $skippedStages = New-Object System.Collections.ArrayList
         $cancelledStage = ''
 
-        Invoke-Step 'Step 1/7 - configuration values will be shown...' {
+        Invoke-Step 'Step 1/7 - Configuration review' {
             if ($script:AutoMode) {
                 Show-AzVmRuntimeConfigurationSnapshot -Platform $platform -ScriptName 'az-vm.ps1' -ScriptRoot $repoRoot -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ConfigMap $effectiveConfigMap -ConfigOverrides $script:ConfigOverrides -Context $step1Context
             }
@@ -181,7 +181,7 @@ function Invoke-AzVmMain {
                 }
                 default {
                     Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-                    Invoke-Step 'Step 2/7 - resource group will be checked...' {
+                    Invoke-Step 'Step 2/7 - Resource group' {
                         Invoke-AzVmResourceGroupStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode
                     }
                     [void]$completedStages.Add('group')
@@ -197,7 +197,7 @@ function Invoke-AzVmMain {
 
         if ($runNetworkAction) {
             Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-            Invoke-Step 'Step 3/7 - VNet, subnet, NSG, NSG rules, public IP, and NIC will be created...' {
+            Invoke-Step 'Step 3/7 - Network' {
                 Invoke-AzVmNetworkStep -Context $step1Context -ExecutionMode $script:ExecutionMode
             }
             [void]$completedStages.Add('network')
@@ -235,7 +235,7 @@ function Invoke-AzVmMain {
                 }
                 default {
                     Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-                    Invoke-Step 'Step 4/7 - virtual machine will be created...' {
+                    Invoke-Step 'Step 4/7 - VM deploy' {
                         Invoke-AzVmVmCreateStep -Context $step1Context -AutoMode:$script:AutoMode -UpdateMode:$script:UpdateMode -ExecutionMode $script:ExecutionMode -CreateVmAction {
                             $vmCreateSecurityArgs = @(Get-AzVmCreateSecurityArgumentsForCurrentVmState -Context $step1Context -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName))
                             az vm create --resource-group ([string]$step1Context.ResourceGroup) --name ([string]$step1Context.VmName) --image ([string]$step1Context.VmImage) --size ([string]$step1Context.VmSize) --storage-sku ([string]$step1Context.VmStorageSku) --os-disk-name ([string]$step1Context.VmDiskName) --os-disk-size-gb ([string]$step1Context.VmDiskSize) --admin-username ([string]$step1Context.VmUser) --admin-password ([string]$step1Context.VmPass) --authentication-type password --nics ([string]$step1Context.NIC) @vmCreateSecurityArgs -o json --only-show-errors
@@ -255,7 +255,10 @@ function Invoke-AzVmMain {
         $initReview = $null
         $initTaskBlocks = @()
         $initDisabledTasks = @()
-        $initStageRan = $false
+        $vmUpdateStageResult = [pscustomobject]@{
+            RebootRequired = $false
+            RebootCount = 0
+        }
 
         if ($runInitAction) {
             $initReview = Get-AzVmReviewTaskRows -DirectoryPath ([string]$step1Context.VmInitTaskDir) -Platform $platform -Stage 'init' -Context $step1Context
@@ -286,7 +289,7 @@ function Invoke-AzVmMain {
                 }
                 default {
                     Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-                    Invoke-Step 'Step 5/7 - VM init tasks will be executed via Azure Run Command...' {
+                    Invoke-Step 'Step 5/7 - VM init' {
                         if (@($initDisabledTasks).Count -gt 0) {
                             $disabledNames = @($initDisabledTasks | ForEach-Object { [string]$_.Name })
                             Write-Host ("Disabled init tasks (ignored): {0}" -f ($disabledNames -join ', ')) -ForegroundColor Yellow
@@ -307,7 +310,6 @@ function Invoke-AzVmMain {
                             Start-Sleep -Seconds 20
                         }
                     }
-                    $initStageRan = $true
                     [void]$completedStages.Add('vm-init')
                 }
             }
@@ -349,11 +351,12 @@ function Invoke-AzVmMain {
                 }
                 default {
                     Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-                    if ($platform -eq 'windows' -and $initStageRan -and @($initTaskBlocks).Count -gt 0) {
-                        Invoke-AzVmWindowsRestartBarrier -Context $step1Context -RepoRoot $repoRoot -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds
+                    if ($platform -eq 'windows' -and @($updateTaskBlocks).Count -gt 0) {
+                        Write-Host 'VM update will begin after one planned restart.' -ForegroundColor DarkCyan
+                        Invoke-AzVmWorkflowRestartBarrier -Context $step1Context -Reason 'before-vm-update' -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds
                     }
 
-                    Invoke-Step 'Step 6/7 - VM update tasks will be executed via persistent SSH...' {
+                    Invoke-Step 'Step 6/7 - VM update' {
                         if (@($updateDisabledTasks).Count -gt 0) {
                             $disabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })
                             Write-Host ("Disabled update tasks (ignored): {0}" -f ($disabledNames -join ', ')) -ForegroundColor Yellow
@@ -378,8 +381,11 @@ function Invoke-AzVmMain {
                                 $sshMaxRetries = Resolve-AzVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
                             }
 
-                            Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser ([string]$step1Context.VmUser) -SshPassword ([string]$step1Context.VmPass) -SshPort ([string]$step1Context.SshPort) -AssistantUser ([string]$step1Context.VmAssistantUser) -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath | Out-Null
+                            $vmUpdateStageResult = Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser ([string]$step1Context.VmUser) -SshPassword ([string]$step1Context.VmPass) -SshPort ([string]$step1Context.SshPort) -AssistantUser ([string]$step1Context.VmAssistantUser) -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath -SuppressDeferredRestartHint
                         }
+                    }
+                    if ($null -ne $vmUpdateStageResult -and [bool]$vmUpdateStageResult.RebootRequired) {
+                        Invoke-AzVmWorkflowRestartBarrier -Context $step1Context -Reason 'after-vm-update' -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds
                     }
                     [void]$completedStages.Add('vm-update')
                 }
@@ -387,7 +393,7 @@ function Invoke-AzVmMain {
         }
 
         [void]$completedStages.Add('vm-summary')
-        Invoke-Step 'Step 7/7 - VM summary will be shown...' {
+        Invoke-Step 'Step 7/7 - VM summary' {
             Write-AzVmWorkflowSummary -Context $step1Context -PlatformDefaults $platformDefaults -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
         }
         Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))

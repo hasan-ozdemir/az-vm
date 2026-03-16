@@ -169,6 +169,7 @@ az login
 
 ### Daily Operator Shortcuts
 ```powershell
+.\az-vm.cmd --version
 .\az-vm.cmd -h
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=start --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>
@@ -539,6 +540,7 @@ Practical outcomes:
 ## Command Guide
 
 ### Global Options
+- `--version`: print the current documented az-vm release and exit without loading the normal command workflow
 - `--auto`: unattended mode for `create`, `update`, and `delete`
 - `--perf`: print timing metrics
 - `--windows`, `--linux`: explicit platform selection or platform expectation
@@ -564,6 +566,7 @@ Behavior notes:
 - `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
 - Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.
+- Windows `vm-update` begins after one planned restart at the start of Step 6, and the workflow performs one more restart automatically before `vm-summary` when any update task requests reboot.
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
@@ -574,6 +577,7 @@ Purpose: maintain one existing managed resource group and one existing VM target
 Behavior notes:
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
 - Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`, with single-VM auto-resolution allowed when the selected group contains exactly one VM.
+- Windows `vm-update` begins after one planned restart at the start of Step 6, and the workflow performs one more restart automatically before `vm-summary` when any update task requests reboot.
 - best fit for day-two maintenance, guest-task refresh, and Azure redeploy-backed repair
 
 ### `list`
@@ -605,8 +609,8 @@ Purpose: list discovered init/update tasks in runtime order, run one task in iso
 
 Behavior notes:
 - shows tracked and local-only task folders together
-- `--run-vm-init` routes one init task through Azure run-command
-- `--run-vm-update` routes one update task through the SSH task runner
+- `--run-vm-init` routes one init task through Azure run-command and relays the full guest transcript immediately after that task finishes
+- `--run-vm-update` routes one update task through the SSH task runner and streams guest stdout/stderr live over SSH
 - `--save-app-state` defaults to `--source=vm`; `--restore-app-state` defaults to `--target=vm`; both default to `--user=.all.`
 - `--user` accepts `.all.`, `.current.`, one explicit user, or a comma-separated user list such as `--user=operator,assistant`
 - managed VM app-state reads or writes the task-local payload at `<task-folder>/app-state/app-state.zip`
@@ -792,6 +796,7 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 ### Init Tasks Versus Update Tasks
 - `vm-init` is Azure Run Command driven and is used for early guest bootstrap, one task at a time.
 - `vm-update` is pyssh driven and is used for richer task-by-task update flows after the VM is reachable.
+- `vm-init` relays the full guest transcript back to the local az-vm console as soon as each task completes, while `vm-update` streams guest stdout/stderr live over SSH while the task is still running.
 - Both stages use portable task folders plus `task.json` as the source of truth for ordering, timeout, and enable/disable state, and both now invoke the same per-task app-state restore helper as a post-task step when a matching task-local plugin zip exists.
 - The natural execution order for both stages is: builtin `initial` task folders, builtin `normal` task folders, local task folders from `local/`, then builtin `final` task folders.
 
@@ -918,6 +923,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\bash-syntax-check.ps
 `code-quality-check.ps1` and the local commit hook keep the current tree and the current commit message clean. Run `.\tests\sensitive-content-check.ps1` directly when you also want the full reachable-history commit-message audit.
 
 GitHub Actions runs the non-destructive `.github/workflows/quality-gate.yml` workflow on pull requests, pushes to `main`, and manual dispatch. It covers static audit, an explicit documentation-contract check, PowerShell compatibility, Linux shell syntax, workflow linting, and the non-live smoke-contract suite.
+For a release push, the job is not finished until the pushed `main` SHA completes this workflow green.
 
 ### Live Release Acceptance
 Before calling the repo or the active profile release-ready for a live publish, run one end-to-end live acceptance cycle against the current `.env` target:

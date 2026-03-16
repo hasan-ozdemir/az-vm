@@ -48,6 +48,7 @@ function Show-AzVmCommandHelpOverview {
         '  help       Show detailed docs (all commands or one command).'
         ''
         'Global options:'
+        '  --version                  Print the current az-vm release version and exit.'
         '  --auto[=true|false]         Auto mode (create/update/delete only).'
         '  --perf[=true|false]         Print timing metrics.'
         '  --windows / --linux         Force VM platform where supported.'
@@ -60,6 +61,7 @@ function Show-AzVmCommandHelpOverview {
         "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
         ''
         'Quick examples:'
+        '  az-vm --version'
         '  az-vm create --auto'
         '  az-vm update --auto'
         '  az-vm task --list --vm-update'
@@ -90,6 +92,7 @@ function Show-AzVmCommandHelpDetailed {
             'Usage: az-vm <command> [--option value] [--option=value]'
             ''
             'Common options:'
+            '  --version                # print the current az-vm release version and exit'
             '  --auto[=true|false]      # create/update/delete only'
             '  --perf[=true|false]'
             '  --windows[=true|false]   # create/update/task/resize'
@@ -98,6 +101,7 @@ function Show-AzVmCommandHelpDetailed {
             '  -v, --vm-name'
             '  -s, --subscription-id'
             '  -c, --command'
+            '  -q, --quiet              # exec one-shot quiet output only'
             '  -h, --help'
             "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
             ''
@@ -160,7 +164,7 @@ function Show-AzVmCommandHelpDetailed {
                 '  az-vm create --auto -s <subscription-guid>'
                 '  az-vm create --auto --windows --vm-name <vm-name> --vm-region <azure-region> --vm-size <vm-sku> -s <subscription-guid>'
                 '  az-vm create --step vm-update --linux'
-                'Notes: create always targets a fresh managed resource group and fresh managed resources. Interactive mode prompts for Azure subscription when --subscription-id is omitted, asks for VM OS type first when --windows/--linux is omitted, proposes the next global gX name plus globally unique nX resource ids, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode runs from the fully resolved selection set: CLI overrides win, otherwise .env SELECTED_* values plus the platform VM defaults must resolve platform, VM name, Azure region, and VM size. vm-summary always renders, even for partial step windows. For a destructive rebuild, run delete first and then create again.'
+                'Notes: create always targets a fresh managed resource group and fresh managed resources. Interactive mode prompts for Azure subscription when --subscription-id is omitted, asks for VM OS type first when --windows/--linux is omitted, proposes the next global gX name plus globally unique nX resource ids, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode runs from the fully resolved selection set: CLI overrides win, otherwise .env SELECTED_* values plus the platform VM defaults must resolve platform, VM name, Azure region, and VM size. Windows vm-update runs after one planned restart at the start of Step 6, and any vm-update reboot request triggers one automatic restart before vm-summary. vm-summary always renders, even for partial step windows. For a destructive rebuild, run delete first and then create again.'
             )
             return
         }
@@ -180,7 +184,7 @@ function Show-AzVmCommandHelpDetailed {
                 '  az-vm update --group <resource-group>'
                 '  az-vm update --auto -s <subscription-guid>'
                 '  az-vm update --auto --group <resource-group> --vm-name <vm-name> -s <subscription-guid>'
-                'Notes: update requires an existing managed resource group and an existing managed VM. Interactive mode prompts for Azure subscription when --subscription-id is omitted, selects only managed existing targets, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode runs from the resolved managed target: CLI overrides win, otherwise .env SELECTED_RESOURCE_GROUP and SELECTED_VM_NAME are used, with single-VM auto-resolution still allowed when the selected group contains exactly one VM. Existing VMs are redeployed after Azure create-or-update.'
+                'Notes: update requires an existing managed resource group and an existing managed VM. Interactive mode prompts for Azure subscription when --subscription-id is omitted, selects only managed existing targets, and asks yes/no/cancel review checkpoints only for group, vm-deploy, vm-init, and vm-update. Auto mode runs from the resolved managed target: CLI overrides win, otherwise .env SELECTED_RESOURCE_GROUP and SELECTED_VM_NAME are used, with single-VM auto-resolution still allowed when the selected group contains exactly one VM. Existing VMs are redeployed after Azure create-or-update. Windows vm-update runs after one planned restart at the start of Step 6, and any vm-update reboot request triggers one automatic restart before vm-summary.'
             )
             return
         }
@@ -248,7 +252,7 @@ function Show-AzVmCommandHelpDetailed {
                 '  az-vm task --save-app-state --source=lm --user=.current. --vm-update-task=115 --windows'
                 '  az-vm task --restore-app-state --target=lm --user=.current. --vm-update-task=115 --windows'
                 '  az-vm task --restore-app-state --target=vm --user=assistant --vm-update-task=115 --group <resource-group> --vm-name <vm-name>'
-                'Notes: --list is local-only and scans tracked plus local task trees with the same discovery rules used by init/update execution. --run-vm-init uses Azure run-command. --run-vm-update uses the SSH task runner. --save-app-state defaults to --source=vm and --restore-app-state defaults to --target=vm. Both default to --user=.all.. VM save/restore is SSH-based and remains limited to the managed manager/assistant profiles; vm-init app-state replay defers until SSH is ready. Local save/restore is Windows-host-only, reads or deploys only `<task-folder>/app-state/app-state.zip`, and writes a restore journal plus backup root before local replay.'
+                'Notes: --list is local-only and scans tracked plus local task trees with the same discovery rules used by init/update execution. --run-vm-init uses Azure run-command and replays the full guest transcript after each task completes. --run-vm-update uses the SSH task runner and streams guest stdout/stderr live. --save-app-state defaults to --source=vm and --restore-app-state defaults to --target=vm. Both default to --user=.all.. VM save/restore is SSH-based and remains limited to the managed manager/assistant profiles; vm-init app-state replay defers until SSH is ready. Local save/restore is Windows-host-only, reads or deploys only `<task-folder>/app-state/app-state.zip`, and writes a restore journal plus backup root before local replay.'
             )
             return
         }
