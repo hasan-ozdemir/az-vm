@@ -4992,12 +4992,26 @@ The next live attempt surfaced a real task-runtime issue: `103-install-python-sy
 **User Prompt**
 
 ````text
-Move the full JAWS settings copy responsibility onto the builtin `131-install-jaws-screen-reader` vm-update task. Seed that task-local payload from the local machine using `C:\Users\hasan\AppData\Roaming\Freedom Scientific\JAWS\2025\Settings` plus the full `Freedom Scientific` HKLM and HKCU trees, keep only JAWS auto-start in its own startup task, run an isolated live validation on the active managed VM so future `create` runs will replay the same payload automatically, and then normalize the saved `app-state.zip` so internal user folders and user expressions use `manager` instead of the local source profile token such as `hasan`.
+Move the full JAWS settings copy responsibility onto the builtin `131-install-jaws-screen-reader` vm-update task. Seed that task-local payload from the local machine using `C:\Users\<local-user>\AppData\Roaming\Freedom Scientific\JAWS\2025\Settings` plus the full `Freedom Scientific` HKLM and HKCU trees, keep only JAWS auto-start in its own startup task, run an isolated live validation on the active managed VM so future `create` runs will replay the same payload automatically, and then normalize the saved `app-state.zip` so internal user folders and user expressions use `manager` instead of the local source profile token.
 ````
 
 **Assistant Summary**
 
 Completed the JAWS task-state handoff around builtin task `131-install-jaws-screen-reader`. The task-local app-state contract now keeps the full JAWS 2025 settings tree plus the full `Freedom Scientific` HKLM/HKCU/WOW6432 registry surface, while `10001-configure-apps-startup` remains the sole owner of JAWS auto-start. I also extended the Windows health snapshot with JAWS settings and registry readback for both managed profiles and for the machine registry trees, and carried the `portableProfilePayload` flag through runtime materialization so portable task-local payloads are recognized consistently during local save.
 
-I regenerated `windows/update/131-install-jaws-screen-reader/app-state/app-state.zip` from the local machine with `task --save-app-state --source=lm --user=.current. --vm-update-task=131 --windows --perf`, then normalized the reusable payload so its manifest source paths, payload folder names, and HKCU registry export now use the canonical managed profile token `manager` instead of the local source profile name. I revalidated the normalization non-live with the smoke and PowerShell compatibility suites, reran `task --run-vm-update 131 --group rg-bizyum-ate1-g1 --vm-name bizyum --windows --perf` live in isolation, reran `task --run-vm-update 10006 --group rg-bizyum-ate1-g1 --vm-name bizyum --windows --perf`, and finished with direct `exec` readbacks that confirmed JAWS settings and `Freedom Scientific` registry presence for both `manager` and `assistant` on the active VM.
+I regenerated `windows/update/131-install-jaws-screen-reader/app-state/app-state.zip` from the local machine with `task --save-app-state --source=lm --user=.current. --vm-update-task=131 --windows --perf`, then normalized the reusable payload so its manifest source paths, payload folder names, and HKCU registry export now use the canonical managed profile token `manager` instead of the local source profile name. I revalidated the normalization non-live with the smoke and PowerShell compatibility suites, reran `task --run-vm-update 131 --windows --perf` live in isolation on the active managed VM, reran `task --run-vm-update 10006 --windows --perf`, and finished with direct `exec` readbacks that confirmed JAWS settings and `Freedom Scientific` registry presence for both `manager` and `assistant` on the active VM.
+
+### 2026-03-16 12:49 UTC
+
+**User Prompt**
+
+````text
+Implement the plan to scan every task-local `app-state.zip`, normalize foreign local-source user tokens or other operator-specific names to the canonical `manager` token, keep the existing allowed contract tokens (`assistant`, `default`, `public`) intact, and update the Windows Public Desktop shortcut task so it writes direct shortcut targets whenever the combined target plus arguments length is at most 259 characters, only falling back to the managed launcher `.cmd` path above that limit.
+````
+
+**Assistant Summary**
+
+Added a dedicated repo maintenance helper, `tools/scripts/normalize-app-state-zips.ps1`, that expands every task-local `app-state.zip`, detects foreign source-profile tokens and embedded user-profile registry literals, rewrites those foreign tokens to `manager`, merges duplicate profile trees deterministically by `newer timestamp -> larger size -> lexical token`, and rewrites embedded `C:\Users\<name>` registry paths to `C:\Users\manager`. I also extended `tools/scripts/app-state-audit.ps1` so it now reports foreign source-profile and embedded registry-user drift directly instead of only showing foreign manifest `targetProfiles`.
+
+I ran the normalization helper on the real repository payload set and cleared the remaining foreign-user residue from `10005-copy-settings-user`, `116-install-codex-app`, `117-install-teams-system`, `120-install-whatsapp-system`, and `125-install-be-my-eyes`; a follow-up audit confirmed that no current `app-state.zip` payload still reports foreign source or embedded user tokens. On the shortcut side, I made the Public Desktop launcher threshold explicit and testable by exposing the combined invocation-length helper, exporting it from the shortcut-launcher module, and pinning the task to the `259` combined `TargetPath + Arguments` contract. I revalidated the full change non-live with `tests\az-vm-smoke-tests.ps1`.
 

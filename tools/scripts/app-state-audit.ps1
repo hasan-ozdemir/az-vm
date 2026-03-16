@@ -15,6 +15,85 @@ function Initialize-AppStateAuditZipSupport {
     }
 }
 
+function Get-AppStateAuditAllowedProfileTokens {
+    return @('manager', 'assistant', 'default', 'public')
+}
+
+function Test-AppStateAuditAllowedProfileToken {
+    param([string]$Token)
+
+    $normalizedToken = if ($null -eq $Token) { '' } else { [string]$Token.Trim().ToLowerInvariant() }
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedToken)) {
+        return $true
+    }
+
+    return (@(Get-AppStateAuditAllowedProfileTokens) -contains $normalizedToken)
+}
+
+function Get-AppStateAuditSourceToken {
+    param(
+        [string]$SourcePath,
+        [string]$CollectionName,
+        [string]$Scope = ''
+    )
+
+    $normalizedSourcePath = if ([string]::IsNullOrWhiteSpace([string]$SourcePath)) { '' } else { ([string]$SourcePath).Replace('/', '\').TrimStart('\') }
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedSourcePath)) {
+        return ''
+    }
+
+    $pattern = ''
+    switch ([string]$CollectionName) {
+        'profileDirectories' { $pattern = '^payload\\profile-directories\\([^\\]+)\\' }
+        'profileFiles' { $pattern = '^payload\\profile-files\\([^\\]+)\\' }
+        'registryImports' {
+            if ([string]::Equals([string]$Scope, 'user', [System.StringComparison]::OrdinalIgnoreCase)) {
+                $pattern = '^payload\\registry\\user\\([^\\]+)\\'
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$pattern)) {
+        return ''
+    }
+
+    $match = [regex]::Match($normalizedSourcePath, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if (-not $match.Success) {
+        return ''
+    }
+
+    return [string]$match.Groups[1].Value.Trim().ToLowerInvariant()
+}
+
+function Get-AppStateAuditEmbeddedUserTokensFromRegistryText {
+    param([string]$Content)
+
+    $tokens = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    if ([string]::IsNullOrWhiteSpace([string]$Content)) {
+        return @()
+    }
+
+    foreach ($pattern in @(
+        '(?i)C:\\Users\\([^\\]+)',
+        '(?i)C:\\\\Users\\\\([^\\]+)'
+    )) {
+        foreach ($match in @([regex]::Matches($Content, $pattern))) {
+            if ($null -eq $match -or -not $match.Success -or $match.Groups.Count -lt 2) {
+                continue
+            }
+
+            $token = [string]$match.Groups[1].Value.Trim().ToLowerInvariant()
+            if ([string]::IsNullOrWhiteSpace([string]$token) -or (Test-AppStateAuditAllowedProfileToken -Token $token)) {
+                continue
+            }
+
+            [void]$tokens.Add($token)
+        }
+    }
+
+    return @($tokens | Sort-Object)
+}
+
 function Get-AppStateAuditZipPaths {
     param([string]$RepositoryRoot)
 
@@ -96,25 +175,71 @@ function Get-AppStateAuditReport {
         }
 
         $foreignTargets = New-Object 'System.Collections.Generic.List[string]'
+        $foreignSourceUsers = New-Object 'System.Collections.Generic.List[string]'
+        $foreignEmbeddedUsers = New-Object 'System.Collections.Generic.List[string]'
         foreach ($collectionName in @('profileDirectories', 'profileFiles', 'registryImports')) {
             foreach ($entry in @($manifest.$collectionName)) {
-                if ($null -eq $entry -or $entry.PSObject.Properties.Match('targetProfiles').Count -lt 1) {
+                if ($null -eq $entry) {
                     continue
                 }
 
-                foreach ($targetProfile in @($entry.targetProfiles)) {
-                    $normalized = if ($null -eq $targetProfile) { '' } else { [string]$targetProfile }
-                    if ([string]::IsNullOrWhiteSpace([string]$normalized)) {
-                        continue
-                    }
-                    $normalized = $normalized.Trim().ToLowerInvariant()
-                    if ($normalized -in @('manager', 'assistant')) {
-                        continue
-                    }
-                    if ($foreignTargets -notcontains $normalized) {
-                        $foreignTargets.Add($normalized) | Out-Null
+                $scope = ''
+                if ($entry.PSObject.Properties.Match('scope').Count -gt 0) {
+                    $scope = [string]$entry.scope
+                }
+
+                $sourceToken = Get-AppStateAuditSourceToken -SourcePath ([string]$entry.sourcePath) -CollectionName $collectionName -Scope $scope
+                if (-not (Test-AppStateAuditAllowedProfileToken -Token $sourceToken)) {
+                    if ($foreignSourceUsers -notcontains $sourceToken) {
+                        $foreignSourceUsers.Add($sourceToken) | Out-Null
                     }
                 }
+
+                if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
+                    foreach ($targetProfile in @($entry.targetProfiles)) {
+                        $normalized = if ($null -eq $targetProfile) { '' } else { [string]$targetProfile }
+                        if ([string]::IsNullOrWhiteSpace([string]$normalized)) {
+                            continue
+                        }
+                        $normalized = $normalized.Trim().ToLowerInvariant()
+                        if (Test-AppStateAuditAllowedProfileToken -Token $normalized) {
+                            continue
+                        }
+                        if ($foreignTargets -notcontains $normalized) {
+                            $foreignTargets.Add($normalized) | Out-Null
+                        }
+                    }
+                }
+            }
+        }
+
+        foreach ($registryEntry in @(
+            $archive.Entries |
+                Where-Object { ([string]$_.FullName -match '^payload/registry/user/.+\.reg$') -or ([string]$_.FullName -match '^payload\\registry\\user\\.+\.reg$') }
+        )) {
+            $reader = New-Object System.IO.StreamReader($registryEntry.Open())
+            try {
+                $registryText = [string]$reader.ReadToEnd()
+            }
+            finally {
+                $reader.Dispose()
+            }
+
+            foreach ($embeddedToken in @(Get-AppStateAuditEmbeddedUserTokensFromRegistryText -Content $registryText)) {
+                if ($foreignEmbeddedUsers -notcontains $embeddedToken) {
+                    $foreignEmbeddedUsers.Add($embeddedToken) | Out-Null
+                }
+            }
+        }
+
+        $foreignUsers = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($token in @($foreignTargets) + @($foreignSourceUsers) + @($foreignEmbeddedUsers)) {
+            $normalizedToken = if ($null -eq $token) { '' } else { [string]$token.Trim().ToLowerInvariant() }
+            if ([string]::IsNullOrWhiteSpace([string]$normalizedToken)) {
+                continue
+            }
+            if ($foreignUsers -notcontains $normalizedToken) {
+                $foreignUsers.Add($normalizedToken) | Out-Null
             }
         }
 
@@ -136,6 +261,9 @@ function Get-AppStateAuditReport {
             ZipPath = [string]$ZipPath
             SizeMb = [math]::Round(((Get-Item -LiteralPath $ZipPath).Length / 1MB), 2)
             ForeignTargets = @($foreignTargets.ToArray())
+            ForeignSourceUsers = @($foreignSourceUsers.ToArray())
+            ForeignEmbeddedUsers = @($foreignEmbeddedUsers.ToArray())
+            ForeignUsers = @($foreignUsers.ToArray())
             LargestEntries = @($largestEntries)
         }
     }
@@ -162,6 +290,12 @@ foreach ($report in @($reports)) {
     Write-Host ("[{0}] {1} => {2} MB" -f [string]$report.Stage, [string]$report.TaskName, [string]$report.SizeMb)
     if (@($report.ForeignTargets).Count -gt 0) {
         Write-Host ("  foreign-targets: {0}" -f ((@($report.ForeignTargets) | Sort-Object) -join ', '))
+    }
+    if (@($report.ForeignSourceUsers).Count -gt 0) {
+        Write-Host ("  foreign-source-users: {0}" -f ((@($report.ForeignSourceUsers) | Sort-Object) -join ', '))
+    }
+    if (@($report.ForeignEmbeddedUsers).Count -gt 0) {
+        Write-Host ("  foreign-embedded-users: {0}" -f ((@($report.ForeignEmbeddedUsers) | Sort-Object) -join ', '))
     }
 
     if ([double]$report.SizeMb -ge [double]$MinimumReportSizeMb) {

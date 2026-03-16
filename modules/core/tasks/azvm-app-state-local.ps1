@@ -1372,6 +1372,50 @@ function Test-AzVmTaskPortableProfilePayload {
     return [bool]$appStateSpec.portableProfilePayload
 }
 
+function Test-AzVmTaskCanonicalManagerProfilePayload {
+    param([psobject]$TaskBlock)
+
+    if (Test-AzVmTaskPortableProfilePayload -TaskBlock $TaskBlock) {
+        return $true
+    }
+
+    if ($null -eq $TaskBlock -or $TaskBlock.PSObject.Properties.Match('AppStateSpec').Count -lt 1 -or $null -eq $TaskBlock.AppStateSpec) {
+        return $false
+    }
+
+    $appStateSpec = $TaskBlock.AppStateSpec
+    $profileRules = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($collectionName in @('profileDirectories', 'profileFiles', 'userRegistryKeys')) {
+        if ($appStateSpec.PSObject.Properties.Match($collectionName).Count -lt 1) {
+            continue
+        }
+
+        foreach ($rule in @($appStateSpec.$collectionName)) {
+            if ($null -ne $rule) {
+                $profileRules.Add($rule) | Out-Null
+            }
+        }
+    }
+
+    $rules = @($profileRules.ToArray())
+    if (@($rules).Count -lt 1) {
+        return $false
+    }
+
+    foreach ($rule in @($rules)) {
+        $targetProfiles = @(
+            Get-AzVmTaskAppStateRuleValue -Rule $rule -PropertyName 'targetProfiles' |
+                ForEach-Object { [string]$_ } |
+                Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+        )
+        if (@($targetProfiles).Count -gt 0) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Get-AzVmTaskPortableProfilePayloadCanonicalProfileTarget {
     return [pscustomobject]@{
         Label = 'manager'
@@ -1664,9 +1708,9 @@ function Save-AzVmTaskAppStateFromLocalMachine {
             }
         }
 
-        if (Test-AzVmTaskPortableProfilePayload -TaskBlock $TaskBlock) {
+        if ((@($profileTargets).Count -eq 1) -and (Test-AzVmTaskCanonicalManagerProfilePayload -TaskBlock $TaskBlock)) {
             Convert-AzVmTaskAppStateZipToPortableProfilePayload -ZipPath $zipPath -TaskName $taskName -ProfileTargets @($profileTargets)
-            Write-Host ("App-state portable profile payload normalized: {0}" -f [string]$taskName)
+            Write-Host ("App-state canonical manager payload normalized: {0}" -f [string]$taskName)
         }
 
         return [pscustomobject]@{

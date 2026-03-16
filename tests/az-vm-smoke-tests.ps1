@@ -5334,6 +5334,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $sshAssetsText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\assets.ps1') -Raw)
     $sshProcessText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\process.ps1') -Raw)
     $auditScriptPath = Join-Path $RepoRoot 'tools\scripts\app-state-audit.ps1'
+    $normalizeScriptPath = Join-Path $RepoRoot 'tools\scripts\normalize-app-state-zips.ps1'
     $auditScriptText = [string](Get-Content -LiteralPath $auditScriptPath -Raw)
 
     Assert-True -Condition (-not ($guestHelperText -like '*C:\Users\Default*')) -Message 'Windows app-state guest helpers must not target the default profile.'
@@ -5380,14 +5381,18 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition (-not ($jawsTaskJsonText -like '*GPUCache*')) -Message 'JAWS task-local app-state must now allow the full Settings subtree.'
     Assert-True -Condition (-not ($jawsTaskJsonText -like '*.log*')) -Message 'JAWS task-local app-state must not keep the old log-file exclusions.'
     Assert-True -Condition ($localAppStateText -like '*Convert-AzVmTaskAppStateZipToPortableProfilePayload*') -Message 'Local app-state save must support portable profile payload normalization for task-owned zips.'
+    Assert-True -Condition ($localAppStateText -like '*Test-AzVmTaskCanonicalManagerProfilePayload*') -Message 'Local app-state save must recognize profile-generic task payloads that should normalize to manager.'
     Assert-True -Condition (Test-Path -LiteralPath $auditScriptPath) -Message 'The manual app-state audit helper must exist under tools/scripts.'
     Assert-True -Condition ($auditScriptText -like '*foreign-targets*') -Message 'The manual app-state audit helper must report foreign profile targets when present.'
+    Assert-True -Condition ($auditScriptText -like '*foreign-source-users*') -Message 'The manual app-state audit helper must report foreign source profile tokens when present.'
+    Assert-True -Condition (Test-Path -LiteralPath $normalizeScriptPath) -Message 'The repo must ship a dedicated app-state normalization helper under tools/scripts.'
+    Assert-True -Condition ((Get-Content -LiteralPath $normalizeScriptPath -Raw) -like '*foreign-users:*') -Message 'The app-state normalization helper must summarize normalized foreign profile tokens.'
 }
 
 Invoke-Test -Name "Portable app-state normalization rewrites local user markers to manager" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-portable-payload-smoke-' + [Guid]::NewGuid().ToString('N'))
-    $sourceSettingsRoot = Join-Path $tempRoot 'payload\profile-directories\hasan\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings'
-    $sourceRegistryRoot = Join-Path $tempRoot 'payload\registry\user\hasan'
+    $sourceSettingsRoot = Join-Path $tempRoot 'payload\profile-directories\sourceuser\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings'
+    $sourceRegistryRoot = Join-Path $tempRoot 'payload\registry\user\sourceuser'
     $manifestPath = Join-Path $tempRoot 'app-state.manifest.json'
     $zipPath = Join-Path $tempRoot 'portable-test.zip'
     $expandedRoot = Join-Path $tempRoot 'expanded'
@@ -5400,7 +5405,7 @@ Invoke-Test -Name "Portable app-state normalization rewrites local user markers 
 Windows Registry Editor Version 5.00
 
 [HKEY_CURRENT_USER\Software\Freedom Scientific\JAWS\2025\Settings\Scripts]
-"File1"="C:\\Users\\hasan\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM"
+"File1"="C:\\Users\\sourceuser\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM"
 "@ -Encoding Unicode
 
         $manifest = [ordered]@{
@@ -5410,18 +5415,18 @@ Windows Registry Editor Version 5.00
             machineFiles = @()
             profileDirectories = @(
                 [ordered]@{
-                    sourcePath = 'payload\profile-directories\hasan\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings'
+                    sourcePath = 'payload\profile-directories\sourceuser\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings'
                     relativeDestinationPath = 'AppData\Roaming\Freedom Scientific\JAWS\2025\Settings'
-                    targetProfiles = @('hasan')
+                    targetProfiles = @('sourceuser')
                 }
             )
             profileFiles = @()
             registryImports = @(
                 [ordered]@{
-                    sourcePath = 'payload\registry\user\hasan\HKCU_Software_Freedom_Scientific.reg'
+                    sourcePath = 'payload\registry\user\sourceuser\HKCU_Software_Freedom_Scientific.reg'
                     scope = 'user'
                     registryPath = 'HKEY_CURRENT_USER\Software\Freedom Scientific'
-                    targetProfiles = @('hasan')
+                    targetProfiles = @('sourceuser')
                 }
             )
         }
@@ -5434,9 +5439,9 @@ Windows Registry Editor Version 5.00
 
         Convert-AzVmTaskAppStateZipToPortableProfilePayload -ZipPath $zipPath -TaskName 'portable-test' -ProfileTargets @(
             [pscustomobject]@{
-                Label = 'hasan'
-                UserName = 'hasan'
-                ProfilePath = 'C:\Users\hasan'
+                Label = 'sourceuser'
+                UserName = 'sourceuser'
+                ProfilePath = 'C:\Users\sourceuser'
             }
         )
 
@@ -5455,10 +5460,151 @@ Windows Registry Editor Version 5.00
         Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRoot 'payload\profile-directories\manager\AppData_Roaming_Freedom_Scientific_JAWS_2025_Settings') -PathType Container) -Message 'Portable payload normalization must rename the profile payload folder to manager.'
         Assert-True -Condition (Test-Path -LiteralPath (Join-Path $expandedRoot 'payload\registry\user\manager\HKCU_Software_Freedom_Scientific.reg') -PathType Leaf) -Message 'Portable payload normalization must rename the user registry payload folder to manager.'
         Assert-True -Condition ($normalizedRegistryText -like '*C:\\Users\\manager\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM*') -Message 'Portable payload normalization must rewrite user-profile registry paths to manager.'
-        Assert-True -Condition (-not ($normalizedRegistryText -like '*C:\\Users\\hasan\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM*')) -Message 'Portable payload normalization must remove the original local user path from registry exports.'
+        Assert-True -Condition (-not ($normalizedRegistryText -like '*C:\\Users\\sourceuser\\AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings\\enu\\default.JKM*')) -Message 'Portable payload normalization must remove the original local user path from registry exports.'
     }
     finally {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "App-state normalization tool merges foreign profile payloads into manager" -Action {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $tempRepo = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-normalize-tool-' + [Guid]::NewGuid().ToString('N'))
+    $taskRoot = Join-Path $tempRepo 'windows\update\117-test'
+    $pluginRoot = Join-Path $taskRoot 'app-state'
+    $scratchRoot = Join-Path $tempRepo 'scratch'
+    $payloadRoot = Join-Path $scratchRoot 'payload'
+    $zipPath = Join-Path $pluginRoot 'app-state.zip'
+    $normalizeScriptPath = Join-Path $RepoRoot 'tools\scripts\normalize-app-state-zips.ps1'
+
+    try {
+        New-Item -Path $pluginRoot -ItemType Directory -Force | Out-Null
+        New-Item -Path (Join-Path $payloadRoot 'profile-directories\sourceuser\Settings') -ItemType Directory -Force | Out-Null
+        New-Item -Path (Join-Path $payloadRoot 'profile-directories\backupuser\Settings') -ItemType Directory -Force | Out-Null
+        New-Item -Path (Join-Path $payloadRoot 'registry\user\sourceuser') -ItemType Directory -Force | Out-Null
+        New-Item -Path (Join-Path $payloadRoot 'registry\user\backupuser') -ItemType Directory -Force | Out-Null
+
+        $sourceUserSharedPath = Join-Path $payloadRoot 'profile-directories\sourceuser\Settings\shared.json'
+        $backupUserSharedPath = Join-Path $payloadRoot 'profile-directories\backupuser\Settings\shared.json'
+        $sourceUserSizePath = Join-Path $payloadRoot 'profile-directories\sourceuser\Settings\size-first.json'
+        $backupUserSizePath = Join-Path $payloadRoot 'profile-directories\backupuser\Settings\size-first.json'
+        $sourceUserOnlyPath = Join-Path $payloadRoot 'profile-directories\sourceuser\Settings\only-sourceuser.json'
+        $backupUserOnlyPath = Join-Path $payloadRoot 'profile-directories\backupuser\Settings\only-backupuser.json'
+        $sourceUserRegistryPath = Join-Path $payloadRoot 'registry\user\sourceuser\HKCU_Software_TestApp.reg'
+        $backupUserRegistryPath = Join-Path $payloadRoot 'registry\user\backupuser\HKCU_Software_TestApp.reg'
+
+        Set-Content -LiteralPath $sourceUserSharedPath -Value '{"winner":"newer"}' -Encoding UTF8
+        Set-Content -LiteralPath $backupUserSharedPath -Value '{"winner":"older-but-bigger-than-shared"}' -Encoding UTF8
+        Set-Content -LiteralPath $sourceUserSizePath -Value '{"winner":"smaller"}' -Encoding UTF8
+        Set-Content -LiteralPath $backupUserSizePath -Value '{"winner":"larger-loses-on-time?no-size-wins"}' -Encoding UTF8
+        Set-Content -LiteralPath $sourceUserOnlyPath -Value '{"owner":"sourceuser"}' -Encoding UTF8
+        Set-Content -LiteralPath $backupUserOnlyPath -Value '{"owner":"backupuser"}' -Encoding UTF8
+        Set-Content -LiteralPath $sourceUserRegistryPath -Value @"
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\TestApp]
+"PrimaryProfile"="C:\\Users\\sourceuser\\AppData\\Roaming\\TestApp"
+"@ -Encoding Unicode
+        Set-Content -LiteralPath $backupUserRegistryPath -Value @"
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\TestApp]
+"PrimaryProfile"="C:\\Users\\backupuser\\AppData\\Roaming\\TestApp"
+"@ -Encoding Unicode
+
+        $newerTime = [datetime]::SpecifyKind([datetime]'2026-03-16T10:00:00', [System.DateTimeKind]::Utc)
+        $olderTime = [datetime]::SpecifyKind([datetime]'2026-03-16T09:00:00', [System.DateTimeKind]::Utc)
+        $tieTime = [datetime]::SpecifyKind([datetime]'2026-03-16T08:00:00', [System.DateTimeKind]::Utc)
+        (Get-Item -LiteralPath $sourceUserSharedPath).LastWriteTimeUtc = $newerTime
+        (Get-Item -LiteralPath $backupUserSharedPath).LastWriteTimeUtc = $olderTime
+        (Get-Item -LiteralPath $sourceUserSizePath).LastWriteTimeUtc = $tieTime
+        (Get-Item -LiteralPath $backupUserSizePath).LastWriteTimeUtc = $tieTime
+        (Get-Item -LiteralPath $sourceUserRegistryPath).LastWriteTimeUtc = $newerTime
+        (Get-Item -LiteralPath $backupUserRegistryPath).LastWriteTimeUtc = $olderTime
+
+        $manifest = [ordered]@{
+            version = 3
+            taskName = '117-test'
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @(
+                [ordered]@{
+                    sourcePath = 'payload\profile-directories\sourceuser\Settings'
+                    relativeDestinationPath = 'AppData\Local\Packages\MSTeams_8wekyb3d8bbwe\Settings'
+                    targetProfiles = @('sourceuser')
+                },
+                [ordered]@{
+                    sourcePath = 'payload\profile-directories\backupuser\Settings'
+                    relativeDestinationPath = 'AppData\Local\Packages\MSTeams_8wekyb3d8bbwe\Settings'
+                    targetProfiles = @('backupuser')
+                }
+            )
+            profileFiles = @()
+            registryImports = @(
+                [ordered]@{
+                    sourcePath = 'payload\registry\user\sourceuser\HKCU_Software_TestApp.reg'
+                    scope = 'user'
+                    registryPath = 'HKEY_CURRENT_USER\Software\TestApp'
+                    targetProfiles = @('sourceuser')
+                },
+                [ordered]@{
+                    sourcePath = 'payload\registry\user\backupuser\HKCU_Software_TestApp.reg'
+                    scope = 'user'
+                    registryPath = 'HKEY_CURRENT_USER\Software\TestApp'
+                    targetProfiles = @('backupuser')
+                }
+            )
+        }
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value ($manifest | ConvertTo-Json -Depth 12) -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $taskRoot 'task.json') -Value (([ordered]@{
+            appState = [ordered]@{
+                machineDirectories = @()
+                machineFiles = @()
+                profileDirectories = @(@{ path = 'AppData\Local\Packages\MSTeams_8wekyb3d8bbwe\Settings'; targetProfiles = @() })
+                profileFiles = @()
+                machineRegistryKeys = @()
+                userRegistryKeys = @(@{ path = 'HKCU\Software\TestApp'; targetProfiles = @() })
+            }
+        }) | ConvertTo-Json -Depth 12) -Encoding UTF8
+
+        Compress-Archive -LiteralPath @(
+            (Join-Path $scratchRoot 'app-state.manifest.json'),
+            $payloadRoot
+        ) -DestinationPath $zipPath -Force
+
+        $reports = & $normalizeScriptPath -RepoRoot $tempRepo -PassThru
+        $normalizedReport = @($reports | Where-Object { [string]$_.TaskName -eq '117-test' } | Select-Object -First 1)[0]
+        Assert-True -Condition ($null -ne $normalizedReport) -Message 'The normalization tool must report the processed task.'
+        Assert-True -Condition ([string]$normalizedReport.Status -eq 'normalized') -Message 'The normalization tool must mark foreign profile payloads as normalized.'
+        Assert-True -Condition (((@($normalizedReport.ForeignUsers) | Sort-Object) -join ',') -eq 'backupuser,sourceuser') -Message 'The normalization tool must report the foreign profile tokens it rewrote.'
+
+        $expandedRoot = Join-Path $tempRepo 'expanded'
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $expandedRoot -Force
+        $normalizedManifest = ConvertFrom-JsonCompat -InputObject ([string](Get-Content -LiteralPath (Join-Path $expandedRoot 'app-state.manifest.json') -Raw))
+        $profileEntry = @($normalizedManifest.profileDirectories)[0]
+        $registryEntry = @($normalizedManifest.registryImports)[0]
+        $managerSettingsRoot = Join-Path $expandedRoot 'payload\profile-directories\manager\Settings'
+        $managerRegistryPath = Join-Path $expandedRoot 'payload\registry\user\manager\HKCU_Software_TestApp.reg'
+        $normalizedRegistryText = [string](Get-Content -LiteralPath $managerRegistryPath -Raw)
+
+        Assert-True -Condition (@($normalizedManifest.profileDirectories).Count -eq 1) -Message 'The normalization tool must collapse duplicate foreign profile directories into one manager payload.'
+        Assert-True -Condition (@($normalizedManifest.registryImports).Count -eq 1) -Message 'The normalization tool must collapse duplicate foreign user-registry payloads into one manager payload.'
+        Assert-True -Condition ([string]$profileEntry.sourcePath -eq 'payload\profile-directories\manager\Settings') -Message 'The normalization tool must rewrite profile directory source paths to manager.'
+        Assert-True -Condition (@($profileEntry.targetProfiles).Count -eq 0) -Message 'The normalization tool must clear foreign profile targetProfiles after normalization.'
+        Assert-True -Condition ([string]$registryEntry.sourcePath -eq 'payload\registry\user\manager\HKCU_Software_TestApp.reg') -Message 'The normalization tool must rewrite registry source paths to manager.'
+        Assert-True -Condition (@($registryEntry.targetProfiles).Count -eq 0) -Message 'The normalization tool must clear foreign registry targetProfiles after normalization.'
+        Assert-True -Condition ((Get-Content -LiteralPath (Join-Path $managerSettingsRoot 'shared.json') -Raw) -match 'newer') -Message 'The normalization tool must prefer the newer conflicting profile file.'
+        Assert-True -Condition ((Get-Content -LiteralPath (Join-Path $managerSettingsRoot 'size-first.json') -Raw) -match 'larger-loses-on-time\?no-size-wins') -Message 'The normalization tool must prefer the larger conflicting profile file when timestamps tie.'
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path $managerSettingsRoot 'only-sourceuser.json') -PathType Leaf) -Message 'The normalization tool must keep non-conflicting files from the first foreign profile.'
+        Assert-True -Condition (Test-Path -LiteralPath (Join-Path $managerSettingsRoot 'only-backupuser.json') -PathType Leaf) -Message 'The normalization tool must keep non-conflicting files from the second foreign profile.'
+        Assert-True -Condition ($normalizedRegistryText -like '*C:\\Users\\manager\\AppData\\Roaming\\TestApp*') -Message 'The normalization tool must rewrite embedded registry profile paths to manager.'
+        Assert-True -Condition (-not ($normalizedRegistryText -like '*sourceuser*')) -Message 'The normalization tool must remove the first foreign token from registry payloads.'
+        Assert-True -Condition (-not ($normalizedRegistryText -like '*backupuser*')) -Message 'The normalization tool must remove the second foreign token from registry payloads.'
+        Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $expandedRoot 'payload\profile-directories\sourceuser'))) -Message 'The normalization tool must remove the first superseded foreign profile directory.'
+        Assert-True -Condition (-not (Test-Path -LiteralPath (Join-Path $expandedRoot 'payload\profile-directories\backupuser'))) -Message 'The normalization tool must remove the second superseded foreign profile directory.'
+    }
+    finally {
+        Remove-Item -LiteralPath $tempRepo -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -5723,6 +5869,12 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
         $zipPath = Get-AzVmTaskAppStateZipPath -TaskBlock $taskBlock
         Assert-True -Condition ([string]$saveResult.Status -eq 'saved') -Message 'Local app-state save must complete for matching temp profile targets.'
         Assert-True -Condition (Test-Path -LiteralPath $zipPath) -Message 'Local app-state save must write the task-local app-state zip.'
+        $savedManifestRoot = Join-Path $tempRoot 'saved-manifest'
+        Expand-Archive -LiteralPath $zipPath -DestinationPath $savedManifestRoot -Force
+        $savedManifest = ConvertFrom-JsonCompat -InputObject ([string](Get-Content -LiteralPath (Join-Path $savedManifestRoot 'app-state.manifest.json') -Raw))
+        $savedProfileFileEntry = @($savedManifest.profileFiles)[0]
+        Assert-True -Condition ([string]$savedProfileFileEntry.sourcePath -eq 'payload\profile-files\manager\settings.json') -Message 'Local app-state save must normalize profile-generic payload source paths to manager.'
+        Assert-True -Condition (@($savedProfileFileEntry.targetProfiles).Count -eq 0) -Message 'Local app-state save must clear foreign targetProfiles after manager normalization.'
 
         Set-Content -LiteralPath (Join-Path $operatorProfile 'AppData\Roaming\TestApp\settings.json') -Value '{"theme":"drift"}' -Encoding UTF8
 
@@ -5758,6 +5910,7 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
         else {
             Remove-Item -Path Function:Invoke-AzVmTaskAppStateReplay -ErrorAction SilentlyContinue
         }
+        Remove-Item -LiteralPath (Join-Path $tempRoot 'saved-manifest') -Recurse -Force -ErrorAction SilentlyContinue
         Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
@@ -5868,6 +6021,22 @@ Invoke-Test -Name "Local-machine app-state restore rolls back when verification 
 Invoke-Test -Name "Store install state and shortcut launcher helper modules exist" -Action {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1')) -Message 'Shared Store install state helper must exist.'
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1')) -Message 'Shared shortcut launcher helper must exist.'
+}
+
+Invoke-Test -Name "Shortcut launcher threshold uses combined target and arguments length" -Action {
+    Import-Module (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1') -Force -DisableNameChecking
+    $shortcutTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10002-create-shortcuts-public-desktop'
+    $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
+    $targetPath = 'C:\Program Files\Test App\launcher.exe'
+    $argumentsAtLimit = 'a' * (259 - $targetPath.Length - 1)
+    $argumentsAboveLimit = 'a' * (260 - $targetPath.Length - 1)
+
+    Assert-True -Condition ((Get-AzVmShortcutManagedInvocationLength -TargetPath $targetPath -Arguments $argumentsAtLimit) -eq 259) -Message 'Shortcut launcher helper must measure combined target and arguments length at the direct-write boundary.'
+    Assert-True -Condition (-not (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $targetPath -Arguments $argumentsAtLimit -Threshold 259)) -Message 'Shortcut launcher helper must keep direct shortcut targets when the combined invocation length is 259.'
+    Assert-True -Condition ((Get-AzVmShortcutManagedInvocationLength -TargetPath $targetPath -Arguments $argumentsAboveLimit) -eq 260) -Message 'Shortcut launcher helper must measure combined target and arguments length past the direct-write boundary.'
+    Assert-True -Condition (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $targetPath -Arguments $argumentsAboveLimit -Threshold 259) -Message 'Shortcut launcher helper must require a managed launcher when the combined invocation length exceeds 259.'
+    Assert-True -Condition ($shortcutTaskScript -like '*$managedShortcutInvocationThreshold = 259*') -Message 'Public desktop shortcut task must keep the managed-launcher threshold as an explicit 259-character contract.'
+    Assert-True -Condition ($shortcutTaskScript -like '*Test-AzVmShortcutNeedsManagedLauncher -TargetPath $effectiveTargetPath -Arguments $effectiveArguments -Threshold $managedShortcutInvocationThreshold*') -Message 'Public desktop shortcut task must apply the 259-character rule to the combined target and arguments invocation.'
 }
 
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {

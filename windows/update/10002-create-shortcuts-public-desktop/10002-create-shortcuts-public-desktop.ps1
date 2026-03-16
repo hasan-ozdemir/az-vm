@@ -24,6 +24,9 @@ $unresolvedEmployeeEmailAddressToken = ('__' + 'SELECTED_EMPLOYEE_EMAIL_ADDRESS'
 $unresolvedEmployeeFullNameToken = ('__' + 'SELECTED_EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
 $launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
+# Use the direct .lnk target+arguments form until the combined invocation exceeds
+# the practical shortcut-length ceiling; only then emit a managed launcher script.
+$managedShortcutInvocationThreshold = 259
 
 if (Test-Path -LiteralPath $storeHelperPath) {
     Import-Module $storeHelperPath -Force -DisableNameChecking
@@ -930,7 +933,7 @@ function ConvertTo-ManagedShortcutLauncherSpec {
     $effectiveArguments = Get-ShortcutEffectiveArguments -Spec $Spec
     $effectiveWorkingDirectory = Get-ShortcutEffectiveWorkingDirectory -Spec $Spec
 
-    if (-not (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $effectiveTargetPath -Arguments $effectiveArguments -Threshold 259)) {
+    if (-not (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $effectiveTargetPath -Arguments $effectiveArguments -Threshold $managedShortcutInvocationThreshold)) {
         return $Spec
     }
 

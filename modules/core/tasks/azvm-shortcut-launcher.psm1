@@ -66,6 +66,20 @@ function Get-AzVmShortcutEffectiveCommandText {
     return ('{0} {1}' -f [string]$targetText, [string]$argumentsText).Trim()
 }
 
+function Get-AzVmShortcutManagedInvocationLength {
+    param(
+        [string]$TargetPath,
+        [string]$Arguments = ''
+    )
+
+    $effectiveCommandText = Get-AzVmShortcutEffectiveCommandText -TargetPath $TargetPath -Arguments $Arguments
+    if ([string]::IsNullOrWhiteSpace([string]$effectiveCommandText)) {
+        return 0
+    }
+
+    return [int]$effectiveCommandText.Length
+}
+
 function Test-AzVmShortcutNeedsManagedLauncher {
     param(
         [string]$TargetPath,
@@ -77,12 +91,7 @@ function Test-AzVmShortcutNeedsManagedLauncher {
         $Threshold = 1
     }
 
-    $effectiveCommandText = Get-AzVmShortcutEffectiveCommandText -TargetPath $TargetPath -Arguments $Arguments
-    if ([string]::IsNullOrWhiteSpace([string]$effectiveCommandText)) {
-        return $false
-    }
-
-    return ($effectiveCommandText.Length -gt $Threshold)
+    return ((Get-AzVmShortcutManagedInvocationLength -TargetPath $TargetPath -Arguments $Arguments) -gt $Threshold)
 }
 
 function Get-AzVmShortcutLauncherInvocationArguments {
@@ -293,4 +302,4 @@ function Get-AzVmShortcutResolvedInvocation {
     }
 }
 
-Export-ModuleMember -Function ConvertTo-AzVmShortcutLauncherBase64, ConvertFrom-AzVmShortcutLauncherBase64, Get-AzVmShortcutLauncherRoot, Get-AzVmShortcutLauncherFilePath, Get-AzVmShortcutEffectiveCommandText, Test-AzVmShortcutNeedsManagedLauncher, Get-AzVmShortcutLauncherInvocationArguments, Write-AzVmShortcutLauncherFile, Test-AzVmShortcutLauncherFile, Get-AzVmShortcutLauncherMetadata, Get-AzVmShortcutLauncherPathFromInvocation, Get-AzVmShortcutResolvedInvocation
+Export-ModuleMember -Function ConvertTo-AzVmShortcutLauncherBase64, ConvertFrom-AzVmShortcutLauncherBase64, Get-AzVmShortcutLauncherRoot, Get-AzVmShortcutLauncherFilePath, Get-AzVmShortcutEffectiveCommandText, Get-AzVmShortcutManagedInvocationLength, Test-AzVmShortcutNeedsManagedLauncher, Get-AzVmShortcutLauncherInvocationArguments, Write-AzVmShortcutLauncherFile, Test-AzVmShortcutLauncherFile, Get-AzVmShortcutLauncherMetadata, Get-AzVmShortcutLauncherPathFromInvocation, Get-AzVmShortcutResolvedInvocation

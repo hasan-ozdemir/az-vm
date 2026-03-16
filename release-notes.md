@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.328 - 2026-03-16
+
+### Summary
+This release hardens the task-local app-state payload contract and clarifies the Windows Public Desktop shortcut launcher boundary. The repo now ships a dedicated normalization helper that rewrites foreign local-source user tokens in task-local `app-state.zip` payloads to the canonical managed token `manager`, merges duplicate foreign profile trees deterministically, and rewrites embedded user-profile registry paths to `manager`. The manual app-state audit now reports foreign source-profile and embedded registry-user drift directly, and the Public Desktop shortcut contract now makes the direct-vs-launcher threshold explicit: keep the direct `.lnk` invocation up to combined `TargetPath + Arguments` length `259`, and only fall back to a managed launcher above that.
+
+### Highlights
+- Added `tools/scripts/normalize-app-state-zips.ps1` so foreign local-source profile markers are normalized to `manager` across task-local payload folders, manifest source paths, and embedded registry path literals.
+- Fixed the remaining shipped task-local payloads that still carried foreign user residue, including `10005-copy-settings-user`, `116-install-codex-app`, `117-install-teams-system`, `120-install-whatsapp-system`, and `125-install-be-my-eyes`, then re-audited the payload set to confirm the repo no longer reports foreign user tokens.
+- Extended `tools/scripts/app-state-audit.ps1` to report foreign source users and embedded registry-user literals in addition to foreign manifest targets.
+- Made the Public Desktop shortcut launcher rule explicit and testable: use the direct `.lnk` target plus arguments until the combined invocation exceeds `259`, then generate the managed launcher `.cmd` instead.
+
 ## Release 2026.3.16.327 - 2026-03-16
 
 ### Summary
@@ -9,9 +20,9 @@ This release finishes the JAWS task-state handoff by making `131-install-jaws-sc
 
 ### Highlights
 - Kept JAWS auto-start isolated in `10001-configure-apps-startup` but moved all other builtin JAWS settings replay responsibility onto `131-install-jaws-screen-reader`, which now owns the full task-local settings and registry payload.
-- Normalized portable local JAWS app-state saves so the task-local zip rewrites profile payload folders, manifest source paths, and HKCU registry path markers to `manager`, eliminating source-machine user tokens such as `hasan` from the reusable payload.
+- Normalized portable local JAWS app-state saves so the task-local zip rewrites profile payload folders, manifest source paths, and HKCU registry path markers to `manager`, eliminating source-machine user tokens from the reusable payload.
 - Extended `10006-capture-snapshot-health` with JAWS settings and registry readback for `manager`, `assistant`, `HKLM\Software\Freedom Scientific`, and `HKLM\Software\WOW6432Node\Freedom Scientific`.
-- Revalidated the change non-live with the smoke and PowerShell compatibility gates, regenerated the live task-local JAWS payload from the local machine, reran `task --run-vm-update 131` in isolation on `bizyum`, and confirmed the expected settings and registry surface on the target VM with isolated readback commands.
+- Revalidated the change non-live with the smoke and PowerShell compatibility gates, regenerated the live task-local JAWS payload from the local machine, reran `task --run-vm-update 131` in isolation on the active managed VM, and confirmed the expected settings and registry surface on the target VM with isolated readback commands.
 
 ## Release 2026.3.16.326 - 2026-03-16
 

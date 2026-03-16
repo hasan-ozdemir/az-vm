@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.328] - 2026-03-16
+
+### Changed
+- Added a dedicated `tools/scripts/normalize-app-state-zips.ps1` maintenance helper that scans every task-local `app-state.zip`, rewrites foreign local-source profile tokens to the canonical `manager` payload token, merges duplicate profile trees by `newer timestamp -> larger size -> lexical token`, and rewrites embedded `C:\Users\<name>` registry literals to `manager`.
+- Extended the manual `tools/scripts/app-state-audit.ps1` report so it now surfaces foreign source-profile tokens and embedded foreign registry-user literals, not just foreign manifest `targetProfiles`.
+- Made the Windows Public Desktop shortcut launcher threshold explicit in the shipped contract: the task now keeps direct `.lnk` target plus arguments when the combined invocation length is `<= 259`, and only emits a managed launcher `.cmd` when the combined invocation length exceeds that boundary.
+
+### Fixed
+- Fixed profile-generic local app-state saves so they normalize reusable payload source paths to `manager` even when the owning task uses the generic empty-`targetProfiles` contract rather than the older explicit `portableProfilePayload` flag.
+- Fixed the remaining task-local app-state payloads that still carried foreign user markers or embedded local user paths, including `10005-copy-settings-user`, `116-install-codex-app`, `117-install-teams-system`, `120-install-whatsapp-system`, and `125-install-be-my-eyes`.
+- Fixed the shortcut launcher helper export surface so the combined invocation-length helper is now available to smoke coverage and future runtime callers.
+
+### Tests
+- Revalidated the app-state normalization tool, the local-save canonical-manager path, and the Public Desktop launcher threshold non-live with `tests\az-vm-smoke-tests.ps1`.
+- Re-audited the live task-local payload set with `tools\scripts\app-state-audit.ps1` after normalization and confirmed that no remaining `app-state.zip` payload reports foreign source users or embedded foreign registry-user literals.
+
 ## [2026.3.16.327] - 2026-03-16
 
 ### Changed
@@ -11,13 +27,13 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 - Extended the Windows health snapshot readback with explicit JAWS settings and registry presence checks for both managed profiles plus the HKLM and WOW6432 `Freedom Scientific` trees.
 
 ### Fixed
-- Fixed portable task-local app-state saves so a JAWS payload captured from the local operator machine no longer preserves the source profile token such as `hasan` inside the zip manifest, profile payload folders, or HKCU registry export paths.
+- Fixed portable task-local app-state saves so a JAWS payload captured from the local operator machine no longer preserves the source-machine profile token inside the zip manifest, profile payload folders, or HKCU registry export paths.
 - Fixed the portable payload normalization contract by carrying the `portableProfilePayload` flag through task discovery/runtime materialization and by validating the `manager` canonicalization path with dedicated smoke coverage.
 
 ### Tests
 - Revalidated the portable JAWS payload normalization non-live with `tests\az-vm-smoke-tests.ps1` and `tests\powershell-compatibility-check.ps1`.
 - Regenerated `windows/update/131-install-jaws-screen-reader/app-state/app-state.zip` from the local machine with `task --save-app-state --source=lm --user=.current. --vm-update-task=131 --windows --perf` and verified that the task-local zip now uses `manager` instead of the local source profile token.
-- Revalidated the shipped JAWS replay path live in isolation on `rg-bizyum-ate1-g1 | bizyum` with `task --run-vm-update 131 --windows --perf`, `task --run-vm-update 10006 --windows --perf`, and direct `exec` readbacks that confirmed manager/assistant settings plus HKLM/HKCU `Freedom Scientific` presence on the target VM.
+- Revalidated the shipped JAWS replay path live in isolation on the active managed VM with `task --run-vm-update 131 --windows --perf`, `task --run-vm-update 10006 --windows --perf`, and direct `exec` readbacks that confirmed manager/assistant settings plus HKLM/HKCU `Freedom Scientific` presence on the target VM.
 
 ## [2026.3.16.326] - 2026-03-16
 
