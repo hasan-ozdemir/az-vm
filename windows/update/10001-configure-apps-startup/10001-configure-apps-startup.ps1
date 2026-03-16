@@ -1053,9 +1053,17 @@ function Ensure-AppStartupLocation {
         return
     }
 
+    $enableLocalMachineCompat = $true
+    if ($Spec.PSObject.Properties.Match('EnableLocalMachineCompat').Count -gt 0) {
+        $enableLocalMachineCompat = [bool]$Spec.EnableLocalMachineCompat
+    }
+
     if ([string]::Equals([string]$requestedLocation.Kind, 'Run', [System.StringComparison]::OrdinalIgnoreCase)) {
         Ensure-RunEntry -RunPath ([string]$requestedLocation.RunPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments)
-        if ([string]::Equals([string]$requestedLocation.Scope, 'LocalMachine', [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (
+            [string]::Equals([string]$requestedLocation.Scope, 'LocalMachine', [System.StringComparison]::OrdinalIgnoreCase) -and
+            $enableLocalMachineCompat
+        ) {
             $compatEntryName = Get-CompatStartupEntryName -Name ([string]$Spec.Name)
             Ensure-CompatScheduledTask -TaskName $compatEntryName -ManagerContext $ManagerContext -TargetPath $targetPath -Arguments ([string]$Spec.Arguments)
             Write-Host ("autostart-compat => {0} => ScheduledTask/AtLogOn" -f [string]$Spec.Name)
@@ -1100,6 +1108,10 @@ $windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCand
 $anyDeskExe = Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates @(
     'C:\Program Files\AnyDesk\AnyDesk.exe',
     'C:\Program Files (x86)\AnyDesk\AnyDesk.exe'
+)
+$jawsExe = Resolve-CommandPath -CommandName "jfw.exe" -FallbackCandidates @(
+    'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe',
+    'C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe'
 )
 $codexAppExe = Resolve-AppPackageExecutablePath -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0') -ExecutableName 'Codex.exe'
 $teamsAppId = Resolve-StoreAppId -NameFragment 'teams' -PackageNameHints @('MSTeams', 'MicrosoftTeams', 'teams')
@@ -1207,6 +1219,36 @@ $supportedSpecs = [ordered]@{
         WorkingDirectory = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { Split-Path -Path $codexAppExe -Parent } else { 'C:\Windows' }
         IconLocation = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { "$codexAppExe,0" } else { "$explorerExe,0" }
     }
+    'jaws' = [pscustomobject]@{
+        Name = 'JAWS'
+        OwnedNames = @('JAWS')
+        TargetPath = $jawsExe
+        Arguments = '/run'
+        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$jawsExe)) { '' } else { Split-Path -Path $jawsExe -Parent }
+        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$jawsExe)) { '' } else { "$jawsExe,0" }
+        ForcedLocation = [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+        }
+        EnableLocalMachineCompat = $false
+    }
+}
+
+$managedStartupSummary = @(
+    @($supportedSpecs.Keys) |
+        ForEach-Object {
+            $spec = $supportedSpecs[[string]$_]
+            if ($spec.PSObject.Properties.Match('ForcedLocation').Count -ge 1 -and $null -ne $spec.ForcedLocation) {
+                ("{0}:{1}:{2}" -f [string]$_, [string]$spec.ForcedLocation.EntryType, [string]$spec.ForcedLocation.Scope)
+            }
+        } |
+        Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+)
+if (@($managedStartupSummary).Count -eq 0) {
+    Write-Host 'managed-startup-profile => none'
+}
+else {
+    Write-Host ("managed-startup-profile => {0}" -f ($managedStartupSummary -join ', '))
 }
 
 $managerContext = $null
@@ -1223,6 +1265,16 @@ try {
     foreach ($startupKey in @($supportedSpecs.Keys)) {
         $spec = $supportedSpecs[$startupKey]
         Clear-OwnedStartupArtifacts -Spec $spec -LocationDefinitions $locationDefinitions
+
+        $forcedLocation = $null
+        if ($spec.PSObject.Properties.Match('ForcedLocation').Count -gt 0) {
+            $forcedLocation = $spec.ForcedLocation
+        }
+        if ($null -ne $forcedLocation) {
+            Write-Host ("autostart-managed => {0} => {1}/{2}" -f [string]$spec.Name, [string]$forcedLocation.Scope, [string]$forcedLocation.EntryType)
+            Ensure-AppStartupLocation -Spec $spec -ProfileEntry $forcedLocation -LocationDefinitions $locationDefinitions -ManagerContext $managerContext
+            continue
+        }
 
         if (-not $hostStartupProfileByKey.ContainsKey($startupKey)) {
             Write-Host ("autostart-cleared: {0} => host-disabled-or-absent" -f [string]$spec.Name)

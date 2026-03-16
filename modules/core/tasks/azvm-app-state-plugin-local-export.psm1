@@ -15,6 +15,7 @@ $script:TaskMap = @{
     'onedrive' = '118-install-onedrive-system'
     'vlc' = '123-install-vlc-system'
     'nvda' = '126-install-nvda-system'
+    'jaws' = '131-install-jaws-screen-reader'
     'anydesk' = '121-install-anydesk-system'
     'itunes' = '124-install-itunes-system'
     'icloud' = '129-install-icloud-system'
@@ -44,6 +45,7 @@ $script:SourceManifestJson = @'
     { "id": "onedrive", "displayName": "OneDrive", "userRegistryKeys": [ "HKCU\\Software\\Microsoft\\OneDrive" ] },
     { "id": "vlc", "displayName": "VLC media player", "profileFiles": [ "AppData\\Roaming\\vlc\\vlcrc" ], "userRegistryKeys": [ "HKCU\\Software\\VideoLAN\\VLC" ] },
     { "id": "nvda", "displayName": "NVDA", "profileDirectories": [ "AppData\\Roaming\\nvda" ], "userRegistryKeys": [ "HKCU\\Software\\NVDA" ] },
+    { "id": "jaws", "displayName": "JAWS", "profileDirectories": [ "AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings" ], "machineRegistryKeys": [ "HKLM\\Software\\Freedom Scientific", "HKLM\\Software\\WOW6432Node\\Freedom Scientific" ], "userRegistryKeys": [ "HKCU\\Software\\Freedom Scientific" ] },
     { "id": "anydesk", "displayName": "AnyDesk", "profileFiles": [ "AppData\\Roaming\\AnyDesk\\user.conf", "AppData\\Roaming\\AnyDesk\\system.conf" ], "userRegistryKeys": [ "HKCU\\Software\\AnyDesk" ] },
     { "id": "itunes", "displayName": "iTunes", "userRegistryKeys": [ "HKCU\\Software\\Apple Computer, Inc." ] },
     { "id": "icloud", "displayName": "iCloud", "userRegistryKeys": [ "HKCU\\Software\\Apple Inc.\\iCloud", "HKCU\\Software\\Apple Computer, Inc." ] },

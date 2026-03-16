@@ -1,0 +1,51 @@
+{
+  "priority": 131,
+  "enabled": true,
+  "timeout": 300,
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [
+      {
+        "path": "AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings",
+        "targetProfiles": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "DawnCache",
+          "Crashpad",
+          "CrashDumps",
+          "Temp",
+          "tmp",
+          "Logs"
+        ],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.etl",
+          "*.log"
+        ]
+      }
+    ],
+    "profileFiles": [],
+    "machineRegistryKeys": [
+      {
+        "path": "HKLM\\Software\\Freedom Scientific",
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKLM\\Software\\WOW6432Node\\Freedom Scientific",
+        "distributionAllowList": []
+      }
+    ],
+    "userRegistryKeys": [
+      {
+        "path": "HKCU\\Software\\Freedom Scientific",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      }
+    ]
+  }
+}

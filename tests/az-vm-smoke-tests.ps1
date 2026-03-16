@@ -4273,6 +4273,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '128-configure-unlocker-io' = 23
         '129-install-icloud-system' = 120
         '130-install-vs2022community' = 7200
+        '131-install-jaws-screen-reader' = 300
         '10001-configure-apps-startup' = 45
         '10002-create-shortcuts-public-desktop' = 60
         '10003-configure-ux-windows' = 60
@@ -4804,6 +4805,10 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition ($sessionHelpersText -like '*function Invoke-AzVmSshTaskScript*') -Message 'SSH session helpers must provide a shared task-execution wrapper.'
     Assert-True -Condition ($localExportModuleText -like '*function Get-LocalAppStatePluginDirectoryPath*') -Message 'Local app-state export helpers must resolve task-local plugin directories.'
     Assert-True -Condition ($localExportModuleText -like '*Join-Path $candidate ''app-state''*') -Message 'Local app-state export helpers must write to each task-local app-state folder.'
+    Assert-True -Condition ($localExportModuleText -like '*''jaws'' = ''131-install-jaws-screen-reader''*') -Message 'Local app-state export helpers must map JAWS to its tracked task.'
+    Assert-True -Condition ($localExportModuleText -like '*HKLM\\Software\\Freedom Scientific*') -Message 'Local app-state export helpers must export the JAWS machine Freedom Scientific subtree.'
+    Assert-True -Condition ($localExportModuleText -like '*HKLM\\Software\\WOW6432Node\\Freedom Scientific*') -Message 'Local app-state export helpers must export the JAWS WOW6432 Freedom Scientific subtree.'
+    Assert-True -Condition ($localExportModuleText -like '*HKCU\\Software\\Freedom Scientific*') -Message 'Local app-state export helpers must export the JAWS user Freedom Scientific subtree.'
     Assert-True -Condition (-not ($localExportModuleText -like '*AppStatesRoot*')) -Message 'Local app-state export helpers must not keep the retired shared app-states root.'
     Assert-True -Condition ($gitignoreText -like '*windows/update/**/app-state/***') -Message '.gitignore must ignore Windows update task-local app-state payloads.'
     Assert-True -Condition ($gitignoreText -like '*windows/init/**/app-state/***') -Message '.gitignore must ignore Windows init task-local app-state payloads.'
@@ -4827,7 +4832,7 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
 Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed public shortcuts" -Action {
     $shortcutTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10002-create-shortcuts-public-desktop'
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10099-capture-snapshot-health'
+    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     $expectedShortcutNames = @(
@@ -4863,6 +4868,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'g4Azure Portal',
         'i1Internet Business',
         'i2Internet Personal',
+        'j0Jaws',
         'k1Codex CLI',
         'k2Gemini CLI',
         'k3Github Copilot CLI',
@@ -5198,6 +5204,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("AnyDesk")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry explicit AnyDesk duplicate aliases.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("IObit Unlocker")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit IObit Unlocker duplicate alias.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("NVDA")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit NVDA duplicate alias.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('@("JAWS")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit JAWS duplicate alias.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Ctrl+Shift+J', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must assign the JAWS hotkey.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('CleanupAliasMatchByNameOnly $true', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must support explicit alias-only cleanup for installer shortcuts that wrap the managed app target.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('unexpected-public-shortcut', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep unexpected Public Desktop cleanup logic.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for Codex when a Store app id is available.'
@@ -5213,7 +5221,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
 
 Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite signals" -Action {
     $wslTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '113-install-wsl2-system'
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10099-capture-snapshot-health'
+    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
     $wslTaskText = [string](Get-Content -LiteralPath $wslTaskPath -Raw)
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
@@ -5249,6 +5257,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $azdTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '112-install-azd-cli') -Raw)
     $azureCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '105-install-azure-cli') -Raw)
     $ghCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '106-install-gh-cli') -Raw)
+    $jawsTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '131-install-jaws-screen-reader') -Raw)
     $auditScriptPath = Join-Path $RepoRoot 'tools\scripts\app-state-audit.ps1'
     $auditScriptText = [string](Get-Content -LiteralPath $auditScriptPath -Raw)
 
@@ -5267,6 +5276,10 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($azdTaskJsonText -like '*telemetry*') -Message 'Task-local azd capture specs must exclude telemetry payloads.'
     Assert-True -Condition ($azureCliTaskJsonText -like '*telemetry*') -Message 'Task-local Azure CLI capture specs must exclude telemetry payloads.'
     Assert-True -Condition (-not ($ghCliTaskJsonText -like '*AppData\Local\GitHub CLI*')) -Message 'Task-local GitHub CLI capture specs must not keep the heavy local cache tree.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings*') -Message 'JAWS task-local app-state must capture the 2025 settings directory.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*HKLM\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the machine Freedom Scientific subtree.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*HKLM\\Software\\WOW6432Node\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the WOW6432 Freedom Scientific subtree.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*HKCU\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the user Freedom Scientific subtree.'
     Assert-True -Condition (Test-Path -LiteralPath $auditScriptPath) -Message 'The manual app-state audit helper must exist under tools/scripts.'
     Assert-True -Condition ($auditScriptText -like '*foreign-targets*') -Message 'The manual app-state audit helper must report foreign profile targets when present.'
 }
@@ -5428,17 +5441,18 @@ Invoke-Test -Name "Store install state and shortcut launcher helper modules exis
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
     $installTaskMap = [ordered]@{
         '115-install-npm-packages-global.ps1' = @('@github/copilot@latest', '@openai/codex@latest', '@google/gemini-cli@latest')
-        '125-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
+        '124-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
         '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
-        '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd' )
+        '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd')
+        '131-install-jaws-screen-reader.ps1' = @('FreedomScientific.JAWS.2025', 'jfw.exe', '--exact', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity')
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
-        '124-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
+        '123-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '131-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
-        '132-install-vs2022community.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-completed')
-        '119-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
-        '120-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
-        '117-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
+        '129-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
+        '130-install-vs2022community.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-completed')
+        '118-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
+        '119-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
+        '116-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {
@@ -5453,7 +5467,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage init -TaskName '130-autologon-manager-user'
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10099-capture-snapshot-health'
+    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
 
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Autologon manager task file was not found.'
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
@@ -5520,21 +5534,23 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
     }
 }
 
-Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by method" -Action {
+Invoke-Test -Name "Windows auto-start task mirrors the host startup profile and keeps the managed JAWS exception" -Action {
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10001-configure-apps-startup'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10099-capture-snapshot-health'
+    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     foreach ($fragment in @(
         '__HOST_STARTUP_PROFILE_JSON_B64__',
         'host-startup-profile =>',
+        'managed-startup-profile =>',
         'Get-ManagerContext',
         'Get-StartupLocationDefinitions',
         'Resolve-RequestedStartupLocation',
         'Clear-OwnedStartupArtifacts',
         'autostart-cleared:',
+        'autostart-managed =>',
         'autostart-method =>',
         'Register-ScheduledTask',
         'ScheduledTask/AtLogOn',
@@ -5559,6 +5575,10 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         'Windscribe',
         'AnyDesk',
         'Codex App',
+        'jaws',
+        'JAWS',
+        'jfw.exe',
+        '/run',
         'msteams:system-initiated',
         '%LOCALAPPDATA%\Programs\Ollama\ollama app.exe',
         'configure-apps-startup-completed'
@@ -5571,6 +5591,7 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         'AUTO-START APP STATUS:',
         '__HOST_STARTUP_PROFILE_JSON_B64__',
         'host-startup-profile =>',
+        'managed-startup-profile =>',
         'startup-entry =>',
         'missing-startup-entry =>',
         'unsupported-startup-key =>',
@@ -5578,7 +5599,10 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile by m
         'Ollama',
         'OneDrive',
         'Teams',
-        'iTunesHelper'
+        'iTunesHelper',
+        'JAWS',
+        'jaws-winget-probe =>',
+        'jaws-exe-present =>'
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + $fragment + '*')) -Message ("Health snapshot must include startup fragment '{0}'." -f $fragment)
     }
@@ -5603,6 +5627,7 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
         '118-install-teams-system.ps1' = @('Existing Microsoft Teams installation is already healthy. Skipping winget install.')
         '122-install-anydesk-system.ps1' = @('Existing AnyDesk installation is already healthy', 'function Test-AnyDeskInstalled')
         '123-install-windscribe-system.ps1' = @('Existing Windscribe installation is already healthy. Skipping winget install.', 'function Test-WindscribeInstalled')
+        '131-install-jaws-screen-reader.ps1' = @('Existing JAWS installation is already healthy. Skipping winget install.', 'FreedomScientific.JAWS.2025', 'jfw.exe')
         '129-configure-unlocker-io.ps1' = @('Existing Io Unlocker installation is already healthy. Skipping choco install.')
     }
 

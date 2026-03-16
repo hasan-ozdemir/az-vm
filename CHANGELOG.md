@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.323] - 2026-03-16
+
+### Added
+- Added tracked Windows `vm-update` task `131-install-jaws-screen-reader`, which installs JAWS 2025 through `winget`, verifies the `jfw.exe` install path, and carries a task-local app-state contract for the JAWS 2025 settings directory plus the full `Freedom Scientific` HKCU/HKLM/WOW6432 registry subtrees.
+
+### Changed
+- Extended the Windows managed startup contract with one explicit accessibility exception: JAWS is now always written as a machine `Run` entry with `/run`, matching the current local-machine contract instead of depending on host startup-profile mirroring.
+- Extended the Windows Public Desktop and local app-state export contracts so JAWS now gets a managed `j0Jaws` shortcut with `Ctrl+Shift+J`, duplicate-alias cleanup, health readback, and local app-state export coverage.
+
+### Tests
+- Revalidated the JAWS task, managed startup exception, Public Desktop shortcut, health snapshot, and app-state capture contract non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.16.322] - 2026-03-16
 
 ### Changed

@@ -4931,3 +4931,17 @@ Completed the full three-phase pass non-live. Vm-init and vm-update now use port
 
 I also standardized maintained documentation timestamps on UTC by updating the repo rules, README guidance, release docs, and the existing prompt-history headings, while preserving the user's AGENTS.md edit in the same final change set. Because the managed VM had already been deleted during the prompt, validation stayed non-live only: `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1` were used to verify the finished state, and the staged release-doc gate was rerun before the final commit.
 
+### 2026-03-16 03:32 UTC
+
+**User Prompt**
+
+````text
+Add a builtin Windows vm-update task named `131-install-jaws-screen-reader` that installs JAWS for Windows 2025 through `winget` without duplicating any existing task. Expand the task so app-state captures the full `Freedom Scientific` registry subtree in both HKCU and HKLM, add auto-start for `C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe`, and make the managed startup behavior follow the same effective local-machine contract currently observed on the operator workstation.
+````
+
+**Assistant Summary**
+
+Added tracked Windows update task `131-install-jaws-screen-reader` with bounded `winget` install-and-verify behavior for `FreedomScientific.JAWS.2025`, plus a task-local JAWS app-state contract for `AppData\Roaming\Freedom Scientific\JAWS\2025\Settings`, `HKCU\Software\Freedom Scientific`, `HKLM\Software\Freedom Scientific`, and `HKLM\Software\WOW6432Node\Freedom Scientific`. I also extended the local app-state export helper so the same JAWS/Freedom Scientific capture scope is available from the local-machine app-state workflow.
+
+On the Windows UX side, I extended `10001-configure-apps-startup` with one explicit managed JAWS exception that always writes the machine `Run` entry `JAWS="C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe" /run`, matching the local-machine contract that was inspected during planning instead of relying on host startup-profile mirroring. I also added the managed Public Desktop shortcut `j0Jaws` with hotkey `Ctrl+Shift+J`, wired JAWS into the health snapshot, updated README plus release docs, refreshed the sensitive-content audit so this newly intentional vendor/product surface is allowed, and revalidated the change set non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+

@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.323 - 2026-03-16
+
+### Summary
+This release adds first-class JAWS support to the tracked Windows update flow. The repo now has a builtin `131-install-jaws-screen-reader` task for JAWS 2025, task-local JAWS app-state capture for the full `Freedom Scientific` registry surface plus the JAWS 2025 settings directory, one managed `j0Jaws` Public Desktop shortcut, and a managed startup exception that writes the same machine `Run` entry shape observed on the local reference machine.
+
+### Highlights
+- Added tracked Windows update task `131-install-jaws-screen-reader` with bounded `winget` install-and-verify behavior for `FreedomScientific.JAWS.2025`.
+- Added JAWS task-local app-state coverage for `AppData\Roaming\Freedom Scientific\JAWS\2025\Settings`, `HKCU\Software\Freedom Scientific`, `HKLM\Software\Freedom Scientific`, and `HKLM\Software\WOW6432Node\Freedom Scientific`, and extended the local app-state export helper with the same JAWS contract.
+- Added the managed `j0Jaws` Public Desktop shortcut with `Ctrl+Shift+J`, normalized stale `JAWS` aliases during shortcut cleanup, extended the health snapshot with JAWS install/startup readback, and added one explicit managed auto-start exception so JAWS is always written as `HKLM\Software\Microsoft\Windows\CurrentVersion\Run\JAWS="C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe" /run`.
+- Revalidated the shipped contract non-live through the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+
 ## Release 2026.3.16.322 - 2026-03-16
 
 ### Summary

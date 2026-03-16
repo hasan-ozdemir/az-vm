@@ -895,6 +895,7 @@ function Resolve-StartupDisplayName {
         'windscribe' { return 'Windscribe' }
         'anydesk' { return 'AnyDesk' }
         'codex-app' { return 'Codex App' }
+        'jaws' { return 'JAWS' }
         default { return '' }
     }
 }
@@ -1149,6 +1150,7 @@ $publicShortcutNames = @(
     "g4Azure Portal",
     "i1Internet Business",
     "i2Internet Personal",
+    "j0Jaws",
     "k1Codex CLI",
     "k2Gemini CLI",
     "k3Github Copilot CLI",
@@ -1495,6 +1497,7 @@ if (@($startupProfileSummary).Count -eq 0) {
 else {
     Write-Host ("host-startup-profile => {0}" -f ($startupProfileSummary -join ', '))
 }
+Write-Host 'managed-startup-profile => jaws:Run:LocalMachine'
 
 $managerContext = $null
 try {
@@ -1510,6 +1513,14 @@ try {
 
         Write-StartupEntryStatus -DisplayName $displayName -ProfileEntry $startupProfileByKey[[string]$startupKey] -LocationDefinitions $startupLocationDefinitions
     }
+
+    Write-StartupEntryStatus `
+        -DisplayName 'JAWS' `
+        -ProfileEntry ([pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+        }) `
+        -LocationDefinitions $startupLocationDefinitions
 }
 catch {
     Write-Warning ("startup-health-readback-failed => {0}" -f $_.Exception.Message)
@@ -1525,6 +1536,26 @@ Write-StoreInstallStateReadback -TaskName '116-install-codex-app' -Label 'Codex 
 Write-StoreInstallStateReadback -TaskName '120-install-whatsapp-system' -Label 'WhatsApp'
 Write-StoreInstallStateReadback -TaskName '125-install-be-my-eyes' -Label 'Be My Eyes'
 Write-StoreInstallStateReadback -TaskName '129-install-icloud-system' -Label 'iCloud'
+
+Write-Host "JAWS HEALTH:"
+$jawsExpectedExe = 'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe'
+$jawsExe = Resolve-CommandPath -CommandName 'jfw.exe' -FallbackCandidates @(
+    $jawsExpectedExe,
+    'C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe'
+)
+Write-Host ("jaws-exe => {0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$jawsExe)) { 'not-found' } else { $jawsExe }))
+Write-Host ("jaws-exe-present => {0}" -f [bool](Test-Path -LiteralPath $jawsExpectedExe))
+Write-Host ("jaws-exe-path-match => {0}" -f [string]::Equals([string]$jawsExe, $jawsExpectedExe, [System.StringComparison]::OrdinalIgnoreCase))
+$jawsProcesses = @(Get-Process -Name 'jfw' -ErrorAction SilentlyContinue)
+Write-Host ("jaws-process-count => {0}" -f @($jawsProcesses).Count)
+$wingetExe = Resolve-CommandPath -CommandName 'winget' -FallbackCandidates @('C:\ProgramData\az-vm\tools\winget-x64\winget.exe')
+if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
+    Write-Host 'jaws-winget-probe => success=False; timed-out=False; exit-code=1'
+}
+else {
+    $jawsWingetResult = Invoke-NativeCommandProbe -FilePath $wingetExe -Arguments @('list', '--id', 'FreedomScientific.JAWS.2025', '--exact') -TimeoutSeconds 20
+    Write-Host ("jaws-winget-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$jawsWingetResult.Success, [bool]$jawsWingetResult.TimedOut, [int]$jawsWingetResult.ExitCode)
+}
 
 Write-Host "DOCKER DESKTOP HEALTH:"
 $dockerDesktopExe = "C:\Program Files\Docker\Docker\Docker Desktop.exe"

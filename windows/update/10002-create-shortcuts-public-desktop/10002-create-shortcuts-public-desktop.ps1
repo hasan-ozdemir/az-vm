@@ -1577,6 +1577,10 @@ $itunesExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\iTu
     "C:\Program Files (x86)\iTunes\iTunes.exe"
 )) -FallbackPath "C:\Program Files\iTunes\iTunes.exe"
 $nvdaExe = "C:\Program Files (x86)\NVDA\nvda.exe"
+$jawsExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe" -ResolvedPath (Resolve-CommandPath -CommandName "jfw.exe" -FallbackCandidates @(
+    "C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe",
+    "C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe"
+)) -FallbackPath "C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe"
 $edgeExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -ResolvedPath (Resolve-CommandPath -CommandName "msedge.exe" -FallbackCandidates @(
     "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     "C:\Program Files\Microsoft\Edge\Application\msedge.exe"
@@ -1761,6 +1765,7 @@ foreach ($spec in @($developerWebShortcuts)) {
 
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i1Internet Business" -Url $companyWebRootUrl -ProfileKind 'business' -Variant 'remote' -CleanupAliases @("Google Chrome", "Chrome"))
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "i2Internet Personal" -Url "https://www.google.com" -ProfileKind 'personal' -Variant 'remote')
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "j0Jaws" -TargetPath $jawsExe -Hotkey "Ctrl+Shift+J" -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("JAWS") -CleanupAliasMatchByNameOnly $true)
 
 $codexCliLaunchCommand = if (-not [string]::IsNullOrWhiteSpace([string]$codexCmdPath)) {
     ('/c start "" /max /high "{0}" -c model_reasoning_summary=detailed -c hide_agent_reasoning=false -c show_raw_agent_reasoning=true -c tui.animations=true --enable multi_agent --enable fast_mode --yolo -s danger-full-access --cd "%UserProfile%" --search' -f $codexCmdPath)
@@ -1860,6 +1865,7 @@ $ownedManagedShortcutNames = @(
     "g4Azure Portal",
     "i1Internet Business",
     "i2Internet Personal",
+    "j0Jaws",
     "k1Codex CLI",
     "k2Gemini CLI",
     "k3Github Copilot CLI",
