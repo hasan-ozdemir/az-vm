@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.16.326 - 2026-03-16
+
+### Summary
+This release hardens the live Windows create path around the exact `create --auto --windows --perf` publish flow. Windows task asset delivery now uses a verified SCP path instead of the slower base64 chunk transport, step review redacts password- and token-shaped values reliably, task-scoped app-state capture/replay preserves exact file destinations for overlays like JAWS `version.dll`, and several narrow task timeouts were widened so healthy installs do not degrade into warning-only runs. The release was validated by completing a full live Windows publish cycle and the normal post-create acceptance checks.
+
+### Highlights
+- Replaced the Windows task asset upload path with host-key-validated `pscp.exe` SCP plus remote size and SHA-256 verification, removing the chunk-heavy transfer mode that had been inflating live create time.
+- Added generic sensitive-key redaction in the effective configuration review so passwords, secrets, and tokens render as `[redacted]` instead of appearing in plaintext during operator review output.
+- Fixed app-state file capture/replay and wildcard destination expansion on both local-machine and guest paths, and trimmed the WhatsApp payload contract so large transfer/AppCenter residue no longer bloats uploads.
+- Raised the timeout ceilings for Python, GitHub CLI, 7-Zip, and rclone install tasks, then verified the Python task in isolation before rerunning the exact Windows create and confirming the resulting VM with `show`, status, SSH, and RDP checks.
+
 ## Release 2026.3.16.325 - 2026-03-16
 
 ### Summary

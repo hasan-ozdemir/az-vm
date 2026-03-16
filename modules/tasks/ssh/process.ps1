@@ -62,7 +62,8 @@ function Invoke-AzVmProcessWithRetry {
         [string]$Label,
         [int]$MaxAttempts = 3,
         [switch]$AllowFailure,
-        [switch]$SuppressTrackedLogging
+        [switch]$SuppressTrackedLogging,
+        [switch]$SkipPythonBytecodeFlag
     )
 
     if ($MaxAttempts -lt 1) {
@@ -76,12 +77,13 @@ function Invoke-AzVmProcessWithRetry {
     $lastExit = 0
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         $attemptLabel = if ($MaxAttempts -gt 1) { ("{0} (attempt {1}/{2})" -f $Label, $attempt, $MaxAttempts) } else { $Label }
+        $effectiveArguments = if ($SkipPythonBytecodeFlag) { @($Arguments) } else { @('-B') + @($Arguments) }
         if ($SuppressTrackedLogging) {
-            $processResult = Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments (@('-B') + @($Arguments))
+            $processResult = Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
         }
         else {
             $processResult = Invoke-TrackedAction -Label $attemptLabel -Action {
-                Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments (@('-B') + @($Arguments))
+                Invoke-AzVmCapturedProcess -FilePath $FilePath -Arguments $effectiveArguments
             }
         }
         $lastExit = [int]$processResult.ExitCode

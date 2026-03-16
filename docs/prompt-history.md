@@ -4973,3 +4973,17 @@ Removed the remaining disabled task folders from disk so the disabled stage root
 
 I revalidated the result non-live by checking the disabled task inventory across Windows and Linux init/update stages, then reran the smoke, documentation-contract, and release-doc gates before finalizing the cleanup.
 
+### 2026-03-16 10:33 UTC
+
+**User Prompt**
+
+````text
+Publish to production: first delete all resource groups tagged as az-vm-managed; then bring up a VM with `az-vm create --auto --windows --perf`; if any issue appears while that command is running, stop there, fix the code, return to the beginning, and rerun the same `create` command with the same parameters until the new VM is successfully live.
+````
+
+**Assistant Summary**
+
+Completed the full live publish loop against the active Azure subscription. I first cleared the managed resource-group scope, then ran the exact Windows create command and monitored the transcript closely. The first live attempt exposed a diagnostics bug because the review output printed plaintext admin passwords; I fixed the redaction path so password-, secret-, and token-shaped keys now render as `[redacted]`, revalidated the smoke and quality gates, deleted the partial managed resource group, and restarted from a clean slate with the same `create --auto --windows --perf` command.
+
+The next live attempt surfaced a real task-runtime issue: `103-install-python-system` completed just beyond its too-short timeout and was recorded as a warning. I raised the Python timeout ceiling, kept the related short Windows task timeouts aligned, revalidated non-live, reran task `103` in isolation on the partial VM, then deleted the partial group and restarted the exact same create command again. The final live run completed successfully, the only stage warning was the expected deferred reboot request from the WSL2 install task, I executed the restart explicitly, and the resulting managed Windows VM passed `show`, `do --vm-action=status`, `connect --ssh --test`, and `connect --rdp --test`.
+

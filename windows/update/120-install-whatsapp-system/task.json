@@ -29,14 +29,22 @@
           "DawnCache",
           "Crashpad",
           "CrashDumps",
+          "rotatedLogs",
+          "logq",
+          "Microsoft.AppCenter.Storage",
           "Temp",
           "tmp",
           "Logs"
         ],
-        "excludePathPatterns": [],
+        "excludePathPatterns": [
+          "*\\transfers\\*",
+          "*\\Microsoft\\AppCenter\\*"
+        ],
         "excludeFilePatterns": [
           "*.lock",
           "*.tmp",
+          "*.db-shm",
+          "*.db-wal",
           "*.etl",
           "*.log"
         ]
@@ -55,10 +63,15 @@
           "tmp",
           "Logs"
         ],
-        "excludePathPatterns": [],
+        "excludePathPatterns": [
+          "*\\transfers\\*",
+          "*\\Microsoft\\AppCenter\\*"
+        ],
         "excludeFilePatterns": [
           "*.lock",
           "*.tmp",
+          "*.db-shm",
+          "*.db-wal",
           "*.etl",
           "*.log"
         ]

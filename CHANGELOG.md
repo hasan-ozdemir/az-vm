@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.16.326] - 2026-03-16
+
+### Changed
+- Promoted Windows task asset transport to a host-key-validated `pscp.exe` SCP path with remote size and SHA-256 verification, replacing the slower base64 chunk upload path that was inflating live `create --auto --windows --perf` runs.
+- Tightened task-scoped app-state capture and replay path handling so file payloads preserve their exact relative destinations, wildcard restore targets expand deterministically on both local-machine and guest replay paths, and the managed WhatsApp app-state contract excludes large transfer and AppCenter residue that was bloating uploads.
+- Raised the short timeout ceilings for `103-install-python-system`, `106-install-gh-cli`, `107-install-7zip-system`, and `127-install-rclone-system` so healthy first installs no longer trip warning states purely because the default timeout band was too narrow.
+
+### Fixed
+- Fixed step review diagnostics so password-, secret-, and token-shaped keys are always shown as `[redacted]` in the effective configuration block and review output, preventing plaintext credential leakage during live `create` review stages.
+- Fixed configuration template validation so unresolved placeholder tokens in resource-group and generated-resource naming templates now fail early with a precise corrective hint instead of flowing silently into runtime naming.
+- Fixed task-scoped app-state replay for single-file overlays such as the local JAWS `version.dll` payload by preserving the exact destination file path rather than appending duplicate file extensions during capture or replay.
+
+### Tests
+- Revalidated the transport, diagnostics, timeout, and app-state changes non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated the Python timeout fix live in isolation with `task --run-vm-update 103 --windows --group <resource-group> --vm-name <vm-name> --perf`, then completed one full live Windows publish cycle with the exact command `create --auto --windows --perf`, followed by `show`, `do --vm-action=status`, `connect --ssh --test`, and `connect --rdp --test`.
+
 ## [2026.3.16.325] - 2026-03-16
 
 ### Changed

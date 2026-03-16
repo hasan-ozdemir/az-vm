@@ -50,6 +50,131 @@ function Get-AzVmFileSha256 {
     }
 }
 
+if ($null -eq $script:AzVmWindowsScpHostKeyCache) {
+    $script:AzVmWindowsScpHostKeyCache = @{}
+}
+if ($null -eq $script:AzVmWindowsScpPathCache) {
+    $script:AzVmWindowsScpPathCache = ''
+}
+
+function Get-AzVmPscpExecutablePath {
+    if (-not [string]::IsNullOrWhiteSpace([string]$script:AzVmWindowsScpPathCache) -and (Test-Path -LiteralPath ([string]$script:AzVmWindowsScpPathCache))) {
+        return [string]$script:AzVmWindowsScpPathCache
+    }
+
+    $command = Get-Command pscp.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $command) {
+        throw "Windows SCP transport requires pscp.exe on the local operator machine."
+    }
+
+    $resolvedPath = [string]$command.Source
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedPath) -and $command.PSObject.Properties.Match('Path').Count -gt 0) {
+        $resolvedPath = [string]$command.Path
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+        throw "Windows SCP transport could not resolve the pscp.exe path."
+    }
+
+    $script:AzVmWindowsScpPathCache = [string]$resolvedPath
+    return [string]$script:AzVmWindowsScpPathCache
+}
+
+function ConvertTo-AzVmWindowsScpRemoteSpec {
+    param(
+        [string]$HostName,
+        [string]$RemotePath
+    )
+
+    $normalizedRemotePath = ([string]$RemotePath).Replace('\', '/')
+    if ($normalizedRemotePath -match '^[A-Za-z]:/') {
+        $normalizedRemotePath = ('/{0}' -f [string]$normalizedRemotePath)
+    }
+
+    return ('{0}:{1}' -f [string]$HostName, [string]$normalizedRemotePath)
+}
+
+function Get-AzVmWindowsScpHostKeyArguments {
+    param(
+        [string]$HostName,
+        [string]$Port
+    )
+
+    $cacheKey = ('{0}:{1}' -f [string]$HostName, [string]$Port)
+    if ($script:AzVmWindowsScpHostKeyCache.ContainsKey($cacheKey)) {
+        return @($script:AzVmWindowsScpHostKeyCache[$cacheKey])
+    }
+
+    $sshKeyScan = Get-Command ssh-keyscan.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    $sshKeyGen = Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -eq $sshKeyScan -or $null -eq $sshKeyGen) {
+        throw "Windows SCP transport requires ssh-keyscan.exe and ssh-keygen.exe on the local operator machine."
+    }
+
+    $scanResult = Invoke-AzVmCapturedProcess -FilePath ([string]$sshKeyScan.Source) -Arguments @('-p', [string]$Port, [string]$HostName)
+    if ([int]$scanResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace([string]$scanResult.Output)) {
+        throw ("Windows SCP transport could not resolve an SSH host key for {0}:{1}." -f [string]$HostName, [string]$Port)
+    }
+
+    $hostKeyArgs = New-Object 'System.Collections.Generic.List[string]'
+    $seenFingerprints = @{}
+    $scanLines = @([string]$scanResult.Output -split "`r?`n" | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_) -and -not ([string]$_).TrimStart().StartsWith('#')
+        })
+    foreach ($scanLine in @($scanLines)) {
+        $parts = @(([string]$scanLine).Trim() -split '\s+')
+        if (@($parts).Count -lt 3) {
+            continue
+        }
+
+        $algorithm = [string]$parts[1]
+        if ([string]::IsNullOrWhiteSpace([string]$algorithm)) {
+            continue
+        }
+
+        $tempKeyPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-scp-hostkey-' + ([guid]::NewGuid().ToString('N')) + '.pub')
+        try {
+            [System.IO.File]::WriteAllText($tempKeyPath, ([string]$scanLine + [Environment]::NewLine), [System.Text.Encoding]::ASCII)
+            $fingerprintResult = Invoke-AzVmCapturedProcess -FilePath ([string]$sshKeyGen.Source) -Arguments @('-l', '-f', [string]$tempKeyPath)
+            if ([int]$fingerprintResult.ExitCode -ne 0) {
+                continue
+            }
+
+            if ([string]$fingerprintResult.Output -match '^\s*(\d+)\s+SHA256:([A-Za-z0-9+/=]+)\s+') {
+                $bits = [string]$matches[1]
+                $fingerprint = ('{0} {1} SHA256:{2}' -f [string]$algorithm, [string]$bits, [string]$matches[2])
+                $normalizedFingerprint = [string]$fingerprint.Trim()
+                if (-not $seenFingerprints.ContainsKey($normalizedFingerprint)) {
+                    $hostKeyArgs.Add('-hostkey') | Out-Null
+                    $hostKeyArgs.Add($normalizedFingerprint) | Out-Null
+                    $seenFingerprints[$normalizedFingerprint] = $true
+                }
+            }
+        }
+        finally {
+            Remove-Item -LiteralPath $tempKeyPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if ($hostKeyArgs.Count -lt 2) {
+        throw ("Windows SCP transport could not build a trusted host key fingerprint for {0}:{1}." -f [string]$HostName, [string]$Port)
+    }
+
+    $cachedArgs = @($hostKeyArgs.ToArray())
+    $script:AzVmWindowsScpHostKeyCache[$cacheKey] = $cachedArgs
+    return @($cachedArgs)
+}
+
+function New-AzVmWindowsScpPasswordFilePath {
+    param(
+        [string]$Password
+    )
+
+    $passwordFilePath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-pscp-password-' + ([guid]::NewGuid().ToString('N')) + '.txt')
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($passwordFilePath, [string]$Password, $utf8NoBom)
+    return [string]$passwordFilePath
+}
+
 function Invoke-AzVmRemotePowerShellExec {
     param(
         [string]$PySshPythonPath,
@@ -253,34 +378,36 @@ function Copy-AzVmAssetToWindowsViaExec {
         }
     }
 
-    Write-Host ("Task asset copy started: {0} -> {1} (mode=windows-base64, bytes={2})" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length)
+    $pscpPath = Get-AzVmPscpExecutablePath
+    $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $stagingRemotePath
+    $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+    $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
+    Write-Host ("Task asset copy started: {0} -> {1} (mode=windows-scp, bytes={2})" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length)
     $transferWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $remoteBase64Path = ('{0}.b64' -f [string]$stagingRemotePath)
-    $escapedRemoteBase64Path = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$remoteBase64Path)
-    $payloadBase64 = [System.Convert]::ToBase64String([System.IO.File]::ReadAllBytes($resolvedLocalPath))
-    $chunkLength = 7500
-    if ($chunkLength -lt 1024) { $chunkLength = 1024 }
-    $chunkCount = [int][Math]::Max(1, [Math]::Ceiling(([double]$payloadBase64.Length) / [double]$chunkLength))
-    $nextProgressSeconds = 15.0
-    $chunkTimeoutSeconds = if ($chunkCount -gt 1) { [Math]::Max(90, $ConnectTimeoutSeconds) } else { [Math]::Max(30, $ConnectTimeoutSeconds) }
-    $initializeScript = '$d=''' + $escapedRemoteBase64Path + ''';$p=Split-Path -Parent $d;if(-not [string]::IsNullOrWhiteSpace([string]$p)){New-Item -ItemType Directory -Path $p -Force|Out-Null};[IO.File]::WriteAllText($d,'''',[Text.Encoding]::ASCII)'
-    Invoke-AzVmRemotePowerShellCommandTextExec `
-        -PySshPythonPath $PySshPythonPath `
-        -PySshClientPath $PySshClientPath `
-        -HostName $HostName `
-        -UserName $UserName `
-        -Password $Password `
-        -Port $Port `
-        -ScriptText $initializeScript `
-        -Label ("pyssh asset init -> {0}" -f [string]$RemotePath) `
-        -TimeoutSeconds ([Math]::Max(30, $ConnectTimeoutSeconds)) `
-        -SuppressTrackedLogging | Out-Null
-    for ($chunkIndex = 0; $chunkIndex -lt $chunkCount; $chunkIndex++) {
-        $offset = $chunkIndex * $chunkLength
-        $currentChunkLength = [Math]::Min($chunkLength, ($payloadBase64.Length - $offset))
-        $chunkText = $payloadBase64.Substring($offset, $currentChunkLength)
-        $chunkSafe = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$chunkText)
-        $appendScript = "[IO.File]::AppendAllText('{0}','{1}',[Text.Encoding]::ASCII)" -f $escapedRemoteBase64Path, $chunkSafe
+    try {
+        $copyArgs = @(
+            '-batch',
+            '-scp',
+            '-P', [string]$Port,
+            '-l', [string]$UserName,
+            '-pwfile', [string]$passwordFilePath
+        ) + @($hostKeyArgs) + @(
+            [string]$resolvedLocalPath,
+            [string]$remoteSpec
+        )
+
+        Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $copyArgs -Label ("pscp copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
+
+        $finalizeScript = @(
+            '$s=''' + $escapedStagingRemotePath + ''''
+            '$d=''' + $escapedRemotePath + ''''
+            '$expected=' + [string][int64]$fileInfo.Length
+            'if(-not (Test-Path -LiteralPath $s)){throw ''Uploaded staging file is missing.''}'
+            '$item=Get-Item -LiteralPath $s -ErrorAction Stop'
+            'if([int64]$item.Length -ne [int64]$expected){throw (''Uploaded staging length mismatch: {0} <> {1}'' -f [int64]$item.Length,[int64]$expected)}'
+            'if(Test-Path -LiteralPath $d){Remove-Item -LiteralPath $d -Force -EA SilentlyContinue}'
+            'Move-Item -LiteralPath $s -Destination $d -Force'
+        ) -join ';'
         Invoke-AzVmRemotePowerShellCommandTextExec `
             -PySshPythonPath $PySshPythonPath `
             -PySshClientPath $PySshClientPath `
@@ -288,50 +415,41 @@ function Copy-AzVmAssetToWindowsViaExec {
             -UserName $UserName `
             -Password $Password `
             -Port $Port `
-            -ScriptText $appendScript `
-            -Label ("pyssh asset chunk {0}/{1} -> {2}" -f ($chunkIndex + 1), $chunkCount, [string]$RemotePath) `
-            -TimeoutSeconds $chunkTimeoutSeconds `
+            -ScriptText $finalizeScript `
+            -Label ("pyssh asset finalize -> {0}" -f [string]$RemotePath) `
+            -TimeoutSeconds ([Math]::Max(30, $ConnectTimeoutSeconds)) `
             -SuppressTrackedLogging | Out-Null
-
-        if ($transferWatch.Elapsed.TotalSeconds -ge $nextProgressSeconds -and ($chunkIndex + 1) -lt $chunkCount) {
-            $progressPercent = [int][Math]::Floor((($chunkIndex + 1) * 100.0) / $chunkCount)
-            Write-Host ("Task asset copy progress: {0} -> {1} ({2}/{3} chunks, {4}%, {5:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, ($chunkIndex + 1), $chunkCount, $progressPercent, $transferWatch.Elapsed.TotalSeconds)
-            $nextProgressSeconds += 15.0
+    }
+    finally {
+        Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
+        if ($transferWatch.IsRunning) {
+            $transferWatch.Stop()
         }
     }
 
-    $finalizeScript = @(
-        '$b=''' + $escapedRemoteBase64Path + ''''
-        '$s=''' + $escapedStagingRemotePath + ''''
-        '$d=''' + $escapedRemotePath + ''''
-        '$t=[IO.File]::ReadAllText($b,[Text.Encoding]::ASCII)'
-        '[IO.File]::WriteAllBytes($s,[Convert]::FromBase64String($t))'
-        'Remove-Item -LiteralPath $b -Force -EA SilentlyContinue'
-        'if(Test-Path -LiteralPath $d){Remove-Item -LiteralPath $d -Force -EA SilentlyContinue}'
-        'Move-Item -LiteralPath $s -Destination $d -Force'
-    ) -join ';'
-    Invoke-AzVmRemotePowerShellCommandTextExec `
+    $verifiedMetadata = Get-AzVmWindowsRemoteFileMetadata `
         -PySshPythonPath $PySshPythonPath `
         -PySshClientPath $PySshClientPath `
         -HostName $HostName `
         -UserName $UserName `
         -Password $Password `
         -Port $Port `
-        -ScriptText $finalizeScript `
-        -Label ("pyssh asset finalize -> {0}" -f [string]$RemotePath) `
-        -TimeoutSeconds ([Math]::Max(30, $ConnectTimeoutSeconds)) `
-        -SuppressTrackedLogging | Out-Null
-
-    if ($transferWatch.IsRunning) {
-        $transferWatch.Stop()
+        -RemotePath $RemotePath `
+        -ConnectTimeoutSeconds $ConnectTimeoutSeconds
+    if (-not [bool]$verifiedMetadata.Exists -or
+        [int64]$verifiedMetadata.Length -ne [int64]$fileInfo.Length -or
+        [string]::IsNullOrWhiteSpace([string]$verifiedMetadata.Sha256) -or
+        -not [string]::Equals([string]$verifiedMetadata.Sha256, [string]$fileHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Windows SCP asset verification failed for {0}." -f [string]$RemotePath)
     }
-    Write-Host ("Task asset copy completed: {0} -> {1} (mode=windows-base64, bytes={2}, chunks={3}, elapsed={4:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length, $chunkCount, $transferWatch.Elapsed.TotalSeconds)
+
+    Write-Host ("Task asset copy completed: {0} -> {1} (mode=windows-scp, bytes={2}, chunks={3}, elapsed={4:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length, 1, $transferWatch.Elapsed.TotalSeconds)
 
     return [pscustomobject]@{
         RemotePath = [string]$RemotePath
         Copied = $true
         Bytes = [int64]$fileInfo.Length
-        ChunkCount = [int]$chunkCount
+        ChunkCount = 1
         Sha256 = [string]$fileHash
     }
 }
@@ -413,6 +531,35 @@ function Copy-AzVmAssetFromVm {
     $localParent = Split-Path -Path $LocalPath -Parent
     if (-not [string]::IsNullOrWhiteSpace([string]$localParent) -and -not (Test-Path -LiteralPath $localParent)) {
         New-Item -Path $localParent -ItemType Directory -Force | Out-Null
+    }
+
+    if (Test-AzVmWindowsRemotePath -RemotePath $RemotePath) {
+        $pscpPath = Get-AzVmPscpExecutablePath
+        $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $RemotePath
+        $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+        $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
+        try {
+            $fetchArgs = @(
+                '-batch',
+                '-scp',
+                '-P', [string]$Port,
+                '-l', [string]$UserName,
+                '-pwfile', [string]$passwordFilePath
+            ) + @($hostKeyArgs) + @(
+                [string]$remoteSpec,
+                [string]$LocalPath
+            )
+
+            Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $fetchArgs -Label ("pscp fetch asset <- {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
+        }
+        finally {
+            Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
+        }
+
+        if (-not (Test-Path -LiteralPath $LocalPath)) {
+            throw ("Fetched Windows asset was not written locally: {0}" -f [string]$LocalPath)
+        }
+        return
     }
 
     $fetchArgs = @(

@@ -240,6 +240,11 @@ function Resolve-AzVmResourceGroupNameFromTemplate {
     }
 
     $resolved = Resolve-AzVmTemplate -Template $effectiveTemplate -Tokens $baseTokens
+    $resolved = Assert-AzVmResolvedTemplateValue `
+        -Value $resolved `
+        -ConfigKey 'RESOURCE_GROUP_TEMPLATE' `
+        -AllowedTokens @('N') `
+        -Hint "Set RESOURCE_GROUP_TEMPLATE in .env to the current placeholder contract, for example rg-{SELECTED_VM_NAME}-{REGION_CODE}-g{N}."
     if ($resolved.IndexOf("{N}", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         return $resolved
     }
@@ -277,6 +282,11 @@ function Resolve-AzVmNameFromTemplate {
     }
 
     $resolved = Resolve-AzVmTemplate -Template $effectiveTemplate -Tokens $baseTokens
+    $resolved = Assert-AzVmResolvedTemplateValue `
+        -Value $resolved `
+        -ConfigKey ("{0} template" -f [string]$LogicalName) `
+        -AllowedTokens @('N') `
+        -Hint "Set naming templates in .env to the current placeholder contract, for example {RESOURCE_TYPE}-{SELECTED_VM_NAME}-{REGION_CODE}-n{N}."
     if ($resolved.IndexOf("{N}", [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         return $resolved
     }

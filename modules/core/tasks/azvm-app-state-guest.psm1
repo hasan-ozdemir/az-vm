@@ -618,6 +618,57 @@ function Normalize-AzVmAppStateComparablePath {
     return ($uncPrefix + $normalizedPath).TrimEnd('\')
 }
 
+function Get-AzVmAppStateRelativePathFromBase {
+    param(
+        [string]$BasePath,
+        [string]$CandidatePath
+    )
+
+    $normalizedBasePath = [string](Normalize-AzVmAppStateComparablePath -Path $BasePath)
+    $normalizedCandidatePath = [string](Normalize-AzVmAppStateComparablePath -Path $CandidatePath)
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedBasePath) -or [string]::IsNullOrWhiteSpace([string]$normalizedCandidatePath)) {
+        return ''
+    }
+
+    if ([string]::Equals([string]$normalizedBasePath, [string]$normalizedCandidatePath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ''
+    }
+
+    $normalizedPrefix = $normalizedBasePath + '\'
+    if (-not $normalizedCandidatePath.StartsWith($normalizedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        return ''
+    }
+
+    return [string]$normalizedCandidatePath.Substring($normalizedBasePath.Length).TrimStart('\')
+}
+
+function Resolve-AzVmAppStateReplayDestinationPaths {
+    param(
+        [string]$BasePath,
+        [string]$RelativeOrAbsolutePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$RelativeOrAbsolutePath)) {
+        return @()
+    }
+
+    $candidatePath = [string]$RelativeOrAbsolutePath
+    if (-not [System.IO.Path]::IsPathRooted($candidatePath) -and -not [string]::IsNullOrWhiteSpace([string]$BasePath)) {
+        $candidatePath = Join-Path $BasePath $candidatePath
+    }
+
+    $hasWildcard = ($candidatePath.IndexOf('*', [System.StringComparison]::Ordinal) -ge 0 -or $candidatePath.IndexOf('?', [System.StringComparison]::Ordinal) -ge 0)
+    if ($hasWildcard) {
+        return @(
+            Get-ChildItem -Path $candidatePath -Force -ErrorAction SilentlyContinue |
+                Sort-Object FullName |
+                Select-Object -ExpandProperty FullName -Unique
+        )
+    }
+
+    return @([string]$candidatePath)
+}
+
 function Get-AzVmAppStateFileHashValue {
     param([string]$Path)
 
@@ -855,21 +906,28 @@ function Get-AzVmTaskAppStateReplayOperations {
         if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) { continue }
 
         foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $ProfileTargets -Entry $entry)) {
-            $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
-            $key = ('directory|profile|{0}|{1}' -f [string]$profileTarget.Label, $destinationPath.TrimEnd('\').ToLowerInvariant())
-            if ($seen.ContainsKey($key)) { continue }
-            $operations.Add([pscustomobject]@{
-                Kind = 'directory'
-                Scope = 'profile'
-                SourcePath = [string]$sourcePath
-                DestinationPath = [string]$destinationPath
-                RegistryPath = ''
-                ProfileLabel = [string]$profileTarget.Label
-                UserName = [string]$profileTarget.UserName
-                ProfilePath = [string]$profileTarget.ProfilePath
-                DistributionAllowList = @()
-            }) | Out-Null
-            $seen[$key] = $true
+            $destinationPaths = @(Resolve-AzVmAppStateReplayDestinationPaths -BasePath ([string]$profileTarget.ProfilePath) -RelativeOrAbsolutePath $relativeDestinationPath)
+            if (@($destinationPaths).Count -lt 1) {
+                Write-Warning ("app-state-profile-directory-target-skip => {0} => no-match for {1}" -f [string]$profileTarget.Label, [string]$relativeDestinationPath)
+                continue
+            }
+
+            foreach ($destinationPath in @($destinationPaths)) {
+                $key = ('directory|profile|{0}|{1}' -f [string]$profileTarget.Label, ([string]$destinationPath).TrimEnd('\').ToLowerInvariant())
+                if ($seen.ContainsKey($key)) { continue }
+                $operations.Add([pscustomobject]@{
+                    Kind = 'directory'
+                    Scope = 'profile'
+                    SourcePath = [string]$sourcePath
+                    DestinationPath = [string]$destinationPath
+                    RegistryPath = ''
+                    ProfileLabel = [string]$profileTarget.Label
+                    UserName = [string]$profileTarget.UserName
+                    ProfilePath = [string]$profileTarget.ProfilePath
+                    DistributionAllowList = @()
+                }) | Out-Null
+                $seen[$key] = $true
+            }
         }
     }
 
@@ -880,21 +938,28 @@ function Get-AzVmTaskAppStateReplayOperations {
         if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) { continue }
 
         foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $ProfileTargets -Entry $entry)) {
-            $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
-            $key = ('file|profile|{0}|{1}' -f [string]$profileTarget.Label, $destinationPath.ToLowerInvariant())
-            if ($seen.ContainsKey($key)) { continue }
-            $operations.Add([pscustomobject]@{
-                Kind = 'file'
-                Scope = 'profile'
-                SourcePath = [string]$sourcePath
-                DestinationPath = [string]$destinationPath
-                RegistryPath = ''
-                ProfileLabel = [string]$profileTarget.Label
-                UserName = [string]$profileTarget.UserName
-                ProfilePath = [string]$profileTarget.ProfilePath
-                DistributionAllowList = @()
-            }) | Out-Null
-            $seen[$key] = $true
+            $destinationPaths = @(Resolve-AzVmAppStateReplayDestinationPaths -BasePath ([string]$profileTarget.ProfilePath) -RelativeOrAbsolutePath $relativeDestinationPath)
+            if (@($destinationPaths).Count -lt 1) {
+                Write-Warning ("app-state-profile-file-target-skip => {0} => no-match for {1}" -f [string]$profileTarget.Label, [string]$relativeDestinationPath)
+                continue
+            }
+
+            foreach ($destinationPath in @($destinationPaths)) {
+                $key = ('file|profile|{0}|{1}' -f [string]$profileTarget.Label, ([string]$destinationPath).ToLowerInvariant())
+                if ($seen.ContainsKey($key)) { continue }
+                $operations.Add([pscustomobject]@{
+                    Kind = 'file'
+                    Scope = 'profile'
+                    SourcePath = [string]$sourcePath
+                    DestinationPath = [string]$destinationPath
+                    RegistryPath = ''
+                    ProfileLabel = [string]$profileTarget.Label
+                    UserName = [string]$profileTarget.UserName
+                    ProfilePath = [string]$profileTarget.ProfilePath
+                    DistributionAllowList = @()
+                }) | Out-Null
+                $seen[$key] = $true
+            }
         }
     }
 
@@ -1835,7 +1900,7 @@ function Invoke-AzVmTaskAppStateCapture {
         foreach ($entry in @($plan.machineFiles)) {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.path)) { continue }
             foreach ($matchPath in @(Resolve-AzVmAppStateCapturePathMatches -BasePath '' -RelativeOrAbsolutePath ([string]$entry.path))) {
-                $payloadPath = Join-Path ('payload\machine-files') ((ConvertTo-AzVmAppStateCaptureSafeName -Value $matchPath) + [System.IO.Path]::GetExtension($matchPath))
+                $payloadPath = Join-Path 'payload\machine-files' (ConvertTo-AzVmAppStateCaptureSafeName -Value $matchPath)
                 if (Copy-AzVmAppStateCaptureTree -SourcePath $matchPath -DestinationPath (Join-Path $scratchRoot $payloadPath) -ExcludeNames @($entry.excludeNames) -ExcludePathPatterns @($entry.excludePathPatterns) -ExcludeFilePatterns @($entry.excludeFilePatterns)) {
                     $manifest.machineFiles += @{
                         sourcePath = [string]$payloadPath
@@ -1853,11 +1918,17 @@ function Invoke-AzVmTaskAppStateCapture {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.path)) { continue }
             foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $profileTargets -Entry $entry)) {
                 foreach ($matchPath in @(Resolve-AzVmAppStateCapturePathMatches -BasePath ([string]$profileTarget.ProfilePath) -RelativeOrAbsolutePath ([string]$entry.path))) {
-                    $payloadPath = Join-Path ('payload\profile-directories\' + (ConvertTo-AzVmAppStateCaptureSafeName -Value ([string]$profileTarget.UserName))) (ConvertTo-AzVmAppStateCaptureSafeName -Value ([string]$entry.path))
+                    $relativeToProfile = Get-AzVmAppStateRelativePathFromBase -BasePath ([string]$profileTarget.ProfilePath) -CandidatePath $matchPath
+                    if ([string]::IsNullOrWhiteSpace([string]$relativeToProfile)) {
+                        $skipCount++
+                        continue
+                    }
+
+                    $payloadPath = Join-Path ('payload\profile-directories\' + (ConvertTo-AzVmAppStateCaptureSafeName -Value ([string]$profileTarget.UserName))) (ConvertTo-AzVmAppStateCaptureSafeName -Value $relativeToProfile)
                     if (Copy-AzVmAppStateCaptureTree -SourcePath $matchPath -DestinationPath (Join-Path $scratchRoot $payloadPath) -ExcludeNames @($entry.excludeNames) -ExcludePathPatterns @($entry.excludePathPatterns) -ExcludeFilePatterns @($entry.excludeFilePatterns)) {
                         $manifest.profileDirectories += @{
                             sourcePath = [string]$payloadPath
-                            relativeDestinationPath = [string]$entry.path
+                            relativeDestinationPath = [string]$relativeToProfile
                             targetProfiles = @([string]$profileTarget.Label)
                         }
                         $profileDirectoryExports++
@@ -1873,11 +1944,17 @@ function Invoke-AzVmTaskAppStateCapture {
             if ($null -eq $entry -or [string]::IsNullOrWhiteSpace([string]$entry.path)) { continue }
             foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $profileTargets -Entry $entry)) {
                 foreach ($matchPath in @(Resolve-AzVmAppStateCapturePathMatches -BasePath ([string]$profileTarget.ProfilePath) -RelativeOrAbsolutePath ([string]$entry.path))) {
-                    $payloadPath = Join-Path ('payload\profile-files\' + (ConvertTo-AzVmAppStateCaptureSafeName -Value ([string]$profileTarget.UserName))) ((ConvertTo-AzVmAppStateCaptureSafeName -Value ([string]$entry.path)) + [System.IO.Path]::GetExtension($matchPath))
+                    $relativeToProfile = Get-AzVmAppStateRelativePathFromBase -BasePath ([string]$profileTarget.ProfilePath) -CandidatePath $matchPath
+                    if ([string]::IsNullOrWhiteSpace([string]$relativeToProfile)) {
+                        $skipCount++
+                        continue
+                    }
+
+                    $payloadPath = Join-Path ('payload\profile-files\' + (ConvertTo-AzVmAppStateCaptureSafeName -Value ([string]$profileTarget.UserName))) (ConvertTo-AzVmAppStateCaptureSafeName -Value $relativeToProfile)
                     if (Copy-AzVmAppStateCaptureTree -SourcePath $matchPath -DestinationPath (Join-Path $scratchRoot $payloadPath) -ExcludeNames @($entry.excludeNames) -ExcludePathPatterns @($entry.excludePathPatterns) -ExcludeFilePatterns @($entry.excludeFilePatterns)) {
                         $manifest.profileFiles += @{
                             sourcePath = [string]$payloadPath
-                            relativeDestinationPath = [string]$entry.path
+                            relativeDestinationPath = [string]$relativeToProfile
                             targetProfiles = @([string]$profileTarget.Label)
                         }
                         $profileFileExports++

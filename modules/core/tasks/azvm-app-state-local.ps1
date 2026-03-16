@@ -228,6 +228,33 @@ function Test-AzVmLocalAppStatePathMatchesRule {
     return [string]::Equals($normalizedActual, $normalizedRule, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
+function Resolve-AzVmLocalAppStateReplayDestinationPaths {
+    param(
+        [string]$BasePath,
+        [string]$RelativeOrAbsolutePath
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$RelativeOrAbsolutePath)) {
+        return @()
+    }
+
+    $candidatePath = [string]$RelativeOrAbsolutePath
+    if (-not [System.IO.Path]::IsPathRooted($candidatePath) -and -not [string]::IsNullOrWhiteSpace([string]$BasePath)) {
+        $candidatePath = Join-Path $BasePath $candidatePath
+    }
+
+    $hasWildcard = ($candidatePath.IndexOf('*', [System.StringComparison]::Ordinal) -ge 0 -or $candidatePath.IndexOf('?', [System.StringComparison]::Ordinal) -ge 0)
+    if ($hasWildcard) {
+        return @(
+            Get-ChildItem -Path $candidatePath -Force -ErrorAction SilentlyContinue |
+                Sort-Object FullName |
+                Select-Object -ExpandProperty FullName -Unique
+        )
+    }
+
+    return @([string]$candidatePath)
+}
+
 function Test-AzVmLocalAppStateManifestEntryAllowed {
     param(
         [AllowNull()]$Entry,
@@ -448,20 +475,24 @@ function Get-AzVmTaskAppStateLocalRestoreOperations {
         if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) { continue }
 
         foreach ($profileTarget in @(Get-AzVmTaskAppStateLocalSelectedProfileTargets -ProfileTargets @($ProfileTargets) -Entry $entry)) {
-            $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
-            $key = ('directory|profile|{0}|{1}' -f [string]$profileTarget.Label, $destinationPath.TrimEnd('\').ToLowerInvariant())
-            if ($seen.ContainsKey($key)) { continue }
-            $operations.Add([pscustomobject]@{
-                Kind = 'directory'
-                Scope = 'profile'
-                SourcePath = [string]$sourcePath
-                DestinationPath = [string]$destinationPath
-                RegistryPath = ''
-                ProfileLabel = [string]$profileTarget.Label
-                UserName = [string]$profileTarget.UserName
-                ProfilePath = [string]$profileTarget.ProfilePath
-            }) | Out-Null
-            $seen[$key] = $true
+            $destinationPaths = @(Resolve-AzVmLocalAppStateReplayDestinationPaths -BasePath ([string]$profileTarget.ProfilePath) -RelativeOrAbsolutePath $relativeDestinationPath)
+            if (@($destinationPaths).Count -lt 1) { continue }
+
+            foreach ($destinationPath in @($destinationPaths)) {
+                $key = ('directory|profile|{0}|{1}' -f [string]$profileTarget.Label, ([string]$destinationPath).TrimEnd('\').ToLowerInvariant())
+                if ($seen.ContainsKey($key)) { continue }
+                $operations.Add([pscustomobject]@{
+                    Kind = 'directory'
+                    Scope = 'profile'
+                    SourcePath = [string]$sourcePath
+                    DestinationPath = [string]$destinationPath
+                    RegistryPath = ''
+                    ProfileLabel = [string]$profileTarget.Label
+                    UserName = [string]$profileTarget.UserName
+                    ProfilePath = [string]$profileTarget.ProfilePath
+                }) | Out-Null
+                $seen[$key] = $true
+            }
         }
     }
 
@@ -472,20 +503,24 @@ function Get-AzVmTaskAppStateLocalRestoreOperations {
         if (-not (Test-Path -LiteralPath $sourcePath) -or [string]::IsNullOrWhiteSpace([string]$relativeDestinationPath)) { continue }
 
         foreach ($profileTarget in @(Get-AzVmTaskAppStateLocalSelectedProfileTargets -ProfileTargets @($ProfileTargets) -Entry $entry)) {
-            $destinationPath = Join-Path ([string]$profileTarget.ProfilePath) $relativeDestinationPath
-            $key = ('file|profile|{0}|{1}' -f [string]$profileTarget.Label, $destinationPath.ToLowerInvariant())
-            if ($seen.ContainsKey($key)) { continue }
-            $operations.Add([pscustomobject]@{
-                Kind = 'file'
-                Scope = 'profile'
-                SourcePath = [string]$sourcePath
-                DestinationPath = [string]$destinationPath
-                RegistryPath = ''
-                ProfileLabel = [string]$profileTarget.Label
-                UserName = [string]$profileTarget.UserName
-                ProfilePath = [string]$profileTarget.ProfilePath
-            }) | Out-Null
-            $seen[$key] = $true
+            $destinationPaths = @(Resolve-AzVmLocalAppStateReplayDestinationPaths -BasePath ([string]$profileTarget.ProfilePath) -RelativeOrAbsolutePath $relativeDestinationPath)
+            if (@($destinationPaths).Count -lt 1) { continue }
+
+            foreach ($destinationPath in @($destinationPaths)) {
+                $key = ('file|profile|{0}|{1}' -f [string]$profileTarget.Label, ([string]$destinationPath).ToLowerInvariant())
+                if ($seen.ContainsKey($key)) { continue }
+                $operations.Add([pscustomobject]@{
+                    Kind = 'file'
+                    Scope = 'profile'
+                    SourcePath = [string]$sourcePath
+                    DestinationPath = [string]$destinationPath
+                    RegistryPath = ''
+                    ProfileLabel = [string]$profileTarget.Label
+                    UserName = [string]$profileTarget.UserName
+                    ProfilePath = [string]$profileTarget.ProfilePath
+                }) | Out-Null
+                $seen[$key] = $true
+            }
         }
     }
 

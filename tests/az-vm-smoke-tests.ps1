@@ -1966,6 +1966,27 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
 
         Assert-True -Condition ([string]$vnetName -eq 'net-examplevm-sec1-n11') -Message "First generated managed resource id must continue after the global max nX value."
         Assert-True -Condition ([string]$subnetName -eq 'subnet-examplevm-sec1-n12') -Message "Managed resource ids must stay sequential and unique within the same provisioning plan."
+
+        $legacyTemplateFailed = $false
+        try {
+            $null = Resolve-AzVmResourceGroupNameFromTemplate -Template 'rg-{VM_NAME}-{REGION_CODE}-g{N}' -VmName 'examplevm' -RegionCode 'sec1' -UseNextIndex
+        }
+        catch {
+            $legacyTemplateFailed = $true
+            Assert-True -Condition ($_.Exception.Message -like '*unresolved placeholder token*') -Message "Legacy resource-group placeholders must fail with a precise unresolved-token error."
+        }
+        Assert-True -Condition $legacyTemplateFailed -Message "Legacy resource-group templates must be rejected."
+
+        $legacyResourceTemplateFailed = $false
+        try {
+            $null = Resolve-AzVmNameFromTemplate -Template 'net-{VM_NAME}-{REGION_CODE}-n{N}' -ResourceType 'net' -VmName 'examplevm' -RegionCode 'sec1' -ResourceGroup 'rg-examplevm-sec1-g5' -UseNextIndex -IndexAllocator $allocator -LogicalName 'VNET_NAME'
+        }
+        catch {
+            $legacyResourceTemplateFailed = $true
+            Assert-True -Condition ($_.Exception.Message -like '*unresolved placeholder token*') -Message "Legacy managed resource placeholders must fail with a precise unresolved-token error."
+        }
+        Assert-True -Condition $legacyResourceTemplateFailed -Message "Legacy managed resource templates must be rejected."
+
         $reRegisterIndex = Register-AzVmManagedResourceNameIndex -Allocator $allocator -Name 'net-examplevm-sec1-n11' -LogicalName 'VNET_NAME'
         Assert-True -Condition ($reRegisterIndex -eq 11) -Message "Managed resource name registration must be idempotent for the same logical resource."
 
@@ -3481,6 +3502,53 @@ Invoke-Test -Name "Show report redacts password-bearing config values and prints
     }
 }
 
+Invoke-Test -Name "Step first-use values redact sensitive fields" -Action {
+    $script:StepFirstUseCapturedHostLines = @()
+    try {
+        Remove-Variable -Name AzVmFirstUseTracker -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzVmValueStateTracker -Scope Script -ErrorAction SilentlyContinue
+
+        function Write-Host {
+            param(
+                [Parameter(Position = 0, ValueFromRemainingArguments = $true)]
+                [object[]]$Object,
+                [ConsoleColor]$ForegroundColor,
+                [ConsoleColor]$BackgroundColor,
+                [switch]$NoNewline,
+                [object]$Separator
+            )
+
+            $script:StepFirstUseCapturedHostLines += ,((@($Object) | ForEach-Object { [string]$_ }) -join ' ')
+        }
+
+        Show-AzVmStepFirstUseValues `
+            -StepLabel 'Step 4/7 - VM create' `
+            -Context ([ordered]@{
+                VmName = 'samplevm'
+                VmUser = 'manager'
+                VmPass = '<runtime-secret>'
+                VmAssistantUser = 'assistant'
+                VmAssistantPass = '<runtime-secret-2>'
+            }) `
+            -Keys @('VmName', 'VmUser', 'VmPass', 'VmAssistantUser', 'VmAssistantPass') `
+            -ExtraValues @{ VmExecutionMode = 'default' }
+
+        $outputText = $script:StepFirstUseCapturedHostLines -join "`n"
+        Assert-True -Condition ($outputText -match [regex]::Escape('VmPass = [redacted]')) -Message 'Step review must redact VmPass.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VmAssistantPass = [redacted]')) -Message 'Step review must redact VmAssistantPass.'
+        Assert-True -Condition (-not ($outputText -match [regex]::Escape('<runtime-secret>'))) -Message 'Step review must not print the raw admin password.'
+        Assert-True -Condition (-not ($outputText -match [regex]::Escape('<runtime-secret-2>'))) -Message 'Step review must not print the raw assistant password.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VmUser = manager')) -Message 'Step review must keep VmUser visible.'
+        Assert-True -Condition ($outputText -match [regex]::Escape('VmName = samplevm')) -Message 'Step review must keep VmName visible.'
+    }
+    finally {
+        Remove-Item Function:\Write-Host -ErrorAction SilentlyContinue
+        Remove-Variable -Name StepFirstUseCapturedHostLines -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzVmFirstUseTracker -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzVmValueStateTracker -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "SSH identity output matcher accepts machine-qualified usernames" -Action {
     Assert-True -Condition (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName 'manager' -OutputText "samplevm\manager") -Message 'Identity matcher must accept machine-qualified usernames.'
     Assert-True -Condition (Test-AzVmConnectionIdentityOutputMatchesUser -ExpectedUserName 'assistant' -OutputText "assistant") -Message 'Identity matcher must accept plain usernames.'
@@ -4245,11 +4313,11 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '02-check-install-chrome' = 128
         '101-install-powershell-core' = 180
         '102-install-git-system' = 240
-        '103-install-python-system' = 105
+        '103-install-python-system' = 180
         '104-install-node-system' = 240
         '105-install-azure-cli' = 139
-        '106-install-gh-cli' = 11
-        '107-install-7zip-system' = 13
+        '106-install-gh-cli' = 30
+        '107-install-7zip-system' = 30
         '108-install-ffmpeg-system' = 34
         '109-install-vscode-system' = 104
         '110-install-edge-browser' = 120
@@ -4269,7 +4337,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '124-install-itunes-system' = 57
         '125-install-be-my-eyes' = 240
         '126-install-nvda-system' = 54
-        '127-install-rclone-system' = 13
+        '127-install-rclone-system' = 45
         '128-configure-unlocker-io' = 23
         '129-install-icloud-system' = 120
         '130-install-vs2022community' = 7200
@@ -5262,6 +5330,9 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $azureCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '105-install-azure-cli') -Raw)
     $ghCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '106-install-gh-cli') -Raw)
     $jawsTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '131-install-jaws-screen-reader') -Raw)
+    $whatsAppTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '120-install-whatsapp-system') -Raw)
+    $sshAssetsText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\assets.ps1') -Raw)
+    $sshProcessText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\process.ps1') -Raw)
     $auditScriptPath = Join-Path $RepoRoot 'tools\scripts\app-state-audit.ps1'
     $auditScriptText = [string](Get-Content -LiteralPath $auditScriptPath -Raw)
 
@@ -5276,6 +5347,15 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateRollback*') -Message 'Windows app-state guest helpers must support rollback after restore verification failures.'
     Assert-True -Condition ($guestHelperText -like '*phase=verify-complete*') -Message 'Windows app-state guest helpers must log restore verification completion.'
     Assert-True -Condition ($guestHelperText -like '*phase=rollback-complete*') -Message 'Windows app-state guest helpers must log rollback completion.'
+    Assert-True -Condition ($sshAssetsText -like '*Get-AzVmPscpExecutablePath*') -Message 'Windows SSH asset copy must resolve pscp.exe for the primary Windows SCP transport.'
+    Assert-True -Condition ($sshAssetsText -like '*Get-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must resolve trusted SCP host key fingerprints dynamically.'
+    Assert-True -Condition ($sshAssetsText -like '*ssh-keyscan.exe*') -Message 'Windows SCP transport must use ssh-keyscan.exe to discover the current VM host keys.'
+    Assert-True -Condition ($sshAssetsText -like '*ssh-keygen.exe*') -Message 'Windows SCP transport must use ssh-keygen.exe to derive PuTTY-compatible host key fingerprints.'
+    Assert-True -Condition ($sshAssetsText -like '*mode=windows-scp*') -Message 'Windows SSH asset copy logs must identify the SCP transport mode.'
+    Assert-True -Condition ($sshAssetsText -like '*-pwfile*') -Message 'Windows SCP transport must pass the password through a temp pwfile instead of the process command line.'
+    Assert-True -Condition ($sshAssetsText -like '*-scp*') -Message 'Windows SCP transport must force the SCP protocol on Windows targets.'
+    Assert-True -Condition ($sshAssetsText -like '*pscp fetch asset <-*') -Message 'Windows SSH asset fetch must also use SCP on Windows targets.'
+    Assert-True -Condition ($sshProcessText -like '*SkipPythonBytecodeFlag*') -Message 'Shared SSH process helpers must let non-Python transports opt out of the Python-specific -B prefix.'
     Assert-True -Condition ($localAppStateText -like '*Resolve-AzVmLocalAppStateProfileTargets*') -Message 'Local app-state helpers must resolve explicit Windows profile targets.'
     Assert-True -Condition ($localAppStateText -like '*restore-journal.json*') -Message 'Local app-state helpers must write a restore journal.'
     Assert-True -Condition ($localAppStateText -like '*verify-report.json*') -Message 'Local app-state helpers must write a verify report.'
@@ -5288,12 +5368,141 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($azdTaskJsonText -like '*telemetry*') -Message 'Task-local azd capture specs must exclude telemetry payloads.'
     Assert-True -Condition ($azureCliTaskJsonText -like '*telemetry*') -Message 'Task-local Azure CLI capture specs must exclude telemetry payloads.'
     Assert-True -Condition (-not ($ghCliTaskJsonText -like '*AppData\Local\GitHub CLI*')) -Message 'Task-local GitHub CLI capture specs must not keep the heavy local cache tree.'
+    Assert-True -Condition ($whatsAppTaskJsonText -like '*rotatedLogs*') -Message 'WhatsApp task-local app-state must exclude rotated log trees.'
+    Assert-True -Condition ($whatsAppTaskJsonText -like '**\\transfers\\**') -Message 'WhatsApp task-local app-state must exclude transferred-file payloads.'
+    Assert-True -Condition ($whatsAppTaskJsonText -like '*.db-wal*') -Message 'WhatsApp task-local app-state must exclude SQLite WAL payloads.'
     Assert-True -Condition ($jawsTaskJsonText -like '*AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings*') -Message 'JAWS task-local app-state must capture the 2025 settings directory.'
     Assert-True -Condition ($jawsTaskJsonText -like '*HKLM\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the machine Freedom Scientific subtree.'
     Assert-True -Condition ($jawsTaskJsonText -like '*HKLM\\Software\\WOW6432Node\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the WOW6432 Freedom Scientific subtree.'
     Assert-True -Condition ($jawsTaskJsonText -like '*HKCU\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the user Freedom Scientific subtree.'
     Assert-True -Condition (Test-Path -LiteralPath $auditScriptPath) -Message 'The manual app-state audit helper must exist under tools/scripts.'
     Assert-True -Condition ($auditScriptText -like '*foreign-targets*') -Message 'The manual app-state audit helper must report foreign profile targets when present.'
+}
+
+Invoke-Test -Name "Guest app-state capture resolves wildcard profile paths to concrete destinations" -Action {
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-guest-capture-' + [Guid]::NewGuid().ToString('N'))
+    $profilePath = Join-Path $tempRoot 'profiles\manager'
+    $settingsPath = Join-Path $profilePath 'AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\Settings'
+    $planPath = Join-Path $tempRoot 'capture-plan.json'
+    $zipPath = Join-Path $tempRoot 'app-state.zip'
+    $modulePath = Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-guest.psm1'
+    $module = $null
+
+    try {
+        New-Item -Path $settingsPath -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $settingsPath 'settings.json') -Value '{"theme":"saved"}' -Encoding UTF8
+
+        $plan = [ordered]@{
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @(
+                [ordered]@{
+                    path = 'AppData\Local\Packages\OpenAI.Codex_*\Settings'
+                    targetProfiles = @('manager')
+                    excludeNames = @()
+                    excludePathPatterns = @()
+                    excludeFilePatterns = @()
+                }
+            )
+            profileFiles = @()
+            machineRegistryKeys = @()
+            userRegistryKeys = @()
+        }
+        Set-Content -LiteralPath $planPath -Value ($plan | ConvertTo-Json -Depth 8) -Encoding UTF8
+
+        $module = Import-Module -Name $modulePath -Force -PassThru
+        $captureResult = Invoke-AzVmTaskAppStateCapture `
+            -TaskName '116-install-codex-app' `
+            -PlanPath $planPath `
+            -OutputZipPath $zipPath `
+            -ManagerUser 'manager' `
+            -AssistantUser 'assistant' `
+            -ProfileTargets @([pscustomobject]@{ Label = 'manager'; UserName = 'manager'; ProfilePath = $profilePath })
+
+        Assert-True -Condition ([bool]$captureResult.CreatedZip) -Message 'Guest app-state capture must create a zip when wildcard profile content exists.'
+        Assert-True -Condition (Test-Path -LiteralPath $zipPath) -Message 'Guest app-state capture must write the output zip.'
+
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+        try {
+            $manifestEntry = $archive.Entries | Where-Object { $_.FullName -eq 'app-state.manifest.json' } | Select-Object -First 1
+            $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
+            try {
+                $manifest = $reader.ReadToEnd() | ConvertFrom-Json
+            }
+            finally {
+                $reader.Dispose()
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
+
+        $capturedEntry = @($manifest.profileDirectories | Where-Object { @($_.targetProfiles) -contains 'manager' } | Select-Object -First 1)
+        Assert-True -Condition (@($capturedEntry).Count -eq 1) -Message 'Guest app-state capture must emit one concrete profile-directory manifest entry.'
+        Assert-True -Condition ([string]$capturedEntry[0].relativeDestinationPath -eq 'AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\Settings') -Message 'Guest app-state capture must record the resolved package path instead of the wildcard rule.'
+    }
+    finally {
+        if ($null -ne $module) {
+            Remove-Module -ModuleInfo $module -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Guest app-state replay resolves wildcard manifest targets to concrete profile paths" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-guest-replay-' + [Guid]::NewGuid().ToString('N'))
+    $profilePath = Join-Path $tempRoot 'profiles\manager'
+    $resolvedSettingsPath = Join-Path $profilePath 'AppData\Local\Packages\OpenAI.Codex_2p2nqsd0c76g0\Settings'
+    $scratchRoot = Join-Path $tempRoot 'payload-build'
+    $payloadPath = Join-Path $scratchRoot 'payload\profile-directories\manager\OpenAI.Codex.Settings'
+    $zipPath = Join-Path $tempRoot 'app-state.zip'
+    $modulePath = Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-guest.psm1'
+    $module = $null
+
+    try {
+        New-Item -Path $resolvedSettingsPath -ItemType Directory -Force | Out-Null
+        New-Item -Path $payloadPath -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $payloadPath 'settings.json') -Value '{"theme":"saved"}' -Encoding UTF8
+
+        $manifest = [ordered]@{
+            version = 3
+            taskName = '116-install-codex-app'
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @(
+                [ordered]@{
+                    sourcePath = 'payload/profile-directories/manager/OpenAI.Codex.Settings'
+                    relativeDestinationPath = 'AppData\Local\Packages\OpenAI.Codex_*\Settings'
+                    targetProfiles = @('manager')
+                }
+            )
+            profileFiles = @()
+            registryImports = @()
+        }
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value ($manifest | ConvertTo-Json -Depth 8) -Encoding UTF8
+        Compress-Archive -LiteralPath @(
+            (Join-Path $scratchRoot 'app-state.manifest.json'),
+            (Join-Path $scratchRoot 'payload')
+        ) -DestinationPath $zipPath -Force
+
+        $module = Import-Module -Name $modulePath -Force -PassThru
+        $replayResult = Invoke-AzVmTaskAppStateReplay `
+            -ZipPath $zipPath `
+            -TaskName '116-install-codex-app' `
+            -ManagerUser 'manager' `
+            -AssistantUser 'assistant' `
+            -ProfileTargets @([pscustomobject]@{ Label = 'manager'; UserName = 'manager'; ProfilePath = $profilePath })
+
+        Assert-True -Condition ([bool]$replayResult.Verified) -Message 'Guest app-state replay must verify successfully when a wildcard manifest resolves to a concrete profile path.'
+        Assert-True -Condition ((Get-Content -LiteralPath (Join-Path $resolvedSettingsPath 'settings.json') -Raw) -match '"saved"') -Message 'Guest app-state replay must copy wildcard-manifest content into the resolved package directory.'
+    }
+    finally {
+        if ($null -ne $module) {
+            Remove-Module -ModuleInfo $module -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 Invoke-Test -Name "Task command surface supports save and restore app-state maintenance" -Action {

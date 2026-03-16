@@ -94,6 +94,27 @@ function ConvertTo-AzVmDisplayValue {
     return [string]$Value
 }
 
+function Test-AzVmSensitiveDisplayKey {
+    param(
+        [string]$Key
+    )
+
+    $normalizedKey = [string]$Key
+    if ([string]::IsNullOrWhiteSpace([string]$normalizedKey)) {
+        return $false
+    }
+
+    if ($normalizedKey -match '(?i)(pass(word)?|secret|token)$') {
+        return $true
+    }
+
+    if ($normalizedKey -match '(?i)(^|_)(pass|password|secret|token)(_|$)') {
+        return $true
+    }
+
+    return $false
+}
+
 # Handles Get-AzVmFirstUseTracker.
 function Get-AzVmFirstUseTracker {
     if (-not $script:AzVmFirstUseTracker) {
@@ -297,6 +318,9 @@ function Register-AzVmValueObservation {
     }
 
     $displayValue = ConvertTo-AzVmDisplayValue -Value $Value
+    if ((Test-AzVmSensitiveDisplayKey -Key $normalizedKey) -and -not [string]::IsNullOrWhiteSpace([string]$displayValue)) {
+        $displayValue = '[redacted]'
+    }
     $valueState = Get-AzVmValueStateTracker
     $firstUseTracker = Get-AzVmFirstUseTracker
 

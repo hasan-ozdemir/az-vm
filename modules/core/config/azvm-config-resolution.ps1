@@ -22,6 +22,63 @@ function Test-AzVmConfigPlaceholderValue {
     )
 }
 
+# Handles Get-AzVmUnresolvedTemplateTokens.
+function Get-AzVmUnresolvedTemplateTokens {
+    param(
+        [string]$Value,
+        [string[]]$AllowedTokens = @()
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return @()
+    }
+
+    $allowedLookup = @{}
+    foreach ($token in @($AllowedTokens)) {
+        if ([string]::IsNullOrWhiteSpace([string]$token)) {
+            continue
+        }
+
+        $allowedLookup[[string]$token] = $true
+    }
+
+    $tokens = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($match in [regex]::Matches([string]$Value, '\{([A-Z][A-Z0-9_]*)\}')) {
+        $tokenName = [string]$match.Groups[1].Value
+        if ($allowedLookup.ContainsKey($tokenName)) {
+            continue
+        }
+
+        if (-not $tokens.Contains($tokenName)) {
+            [void]$tokens.Add($tokenName)
+        }
+    }
+
+    return @($tokens.ToArray())
+}
+
+# Handles Assert-AzVmResolvedTemplateValue.
+function Assert-AzVmResolvedTemplateValue {
+    param(
+        [string]$Value,
+        [string]$ConfigKey,
+        [string[]]$AllowedTokens = @(),
+        [string]$Hint = 'Update the configured template so it uses only the current placeholder contract.'
+    )
+
+    $unresolvedTokens = @(Get-AzVmUnresolvedTemplateTokens -Value $Value -AllowedTokens $AllowedTokens)
+    if ($unresolvedTokens.Count -le 0) {
+        return [string]$Value
+    }
+
+    $tokenList = ($unresolvedTokens | ForEach-Object { '{' + [string]$_ + '}' }) -join ', '
+    Throw-FriendlyError `
+        -Detail ("Config template '{0}' resolved to '{1}', but unresolved placeholder token(s) remain: {2}." -f [string]$ConfigKey, [string]$Value, $tokenList) `
+        -Code 22 `
+        -Summary "Config template contains unresolved placeholder tokens." `
+        -Hint $Hint
+}
+
 # Handles Get-AzVmResolvedConfigValue.
 function Get-AzVmResolvedConfigValue {
     param(
