@@ -384,29 +384,6 @@ function Dismount-RegistryHive {
     throw ("reg unload failed for HKU\{0} with exit code {1}" -f $MountName, $exitCode)
 }
 
-function Copy-RegistryBranchWithRegExe {
-    param(
-        [string]$SourcePath,
-        [string]$TargetPath,
-        [string]$Label
-    )
-
-    if (-not (Test-Path -LiteralPath $SourcePath)) {
-        Add-CopySkipEvidence -Reason 'missing-registry-source' -Label $Label -Path $SourcePath
-        Write-Detail ("copy-settings-user-registry-skip: {0}" -f $Label)
-        return
-    }
-
-    $sourceRegPath = Convert-AzVmRegistryProviderPathToRegExePath -Path $SourcePath
-    $targetRegPath = Convert-AzVmRegistryProviderPathToRegExePath -Path $TargetPath
-    & reg.exe copy $sourceRegPath $targetRegPath /s /f 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw ("reg copy failed for {0}: {1} -> {2}" -f $Label, $sourceRegPath, $targetRegPath)
-    }
-
-    Write-Detail ("copy-settings-user-registry-ok: {0}" -f $Label)
-}
-
 function Test-RegistryRelativePathExcluded {
     param(
         [string]$RelativePath,
@@ -905,427 +882,6 @@ function Wait-UserSessionsAndProcessesToSettle {
     Write-Warning ("Proceeding after the bounded user-settle wait expired for {0}; later copy steps will still validate the resulting state." -f $UserName)
 }
 
-function Test-PathContentCopied {
-    param([string]$Path)
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return $false
-    }
-
-    if ((Get-Item -LiteralPath $Path -ErrorAction Stop).PSIsContainer) {
-        return (@(Get-ChildItem -LiteralPath $Path -Force -ErrorAction SilentlyContinue).Count -gt 0)
-    }
-
-    return $true
-}
-
-function Assert-RequiredRelativePathCopied {
-    param(
-        [string]$SourceProfilePath,
-        [string]$TargetProfilePath,
-        [string]$RelativePath
-    )
-
-    $sourcePath = Join-Path $SourceProfilePath $RelativePath
-    if (-not (Test-Path -LiteralPath $sourcePath)) {
-        return
-    }
-
-    $sourceItem = Get-Item -LiteralPath $sourcePath -Force -ErrorAction Stop
-    $isSourceReparsePoint = (($sourceItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -eq [System.IO.FileAttributes]::ReparsePoint)
-    if ($isSourceReparsePoint) {
-        return
-    }
-
-    $targetPath = Join-Path $TargetProfilePath $RelativePath
-    if (-not (Test-Path -LiteralPath $targetPath)) {
-        throw ("Required path was not copied: {0}" -f $RelativePath)
-    }
-
-    if (-not $sourceItem.PSIsContainer) {
-        return
-    }
-
-    $sourceHasContent = (@(Get-ChildItem -LiteralPath $sourcePath -Force -ErrorAction SilentlyContinue).Count -gt 0)
-    if (-not $sourceHasContent) {
-        return
-    }
-
-    if (-not (Test-PathContentCopied -Path $targetPath)) {
-        throw ("Required path content was not copied: {0}" -f $RelativePath)
-    }
-}
-
-function Assert-ExcludedItemNotCopied {
-    param(
-        [string]$SourceProfilePath,
-        [string]$TargetProfilePath,
-        [string]$RelativePath
-    )
-
-    $sourcePath = Join-Path $SourceProfilePath $RelativePath
-    $targetPath = Join-Path $TargetProfilePath $RelativePath
-    if (-not (Test-Path -LiteralPath $sourcePath)) {
-        return
-    }
-
-    if (Test-PathContentCopied -Path $targetPath) {
-        throw ("Excluded path was copied unexpectedly: {0}" -f $RelativePath)
-    }
-}
-
-function Assert-TaskManagerSettingsCopied {
-    param(
-        [string]$SourceProfilePath,
-        [string]$ProfilePath,
-        [string]$Label
-    )
-
-    $sourceSettingsPath = Join-Path $SourceProfilePath 'AppData\Local\Microsoft\Windows\TaskManager\settings.json'
-    $settingsPath = Join-Path $ProfilePath 'AppData\Local\Microsoft\Windows\TaskManager\settings.json'
-        if (-not (Test-Path -LiteralPath $sourceSettingsPath)) {
-            if (Test-Path -LiteralPath $settingsPath) {
-                throw ("Task Manager settings were copied unexpectedly for {0}: source is absent but target exists." -f $Label)
-            }
-
-            Add-CopySkipEvidence -Reason 'missing-task-manager-source' -Label $Label -Path $sourceSettingsPath
-            Write-Detail ("copy-settings-user-task-manager-skip: source store missing => {0}" -f $Label)
-            return
-        }
-
-    if (-not (Test-Path -LiteralPath $settingsPath)) {
-        throw ("Task Manager settings were not copied for {0}: {1}" -f $Label, $settingsPath)
-    }
-
-    $raw = [string](Get-Content -LiteralPath $settingsPath -Raw -ErrorAction Stop)
-    if ([string]::IsNullOrWhiteSpace([string]$raw) -or $raw -notmatch '"SmallView"\s*:\s*false') {
-        throw ("Task Manager settings do not contain SmallView=false for {0}." -f $Label)
-    }
-}
-
-function New-ProfileCopySpec {
-    param(
-        [string]$RelativePath,
-        [string]$LabelSuffix,
-        [string[]]$ExcludedDirectories = @(),
-        [string[]]$ExcludedFiles = @()
-    )
-
-    return [pscustomobject]@{
-        RelativePath = [string]$RelativePath
-        LabelSuffix = [string]$LabelSuffix
-        ExcludedDirectories = @($ExcludedDirectories)
-        ExcludedFiles = @($ExcludedFiles)
-    }
-}
-
-function Add-ProfileCopySpecIfPresent {
-    param(
-        [System.Collections.Generic.List[object]]$Specs,
-        [string]$SourceProfilePath,
-        [string]$RelativePath,
-        [string]$LabelSuffix,
-        [string[]]$ExcludedDirectories = @(),
-        [string[]]$ExcludedFiles = @()
-    )
-
-    if ($null -eq $Specs -or [string]::IsNullOrWhiteSpace([string]$RelativePath)) {
-        return
-    }
-
-    $sourcePath = Join-Path $SourceProfilePath $RelativePath
-    if (-not (Test-Path -LiteralPath $sourcePath)) {
-        return
-    }
-
-    $Specs.Add((New-ProfileCopySpec -RelativePath $RelativePath -LabelSuffix $LabelSuffix -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles)) | Out-Null
-}
-
-function Get-ProfileCopySpecs {
-    param(
-        [string]$SourceProfilePath,
-        [string]$TargetProfilePath,
-        [string]$Label
-    )
-
-    $commonExcludedFiles = @(
-        'desktop.ini',
-        'Thumbs.db',
-        'NTUSER.DAT*',
-        'UsrClass.dat*',
-        '*.log',
-        '*.etl',
-        '*.lock'
-    )
-
-    $specs = New-Object 'System.Collections.Generic.List[object]'
-
-    foreach ($requiredRelativePath in @(
-        'Desktop',
-        'Documents',
-        'Favorites',
-        'Videos',
-        'Pictures',
-        'Downloads',
-        'Links',
-        'Music'
-    )) {
-        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath $requiredRelativePath -LabelSuffix $requiredRelativePath
-    }
-
-    Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\TaskManager' -LabelSuffix 'task-manager' -ExcludedFiles @($commonExcludedFiles)
-
-    foreach ($relativePath in @(
-        'AppData\Local\Google\Chrome\User Data\Local State',
-        'AppData\Local\Google\Chrome\User Data\Default\Preferences',
-        'AppData\Local\Google\Chrome\User Data\Default\Secure Preferences',
-        'AppData\Local\Google\Chrome\User Data\Default\Bookmarks'
-    )) {
-        $leafName = ([string]$relativePath).Split('\\')[-1].Replace(' ', '-').ToLowerInvariant()
-        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath $relativePath -LabelSuffix ("chrome-{0}" -f $leafName) -ExcludedFiles @($commonExcludedFiles)
-    }
-
-    foreach ($relativePath in @(
-        'AppData\Roaming\Code\User\settings.json',
-        'AppData\Roaming\Code\User\keybindings.json',
-        'AppData\Roaming\Code\User\tasks.json'
-    )) {
-        $labelSuffix = ([string]$relativePath).Substring(([string]'AppData\Roaming\Code\User\').Length).Replace('.json', '').Replace('\', '-').ToLowerInvariant()
-        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath $relativePath -LabelSuffix ("vscode-{0}" -f $labelSuffix) -ExcludedFiles @($commonExcludedFiles)
-    }
-
-    Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Roaming\Code\User\snippets' -LabelSuffix 'vscode-snippets' -ExcludedFiles @($commonExcludedFiles)
-
-    $targetNpmRoot = Join-Path $TargetProfilePath 'AppData\Roaming\npm'
-    $targetNpmReady = (
-        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'codex.cmd')) -and
-        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'gemini.cmd')) -and
-        (Test-Path -LiteralPath (Join-Path $targetNpmRoot 'copilot.cmd'))
-    )
-    if ([string]::Equals([string]$Label, 'default-profile', [System.StringComparison]::OrdinalIgnoreCase)) {
-        Add-CopySkipEvidence -Reason 'npm-copy-skip-default-profile' -Label $Label -Path (Join-Path $SourceProfilePath 'AppData\Roaming\npm')
-        Write-Detail 'copy-settings-user-file-skip: default-profile roaming npm'
-    }
-    elseif ($targetNpmReady) {
-        Add-CopySkipEvidence -Reason 'npm-already-synchronized' -Label $Label -Path $targetNpmRoot
-        Write-Detail ("copy-settings-user-file-skip: {0} roaming npm already-synchronized" -f $Label)
-    }
-    else {
-        Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Roaming\npm' -LabelSuffix 'npm' -ExcludedFiles @($commonExcludedFiles)
-    }
-
-    return @($specs.ToArray())
-}
-
-function Invoke-ExplicitExcludedTargetCleanup {
-    param(
-        [string]$TargetProfilePath,
-        [string]$Label
-    )
-
-    Remove-StaleExcludedTargetPaths -TargetPath $TargetProfilePath -ExcludedDirectories @(
-        'AppData\Roaming\Microsoft\Credentials',
-        'AppData\Roaming\Microsoft\Protect',
-        'AppData\Roaming\Microsoft\Vault',
-        'AppData\Roaming\Microsoft\IdentityCRL'
-    ) -ExcludedFiles @(
-        'AppData\Local\Microsoft\Windows\WebCacheLock.dat',
-        'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
-    ) -Label ($Label + ' cleanup')
-
-    $ollamaTargetRoot = Join-Path $TargetProfilePath 'AppData\Roaming\ollama app.exe'
-    Remove-StaleExcludedTargetPaths -TargetPath $ollamaTargetRoot -ExcludedDirectories @(
-        'EBWebView\Default\Network',
-        'EBWebView\Default\Safe Browsing Network',
-        'EBWebView\Default\Cache',
-        'EBWebView\Default\Code Cache',
-        'EBWebView\Default\GPUCache',
-        'EBWebView\Default\Service Worker\CacheStorage',
-        'EBWebView\Default\Service Worker\ScriptCache',
-        'EBWebView\Default\DawnCache',
-        'EBWebView\Default\GrShaderCache'
-    ) -Label ($Label + ' cleanup ollama')
-}
-
-function Invoke-RepresentativeRegistryCopy {
-    param(
-        [string]$MainTargetRoot,
-        [string]$ClassesTargetRoot,
-        [string]$Label
-    )
-
-    $mainBranches = @(
-        'Control Panel\Keyboard',
-        'Environment',
-        'Software\Microsoft\Notepad',
-        'Software\Microsoft\Windows\CurrentVersion\Explorer',
-        'Software\Microsoft\Windows\CurrentVersion\Search'
-    )
-    foreach ($branch in @($mainBranches)) {
-        Copy-RegistryBranchWithRegExe -SourcePath (Join-Path 'Registry::HKEY_CURRENT_USER' $branch) -TargetPath (Join-Path $MainTargetRoot $branch) -Label ("{0}:{1}" -f $Label, $branch)
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace([string]$ClassesTargetRoot)) {
-        $classesBranches = @(
-            'Local Settings\Software\Microsoft\Windows\Shell',
-            'CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}'
-        )
-        foreach ($branch in @($classesBranches)) {
-            Copy-RegistryBranchWithRegExe -SourcePath (Join-Path 'Registry::HKEY_CURRENT_USER\Software\Classes' $branch) -TargetPath (Join-Path $ClassesTargetRoot $branch) -Label ("{0}:classes:{1}" -f $Label, $branch)
-        }
-    }
-}
-
-function Invoke-LogonScreenRegistryCopy {
-    $defaultRoot = 'Registry::HKEY_USERS\.DEFAULT'
-
-    $mainBranches = @(
-        'Control Panel\Keyboard',
-        'Environment',
-        'Software\Microsoft\Windows\CurrentVersion\Explorer',
-        'Software\Microsoft\Windows\CurrentVersion\Search'
-    )
-    foreach ($branch in @($mainBranches)) {
-        Copy-RegistryBranchWithRegExe -SourcePath (Join-Path 'Registry::HKEY_CURRENT_USER' $branch) -TargetPath (Join-Path $defaultRoot $branch) -Label ("logon-screen:{0}" -f $branch)
-    }
-}
-
-function Invoke-ClassesHiveRegCopy {
-    param(
-        [string]$HiveFilePath,
-        [string]$MountName,
-        [string]$Label
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
-        Add-CopySkipEvidence -Reason 'missing-classes-hive' -Label $Label -Path $HiveFilePath
-        Write-Detail ("copy-settings-user-classes-skip: {0}" -f $Label)
-        return
-    }
-
-    $mountPath = "HKU\$MountName"
-    & reg.exe load $mountPath $HiveFilePath 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw ("reg load failed for {0}: {1}" -f $Label, $HiveFilePath)
-    }
-
-    try {
-        foreach ($branch in @(
-            'Local Settings\Software\Microsoft\Windows\Shell',
-            'CLSID\{86ca1aa0-34aa-4e8b-a509-50c905bae2a2}'
-        )) {
-            $sourceRegPath = "HKEY_CURRENT_USER\Software\Classes\{0}" -f $branch
-            if (-not (Test-RegExeBranchExists -Path $sourceRegPath)) {
-                Add-CopySkipEvidence -Reason 'missing-classes-registry-branch' -Label ("{0}:classes:{1}" -f $Label, $branch) -Path $sourceRegPath
-                Write-Detail ("copy-settings-user-registry-skip: {0}:classes:{1}" -f $Label, $branch)
-                continue
-            }
-
-            & reg.exe copy $sourceRegPath ("{0}\{1}" -f $mountPath, $branch) /s /f 2>$null | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw ("reg copy failed for {0}: {1}" -f $Label, $branch)
-            }
-        }
-
-        $allFoldersQuery = @(& reg.exe query ("{0}\Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell" -f $mountPath) /v GroupView 2>&1)
-        if (($allFoldersQuery -join ' ') -notmatch '0x0\b') {
-            throw ("Classes hive validation failed for {0}: AllFolders GroupView is not 0." -f $Label)
-        }
-
-        $bagOneQuery = @(& reg.exe query ("{0}\Local Settings\Software\Microsoft\Windows\Shell\Bags\1\Shell" -f $mountPath) /v GroupView 2>&1)
-        if (($bagOneQuery -join ' ') -notmatch '0x0\b') {
-            throw ("Classes hive validation failed for {0}: bag one GroupView is not 0." -f $Label)
-        }
-
-        Write-Detail ("copy-settings-user-classes-ok: {0}" -f $Label)
-    }
-    finally {
-        & reg.exe unload $mountPath 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw ("reg unload failed for {0}: {1}" -f $Label, $mountPath)
-        }
-    }
-}
-
-function Invoke-MainHiveRegCopy {
-    param(
-        [string]$HiveFilePath,
-        [string]$MountName,
-        [string]$Label
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
-        throw ("Main hive file was not found for {0}: {1}" -f $Label, $HiveFilePath)
-    }
-
-    $mountPath = "HKU\$MountName"
-    & reg.exe load $mountPath $HiveFilePath 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw ("reg load failed for {0}: {1}" -f $Label, $HiveFilePath)
-    }
-
-    try {
-        foreach ($branch in @(
-            'Control Panel\Keyboard',
-            'Environment',
-            'Software\Microsoft\Notepad',
-            'Software\Microsoft\Windows\CurrentVersion\Explorer',
-            'Software\Microsoft\Windows\CurrentVersion\Search'
-        )) {
-            $sourceRegPath = "HKEY_CURRENT_USER\{0}" -f $branch
-            if (-not (Test-RegExeBranchExists -Path $sourceRegPath)) {
-                Add-CopySkipEvidence -Reason 'missing-main-registry-branch' -Label ("{0}:{1}" -f $Label, $branch) -Path $sourceRegPath
-                Write-Detail ("copy-settings-user-registry-skip: {0}:{1}" -f $Label, $branch)
-                continue
-            }
-
-            & reg.exe copy $sourceRegPath ("{0}\{1}" -f $mountPath, $branch) /s /f 2>$null | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw ("reg copy failed for {0}: {1}" -f $Label, $branch)
-            }
-        }
-
-        $keyboardQuery = @(& reg.exe query ("{0}\Control Panel\Keyboard" -f $mountPath) /v KeyboardDelay 2>&1)
-        if (($keyboardQuery -join ' ') -notmatch '\bKeyboardDelay\b.*\b0\b') {
-            throw ("Main hive validation failed for {0}: KeyboardDelay is not 0." -f $Label)
-        }
-
-        $advancedQuery = @(& reg.exe query ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced" -f $mountPath) /v ShowTaskViewButton 2>&1)
-        if (($advancedQuery -join ' ') -notmatch '0x0\b') {
-            throw ("Main hive validation failed for {0}: ShowTaskViewButton is not 0." -f $Label)
-        }
-
-        $searchQuery = @(& reg.exe query ("{0}\Software\Microsoft\Windows\CurrentVersion\Search" -f $mountPath) /v SearchboxTaskbarMode 2>&1)
-        if (($searchQuery -join ' ') -notmatch '0x0\b') {
-            throw ("Main hive validation failed for {0}: SearchboxTaskbarMode is not 0." -f $Label)
-        }
-
-        foreach ($desktopIconQueryPath in @(
-            ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel" -f $mountPath),
-            ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu" -f $mountPath)
-        )) {
-            foreach ($desktopIconGuid in @(
-                '{59031a47-3f72-44a7-89c5-5595fe6b30ee}',
-                '{20D04FE0-3AEA-1069-A2D8-08002B30309D}',
-                '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'
-            )) {
-                $desktopIconQuery = @(& reg.exe query $desktopIconQueryPath /v $desktopIconGuid 2>&1)
-                if (($desktopIconQuery -join ' ') -notmatch '0x1\b') {
-                    throw ("Main hive validation failed for {0}: hidden desktop icon state missing for {1}." -f $Label, $desktopIconGuid)
-                }
-            }
-        }
-
-        Write-Detail ("copy-settings-user-main-hive-ok: {0}" -f $Label)
-    }
-    finally {
-        & reg.exe unload $mountPath 2>$null | Out-Null
-        if ($LASTEXITCODE -ne 0) {
-            throw ("reg unload failed for {0}: {1}" -f $Label, $mountPath)
-        }
-    }
-}
-
 function Get-LoadedUserHiveRoots {
     param([string]$UserName)
 
@@ -1354,7 +910,105 @@ function Get-LoadedUserHiveRoots {
     }
 }
 
-function Invoke-ProfileFileCopy {
+function Get-PortableProfileExcludedDirectories {
+    return @(
+        'AppData\Local\Temp',
+        'AppData\LocalLow\Temp',
+        'AppData\Local\CrashDumps',
+        'AppData\Local\Microsoft\Windows\INetCache',
+        'AppData\Local\Microsoft\Windows\WebCache',
+        'AppData\Local\Microsoft\Credentials',
+        'AppData\Roaming\Microsoft\Credentials',
+        'AppData\Local\Microsoft\Protect',
+        'AppData\Roaming\Microsoft\Protect',
+        'AppData\Local\Microsoft\Vault',
+        'AppData\Roaming\Microsoft\Vault',
+        'AppData\Local\Microsoft\IdentityCRL',
+        'AppData\Roaming\Microsoft\IdentityCRL'
+    )
+}
+
+function Get-PortableProfileExcludedFiles {
+    return @(
+        'NTUSER.DAT*',
+        'UsrClass.dat*',
+        '*.lock',
+        '*.tmp',
+        '*.temp',
+        '*.etl',
+        '*.log',
+        '*.crdownload',
+        'WebCacheLock.dat',
+        'Login Data*',
+        'Cookies*'
+    )
+}
+
+function Get-PortableRegistryExcludedPrefixes {
+    return @(
+        'Software\Classes',
+        'Software\Microsoft\Windows\CurrentVersion\CloudStore',
+        'Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts',
+        'Software\Microsoft\Windows\Shell\Associations',
+        'Software\Microsoft\IdentityCRL'
+    )
+}
+
+function Assert-RepresentativePathCopiedIfPresent {
+    param(
+        [string]$SourceProfilePath,
+        [string]$TargetProfilePath,
+        [string]$RelativePath
+    )
+
+    $sourcePath = Join-Path $SourceProfilePath $RelativePath
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    $targetPath = Join-Path $TargetProfilePath $RelativePath
+    if (-not (Test-Path -LiteralPath $targetPath)) {
+        throw ("Representative mirrored path is missing: {0}" -f $targetPath)
+    }
+}
+
+function Assert-ExcludedPathAbsentIfPresent {
+    param(
+        [string]$SourceProfilePath,
+        [string]$TargetProfilePath,
+        [string]$RelativePath
+    )
+
+    $sourcePath = Join-Path $SourceProfilePath $RelativePath
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    $targetPath = Join-Path $TargetProfilePath $RelativePath
+    if (Test-Path -LiteralPath $targetPath) {
+        throw ("Excluded portable path was copied unexpectedly: {0}" -f $RelativePath)
+    }
+}
+
+function Assert-RegistryBranchMirroredIfPresent {
+    param(
+        [string]$SourceRoot,
+        [string]$TargetRoot,
+        [string]$RelativePath
+    )
+
+    $sourcePath = if ([string]::IsNullOrWhiteSpace([string]$RelativePath)) { $SourceRoot } else { Join-Path $SourceRoot $RelativePath }
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    $targetPath = if ([string]::IsNullOrWhiteSpace([string]$RelativePath)) { $TargetRoot } else { Join-Path $TargetRoot $RelativePath }
+    if (-not (Test-Path -LiteralPath $targetPath)) {
+        throw ("Representative mirrored registry branch is missing: {0}" -f $targetPath)
+    }
+}
+
+function Invoke-PortableProfileMirror {
     param(
         [string]$SourceProfilePath,
         [string]$TargetProfilePath,
@@ -1362,65 +1016,138 @@ function Invoke-ProfileFileCopy {
     )
 
     Ensure-AzVmDirectory -Path $TargetProfilePath
-    $targetDesktopPath = Join-Path $TargetProfilePath 'Desktop'
-    Ensure-AzVmDirectory -Path $targetDesktopPath
-    Clear-DesktopEntries -DesktopPath $targetDesktopPath
-
-    $copySpecs = @(Get-ProfileCopySpecs -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -Label $Label)
-    foreach ($copySpec in @($copySpecs)) {
-        $relativePath = [string]$copySpec.RelativePath
-        if ([string]::IsNullOrWhiteSpace([string]$relativePath)) {
-            continue
-        }
-
-        $labelSuffix = [string]$copySpec.LabelSuffix
-        $copyLabel = if ([string]::IsNullOrWhiteSpace([string]$labelSuffix)) {
-            [string]$Label
-        }
-        else {
-            "{0} {1}" -f $Label, $labelSuffix
-        }
-
-        Invoke-ProfileRelativeCopy -SourceProfilePath $SourceProfilePath -TargetProfilePath $TargetProfilePath -RelativePath $relativePath -Label $copyLabel -ExcludedDirectories @($copySpec.ExcludedDirectories) -ExcludedFiles @($copySpec.ExcludedFiles)
-    }
-
-    Invoke-ExplicitExcludedTargetCleanup -TargetProfilePath $TargetProfilePath -Label $Label
+    Invoke-RobocopyBranch `
+        -SourcePath $SourceProfilePath `
+        -TargetPath $TargetProfilePath `
+        -ExcludedDirectories @(Get-PortableProfileExcludedDirectories) `
+        -ExcludedFiles @(Get-PortableProfileExcludedFiles) `
+        -Label $Label
 }
 
-function Invoke-AssistantInteractiveSeed {
+function Invoke-PortableRegistryMirror {
+    param(
+        [string]$SourceMainRoot,
+        [string]$TargetMainRoot,
+        [string]$SourceClassesRoot = '',
+        [string]$TargetClassesRoot = '',
+        [string]$Label
+    )
+
+    Copy-RegistryBranch `
+        -SourcePath $SourceMainRoot `
+        -TargetPath $TargetMainRoot `
+        -ExcludedPrefixes @(Get-PortableRegistryExcludedPrefixes) `
+        -RelativePath ''
+    Write-Detail ("copy-settings-user-registry-main-ok: {0}" -f $Label)
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$SourceClassesRoot) -and
+        -not [string]::IsNullOrWhiteSpace([string]$TargetClassesRoot) -and
+        (Test-Path -LiteralPath $SourceClassesRoot)) {
+        Copy-RegistryBranch `
+            -SourcePath $SourceClassesRoot `
+            -TargetPath $TargetClassesRoot `
+            -ExcludedPrefixes @() `
+            -RelativePath ''
+        Write-Detail ("copy-settings-user-registry-classes-ok: {0}" -f $Label)
+    }
+}
+
+function Invoke-PortableAssistantRegistryMirror {
     param(
         [string]$UserName,
-        [string]$UserPassword,
         [string]$ProfilePath
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$ProfilePath) -or -not (Test-Path -LiteralPath $ProfilePath)) {
-        throw ("Assistant profile path was not found for hive seed: {0}" -f $ProfilePath)
-    }
-
-    $assistantNtUserPath = Join-Path $ProfilePath 'NTUSER.DAT'
-    if (-not (Test-Path -LiteralPath $assistantNtUserPath)) {
-        throw ("Assistant NTUSER.DAT was not found: {0}" -f $assistantNtUserPath)
-    }
-
-    $assistantUsrClassPath = Join-Path $ProfilePath 'AppData\Local\Microsoft\Windows\UsrClass.dat'
+    $ntUserPath = Join-Path $ProfilePath 'NTUSER.DAT'
+    $usrClassPath = Join-Path $ProfilePath 'AppData\Local\Microsoft\Windows\UsrClass.dat'
     $loadedRoots = Get-LoadedUserHiveRoots -UserName $UserName
+
     if (-not [string]::IsNullOrWhiteSpace([string]$loadedRoots.MainRoot)) {
-        Invoke-RepresentativeRegistryCopy -MainTargetRoot ([string]$loadedRoots.MainRoot) -ClassesTargetRoot ([string]$loadedRoots.ClassesRoot) -Label 'assistant-profile'
-        Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.MainRoot) 'Control Panel\Keyboard') -Name 'KeyboardDelay' -ExpectedValue '0'
-        Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.MainRoot) 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced') -Name 'ShowTaskViewButton' -ExpectedValue 0
-        Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.MainRoot) 'Software\Microsoft\Windows\CurrentVersion\Search') -Name 'SearchboxTaskbarMode' -ExpectedValue 0
-        Assert-HiddenShellDesktopIcons -RootPath ([string]$loadedRoots.MainRoot) -Label 'assistant-profile'
-        if (-not [string]::IsNullOrWhiteSpace([string]$loadedRoots.ClassesRoot)) {
-            Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.ClassesRoot) 'Local Settings\Software\Microsoft\Windows\Shell\Bags\AllFolders\Shell') -Name 'GroupView' -ExpectedValue 0
-            Assert-RegistryValue -Path (Join-Path ([string]$loadedRoots.ClassesRoot) 'Local Settings\Software\Microsoft\Windows\Shell\Bags\1\Shell') -Name 'GroupView' -ExpectedValue 0
+        Invoke-PortableRegistryMirror `
+            -SourceMainRoot 'Registry::HKEY_CURRENT_USER' `
+            -TargetMainRoot ([string]$loadedRoots.MainRoot) `
+            -SourceClassesRoot 'Registry::HKEY_CURRENT_USER\Software\Classes' `
+            -TargetClassesRoot ([string]$loadedRoots.ClassesRoot) `
+            -Label 'assistant'
+        return
+    }
+
+    $mainMountName = 'AzVmAssistantNtUser'
+    $classesMountName = 'AzVmAssistantUsrClass'
+    $mainRoot = $null
+    $classesRoot = $null
+    try {
+        $mainRoot = Mount-RegistryHive -MountName $mainMountName -HiveFilePath $ntUserPath
+        if (Test-Path -LiteralPath $usrClassPath) {
+            $classesRoot = Mount-RegistryHive -MountName $classesMountName -HiveFilePath $usrClassPath
+        }
+
+        Invoke-PortableRegistryMirror `
+            -SourceMainRoot 'Registry::HKEY_CURRENT_USER' `
+            -TargetMainRoot $mainRoot `
+            -SourceClassesRoot 'Registry::HKEY_CURRENT_USER\Software\Classes' `
+            -TargetClassesRoot $classesRoot `
+            -Label 'assistant'
+    }
+    finally {
+        foreach ($mountName in @($classesMountName, $mainMountName)) {
+            if ([string]::IsNullOrWhiteSpace([string]$mountName)) {
+                continue
+            }
+            try {
+                Dismount-RegistryHive -MountName $mountName
+            }
+            catch {
+                Write-Detail ("copy-settings-user-hive-unload-warning: {0}" -f $_.Exception.Message)
+                throw
+            }
         }
     }
-    else {
-        Invoke-MainHiveRegCopy -HiveFilePath $assistantNtUserPath -MountName 'AzVmAssistantNtUser' -Label 'assistant-profile'
-        Invoke-ClassesHiveRegCopy -HiveFilePath $assistantUsrClassPath -MountName 'AzVmAssistantUsrClass' -Label 'assistant-profile'
+}
+
+function Invoke-PortableDefaultProfileRegistryMirror {
+    param([string]$DefaultProfilePath)
+
+    $ntUserPath = Join-Path $DefaultProfilePath 'NTUSER.DAT'
+    $usrClassPath = Join-Path $DefaultProfilePath 'AppData\Local\Microsoft\Windows\UsrClass.dat'
+    $mainMountName = 'AzVmDefaultNtUser'
+    $classesMountName = 'AzVmDefaultUsrClass'
+    $mainRoot = $null
+    $classesRoot = $null
+    try {
+        $mainRoot = Mount-RegistryHive -MountName $mainMountName -HiveFilePath $ntUserPath
+        if (Test-Path -LiteralPath $usrClassPath) {
+            $classesRoot = Mount-RegistryHive -MountName $classesMountName -HiveFilePath $usrClassPath
+        }
+
+        Invoke-PortableRegistryMirror `
+            -SourceMainRoot 'Registry::HKEY_CURRENT_USER' `
+            -TargetMainRoot $mainRoot `
+            -SourceClassesRoot 'Registry::HKEY_CURRENT_USER\Software\Classes' `
+            -TargetClassesRoot $classesRoot `
+            -Label 'default-profile'
     }
-    Write-Detail ("copy-settings-user-interactive-hkcu-ok: {0}" -f $UserName)
+    finally {
+        foreach ($mountName in @($classesMountName, $mainMountName)) {
+            if ([string]::IsNullOrWhiteSpace([string]$mountName)) {
+                continue
+            }
+            try {
+                Dismount-RegistryHive -MountName $mountName
+            }
+            catch {
+                Write-Detail ("copy-settings-user-hive-unload-warning: {0}" -f $_.Exception.Message)
+                throw
+            }
+        }
+    }
+}
+
+function Invoke-PortableLogonRegistryMirror {
+    Invoke-PortableRegistryMirror `
+        -SourceMainRoot 'Registry::HKEY_CURRENT_USER' `
+        -TargetMainRoot 'Registry::HKEY_USERS\.DEFAULT' `
+        -Label 'logon-screen'
 }
 
 Ensure-LocalUserExists -UserName $managerUser
@@ -1435,92 +1162,54 @@ $assistantProfilePath = Ensure-UserProfileMaterialized -UserName $assistantUser 
 Stop-LoggedOnUserSessions -UserName $assistantUser
 Stop-UserProcesses -UserName $assistantUser
 Wait-UserSessionsAndProcessesToSettle -UserName $assistantUser -TimeoutSeconds 8
+
 $defaultProfilePath = 'C:\Users\Default'
 if (-not (Test-Path -LiteralPath $defaultProfilePath)) {
     throw ("Default user profile path was not found: {0}" -f $defaultProfilePath)
 }
 
-$defaultNtUserPath = Join-Path $defaultProfilePath 'NTUSER.DAT'
+Invoke-PortableProfileMirror -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -Label 'assistant'
+Invoke-PortableProfileMirror -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -Label 'default-profile'
+Invoke-PortableAssistantRegistryMirror -UserName $assistantUser -ProfilePath $assistantProfilePath
+Invoke-PortableDefaultProfileRegistryMirror -DefaultProfilePath $defaultProfilePath
+Invoke-PortableLogonRegistryMirror
 
-$defaultMainMountName = 'AzVmDefaultNtUser'
-
-$defaultMainRoot = $null
-
-try {
-    Clear-DesktopEntries -DesktopPath (Join-Path $managerProfilePath 'Desktop')
-    Clear-DesktopEntries -DesktopPath (Join-Path $assistantProfilePath 'Desktop')
-    Clear-DesktopEntries -DesktopPath (Join-Path $defaultProfilePath 'Desktop')
-
-    $defaultMainRoot = Mount-RegistryHive -MountName $defaultMainMountName -HiveFilePath $defaultNtUserPath
-
-    Invoke-RepresentativeRegistryCopy -MainTargetRoot $defaultMainRoot -ClassesTargetRoot '' -Label 'default-profile'
-    Invoke-LogonScreenRegistryCopy
-
-    Invoke-ProfileFileCopy -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -Label 'assistant'
-    Invoke-ProfileFileCopy -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -Label 'default-profile'
-    Invoke-AssistantInteractiveSeed -UserName $assistantUser -UserPassword $assistantPassword -ProfilePath $assistantProfilePath
-
-    Assert-RegistryValue -Path (Join-Path $defaultMainRoot 'Control Panel\Keyboard') -Name 'KeyboardDelay' -ExpectedValue '0'
-    Assert-RegistryValue -Path (Join-Path $defaultMainRoot 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced') -Name 'ShowTaskViewButton' -ExpectedValue 0
-    Assert-RegistryValue -Path (Join-Path $defaultMainRoot 'Software\Microsoft\Windows\CurrentVersion\Search') -Name 'SearchboxTaskbarMode' -ExpectedValue 0
-    Assert-HiddenShellDesktopIcons -RootPath $defaultMainRoot -Label 'default-profile'
-
-    Assert-RegistryValue -Path 'Registry::HKEY_USERS\.DEFAULT\Control Panel\Keyboard' -Name 'KeyboardDelay' -ExpectedValue '0'
-    Assert-RegistryValue -Path 'Registry::HKEY_USERS\.DEFAULT\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced' -Name 'ShowTaskViewButton' -ExpectedValue 0
-    Assert-RegistryValue -Path 'Registry::HKEY_USERS\.DEFAULT\Software\Microsoft\Windows\CurrentVersion\Search' -Name 'SearchboxTaskbarMode' -ExpectedValue 0
-    Assert-HiddenShellDesktopIcons -RootPath 'Registry::HKEY_USERS\.DEFAULT' -Label 'logon-screen'
-
-    Assert-TaskManagerSettingsCopied -SourceProfilePath $managerProfilePath -ProfilePath $assistantProfilePath -Label 'assistant'
-    Assert-TaskManagerSettingsCopied -SourceProfilePath $managerProfilePath -ProfilePath $defaultProfilePath -Label 'default-profile'
-    foreach ($requiredRelativePath in @(
-        'Desktop',
-        'Documents',
-        'Favorites',
-        'Videos',
-        'Pictures',
-        'Downloads',
-        'Links',
-        'Music'
-    )) {
-        Assert-RequiredRelativePathCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath $requiredRelativePath
-        Assert-RequiredRelativePathCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath $requiredRelativePath
-    }
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\Microsoft\Credentials'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Cache'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Code Cache'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\GPUCache'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\Microsoft\Credentials'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Cache'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\Code Cache'
-    Assert-ExcludedItemNotCopied -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath 'AppData\Roaming\ollama app.exe\EBWebView\Default\GPUCache'
-}
-finally {
-    foreach ($mountName in @($defaultMainMountName)) {
-        if ([string]::IsNullOrWhiteSpace([string]$mountName)) {
-            continue
-        }
-
-        try {
-            Dismount-RegistryHive -MountName $mountName
-        }
-        catch {
-            Write-Detail ("copy-settings-user-hive-unload-warning: {0}" -f $_.Exception.Message)
-            throw
-        }
-    }
+foreach ($requiredRelativePath in @(
+    'Desktop',
+    'Documents',
+    'Favorites',
+    'Videos',
+    'Pictures',
+    'Downloads',
+    'Links',
+    'Music'
+)) {
+    Assert-RepresentativePathCopiedIfPresent -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath $requiredRelativePath
+    Assert-RepresentativePathCopiedIfPresent -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath $requiredRelativePath
 }
 
-foreach ($mountName in @($defaultMainMountName)) {
-    if (Test-Path -LiteralPath ("Registry::HKEY_USERS\{0}" -f $mountName)) {
-        throw ("Registry hive mount remains loaded after cleanup: {0}" -f $mountName)
-    }
+foreach ($excludedRelativePath in @(
+    'AppData\Roaming\Microsoft\Credentials',
+    'AppData\Roaming\Microsoft\Protect',
+    'AppData\Roaming\Microsoft\Vault',
+    'AppData\Roaming\Microsoft\IdentityCRL',
+    'AppData\Local\Microsoft\Windows\WebCache\WebCacheV01.dat'
+)) {
+    Assert-ExcludedPathAbsentIfPresent -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -RelativePath $excludedRelativePath
+    Assert-ExcludedPathAbsentIfPresent -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -RelativePath $excludedRelativePath
 }
+
+$assistantLoadedRoots = Get-LoadedUserHiveRoots -UserName $assistantUser
+if (-not [string]::IsNullOrWhiteSpace([string]$assistantLoadedRoots.MainRoot)) {
+    Assert-RegistryBranchMirroredIfPresent -SourceRoot 'Registry::HKEY_CURRENT_USER' -TargetRoot ([string]$assistantLoadedRoots.MainRoot) -RelativePath 'Software\Microsoft\Windows\CurrentVersion\Explorer'
+    Assert-RegistryBranchMirroredIfPresent -SourceRoot 'Registry::HKEY_CURRENT_USER' -TargetRoot ([string]$assistantLoadedRoots.MainRoot) -RelativePath 'Environment'
+}
+
+Assert-RegistryBranchMirroredIfPresent -SourceRoot 'Registry::HKEY_CURRENT_USER' -TargetRoot 'Registry::HKEY_USERS\.DEFAULT' -RelativePath 'Software\Microsoft\Windows\CurrentVersion\Explorer'
+Assert-RegistryBranchMirroredIfPresent -SourceRoot 'Registry::HKEY_CURRENT_USER' -TargetRoot 'Registry::HKEY_USERS\.DEFAULT' -RelativePath 'Environment'
 
 Write-CopySkipEvidenceSummary
-Write-Detail 'copy-settings-user-registry-validated'
-Write-Detail 'copy-settings-user-files-validated'
+Write-Detail 'copy-settings-user-portable-mirror-validated'
 Write-Host "copy-settings-user-completed"
 Write-Host "Update task completed: copy-settings-user"
 

@@ -1,5 +1,9 @@
 {
   "priority": 6,
   "enabled": true,
-  "timeout": 85
+  "timeout": 90,
+  "dependsOn": [
+    "02-configure-rdp-system",
+    "05-configure-sshd-port"
+  ]
 }

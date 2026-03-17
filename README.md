@@ -568,7 +568,7 @@ Behavior notes:
 - `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
 - Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.
-- Windows `vm-update` runs without a planned restart at Step 6 start, and the workflow performs one automatic restart before `vm-summary` only when any update task requests reboot.
+- Reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then continue with the next task. Windows `vm-update` also performs one additional final restart before `vm-summary`.
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
@@ -579,7 +579,7 @@ Purpose: maintain one existing managed resource group and one existing VM target
 Behavior notes:
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
 - Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`, with single-VM auto-resolution allowed when the selected group contains exactly one VM.
-- Windows `vm-update` runs without a planned restart at Step 6 start, and the workflow performs one automatic restart before `vm-summary` only when any update task requests reboot.
+- Reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then continue with the next task. Windows `vm-update` also performs one additional final restart before `vm-summary`.
 - best fit for day-two maintenance, guest-task refresh, and Azure redeploy-backed repair
 
 ### `list`
@@ -801,6 +801,9 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 - `vm-init` relays the full guest transcript back to the local az-vm console as soon as each task completes, while `vm-update` streams guest stdout/stderr live over SSH while the task is still running.
 - Both stages use portable task folders plus `task.json` as the source of truth for ordering, timeout, and enable/disable state, and both now invoke the same per-task app-state restore helper as a post-task step when a matching task-local plugin zip exists.
 - The natural execution order for both stages is: builtin `initial` task folders, builtin `normal` task folders, local task folders from `local/`, then builtin `final` task folders.
+- Every task timeout is normalized to a minimum of `30` seconds and then rounded up in `15`-second slots.
+- Reboot-signaling tasks restart the VM immediately, wait for the required transport recovery, and then resume from the next task. Windows `vm-update` also performs one unconditional final restart before `vm-summary`.
+- `vm-summary` begins with a read-only guest readback block and then continues with the normal summary and connection details.
 
 ### Interactive Versus Auto Mode
 - Interactive mode is the default and prompts when required values are missing.

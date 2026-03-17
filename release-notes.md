@@ -2,6 +2,20 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.341 - 2026-03-17
+
+### Summary
+This release completes the VM task-catalog refactor. `vm-init` and `vm-update` now share the normalized timeout contract, reboot-signaling tasks restart the VM immediately instead of deferring restart ownership to the stage wrapper, Windows `vm-update` ends with one unconditional final restart, and the old task-based health snapshot has been removed in favor of a read-only `vm-summary` readback block. The same pass also reorders and renumbers the task catalogs, moves Windows autologon into the final update band, and narrows `10005-copy-settings-user` to a portable manager-state mirror only.
+
+### Highlights
+- Normalized all tracked and local VM task timeouts to the shared `30s` minimum plus `15s` upward-rounding contract, and taught runtime task discovery to enforce the same rule centrally.
+- Reordered and renumbered the Windows task catalogs, keeping dependency-safe ordering inside the existing `initial` / `normal` / `local` / `final` bands, moving `autologon-manager-user` into the final Windows update band, and removing the old `capture-snapshot-health` task from both Windows and Linux update inventories.
+- Added dependency-aware task discovery that sorts by dependency safety first, then normalized timeout, then observed duration, then alphabetical name.
+- Changed both task runners so reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then resume from the next task, while Windows `vm-update` still performs one additional final restart before `vm-summary`.
+- Moved the old late health/reporting logic into `vm-summary`, which now starts with a read-only guest readback block before showing the normal connection details.
+- Reworked `10005-copy-settings-user` into a pure portable mirror: it now mirrors portable `manager` profile and registry state into `assistant`, `C:\Users\Default`, and `HKEY_USERS\.DEFAULT`, while excluding caches, temp data, DPAPI-bound secret stores, vault/credential stores, and other non-portable artifacts.
+- Removed the remaining dead curated-copy helpers from `10005-copy-settings-user`, aligned smoke coverage with the new mirror contract, and revalidated the full change non-live across the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+
 ## Release 2026.3.17.340 - 2026-03-17
 
 ### Summary

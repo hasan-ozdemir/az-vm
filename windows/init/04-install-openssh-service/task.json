@@ -1,0 +1,8 @@
+{
+  "priority": 4,
+  "enabled": true,
+  "timeout": 45,
+  "dependsOn": [
+    "03-bootstrap-choco-system"
+  ]
+}

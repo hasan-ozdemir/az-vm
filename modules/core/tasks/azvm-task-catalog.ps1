@@ -77,8 +77,11 @@ function Convert-AzVmTaskCatalogTimeout {
         $timeoutSeconds = $DefaultValue
     }
 
-    if ($timeoutSeconds -lt 5) {
-        $timeoutSeconds = 5
+    if ($timeoutSeconds -le 30) {
+        $timeoutSeconds = 30
+    }
+    else {
+        $timeoutSeconds = (30 + (15 * [int][Math]::Ceiling(($timeoutSeconds - 30) / 15.0)))
     }
     if ($timeoutSeconds -gt 7200) {
         $timeoutSeconds = 7200
@@ -89,6 +92,190 @@ function Convert-AzVmTaskCatalogTimeout {
 
 function Get-AzVmTaskDefaultTimeoutSeconds {
     return 180
+}
+
+function ConvertTo-AzVmTaskFolderDependsOn {
+    param(
+        [AllowNull()]$InputObject,
+        [string]$TaskLabel
+    )
+
+    $values = New-Object 'System.Collections.Generic.List[string]'
+    $seen = @{}
+    foreach ($item in @(ConvertTo-ObjectArrayCompat -InputObject $InputObject)) {
+        if ($null -eq $item) {
+            continue
+        }
+
+        $text = [string]$item
+        if ([string]::IsNullOrWhiteSpace([string]$text)) {
+            continue
+        }
+
+        $normalized = $text.Trim()
+        if ($seen.ContainsKey($normalized)) {
+            continue
+        }
+
+        $values.Add($normalized) | Out-Null
+        $seen[$normalized] = $true
+    }
+
+    return @($values.ToArray())
+}
+
+function Resolve-AzVmTaskCatalogRepoRoot {
+    param([string]$StartPath = $PSScriptRoot)
+
+    $cursor = [string]$StartPath
+    while (-not [string]::IsNullOrWhiteSpace([string]$cursor)) {
+        if (Test-Path -LiteralPath (Join-Path $cursor 'az-vm.ps1')) {
+            return [string]$cursor
+        }
+
+        $parent = [string](Split-Path -Path $cursor -Parent)
+        if ([string]::IsNullOrWhiteSpace([string]$parent) -or
+            [string]::Equals([string]$parent, [string]$cursor, [System.StringComparison]::OrdinalIgnoreCase)) {
+            break
+        }
+
+        $cursor = $parent
+    }
+
+    return ''
+}
+
+function Get-AzVmTaskCatalogObservedDurationMap {
+    if ($null -ne $script:AzVmTaskCatalogObservedDurationMap) {
+        return $script:AzVmTaskCatalogObservedDurationMap
+    }
+
+    $observedDurations = @{}
+    $repoRoot = Resolve-AzVmTaskCatalogRepoRoot -StartPath $PSScriptRoot
+    if (-not [string]::IsNullOrWhiteSpace([string]$repoRoot) -and (Test-Path -LiteralPath $repoRoot)) {
+        $logFiles = @(
+            Get-ChildItem -LiteralPath $repoRoot -Filter 'az-vm-log-*.txt' -File -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTimeUtc -Descending
+        )
+        foreach ($logFile in @($logFiles)) {
+            foreach ($line in @(Get-Content -LiteralPath $logFile.FullName -ErrorAction SilentlyContinue)) {
+                if ([string]$line -notmatch '^Task completed:\s+(?<name>[^\r\n(]+?)\s+\((?<seconds>[0-9][0-9\.,]*)s\)\s+-\s+success\b') {
+                    continue
+                }
+
+                $taskName = [string]$Matches.name.Trim()
+                if ($observedDurations.ContainsKey($taskName)) {
+                    continue
+                }
+
+                $secondsText = ([string]$Matches.seconds).Replace(',', '')
+                $seconds = [double]::PositiveInfinity
+                try {
+                    $seconds = [double]$secondsText
+                }
+                catch {
+                    $seconds = [double]::PositiveInfinity
+                }
+
+                $observedDurations[$taskName] = [double]$seconds
+            }
+        }
+    }
+
+    $script:AzVmTaskCatalogObservedDurationMap = $observedDurations
+    return $script:AzVmTaskCatalogObservedDurationMap
+}
+
+function Get-AzVmTaskBandRank {
+    param([string]$TaskType)
+
+    switch ([string]$TaskType) {
+        'initial' { return 0 }
+        'normal' { return 1 }
+        'local' { return 2 }
+        'final' { return 3 }
+        default { return 99 }
+    }
+}
+
+function Sort-AzVmTaskInventoryRows {
+    param([object[]]$Rows)
+
+    $bandOrder = @('initial', 'normal', 'local', 'final')
+    $sortedRows = New-Object 'System.Collections.Generic.List[object]'
+    foreach ($band in @($bandOrder)) {
+        $bandRows = @($Rows | Where-Object { [string]::Equals([string]$_.TaskType, [string]$band, [System.StringComparison]::OrdinalIgnoreCase) })
+        if (@($bandRows).Count -lt 1) {
+            continue
+        }
+
+        $bandNameMap = @{}
+        foreach ($row in @($bandRows)) {
+            $bandNameMap[[string]$row.Name] = $row
+        }
+
+        foreach ($row in @($bandRows)) {
+            foreach ($dependencyName in @($row.DependsOn)) {
+                if ([string]::IsNullOrWhiteSpace([string]$dependencyName)) {
+                    continue
+                }
+                if ($bandNameMap.ContainsKey([string]$dependencyName)) {
+                    continue
+                }
+                if (@($Rows | Where-Object { [string]::Equals([string]$_.Name, [string]$dependencyName, [System.StringComparison]::OrdinalIgnoreCase) }).Count -gt 0) {
+                    continue
+                }
+                throw ("Task '{0}' depends on '{1}', but that task was not found in the discovered inventory." -f [string]$row.Name, [string]$dependencyName)
+            }
+        }
+
+        $remainingRows = New-Object 'System.Collections.Generic.List[object]'
+        foreach ($row in @($bandRows)) {
+            $remainingRows.Add($row) | Out-Null
+        }
+
+        while ($remainingRows.Count -gt 0) {
+            $remainingNameMap = @{}
+            foreach ($remainingRow in @($remainingRows.ToArray())) {
+                $remainingNameMap[[string]$remainingRow.Name] = $true
+            }
+
+            $readyRows = @(
+                $remainingRows.ToArray() |
+                    Where-Object {
+                        $pendingDependencies = @(
+                            @($_.DependsOn) |
+                                Where-Object {
+                                    -not [string]::IsNullOrWhiteSpace([string]$_) -and
+                                    $bandNameMap.ContainsKey([string]$_) -and
+                                    $remainingNameMap.ContainsKey([string]$_)
+                                }
+                        )
+                        @($pendingDependencies).Count -eq 0
+                    }
+            )
+
+            if (@($readyRows).Count -lt 1) {
+                $cycleTaskNames = @($remainingRows.ToArray() | ForEach-Object { [string]$_.Name } | Sort-Object)
+                throw ("Task dependency cycle detected in the '{0}' band: {1}" -f [string]$band, ($cycleTaskNames -join ', '))
+            }
+
+            $readyRows = @(
+                $readyRows |
+                    Sort-Object `
+                        @{ Expression = { [int]$_.TimeoutSeconds } }, `
+                        @{ Expression = { [double]$_.ObservedDurationSeconds } }, `
+                        @{ Expression = { [string]$_.Name } }
+            )
+
+            foreach ($readyRow in @($readyRows)) {
+                $sortedRows.Add($readyRow) | Out-Null
+                [void]$remainingRows.Remove($readyRow)
+            }
+        }
+    }
+
+    return @($sortedRows.ToArray())
 }
 
 function Test-AzVmTaskPriorityFitsType {
@@ -409,12 +596,18 @@ function Get-AzVmTaskFolderMetadata {
         $appStateSpec = ConvertTo-AzVmTaskFolderAppStateSpec -AppState $metadata.appState -TaskName $TaskName -TaskLabel $taskLabel
     }
 
+    $dependsOn = @()
+    if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('dependsOn').Count -gt 0 -and $null -ne $metadata.dependsOn) {
+        $dependsOn = @(ConvertTo-AzVmTaskFolderDependsOn -InputObject $metadata.dependsOn -TaskLabel $taskLabel)
+    }
+
     return [pscustomobject]@{
         Priority = [int]$priority
         Enabled = [bool]$enabled
         TimeoutSeconds = [int]$timeoutSeconds
         AssetSpecs = @($assets)
         AppStateSpec = $appStateSpec
+        DependsOn = @($dependsOn)
     }
 }
 
@@ -589,6 +782,8 @@ function Read-AzVmTaskFolderRow {
         TaskNumber = [int]$taskNumber
         Enabled = [bool]$isEnabled
         DisabledReason = [string]$disabledReason
+        DependsOn = @($metadata.DependsOn)
+        ObservedDurationSeconds = [double]::PositiveInfinity
     }
 }
 
@@ -644,13 +839,17 @@ function Get-AzVmTaskBlocksFromDirectory {
         $priorityMap[$priorityKey] = [string]$row.Name
     }
 
-    $sortedInventory = @(
-        $rows |
-            Sort-Object `
-                @{ Expression = { [int]$_.Priority } }, `
-                @{ Expression = { [int]$_.TaskNumber } }, `
-                @{ Expression = { [string]$_.Name } }
-    )
+    $observedDurationMap = Get-AzVmTaskCatalogObservedDurationMap
+    foreach ($row in @($rows)) {
+        if ($observedDurationMap.ContainsKey([string]$row.Name)) {
+            $row.ObservedDurationSeconds = [double]$observedDurationMap[[string]$row.Name]
+        }
+        else {
+            $row.ObservedDurationSeconds = [double]::PositiveInfinity
+        }
+    }
+
+    $sortedInventory = @(Sort-AzVmTaskInventoryRows -Rows @($rows))
 
     $activeTasks = @()
     $disabledTasks = @()
@@ -671,6 +870,8 @@ function Get-AzVmTaskBlocksFromDirectory {
                 TaskNumber = [int]$task.TaskNumber
                 TaskRootPath = [string]$task.TaskRootPath
                 TaskMetadataPath = [string]$task.TaskMetadataPath
+                DependsOn = @($task.DependsOn)
+                ObservedDurationSeconds = [double]$task.ObservedDurationSeconds
             }
             continue
         }
@@ -690,6 +891,8 @@ function Get-AzVmTaskBlocksFromDirectory {
             TaskType = [string]$task.TaskType
             Source = [string]$task.Source
             TaskNumber = [int]$task.TaskNumber
+            DependsOn = @($task.DependsOn)
+            ObservedDurationSeconds = [double]$task.ObservedDurationSeconds
         }
     }
 

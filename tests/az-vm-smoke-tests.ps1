@@ -40,32 +40,62 @@ function Get-CurrentSmokeTaskName {
     param([string]$TaskName)
 
     $map = @{
-        '108-install-sysinternals-suite' = '133-install-sysinternals-suite'
-        '130-autologon-manager-user' = '134-autologon-manager-user'
-        '109-install-ffmpeg-system' = '108-install-ffmpeg-system'
-        '110-install-vscode-system' = '109-install-vscode-system'
-        '111-install-edge-browser' = '110-install-edge-browser'
-        '112-install-azd-cli' = '111-install-azd-cli'
-        '113-install-wsl2-system' = '112-install-wsl2-system'
-        '114-install-docker-desktop' = '113-install-docker-desktop'
-        '115-install-npm-packages-global' = '114-install-npm-packages-global'
-        '116-install-ollama-system' = '115-install-ollama-system'
-        '117-install-codex-app' = '116-install-codex-app'
-        '118-install-teams-system' = '117-install-teams-system'
-        '119-install-onedrive-system' = '118-install-onedrive-system'
-        '120-install-google-drive' = '119-install-google-drive'
-        '121-install-whatsapp-system' = '120-install-whatsapp-system'
-        '122-install-anydesk-system' = '121-install-anydesk-system'
-        '123-install-windscribe-system' = '122-install-windscribe-system'
-        '124-install-vlc-system' = '123-install-vlc-system'
-        '125-install-itunes-system' = '124-install-itunes-system'
-        '126-install-be-my-eyes' = '125-install-be-my-eyes'
-        '127-install-nvda-system' = '126-install-nvda-system'
-        '128-install-rclone-system' = '127-install-rclone-system'
-        '129-configure-unlocker-io' = '128-configure-unlocker-io'
-        '131-install-icloud-system' = '129-install-icloud-system'
-        '132-install-vs2022community' = '130-install-vs2022community'
-        '10099-capture-snapshot-health' = '10006-capture-snapshot-health'
+        '02-bootstrap-choco-system' = '03-bootstrap-choco-system'
+        '03-install-openssh-service' = '04-install-openssh-service'
+        '04-configure-sshd-port' = '05-configure-sshd-port'
+        '05-configure-rdp-system' = '02-configure-rdp-system'
+        '101-install-powershell-core' = '122-install-powershell-core'
+        '102-install-git-system' = '121-install-git-system'
+        '103-install-python-system' = '123-install-python-system'
+        '104-install-node-system' = '110-install-node-system'
+        '105-install-azure-cli' = '125-install-azure-cli'
+        '107-install-7zip-system' = '105-install-7zip-system'
+        '108-install-sysinternals-suite' = '127-install-sysinternals-suite'
+        '108-install-ffmpeg-system' = '112-install-ffmpeg-system'
+        '109-install-vscode-system' = '117-install-vscode-system'
+        '110-install-edge-browser' = '101-install-edge-browser'
+        '130-autologon-manager-user' = '10006-autologon-manager-user'
+        '109-install-ffmpeg-system' = '112-install-ffmpeg-system'
+        '110-install-vscode-system' = '117-install-vscode-system'
+        '111-install-edge-browser' = '101-install-edge-browser'
+        '112-install-azd-cli' = '107-install-azd-cli'
+        '113-install-wsl2-system' = '119-install-wsl2-system'
+        '114-install-docker-desktop' = '130-install-docker-desktop'
+        '115-install-npm-packages-global' = '131-install-npm-packages-global'
+        '116-install-codex-app' = '115-install-codex-app'
+        '116-install-ollama-system' = '132-install-ollama-system'
+        '117-install-codex-app' = '115-install-codex-app'
+        '118-install-teams-system' = '103-install-teams-system'
+        '118-install-onedrive-system' = '102-install-onedrive-system'
+        '119-install-onedrive-system' = '102-install-onedrive-system'
+        '119-install-google-drive' = '124-install-google-drive'
+        '120-install-google-drive' = '124-install-google-drive'
+        '120-install-whatsapp-system' = '114-install-whatsapp-system'
+        '121-install-whatsapp-system' = '114-install-whatsapp-system'
+        '121-install-anydesk-system' = '108-install-anydesk-system'
+        '122-install-anydesk-system' = '108-install-anydesk-system'
+        '123-install-windscribe-system' = '111-install-windscribe-system'
+        '123-install-vlc-system' = '126-install-vlc-system'
+        '124-install-itunes-system' = '118-install-itunes-system'
+        '124-install-vlc-system' = '126-install-vlc-system'
+        '125-install-itunes-system' = '118-install-itunes-system'
+        '125-install-be-my-eyes' = '113-install-be-my-eyes'
+        '126-install-be-my-eyes' = '113-install-be-my-eyes'
+        '127-install-nvda-system' = '116-install-nvda-system'
+        '128-install-rclone-system' = '104-install-rclone-system'
+        '129-install-icloud-system' = '120-install-icloud-system'
+        '129-configure-unlocker-io' = '109-configure-unlocker-io'
+        '131-install-icloud-system' = '120-install-icloud-system'
+        '130-install-vs2022community' = '128-install-vs2022community'
+        '131-install-jaws-screen-reader' = '129-install-jaws-screen-reader'
+        '132-install-vs2022community' = '128-install-vs2022community'
+        '132-configure-language-settings' = '133-configure-language-settings'
+        '133-install-sysinternals-suite' = '127-install-sysinternals-suite'
+        '134-autologon-manager-user' = '10006-autologon-manager-user'
+        '10001-configure-apps-startup' = '10002-configure-apps-startup'
+        '10002-create-shortcuts-public-desktop' = '10003-create-shortcuts-public-desktop'
+        '10003-configure-ux-windows' = '10004-configure-ux-windows'
+        '10004-configure-settings-advanced-system' = '10001-configure-settings-advanced-system'
         '1090-export-local-app-state-snapshot' = '1002-export-local-app-state-snapshot'
         '1004-disable-services-conservative' = '1001-disable-services-conservative'
     }
@@ -125,6 +155,19 @@ function Get-RepoTaskJsonPath {
     )
 
     return (Join-Path (Get-RepoTaskRootPath -Platform $Platform -Stage $Stage -TaskName $TaskName) 'task.json')
+}
+
+function Get-RepoSummaryReadbackScriptPath {
+    param(
+        [ValidateSet('windows','linux')]
+        [string]$Platform
+    )
+
+    if ([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return (Join-Path $RepoRoot 'tools\scripts\az-vm-summary-readback-linux.sh')
+    }
+
+    return (Join-Path $RepoRoot 'tools\scripts\az-vm-summary-readback-windows.ps1')
 }
 
 function New-RepoTaskTemplate {
@@ -654,7 +697,7 @@ Invoke-Test -Name "CLI entrypoint keeps a normal banner path and a pre-banner ve
     Assert-True -Condition ($entryText -match '(?s)# Load modular function files.*?if \(\$MyInvocation\.InvocationName -eq ''\.''\) \{\s*return\s*\}\s*Write-AzVmCliBanner\s*try \{') -Message 'CLI entrypoint must still load modules when dot-sourced and print the banner only for normal command dispatch.'
 }
 
-Invoke-Test -Name "Workflow pipeline applies only the conditional post-vm-update restart barrier" -Action {
+Invoke-Test -Name "Workflow pipeline delegates restarts to task runners and starts vm-summary with readback" -Action {
     $pipelineText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1') -Raw)
     $workflowText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-workflow.ps1') -Raw)
 
@@ -670,19 +713,13 @@ Invoke-Test -Name "Workflow pipeline applies only the conditional post-vm-update
         Assert-True -Condition ($pipelineText -match [regex]::Escape([string]$stepLabel)) -Message ("Pipeline must use the step label '{0}'." -f [string]$stepLabel)
     }
 
-    Assert-True -Condition ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowRestartBarrier -Context $step1Context')) -Message 'Pipeline must call the shared restart barrier.'
-    Assert-True -Condition (-not ($pipelineText -match [regex]::Escape("-Reason 'before-vm-update'"))) -Message 'Pipeline must not call the removed pre-vm-update restart barrier.'
-    Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('VM update will begin after one planned restart.'))) -Message 'Pipeline must not announce the removed planned Windows restart before vm-update.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('$vmUpdateStageResult = Invoke-Step ''Step 6/7 - VM update''')) -Message 'Pipeline must capture the vm-update stage result from the shared step wrapper.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('return (Invoke-AzVmSshTaskBlocks')) -Message 'VM update step must return the SSH stage result explicitly.'
-    Assert-True -Condition ($pipelineText -match [regex]::Escape('-SuppressDeferredRestartHint')) -Message 'Pipeline must suppress the manual deferred restart hint during orchestrated vm-update.'
-    Assert-True -Condition ($pipelineText -match '(?s)if \(\$null -ne \$vmUpdateStageResult -and \[bool\]\$vmUpdateStageResult\.RebootRequired\) \{\s*Invoke-AzVmWorkflowRestartBarrier -Context \$step1Context -Reason ''after-vm-update''') -Message 'Pipeline must restart automatically after vm-update when reboot is required.'
-
-    Assert-True -Condition ($workflowText -match [regex]::Escape("function Invoke-AzVmWorkflowRestartBarrier")) -Message 'Workflow helper must expose the shared restart barrier.'
-    Assert-True -Condition (-not ($workflowText -match [regex]::Escape('Restarting VM before vm-update...'))) -Message 'Workflow helper must not keep the removed pre-vm-update restart action.'
-    Assert-True -Condition (-not ($workflowText -match [regex]::Escape('VM restart before vm-update completed successfully.'))) -Message 'Workflow helper must not keep the removed pre-vm-update restart success message.'
-    Assert-True -Condition ($workflowText -match [regex]::Escape('VM update requested a restart. Restarting VM before vm-summary...')) -Message 'Workflow helper must announce the post-vm-update restart action.'
-    Assert-True -Condition ($workflowText -match [regex]::Escape('VM restart after vm-update completed successfully.')) -Message 'Workflow helper must report successful post-vm-update restart.'
+    Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowRestartBarrier'))) -Message 'Pipeline must not keep the retired deferred restart barrier call.'
+    Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('-SuppressDeferredRestartHint'))) -Message 'Pipeline must not keep the retired deferred restart hint suppression flag.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowSummaryReadback')) -Message 'Pipeline summary must invoke the shared summary readback helper.'
+    Assert-True -Condition ($workflowText -match [regex]::Escape('function Invoke-AzVmWorkflowSummaryReadback')) -Message 'Workflow helpers must expose the vm-summary readback helper.'
+    Assert-True -Condition ($workflowText -match [regex]::Escape('vm-summary-readback')) -Message 'Workflow summary readback helper must build a dedicated readback task block.'
 }
 
 Invoke-Test -Name "Shared step wrapper returns the action result to callers" -Action {
@@ -708,10 +745,12 @@ Invoke-Test -Name "Guest task output relay is enabled for vm-init and vm-update 
     Assert-True -Condition ($sshProcessText -match [regex]::Escape('[switch]$RelayOutput')) -Message 'SSH process retry helper must accept live output relay.'
     Assert-True -Condition ($sshSessionText -match [regex]::Escape('-RelayOutput')) -Message 'One-shot SSH task execution must enable live output relay.'
     Assert-True -Condition ($sshRunnerText -match [regex]::Escape('OutputRelayedLive = $true')) -Message 'Persistent SSH task execution must mark output as already relayed.'
-    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('The workflow will apply the required restart automatically before vm-summary.')) -Message 'SSH task runner must switch to the automatic restart hint for orchestrated vm-update.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('$warningTasks = @()')) -Message 'SSH task runner must track warning tasks separately from hard failures.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Warning tasks:')) -Message 'SSH task runner must summarize warning tasks explicitly.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('WarningTasks = @($uniqueWarningTasks)')) -Message 'SSH task runner result contract must expose warning task names.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape("requested a restart. Restarting VM now")) -Message 'SSH task runner must restart immediately after reboot-signaling update tasks.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Running the final VM restart before vm-summary')) -Message 'SSH task runner must perform the unconditional final vm-update restart.'
+    Assert-True -Condition ($runCommandRunnerText -match [regex]::Escape("requested a restart. Restarting VM now")) -Message 'Run-command task runner must restart immediately after reboot-signaling init tasks.'
     Assert-True -Condition ($appStatePluginText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state replay must avoid re-printing live-relayed task output.'
     Assert-True -Condition ($appStateCaptureText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state capture must avoid re-printing live-relayed task output.'
     Assert-True -Condition ($runCommandParserText -match [regex]::Escape('function Get-AzVmRunCommandResultEnvelope')) -Message 'Run-command parsing must expose a non-throwing envelope helper.'
@@ -1421,9 +1460,9 @@ Invoke-Test -Name "Task command lists discovered tasks in runtime order" -Action
             return [ordered]@{
                 InventoryTasks = @(
                     [pscustomobject]@{
-                        Name = '10006-capture-snapshot-health'
-                        RelativePath = '10006-capture-snapshot-health/10006-capture-snapshot-health.ps1'
-                        TimeoutSeconds = 30
+                        Name = '10006-autologon-manager-user'
+                        RelativePath = '10006-autologon-manager-user/10006-autologon-manager-user.ps1'
+                        TimeoutSeconds = 45
                         Priority = 10006
                         TaskType = 'final'
                         Source = 'tracked'
@@ -1438,7 +1477,7 @@ Invoke-Test -Name "Task command lists discovered tasks in runtime order" -Action
         $updateResult = Invoke-AzVmTaskCommand -Options @{ list = $true; 'vm-update' = $true } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
         Assert-True -Condition ($null -ne $updateResult) -Message 'Task command must return a result object.'
         Assert-True -Condition ($updateResult.Rows.Count -eq 1) -Message 'Task command vm-update filter must return only update-stage rows.'
-        Assert-True -Condition ([string]$updateResult.Rows[0].Name -eq '10006-capture-snapshot-health') -Message 'Task command must preserve discovered update task names.'
+        Assert-True -Condition ([string]$updateResult.Rows[0].Name -eq '10006-autologon-manager-user') -Message 'Task command must preserve discovered update task names.'
         Assert-True -Condition ([string]$updateResult.Rows[0].Stage -eq 'vm-update') -Message 'Task command must label update-stage rows.'
 
         $disabledResult = Invoke-AzVmTaskCommand -Options @{ list = $true; disabled = $true } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
@@ -4307,10 +4346,10 @@ Invoke-Test -Name "Task execution helper supports strict outcome override for up
             return [pscustomobject]@{
                 ActiveTasks = @(
                     [pscustomobject]@{
-                        Name = '10006-capture-snapshot-health'
+                        Name = '10006-autologon-manager-user'
                         TaskNumber = 10006
                         Script = 'Write-Host ok'
-                        TimeoutSeconds = 30
+                        TimeoutSeconds = 45
                     }
                 )
             }
@@ -4380,7 +4419,7 @@ Invoke-Test -Name "Task execution helper supports strict outcome override for up
         $result = Invoke-AzVmTaskExecutionWithTarget -Runtime $runtime -Options @{ 'vm-name' = 'samplevm' } -Stage 'update' -Requested '10006' -TaskOutcomeModeOverride 'strict'
 
         Assert-True -Condition ($null -ne $script:TaskUpdateInvocation) -Message 'Task update execution helper must invoke SSH task runner.'
-        Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskName -eq '10006-capture-snapshot-health') -Message 'Task update execution helper must preserve selected task.'
+        Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskName -eq '10006-autologon-manager-user') -Message 'Task update execution helper must preserve selected task.'
         Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskOutcomeMode -eq 'strict') -Message 'Strict override must flow into the SSH task outcome mode.'
         Assert-True -Condition ([string]$script:TaskUpdateInvocation.PerfTaskCategory -eq 'task-run') -Message 'Task update execution helper must use the task-run perf category.'
         Assert-True -Condition ([string]$result.Stage -eq 'update') -Message 'Task update execution helper must report update stage result.'
@@ -4637,51 +4676,48 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $activeNames = @($active | ForEach-Object { [string]$_.Name })
 
     $expectedTrackedTimeouts = [ordered]@{
-        '01-bootstrap-winget-system' = 49
-        '02-check-install-chrome' = 88
-        '101-install-powershell-core' = 120
-        '102-install-git-system' = 88
-        '103-install-python-system' = 119
-        '104-install-node-system' = 37
-        '105-install-azure-cli' = 151
-        '106-install-gh-cli' = 22
-        '107-install-7zip-system' = 22
-        '108-install-ffmpeg-system' = 41
-        '109-install-vscode-system' = 74
-        '110-install-edge-browser' = 12
-        '111-install-azd-cli' = 24
-        '112-install-wsl2-system' = 82
-        '113-install-docker-desktop' = 346
-        '114-install-npm-packages-global' = 383
-        '115-install-ollama-system' = 474
-        '116-install-codex-app' = 63
-        '117-install-teams-system' = 12
-        '118-install-onedrive-system' = 12
-        '119-install-google-drive' = 119
-        '120-install-whatsapp-system' = 65
-        '121-install-anydesk-system' = 33
-        '122-install-windscribe-system' = 37
-        '123-install-vlc-system' = 170
-        '124-install-itunes-system' = 74
-        '125-install-be-my-eyes' = 53
-        '126-install-nvda-system' = 68
-        '127-install-rclone-system' = 21
-        '128-configure-unlocker-io' = 35
-        '129-install-icloud-system' = 81
-        '130-install-vs2022community' = 221
-        '131-install-jaws-screen-reader' = 276
-        '132-configure-language-settings' = 1563
-        '133-install-sysinternals-suite' = 166
-        '134-autologon-manager-user' = 45
-        '10001-configure-apps-startup' = 32
-        '10002-create-shortcuts-public-desktop' = 38
-        '10003-configure-ux-windows' = 180
-        '10004-configure-settings-advanced-system' = 12
-        '10005-copy-settings-user' = 163
-        '10006-capture-snapshot-health' = 63
+        '01-bootstrap-winget-system' = 60
+        '02-check-install-chrome' = 90
+        '101-install-edge-browser' = 30
+        '102-install-onedrive-system' = 30
+        '103-install-teams-system' = 30
+        '104-install-rclone-system' = 30
+        '105-install-7zip-system' = 30
+        '106-install-gh-cli' = 30
+        '107-install-azd-cli' = 30
+        '108-install-anydesk-system' = 45
+        '109-configure-unlocker-io' = 45
+        '110-install-node-system' = 45
+        '111-install-windscribe-system' = 45
+        '112-install-ffmpeg-system' = 45
+        '113-install-be-my-eyes' = 60
+        '114-install-whatsapp-system' = 75
+        '115-install-codex-app' = 75
+        '116-install-nvda-system' = 75
+        '117-install-vscode-system' = 75
+        '118-install-itunes-system' = 75
+        '119-install-wsl2-system' = 90
+        '120-install-icloud-system' = 90
+        '121-install-git-system' = 90
+        '122-install-powershell-core' = 120
+        '123-install-python-system' = 120
+        '124-install-google-drive' = 120
+        '125-install-azure-cli' = 165
+        '126-install-vlc-system' = 180
+        '127-install-sysinternals-suite' = 180
+        '128-install-vs2022community' = 225
+        '129-install-jaws-screen-reader' = 285
+        '130-install-docker-desktop' = 360
+        '131-install-npm-packages-global' = 390
+        '132-install-ollama-system' = 480
+        '133-configure-language-settings' = 1575
+        '10001-configure-settings-advanced-system' = 30
+        '10002-configure-apps-startup' = 45
+        '10003-create-shortcuts-public-desktop' = 45
+        '10004-configure-ux-windows' = 180
+        '10005-copy-settings-user' = 165
+        '10006-autologon-manager-user' = 45
     }
-    $expectedTrackedOrder = @($expectedTrackedTimeouts.Keys)
-
     Assert-True -Condition ([string]$activeNames[0] -eq '01-bootstrap-winget-system') -Message 'Winget bootstrap must be the first tracked Windows update task.'
     Assert-True -Condition ([string]$activeNames[1] -eq '02-check-install-chrome') -Message 'Chrome install check must be the second tracked Windows update task.'
 
@@ -4691,18 +4727,46 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         Assert-True -Condition ([int]$task.TimeoutSeconds -eq [int]$entry.Value) -Message ("Tracked task '{0}' timeout must stay {1}." -f [string]$entry.Key, [int]$entry.Value)
     }
 
-    $lastSeenIndex = -1
-    foreach ($taskName in @($expectedTrackedOrder)) {
-        $currentIndex = [array]::IndexOf($activeNames, $taskName)
-        Assert-True -Condition ($currentIndex -ge 0) -Message ("Tracked task '{0}' must appear in the active order." -f $taskName)
-        Assert-True -Condition ($currentIndex -gt $lastSeenIndex) -Message ("Tracked task order must keep '{0}' after the previous tracked task." -f $taskName)
-        $lastSeenIndex = $currentIndex
+    $dependencyExpectedPairs = @(
+        @('01-bootstrap-winget-system', '02-check-install-chrome'),
+        @('110-install-node-system', '131-install-npm-packages-global'),
+        @('119-install-wsl2-system', '130-install-docker-desktop'),
+        @('10001-configure-settings-advanced-system', '10005-copy-settings-user'),
+        @('10002-configure-apps-startup', '10005-copy-settings-user'),
+        @('10003-create-shortcuts-public-desktop', '10005-copy-settings-user'),
+        @('10004-configure-ux-windows', '10005-copy-settings-user'),
+        @('10005-copy-settings-user', '10006-autologon-manager-user')
+    )
+    foreach ($pair in @($dependencyExpectedPairs)) {
+        $beforeIndex = [array]::IndexOf($activeNames, [string]$pair[0])
+        $afterIndex = [array]::IndexOf($activeNames, [string]$pair[1])
+        Assert-True -Condition ($beforeIndex -ge 0) -Message ("Tracked task '{0}' must appear in the active order." -f [string]$pair[0])
+        Assert-True -Condition ($afterIndex -ge 0) -Message ("Tracked task '{0}' must appear in the active order." -f [string]$pair[1])
+        Assert-True -Condition ($beforeIndex -lt $afterIndex) -Message ("Tracked task order must keep '{0}' before '{1}'." -f [string]$pair[0], [string]$pair[1])
     }
+
+    $expectedFinalTail = @(
+        '10001-configure-settings-advanced-system',
+        '10002-configure-apps-startup',
+        '10003-create-shortcuts-public-desktop',
+        '10004-configure-ux-windows',
+        '10005-copy-settings-user',
+        '10006-autologon-manager-user'
+    )
+    $lastSeenFinalIndex = -1
+    foreach ($taskName in @($expectedFinalTail)) {
+        $currentIndex = [array]::IndexOf($activeNames, $taskName)
+        Assert-True -Condition ($currentIndex -ge 0) -Message ("Final tracked task '{0}' must appear in the active order." -f $taskName)
+        Assert-True -Condition ($currentIndex -gt $lastSeenFinalIndex) -Message ("Windows final tracked task order must keep '{0}' after the previous final task." -f $taskName)
+        $lastSeenFinalIndex = $currentIndex
+    }
+    Assert-True -Condition ([string]$activeNames[-1] -eq '10006-autologon-manager-user') -Message 'Autologon manager must be the last active Windows update task after health-task removal.'
 
     Assert-True -Condition ($activeNames -notcontains '101-install-sysinternals-suite') -Message 'Windows update catalog must not keep the old init-path sysinternals task name.'
     Assert-True -Condition ($activeNames -notcontains '102-autologon-manager-user') -Message 'Windows update catalog must not keep the old init-path autologon task name.'
-    Assert-True -Condition ($activeNames -contains '133-install-sysinternals-suite') -Message 'Windows update catalog must include 133-install-sysinternals-suite.'
-    Assert-True -Condition ($activeNames -contains '134-autologon-manager-user') -Message 'Windows update catalog must include 134-autologon-manager-user.'
+    Assert-True -Condition ($activeNames -contains '127-install-sysinternals-suite') -Message 'Windows update catalog must include 127-install-sysinternals-suite.'
+    Assert-True -Condition ($activeNames -contains '10006-autologon-manager-user') -Message 'Windows update catalog must include 10006-autologon-manager-user.'
+    Assert-True -Condition ($activeNames -notcontains '10006-capture-snapshot-health') -Message 'Windows update catalog must not keep the removed health snapshot task.'
 
     $initCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot 'windows\init') -Platform windows -Stage init
     $initActive = @($initCatalog.ActiveTasks)
@@ -4836,15 +4900,15 @@ Invoke-Test -Name "Task json controls local-only task discovery" -Action {
         Assert-True -Condition ($active.Count -eq 3) -Message 'Tracked root tasks and local-only tasks must both be discoverable.'
         Assert-True -Condition ($disabled.Count -eq 1) -Message 'Tasks under local/disabled must be discovered as disabled.'
         Assert-True -Condition ([string]$activeNames[0] -eq '101-alpha-task') -Message 'Tracked tasks must keep their task.json priority.'
-        Assert-True -Condition ([string]$activeNames[1] -eq '1001-delta-task') -Message 'Local-only tasks without task.json priority must fall back to their task number.'
-        Assert-True -Condition ([string]$activeNames[2] -eq '1002-beta-task') -Message 'task.json priority must order local-only tasks discovered from local/.'
+        Assert-True -Condition ([string]$activeNames[1] -eq '1002-beta-task') -Message 'Local-only tasks must sort by normalized timeout before higher-timeout local peers.'
+        Assert-True -Condition ([string]$activeNames[2] -eq '1001-delta-task') -Message 'Local-only tasks without task.json priority must still fall back to their task number metadata even when timeout ordering places them later.'
 
         $alphaTask = $active | Where-Object { [string]$_.Name -eq '101-alpha-task' } | Select-Object -First 1
         $betaTask = $active | Where-Object { [string]$_.Name -eq '1002-beta-task' } | Select-Object -First 1
         $deltaTask = $active | Where-Object { [string]$_.Name -eq '1001-delta-task' } | Select-Object -First 1
 
         Assert-True -Condition ([int]$alphaTask.TimeoutSeconds -eq 90) -Message 'task.json timeout must drive tracked tasks.'
-        Assert-True -Condition ([int]$betaTask.TimeoutSeconds -eq 44) -Message 'task.json timeout must drive local-only tasks.'
+        Assert-True -Condition ([int]$betaTask.TimeoutSeconds -eq 45) -Message 'Local-only task timeouts must be normalized to the shared 30-plus-15-second contract.'
         Assert-True -Condition ([int]$deltaTask.TimeoutSeconds -eq 180) -Message 'Local-only tasks without task.json timeout must default to 180.'
         Assert-True -Condition ([int]$alphaTask.Priority -eq 101) -Message 'Tracked task priority must come from task.json.'
         Assert-True -Condition ([int]$betaTask.Priority -eq 1002) -Message 'task.json priority must drive local-only tasks.'
@@ -5129,46 +5193,33 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsAssetCopies.Count -eq 1) -Message "Copy user settings task must publish exactly one helper asset."
     Assert-True -Condition ([string]$copyUserSettingsAssetCopies[0].RemotePath -eq 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1') -Message "Copy user settings helper remote path mismatch."
     Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-profile-materialized*') -Message "Copy user settings task must materialize the assistant profile."
-    Assert-True -Condition ($copyUserSettingsBody -like '*SearchboxTaskbarMode*') -Message "Copy user settings task must propagate taskbar search visibility."
-    Assert-True -Condition ($copyUserSettingsBody -like '*TaskManager\settings.json*') -Message "Copy user settings task must propagate Task Manager settings."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableProfileMirror*') -Message "Copy user settings task must mirror portable profile files."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableRegistryMirror*') -Message "Copy user settings task must mirror portable registry state."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableAssistantRegistryMirror*') -Message "Copy user settings task must mirror portable manager state into assistant."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableDefaultProfileRegistryMirror*') -Message "Copy user settings task must mirror portable manager state into the default profile template."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableLogonRegistryMirror*') -Message "Copy user settings task must mirror portable manager state into the Winlogon hive."
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Get-ProfileCopySpecs*') -Message "Copy user settings task must build a targeted copy spec list instead of sweeping whole AppData trees."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Windows\TaskManager*') -Message "Copy user settings task must target Task Manager settings explicitly."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Code\User\settings.json*') -Message "Copy user settings task must target the VS Code settings file explicitly."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Code\User\keybindings.json*') -Message "Copy user settings task must target the VS Code keybindings file explicitly."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Code\User\snippets*') -Message "Copy user settings task must target the VS Code snippets directory explicitly."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\npm*') -Message "Copy user settings task must target repo-managed npm CLI wrappers explicitly."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Desktop*') -Message "Copy user settings task must explicitly copy required profile roots such as Desktop."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Documents*') -Message "Copy user settings task must explicitly copy required profile roots such as Documents."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Downloads*') -Message "Copy user settings task must explicitly copy required profile roots such as Downloads."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Links*') -Message "Copy user settings task must explicitly copy required profile roots such as Links."
-    Assert-True -Condition ($copyUserSettingsBody -like '*desktop.ini*') -Message "Copy user settings task must exclude desktop.ini from file copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Thumbs.db*') -Message "Copy user settings task must exclude Thumbs.db from file copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Microsoft\Windows\WebCacheLock.dat*') -Message "Copy user settings task must exclude the locked WebCacheLock.dat path from local profile copies."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Assert-RequiredRelativePathCopied*') -Message "Copy user settings task must validate that required profile roots were copied."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("-RelativePath 'AppData\\Roaming'", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not sweep the entire roaming profile tree."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("-RelativePath 'AppData\\Local'", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not sweep the entire local profile tree."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf('AppData\LocalLow', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not spend time copying LocalLow."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf('Application Data', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old root blocker scan."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf('root reparse-point', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old broad root reparse scan."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Extensions", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome extensions tree."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Extension Settings", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome extension settings tree."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Sync Extension Settings", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome sync extension settings tree."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("AppData\Local\Google\Chrome\User Data\Default\Local Extension Settings", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Chrome local extension settings tree."
-    Assert-True -Condition (($copyUserSettingsBody.IndexOf("Add-ProfileCopySpecIfPresent -Specs $specs -SourceProfilePath $SourceProfilePath -RelativePath 'AppData\Roaming\ollama app.exe'", [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not copy the full Ollama app data tree."
-    Assert-True -Condition ($copyUserSettingsBody -like '*HideDesktopIcons*') -Message "Copy user settings task must propagate hidden shell desktop icon state."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Google\Chrome\User Data*') -Message "Copy user settings task must explicitly clean legacy copied Chrome user data."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\ollama app.exe*') -Message "Copy user settings task must explicitly clean legacy copied Ollama app data."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-ExplicitExcludedTargetCleanup*') -Message "Copy user settings task must keep a narrow cleanup pass for excluded target leftovers on reruns."
-    Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune:*') -Message "Copy user settings task must log stale excluded target pruning on reruns."
-    Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-target-prune-skip:*') -Message "Copy user settings task must treat locked excluded target leftovers as bounded skips instead of hard failures."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Add-CopySkipEvidence -Reason ''session-logoff-failed''*') -Message "Copy user settings task must count session logoff skips in the summary evidence ledger."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Add-CopySkipEvidence -Reason ''npm-already-synchronized''*') -Message "Copy user settings task must count npm skip decisions in the summary evidence ledger."
-    Assert-True -Condition ($copyUserSettingsBody -like '*Add-CopySkipEvidence -Reason ''missing-main-registry-branch''*') -Message "Copy user settings task must count missing registry branches in the summary evidence ledger."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableProfileExcludedDirectories*') -Message "Copy user settings task must define portable profile-directory exclusions."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableProfileExcludedFiles*') -Message "Copy user settings task must define portable file exclusions."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableRegistryExcludedPrefixes*') -Message "Copy user settings task must define portable registry exclusions."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Microsoft\Credentials*') -Message "Copy user settings task must exclude portable-incompatible credential stores."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Protect*') -Message "Copy user settings task must exclude DPAPI-bound secret stores."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Vault*') -Message "Copy user settings task must exclude vault stores."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\IdentityCRL*') -Message "Copy user settings task must exclude identity stores."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Windows\WebCache*') -Message "Copy user settings task must exclude web cache state."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Login Data*') -Message "Copy user settings task must exclude Chromium login data."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Cookies*') -Message "Copy user settings task must exclude Chromium cookie stores."
+    Assert-True -Condition ($copyUserSettingsBody -like '*NTUSER.DAT*') -Message "Copy user settings task must exclude raw source hive files from profile copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*UsrClass.dat*') -Message "Copy user settings task must exclude raw source classes hives from profile copies."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Assert-RepresentativePathCopiedIfPresent*') -Message "Copy user settings task must verify representative profile paths after mirroring."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Assert-ExcludedPathAbsentIfPresent*') -Message "Copy user settings task must verify excluded non-portable paths stay absent."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Assert-RegistryBranchMirroredIfPresent*') -Message "Copy user settings task must verify representative mirrored registry branches."
+    Assert-True -Condition ($copyUserSettingsBody -like '*copy-settings-user-portable-mirror-validated*') -Message "Copy user settings task must log portable mirror validation."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('Start-Sleep -Seconds 5', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old fixed five-second post-logoff sleep."
+    Assert-True -Condition (($copyUserSettingsBody.IndexOf('Get-ProfileCopySpecs', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the retired targeted copy-spec builder."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
 
     $resolvedAdvancedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @(
@@ -5335,7 +5386,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     $shortcutTaskScript = [string](Get-Content -LiteralPath $shortcutTaskPath -Raw)
     $shortcutTaskJsonPath = Join-Path (Split-Path -Path $shortcutTaskPath -Parent) 'task.json'
     $shortcutTaskJsonText = [string](Get-Content -LiteralPath $shortcutTaskJsonPath -Raw)
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
+    $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     $expectedShortcutNames = @(
@@ -5688,10 +5739,10 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition ($healthTaskScript -like '*effective-args =>*') -Message 'Health snapshot must read back managed launcher effective arguments.'
     foreach ($fragment in @(
         'STORE INSTALL STATE:',
-        '116-install-codex-app',
-        '120-install-whatsapp-system',
-        '125-install-be-my-eyes',
-        '129-install-icloud-system'
+        '115-install-codex-app',
+        '114-install-whatsapp-system',
+        '113-install-be-my-eyes',
+        '120-install-icloud-system'
     )) {
         Assert-True -Condition ($healthTaskScript -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include Store install state fragment '{0}'." -f [string]$fragment)
     }
@@ -5737,7 +5788,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
 
 Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite signals" -Action {
     $wslTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '113-install-wsl2-system'
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
+    $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
     $wslTaskText = [string](Get-Content -LiteralPath $wslTaskPath -Raw)
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
@@ -5770,7 +5821,6 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $chromeTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '02-check-install-chrome') -Raw)
     $edgeTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '110-install-edge-browser') -Raw)
     $copySettingsTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10005-copy-settings-user') -Raw)
-    $healthTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health') -Raw)
     $dockerTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '114-install-docker-desktop') -Raw)
     $ollamaTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '116-install-ollama-system') -Raw)
     $azdTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '112-install-azd-cli') -Raw)
@@ -5829,7 +5879,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
         Assert-True -Condition (-not ($edgeTaskJsonText -like ('*' + [string]$browserDurablePath + '*'))) -Message ("Edge task-local app-state must not exclude durable browser subtree token '{0}'." -f [string]$browserDurablePath)
     }
     Assert-True -Condition (-not ($copySettingsTaskJsonText -like '*"appState"*')) -Message '10005-copy-settings-user must stay out of task-local app-state snapshot and restore.'
-    Assert-True -Condition (-not ($healthTaskJsonText -like '*"appState"*')) -Message '10006-capture-snapshot-health must stay out of task-local app-state snapshot and restore.'
+    Assert-True -Condition (Test-Path -LiteralPath (Get-RepoSummaryReadbackScriptPath -Platform windows)) -Message 'Windows vm-summary readback script must exist after removing the health task.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*updates_v2*') -Message 'Task-local Ollama capture specs must exclude installer update payloads.'
     Assert-True -Condition ($ollamaTaskJsonText -like '*EBWebView*') -Message 'Task-local app-state specs must exclude embedded WebView runtime payloads where they are not durable settings.'
     Assert-True -Condition ($azdTaskJsonText -like '*telemetry*') -Message 'Task-local azd capture specs must exclude telemetry payloads.'
@@ -6538,8 +6588,8 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 }
 
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
-    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '134-autologon-manager-user'
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-autologon-manager-user'
+    $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
 
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Autologon manager task file was not found.'
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
@@ -6558,7 +6608,7 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
         'Autologon note: DefaultPassword is not present in Winlogon.',
         'autologon-manager-user-completed',
         'autologon.exe was not found',
-        'Ensure 133-install-sysinternals-suite completed successfully.'
+        'Ensure 127-install-sysinternals-suite completed successfully.'
     )) {
         Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Autologon manager task must include fragment '{0}'." -f [string]$fragment)
     }
@@ -6610,7 +6660,7 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile and 
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10001-configure-apps-startup'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
+    $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
 
     foreach ($fragment in @(
@@ -6691,7 +6741,7 @@ Invoke-Test -Name "Windows auto-start task mirrors the host startup profile and 
 Invoke-Test -Name "Windows language task and health contract" -Action {
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '132-configure-language-settings'
     $taskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '132-configure-language-settings'
-    $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
+    $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
 
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Language settings task file was not found.'
     Assert-True -Condition (Test-Path -LiteralPath $taskJsonPath) -Message 'Language settings task json was not found.'
@@ -6729,7 +6779,7 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         Assert-True -Condition (-not ($taskText -like ('*' + [string]$removedFragment + '*'))) -Message ("Language settings task must no longer own '{0}'." -f [string]$removedFragment)
     }
 
-    Assert-True -Condition ($taskJsonText -like '*"timeout": 1563*') -Message 'Language settings task must keep the log-derived timeout 1563.'
+    Assert-True -Condition ($taskJsonText -like '*"timeout": 1575*') -Message 'Language settings task must keep the normalized timeout 1575.'
     Assert-True -Condition (-not ($taskJsonText -like '*"appState"*')) -Message 'Language settings task must stay out of task-local app-state snapshot and restore.'
 
     foreach ($fragment in @(
@@ -6753,8 +6803,8 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include language fragment '{0}'." -f [string]$fragment)
     }
 
-    $uxTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10003-configure-ux-windows'
-    $uxTaskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10003-configure-ux-windows'
+    $uxTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10004-configure-ux-windows'
+    $uxTaskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10004-configure-ux-windows'
     $uxTaskText = [string](Get-Content -LiteralPath $uxTaskPath -Raw)
     $uxTaskJsonText = [string](Get-Content -LiteralPath $uxTaskJsonPath -Raw)
 

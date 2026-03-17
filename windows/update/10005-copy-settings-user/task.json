@@ -1,5 +1,11 @@
 {
   "priority": 10005,
   "enabled": true,
-  "timeout": 163
+  "timeout": 165,
+  "dependsOn": [
+    "10001-configure-settings-advanced-system",
+    "10002-configure-apps-startup",
+    "10003-create-shortcuts-public-desktop",
+    "10004-configure-ux-windows"
+  ]
 }

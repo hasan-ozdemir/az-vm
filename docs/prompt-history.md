@@ -5225,3 +5225,17 @@ Before retrying the full publish cycle, I analyzed the latest end-to-end create 
 
 I also changed the shared SSH task-stage accounting so continue-mode task issues stay classified as warnings instead of being mixed into the failed-task bucket. After those changes, I revalidated the repo non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates, then revalidated the affected Windows update surfaces live in isolation on the active managed VM by rerunning `123-install-vlc-system`, `10003-configure-ux-windows`, and `10006-capture-snapshot-health`. The fix set was then prepared for release and for the next clean `create --auto --windows --perf` retry.
 
+### 2026-03-17 17:07 UTC
+
+**User Prompt**
+
+````text
+Implement the locked VM task refactor plan end to end: normalize every vm-init and vm-update timeout to the new minimum-and-round-up contract; reorder and renumber the task catalogs safely inside their current bands; restart immediately after any reboot-signaling task and keep one extra final restart at the end of Windows vm-update; remove capture-snapshot-health as a task and move its reporting into the start of vm-summary; move autologon-manager-user into the final Windows update band as the last final task; and narrow copy-settings-user so it mirrors only portable manager state into assistant, the Winlogon hive, and the default-profile template.
+````
+
+**Assistant Summary**
+
+I completed the task-catalog and workflow refactor across the repo. The shared task timeout helper now enforces the `30s` minimum with `15s` upward rounding, both task runners now restart the VM immediately after reboot-signaling tasks and resume automatically, and Windows `vm-update` still performs one additional final restart before `vm-summary`. I also reordered and renumbered the Windows task catalogs inside their existing `initial`, `normal`, `local`, and `final` bands, moved `autologon-manager-user` into the final Windows update tail, removed the old Windows and Linux `capture-snapshot-health` tasks from the active inventories, and replaced them with read-only `vm-summary` guest readback helpers.
+
+I narrowed `10005-copy-settings-user` to a portable mirror of `manager` state only. The task now mirrors portable profile and registry state into `assistant`, `C:\Users\Default`, and `HKEY_USERS\.DEFAULT`, while excluding caches, temporary files, lock artifacts, DPAPI-bound secret stores, vault and credential stores, and other non-portable data. I removed the remaining dead curated-copy helper block from the script, updated the smoke contract for the new mirror behavior and the renumbered task names, and revalidated the entire change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+

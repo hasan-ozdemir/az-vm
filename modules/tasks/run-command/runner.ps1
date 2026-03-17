@@ -11,8 +11,8 @@ function New-AzVmRunCommandTaskWrapperScript {
         [string]$CombinedShell = 'powershell'
     )
 
-    if ($TimeoutSeconds -lt 5) {
-        $TimeoutSeconds = 5
+    if ($TimeoutSeconds -lt 30) {
+        $TimeoutSeconds = 30
     }
 
     if ([string]::Equals([string]$CombinedShell, 'bash', [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -77,7 +77,7 @@ function New-AzVmRunCommandTaskWrapperScript {
     [void]$builder.AppendLine('$script:RebootCount = 0')
     [void]$builder.AppendLine('function Invoke-RunCommandTaskBlock {')
     [void]$builder.AppendLine('    param([string]$TaskName,[string]$ScriptBase64,[int]$TimeoutSeconds)')
-    [void]$builder.AppendLine('    if ($TimeoutSeconds -lt 5) { $TimeoutSeconds = 5 }')
+    [void]$builder.AppendLine('    if ($TimeoutSeconds -lt 30) { $TimeoutSeconds = 30 }')
     [void]$builder.AppendLine('    $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()')
     [void]$builder.AppendLine('    $job = $null')
     [void]$builder.AppendLine('    $tempPath = $null')
@@ -522,10 +522,60 @@ function Invoke-VmRunCommandBlocks {
         if ([bool]$taskResult.RebootRequired) {
             $rebootCount++
             $rebootRequestedTasks += $taskName
-            Write-Host ("Task '{0}' requested a VM restart. The request was recorded and deferred until the vm-init stage completes." -f [string]$taskName) -ForegroundColor Yellow
-            if ([string]::Equals([string]$TaskOutcomeMode, 'continue', [System.StringComparison]::OrdinalIgnoreCase)) {
-                $totalWarnings++
-                $warningTasks += ("{0} => reboot" -f [string]$taskName)
+            $restartRequiresSsh = ($pendingAppStateTaskBlocks.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$SshPort))
+            $null = Invoke-AzVmRestartAndWait `
+                -ResourceGroup ([string]$ResourceGroup) `
+                -VmName ([string]$VmName) `
+                -StartMessage ("Task '{0}' requested a restart. Restarting VM now..." -f [string]$taskName) `
+                -SuccessMessage ("VM restart completed successfully after task '{0}'." -f [string]$taskName) `
+                -RunningFailureSummary 'VM could not be restarted after a vm-init task.' `
+                -RunningFailureHint 'Check the VM in Azure Portal and rerun vm-init after the guest returns to running state.' `
+                -ProvisioningFailureSummary 'VM restart recovery after a vm-init task did not complete successfully.' `
+                -ProvisioningFailureHint 'Check provisioning status and guest boot health before rerunning vm-init.' `
+                -HostFailureSummary 'VM restart after a vm-init task completed, but SSH host resolution failed.' `
+                -HostFailureHint 'Verify that the managed VM still has a reachable public IP or FQDN.' `
+                -SshFailureSummary 'VM restart after a vm-init task completed, but SSH did not recover in time.' `
+                -SshFailureHint 'Verify guest startup health and rerun vm-init after SSH becomes reachable.' `
+                -SshPort ([int]$SshPort) `
+                -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                -RequireSsh:$restartRequiresSsh
+
+            if ($pendingAppStateTaskBlocks.Count -gt 0) {
+                try {
+                    $postRestartFlushResult = Invoke-AzVmRunCommandDeferredAppStateFlush `
+                        -Platform $Platform `
+                        -RepoRoot $RepoRoot `
+                        -PendingTaskBlocks @($pendingAppStateTaskBlocks.ToArray()) `
+                        -SshHost $SshHost `
+                        -SshUser $SshUser `
+                        -SshPassword $SshPassword `
+                        -SshPort $SshPort `
+                        -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                        -ConfiguredPySshClientPath $ConfiguredPySshClientPath `
+                        -ManagerUser ([string]$ManagerUser) `
+                        -AssistantUser ([string]$AssistantUser) `
+                        -AllowWait
+                }
+                catch {
+                    Write-Warning ("App-state flush after restart failed: {0}" -f $_.Exception.Message)
+                    $postRestartFlushResult = [pscustomobject]@{
+                        RemainingTasks = @($pendingAppStateTaskBlocks.ToArray())
+                        WarningTasks = @()
+                    }
+                }
+
+                $pendingAppStateTaskBlocks = New-Object 'System.Collections.Generic.List[object]'
+                foreach ($remainingTask in @($postRestartFlushResult.RemainingTasks)) {
+                    if ($null -ne $remainingTask) {
+                        $pendingAppStateTaskBlocks.Add($remainingTask) | Out-Null
+                    }
+                }
+                foreach ($warningTask in @($postRestartFlushResult.WarningTasks)) {
+                    if (-not [string]::IsNullOrWhiteSpace([string]$warningTask)) {
+                        $totalWarnings++
+                        $warningTasks += [string]$warningTask
+                    }
+                }
             }
         }
     }
@@ -594,12 +644,11 @@ function Invoke-VmRunCommandBlocks {
         if (@($rebootTaskList).Count -eq 0) {
             $rebootTaskList = @('(task names unavailable)')
         }
-        Write-Host 'VM restart requirement detected after vm-init.' -ForegroundColor Yellow
-        Write-Host 'Tasks requesting restart:' -ForegroundColor Yellow
+        Write-Host 'VM init automatic restarts were completed after reboot-signaling tasks.' -ForegroundColor Cyan
+        Write-Host 'Restarted after tasks:' -ForegroundColor Cyan
         foreach ($rebootTaskName in @($rebootTaskList)) {
-            Write-Host ("- {0}" -f [string]$rebootTaskName) -ForegroundColor Yellow
+            Write-Host ("- {0}" -f [string]$rebootTaskName) -ForegroundColor Cyan
         }
-        Write-Host ("Hint: restart the VM if the restored init state depends on a reboot: az vm restart --resource-group {0} --name {1}" -f [string]$ResourceGroup, [string]$VmName) -ForegroundColor Cyan
     }
     if ([string]::Equals([string]$TaskOutcomeMode, 'strict', [System.StringComparison]::OrdinalIgnoreCase) -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
         throw ("VM init strict task outcome mode blocked continuation: warning={0}, error={1}" -f $totalWarnings, $totalErrors)
@@ -609,7 +658,8 @@ function Invoke-VmRunCommandBlocks {
         SuccessCount = $totalSuccess
         WarningCount = $totalWarnings
         ErrorCount = $totalErrors
-        RebootRequired = ($rebootCount -gt 0)
+        RebootCount = $rebootCount
+        RebootRequired = $false
         NextTaskIndex = [int]$processedTaskCount
         TaskDurations = @()
     }

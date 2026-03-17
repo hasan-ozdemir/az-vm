@@ -42,8 +42,7 @@ function Invoke-AzVmSshTaskBlocks {
         [int]$SshMaxRetries = 3,
         [int]$SshTaskTimeoutSeconds = 180,
         [int]$SshConnectTimeoutSeconds = 30,
-        [string]$ConfiguredPySshClientPath = '',
-        [switch]$SuppressDeferredRestartHint
+        [string]$ConfiguredPySshClientPath = ''
     )
 
     if (-not $TaskBlocks -or @($TaskBlocks).Count -eq 0) {
@@ -72,6 +71,7 @@ function Invoke-AzVmSshTaskBlocks {
     $signalWarningCount = 0
     $totalErrors = 0
     $rebootCount = 0
+    $finalRestartCount = 0
     $successfulTasks = @()
     $failedTasks = @()
     $warningTasks = @()
@@ -358,10 +358,103 @@ function Invoke-AzVmSshTaskBlocks {
             if ($taskRequestedReboot) {
                 $rebootCount++
                 $rebootRequestedTasks += $taskName
-                Write-Host ("Task '{0}' requested a VM restart. The request was recorded and deferred until the vm-update stage completes." -f $taskName) -ForegroundColor Yellow
-                if ($TaskOutcomeMode -eq 'continue' -and [int]$taskResult.ExitCode -eq 0) {
-                    $totalWarnings++
+
+                if ($null -ne $session) {
+                    Stop-AzVmPersistentSshSession -Session $session
+                    $session = $null
                 }
+
+                $restartRecovery = Invoke-AzVmRestartAndWait `
+                    -ResourceGroup ([string]$ResourceGroup) `
+                    -VmName ([string]$VmName) `
+                    -StartMessage ("Task '{0}' requested a restart. Restarting VM now..." -f [string]$taskName) `
+                    -SuccessMessage ("VM restart completed successfully after task '{0}'." -f [string]$taskName) `
+                    -RunningFailureSummary 'VM could not be restarted after a vm-update task.' `
+                    -RunningFailureHint 'Check the VM in Azure Portal and rerun vm-update after the guest returns to running state.' `
+                    -ProvisioningFailureSummary 'VM restart recovery after a vm-update task did not complete successfully.' `
+                    -ProvisioningFailureHint 'Check provisioning status and guest boot health before rerunning vm-update.' `
+                    -HostFailureSummary 'VM restart after a vm-update task completed, but SSH host resolution failed.' `
+                    -HostFailureHint 'Verify that the managed VM still has a reachable public IP or FQDN.' `
+                    -SshFailureSummary 'VM restart after a vm-update task completed, but SSH did not recover in time.' `
+                    -SshFailureHint 'Verify guest startup health and rerun vm-update after SSH becomes reachable.' `
+                    -SshPort ([int]$SshPort) `
+                    -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                    -RequireSsh `
+                    -Context @{
+                        ResourceGroup = [string]$ResourceGroup
+                        VmName = [string]$VmName
+                        SshPort = [int]$SshPort
+                    }
+
+                if (-not [string]::IsNullOrWhiteSpace([string]$restartRecovery.SshHost)) {
+                    $SshHost = [string]$restartRecovery.SshHost
+                }
+
+                $bootstrap = Initialize-AzVmSshHostKey `
+                    -PySshPythonPath ([string]$pySsh.PythonPath) `
+                    -PySshClientPath ([string]$pySsh.ClientPath) `
+                    -HostName $SshHost `
+                    -UserName $SshUser `
+                    -Password $SshPassword `
+                    -Port $SshPort `
+                    -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+                if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
+                    Write-Host ([string]$bootstrap.Output)
+                }
+
+                if ($persistentSessionEnabled) {
+                    try {
+                        $session = Start-AzVmPersistentSshSession `
+                            -PySshPythonPath ([string]$pySsh.PythonPath) `
+                            -PySshClientPath ([string]$pySsh.ClientPath) `
+                            -HostName $SshHost `
+                            -UserName $SshUser `
+                            -Password $SshPassword `
+                            -Port $SshPort `
+                            -Shell $shell `
+                            -ConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                            -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds
+                    }
+                    catch {
+                        $persistentSessionEnabled = $false
+                        $usedOneShotTransport = $true
+                        $session = $null
+                        Write-Warning ("Persistent SSH session recovery failed after task '{0}'. Switching to one-shot SSH task execution: {1}" -f $taskName, $_.Exception.Message)
+                    }
+                }
+            }
+        }
+
+        if (@($TaskBlocks).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+            if ($null -ne $session) {
+                Stop-AzVmPersistentSshSession -Session $session
+                $session = $null
+            }
+
+            $finalRestartCount = 1
+            $finalRestartRecovery = Invoke-AzVmRestartAndWait `
+                -ResourceGroup ([string]$ResourceGroup) `
+                -VmName ([string]$VmName) `
+                -StartMessage 'VM update completed. Running the final VM restart before vm-summary...' `
+                -SuccessMessage 'Final VM restart after vm-update completed successfully.' `
+                -RunningFailureSummary 'VM could not be restarted after vm-update.' `
+                -RunningFailureHint 'Check the VM in Azure Portal and rerun update after the guest returns to running state.' `
+                -ProvisioningFailureSummary 'VM restart recovery after vm-update did not complete successfully.' `
+                -ProvisioningFailureHint 'Check provisioning status and guest boot health before relying on the updated VM.' `
+                -HostFailureSummary 'Final VM restart after vm-update completed, but SSH host resolution failed.' `
+                -HostFailureHint 'Verify that the managed VM still has a reachable public IP or FQDN.' `
+                -SshFailureSummary 'Final VM restart after vm-update completed, but SSH did not recover in time.' `
+                -SshFailureHint 'Verify guest startup health before continuing to vm-summary.' `
+                -SshPort ([int]$SshPort) `
+                -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds `
+                -RequireSsh `
+                -Context @{
+                    ResourceGroup = [string]$ResourceGroup
+                    VmName = [string]$VmName
+                    SshPort = [int]$SshPort
+                }
+            if ($null -ne $finalRestartRecovery -and -not [string]::IsNullOrWhiteSpace([string]$finalRestartRecovery.SshHost)) {
+                $SshHost = [string]$finalRestartRecovery.SshHost
             }
         }
 
@@ -370,7 +463,7 @@ function Invoke-AzVmSshTaskBlocks {
         $uniqueWarningTasks = @($warningTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
         $uniqueSignalWarningTasks = @($signalWarningTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
-        Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, signal-warning={3}, error={4}, reboot={5}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $signalWarningCount, $totalErrors, $rebootCount)
+        Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, signal-warning={3}, error={4}, reboot={5}, final-restart={6}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $signalWarningCount, $totalErrors, $rebootCount, $finalRestartCount)
         if ($usedOneShotTransport) {
             if ($Platform -eq 'windows') {
                 Write-Host 'VM update transport summary: one-shot SSH execution was used for the Windows task stage.' -ForegroundColor Cyan
@@ -406,19 +499,10 @@ function Invoke-AzVmSshTaskBlocks {
             if (@($rebootTaskList).Count -eq 0) {
                 $rebootTaskList = @('(task names unavailable)')
             }
-            Write-Host 'VM restart requirement detected after vm-update.' -ForegroundColor Yellow
-            Write-Host 'Tasks requesting restart:' -ForegroundColor Yellow
+            Write-Host 'VM update automatic restarts were completed after reboot-signaling tasks.' -ForegroundColor Cyan
+            Write-Host 'Restarted after tasks:' -ForegroundColor Cyan
             foreach ($rebootTaskName in @($rebootTaskList)) {
-                Write-Host ("- {0}" -f [string]$rebootTaskName) -ForegroundColor Yellow
-            }
-            if ($SuppressDeferredRestartHint) {
-                Write-Host 'The workflow will apply the required restart automatically before vm-summary.' -ForegroundColor Cyan
-            }
-            elseif (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
-                Write-Host ("Hint: restart the VM after step 6 finishes: az vm restart --resource-group {0} --name {1}" -f $ResourceGroup, $VmName) -ForegroundColor Cyan
-            }
-            else {
-                Write-Host "Hint: restart the VM after step 6 finishes before relying on newly installed components." -ForegroundColor Cyan
+                Write-Host ("- {0}" -f [string]$rebootTaskName) -ForegroundColor Cyan
             }
         }
         if ($TaskOutcomeMode -eq 'strict' -and ($totalWarnings -gt 0 -or $totalErrors -gt 0)) {
@@ -436,7 +520,8 @@ function Invoke-AzVmSshTaskBlocks {
             SignalWarningTasks = @($uniqueSignalWarningTasks)
             ErrorCount = $totalErrors
             RebootCount = $rebootCount
-            RebootRequired = ($rebootCount -gt 0)
+            FinalRestartCount = [int]$finalRestartCount
+            RebootRequired = $false
             RebootRequestedTasks = @($rebootRequestedTasks | Select-Object -Unique)
         }
     }

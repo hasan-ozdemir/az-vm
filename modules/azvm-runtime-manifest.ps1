@@ -177,6 +177,7 @@
     'modules/commands/connect/contract.ps1'
     'modules/commands/connect/entry.ps1'
     'modules/commands/move/runtime.ps1'
+    'modules/core/tasks/azvm-task-restart.ps1'
     'modules/commands/move/parameters/perf.ps1'
     'modules/commands/move/parameters/help.ps1'
     'modules/commands/move/parameters/group.ps1'

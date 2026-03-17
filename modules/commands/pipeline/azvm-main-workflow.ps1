@@ -175,76 +175,154 @@ function Invoke-AzVmPersistPendingSelections {
     Write-Host "Saved selected configuration values to .env." -ForegroundColor Green
 }
 
-function Invoke-AzVmWorkflowRestartBarrier {
+function Get-AzVmWorkflowSummaryReadbackScriptPath {
+    param(
+        [string]$RepoRoot,
+        [ValidateSet('windows','linux')]
+        [string]$Platform
+    )
+
+    if ([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return (Join-Path $RepoRoot 'tools\scripts\az-vm-summary-readback-linux.sh')
+    }
+
+    return (Join-Path $RepoRoot 'tools\scripts\az-vm-summary-readback-windows.ps1')
+}
+
+function New-AzVmWorkflowSummaryReadbackTaskBlock {
+    param(
+        [string]$RepoRoot,
+        [ValidateSet('windows','linux')]
+        [string]$Platform
+    )
+
+    $scriptPath = Get-AzVmWorkflowSummaryReadbackScriptPath -RepoRoot $RepoRoot -Platform $Platform
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        throw ("VM summary readback script was not found: {0}" -f $scriptPath)
+    }
+
+    $assetSpecs = @()
+    if ([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $assetSpecs = @(
+            [pscustomobject]@{
+                LocalPath = (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1')
+                RemotePath = 'C:/Windows/Temp/az-vm-store-install-state.psm1'
+            },
+            [pscustomobject]@{
+                LocalPath = (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1')
+                RemotePath = 'C:/Windows/Temp/az-vm-shortcut-launcher.psm1'
+            },
+            [pscustomobject]@{
+                LocalPath = (Join-Path $RepoRoot 'tools\scripts\az-vm-interactive-session-helper.ps1')
+                RemotePath = 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1'
+            }
+        )
+    }
+
+    return [pscustomobject]@{
+        Name = 'vm-summary-readback'
+        Script = [string](Get-Content -LiteralPath $scriptPath -Raw)
+        RelativePath = ''
+        DirectoryPath = [string](Split-Path -Path $scriptPath -Parent)
+        TaskRootPath = ''
+        TaskMetadataPath = ''
+        StageRootDirectoryPath = ''
+        AssetSpecs = @($assetSpecs)
+        TimeoutSeconds = 180
+        Priority = 0
+        TaskType = 'builtin'
+        Source = 'builtin'
+        TaskNumber = 0
+        AppStateSpec = $null
+        DependsOn = @()
+        ObservedDurationSeconds = [double]::PositiveInfinity
+    }
+}
+
+function Invoke-AzVmWorkflowSummaryReadback {
     param(
         [hashtable]$Context,
-        [ValidateSet('after-vm-update')]
-        [string]$Reason,
-        [int]$SshConnectTimeoutSeconds = 5
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
+        [string]$RepoRoot,
+        [string]$ConfiguredPySshClientPath = '',
+        [int]$SshConnectTimeoutSeconds = 30
     )
+
+    if ($null -eq $Context) {
+        return
+    }
 
     $resourceGroup = [string]$Context.ResourceGroup
     $vmName = [string]$Context.VmName
-    $sshPort = [int]$Context.SshPort
+    if ([string]::IsNullOrWhiteSpace([string]$resourceGroup) -or [string]::IsNullOrWhiteSpace([string]$vmName)) {
+        return
+    }
 
-    $startMessage = ''
-    $successMessage = ''
-    $runningFailureSummary = ''
-    $runningFailureHint = ''
-    $hostFailureSummary = ''
-    $hostFailureHint = ''
-    $sshFailureSummary = ''
-    $sshFailureHint = ''
+    try {
+        $vmRuntimeDetails = Get-AzVmVmDetails -Context $Context
+        $sshHost = [string]$vmRuntimeDetails.VmFqdn
+        if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
+            $sshHost = [string]$vmRuntimeDetails.PublicIP
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
+            Write-Warning 'VM summary readback could not resolve an SSH host. Continuing with connection details only.'
+            return
+        }
 
-    switch ($Reason) {
-        'after-vm-update' {
-            $startMessage = 'VM update requested a restart. Restarting VM before vm-summary...'
-            $successMessage = 'VM restart after vm-update completed successfully.'
-            $runningFailureSummary = 'VM could not be restarted after vm-update.'
-            $runningFailureHint = 'Check the VM in Azure Portal and rerun update after the guest returns to running state.'
-            $hostFailureSummary = 'VM restart after vm-update could not resolve SSH host.'
-            $hostFailureHint = 'Verify the managed VM still has a public IP or FQDN.'
-            $sshFailureSummary = 'VM restart after vm-update did not restore SSH connectivity.'
-            $sshFailureHint = 'Verify guest startup health and rerun update after SSH becomes reachable.'
+        $pySsh = Ensure-AzVmPySshTools -RepoRoot $RepoRoot -ConfiguredPySshClientPath $ConfiguredPySshClientPath
+        $resolvedTask = @(
+            Resolve-AzVmRuntimeTaskBlocks `
+                -TemplateTaskBlocks @((New-AzVmWorkflowSummaryReadbackTaskBlock -RepoRoot $RepoRoot -Platform $Platform)) `
+                -Context $Context
+        ) | Select-Object -First 1
+
+        $null = Initialize-AzVmSshHostKey `
+            -PySshPythonPath ([string]$pySsh.PythonPath) `
+            -PySshClientPath ([string]$pySsh.ClientPath) `
+            -HostName $sshHost `
+            -UserName ([string]$Context.VmUser) `
+            -Password ([string]$Context.VmPass) `
+            -Port ([string]$Context.SshPort) `
+            -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+
+        Write-Host ''
+        Write-Host 'VM summary readback' -ForegroundColor DarkCyan
+
+        foreach ($assetCopy in @($resolvedTask.AssetCopies)) {
+            Copy-AzVmAssetToVm `
+                -PySshPythonPath ([string]$pySsh.PythonPath) `
+                -PySshClientPath ([string]$pySsh.ClientPath) `
+                -HostName $sshHost `
+                -UserName ([string]$Context.VmUser) `
+                -Password ([string]$Context.VmPass) `
+                -Port ([string]$Context.SshPort) `
+                -LocalPath ([string]$assetCopy.LocalPath) `
+                -RemotePath ([string]$assetCopy.RemotePath) `
+                -ConnectTimeoutSeconds $SshConnectTimeoutSeconds | Out-Null
+        }
+
+        $shell = if ([string]::Equals([string]$Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) { 'bash' } else { 'powershell' }
+        $result = Invoke-AzVmOneShotSshTask `
+            -PySshPythonPath ([string]$pySsh.PythonPath) `
+            -PySshClientPath ([string]$pySsh.ClientPath) `
+            -HostName $sshHost `
+            -UserName ([string]$Context.VmUser) `
+            -Password ([string]$Context.VmPass) `
+            -Port ([string]$Context.SshPort) `
+            -Shell $shell `
+            -TaskName 'vm-summary-readback' `
+            -TaskScript ([string]$resolvedTask.Script) `
+            -TimeoutSeconds 180
+
+        if ([int]$result.ExitCode -ne 0) {
+            if (-not ([bool]$result.OutputRelayedLive) -and -not [string]::IsNullOrWhiteSpace([string]$result.Output)) {
+                Write-Host ([string]$result.Output)
+            }
+            Write-Warning ("VM summary readback exited with code {0}. Continuing with connection details." -f [int]$result.ExitCode)
         }
     }
-
-    Write-Host $startMessage -ForegroundColor Cyan
-    Invoke-TrackedAction -Label ("az vm restart -g {0} -n {1}" -f $resourceGroup, $vmName) -Action {
-        az vm restart -g $resourceGroup -n $vmName -o none --only-show-errors
-        Assert-LastExitCode "az vm restart"
-    } | Out-Null
-
-    $running = Wait-AzVmVmPowerState -ResourceGroup $resourceGroup -VmName $vmName -DesiredPowerState "VM running" -MaxAttempts 36 -DelaySeconds 10
-    if (-not $running) {
-        Throw-FriendlyError `
-            -Detail ("VM '{0}' did not return to running state after the workflow restart barrier." -f $vmName) `
-            -Code 62 `
-            -Summary $runningFailureSummary `
-            -Hint $runningFailureHint
+    catch {
+        Write-Warning ("VM summary readback could not complete: {0}" -f $_.Exception.Message)
     }
-
-    $vmRuntimeDetails = Get-AzVmVmDetails -Context $Context
-    $sshHost = [string]$vmRuntimeDetails.VmFqdn
-    if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
-        $sshHost = [string]$vmRuntimeDetails.PublicIP
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
-        Throw-FriendlyError `
-            -Detail "SSH host could not be resolved after the workflow restart barrier." `
-            -Code 62 `
-            -Summary $hostFailureSummary `
-            -Hint $hostFailureHint
-    }
-
-    $sshReady = Wait-AzVmTcpPortReachable -HostName $sshHost -Port $sshPort -MaxAttempts 30 -DelaySeconds 10 -TimeoutSeconds $SshConnectTimeoutSeconds -Label 'ssh'
-    if (-not $sshReady) {
-        Throw-FriendlyError `
-            -Detail ("SSH port {0} on '{1}' did not become reachable after the workflow restart barrier." -f $sshPort, $sshHost) `
-            -Code 62 `
-            -Summary $sshFailureSummary `
-            -Hint $sshFailureHint
-    }
-
-    Write-Host $successMessage -ForegroundColor Green
 }

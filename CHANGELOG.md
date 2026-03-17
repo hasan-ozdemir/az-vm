@@ -3,6 +3,30 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.341] - 2026-03-17
+
+### Added
+- Added a shared task-restart helper for `vm-init`, `vm-update`, isolated task runs, and the main workflow so reboot-signaling tasks can restart the VM immediately, wait for recovery, and then continue with the next task.
+- Added `dependsOn`-aware task-catalog ordering plus observed-duration metadata so runtime discovery can sort tasks dependency-safe inside each band before using timeout and alphabetical tie-breaks.
+- Added `vm-summary` readback helpers and platform-specific summary scripts so the final summary now begins with a read-only guest health/state probe instead of relying on a dedicated late update task.
+
+### Changed
+- Changed the shared VM task timeout contract so every tracked and local `vm-init` / `vm-update` task now uses a minimum `30` seconds and rounds up in `15`-second increments, with the runtime helper enforcing the same normalization centrally.
+- Changed the Windows init/update task catalogs by reordering and renumbering them inside their existing `initial`, `normal`, `local`, and `final` bands, moving `autologon-manager-user` into the final update band and keeping it as the last final Windows update task.
+- Changed `vm-update` restart orchestration so reboot-signaling tasks restart immediately after completion, while the Windows `vm-update` stage still performs one additional final restart before `vm-summary`.
+- Changed `10005-copy-settings-user` so it is now a pure portable mirror of `manager` state into `assistant`, the default profile, and `HKEY_USERS\.DEFAULT`; the old curated per-app copy model is no longer part of the active task behavior.
+- Changed the operator documentation and CLI help so create/update now describe task-immediate restarts, the final Windows `vm-update` restart, and the new `vm-summary` readback-first flow.
+
+### Removed
+- Removed `windows/update/10006-capture-snapshot-health` and `linux/update/10001-capture-snapshot-health` from the active task inventories.
+- Removed the remaining dead curated-copy helper block from `10005-copy-settings-user.ps1`.
+
+### Fixed
+- Fixed the smoke-contract surface so it now resolves the renumbered task folders, checks dependency-safe Windows update ordering without overfitting to one exact timeout-tie order, and validates the new portable-mirror `copy-settings-user` contract.
+
+### Tests
+- Revalidated the full non-live gate with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.17.340] - 2026-03-17
 
 ### Changed

@@ -1,7 +1,7 @@
 {
   "priority": 2,
   "enabled": true,
-  "timeout": 88,
+  "timeout": 90,
   "appState": {
     "machineDirectories": [],
     "machineFiles": [],
@@ -38,5 +38,8 @@
     "profileFiles": [],
     "machineRegistryKeys": [],
     "userRegistryKeys": []
-  }
+  },
+  "dependsOn": [
+    "01-bootstrap-winget-system"
+  ]
 }

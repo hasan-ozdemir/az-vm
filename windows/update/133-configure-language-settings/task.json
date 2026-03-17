@@ -1,0 +1,11 @@
+{
+  "priority": 133,
+  "enabled": true,
+  "timeout": 1575,
+  "assets": [
+    {
+      "local": "../../../tools/scripts/az-vm-interactive-session-helper.ps1",
+      "remote": "C:/Windows/Temp/az-vm-interactive-session-helper.ps1"
+    }
+  ]
+}

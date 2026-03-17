@@ -107,7 +107,7 @@ function Apply-AzVmTaskBlockReplacements {
                 }
             }
 
-            if ($taskName -in @('10003-configure-ux-windows', '10005-copy-settings-user', '125-install-be-my-eyes', '129-install-icloud-system')) {
+            if ($taskName -in @('10004-configure-ux-windows', '10005-copy-settings-user', '113-install-be-my-eyes', '120-install-icloud-system')) {
                 $repoRoot = Resolve-AzVmTaskRepoRootFromPath -StartPath $directoryPath
                 if ([string]::IsNullOrWhiteSpace([string]$repoRoot)) {
                     throw ("Repo root could not be resolved for task '{0}' from '{1}'." -f $taskName, $directoryPath)
@@ -139,6 +139,8 @@ function Apply-AzVmTaskBlockReplacements {
             Source = if ($taskBlock.PSObject.Properties.Match('Source').Count -gt 0) { [string]$taskBlock.Source } else { '' }
             TaskNumber = if ($taskBlock.PSObject.Properties.Match('TaskNumber').Count -gt 0) { [int]$taskBlock.TaskNumber } else { 0 }
             AppStateSpec = if ($taskBlock.PSObject.Properties.Match('AppStateSpec').Count -gt 0) { $taskBlock.AppStateSpec } else { $null }
+            DependsOn = if ($taskBlock.PSObject.Properties.Match('DependsOn').Count -gt 0) { @($taskBlock.DependsOn) } else { @() }
+            ObservedDurationSeconds = if ($taskBlock.PSObject.Properties.Match('ObservedDurationSeconds').Count -gt 0) { [double]$taskBlock.ObservedDurationSeconds } else { [double]::PositiveInfinity }
         }
     }
 

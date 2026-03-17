@@ -3,7 +3,12 @@
 function Write-AzVmWorkflowSummary {
     param(
         [hashtable]$Context,
+        [ValidateSet('windows','linux')]
+        [string]$Platform,
         [hashtable]$PlatformDefaults,
+        [string]$RepoRoot = '',
+        [string]$ConfiguredPySshClientPath = '',
+        [int]$SshConnectTimeoutSeconds = 30,
         [string[]]$CompletedStages,
         [string[]]$SkippedStages,
         [string]$CancelledStage = ''
@@ -31,6 +36,13 @@ function Write-AzVmWorkflowSummary {
         Write-Host ("VM summary: VM '{0}' is not present yet; connection details are unavailable." -f $vmName) -ForegroundColor Yellow
         return
     }
+
+    Invoke-AzVmWorkflowSummaryReadback `
+        -Context $Context `
+        -Platform $Platform `
+        -RepoRoot $RepoRoot `
+        -ConfiguredPySshClientPath $ConfiguredPySshClientPath `
+        -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds
 
     $connectionModel = if ([bool]$PlatformDefaults.IncludeRdp) {
         Get-AzVmConnectionDisplayModel -Context $Context -ManagerUser ([string]$Context.VmUser) -AssistantUser ([string]$Context.VmAssistantUser) -SshPort ([string]$Context.SshPort) -RdpPort ([string]$Context.RdpPort) -IncludeRdp
@@ -190,7 +202,7 @@ function Invoke-AzVmMain {
         }
 
         if (-not [string]::IsNullOrWhiteSpace([string]$cancelledStage)) {
-            Write-AzVmWorkflowSummary -Context $step1Context -PlatformDefaults $platformDefaults -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
+            Write-AzVmWorkflowSummary -Context $step1Context -Platform $platform -PlatformDefaults $platformDefaults -RepoRoot $repoRoot -ConfiguredPySshClientPath $configuredPySshClientPath -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
             Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))
             return
         }
@@ -247,7 +259,7 @@ function Invoke-AzVmMain {
         }
 
         if (-not [string]::IsNullOrWhiteSpace([string]$cancelledStage)) {
-            Write-AzVmWorkflowSummary -Context $step1Context -PlatformDefaults $platformDefaults -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
+            Write-AzVmWorkflowSummary -Context $step1Context -Platform $platform -PlatformDefaults $platformDefaults -RepoRoot $repoRoot -ConfiguredPySshClientPath $configuredPySshClientPath -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
             Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))
             return
         }
@@ -376,10 +388,7 @@ function Invoke-AzVmMain {
                             $sshMaxRetries = Resolve-AzVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
                         }
 
-                        return (Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser ([string]$step1Context.VmUser) -SshPassword ([string]$step1Context.VmPass) -SshPort ([string]$step1Context.SshPort) -AssistantUser ([string]$step1Context.VmAssistantUser) -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath -SuppressDeferredRestartHint)
-                    }
-                    if ($null -ne $vmUpdateStageResult -and [bool]$vmUpdateStageResult.RebootRequired) {
-                        Invoke-AzVmWorkflowRestartBarrier -Context $step1Context -Reason 'after-vm-update' -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds
+                        return (Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser ([string]$step1Context.VmUser) -SshPassword ([string]$step1Context.VmPass) -SshPort ([string]$step1Context.SshPort) -AssistantUser ([string]$step1Context.VmAssistantUser) -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath)
                     }
                     [void]$completedStages.Add('vm-update')
                 }
@@ -388,7 +397,7 @@ function Invoke-AzVmMain {
 
         [void]$completedStages.Add('vm-summary')
         Invoke-Step 'Step 7/7 - VM summary' {
-            Write-AzVmWorkflowSummary -Context $step1Context -PlatformDefaults $platformDefaults -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
+            Write-AzVmWorkflowSummary -Context $step1Context -Platform $platform -PlatformDefaults $platformDefaults -RepoRoot $repoRoot -ConfiguredPySshClientPath $configuredPySshClientPath -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -CompletedStages @($completedStages) -SkippedStages @($skippedStages) -CancelledStage $cancelledStage
         }
         Write-Host ("All console output was saved to '{0}'." -f [System.IO.Path]::GetFileName($logPath))
     }
