@@ -700,6 +700,7 @@ function Invoke-AzVmStep1Common {
     $vmUpdateTaskDirName = Resolve-AzVmTemplate -Template (Get-ConfigValue -Config $ConfigMap -Key $vmUpdateTaskDirConfigKey -DefaultValue ([string]$((Get-AzVmPlatformDefaults -Platform $Platform).VmUpdateTaskDirDefault))) -Tokens $baseTokens
     $vmInitTaskDir = Resolve-ConfigPath -PathValue $vmInitTaskDirName -RootPath $ScriptRoot
     $vmUpdateTaskDir = Resolve-ConfigPath -PathValue $vmUpdateTaskDirName -RootPath $ScriptRoot
+    $publicDnsLabel = Resolve-AzVmPublicDnsLabel -PublicIpName ([string]$IP) -VmName ([string]$vmName)
 
     $defaultPortsCsv = Get-AzVmDefaultTcpPortsCsv
     $tcpPortsConfiguredCsv = Get-ConfigValue -Config $ConfigMap -Key "TCP_PORTS" -DefaultValue $defaultPortsCsv
@@ -734,6 +735,7 @@ function Invoke-AzVmStep1Common {
         NSG = $NSG
         NsgRule = $nsgRule
         IP = $IP
+        PublicDnsLabel = [string]$publicDnsLabel
         NIC = $NIC
         VmName = $vmName
         VmImage = $vmImage

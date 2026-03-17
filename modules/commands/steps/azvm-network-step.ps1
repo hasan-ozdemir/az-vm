@@ -13,7 +13,7 @@ function Invoke-AzVmNetworkStep {
     Show-AzVmStepFirstUseValues `
         -StepLabel "Step 3/7 - network provisioning" `
         -Context $Context `
-        -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "NIC", "TcpPorts") `
+        -Keys @("ResourceGroup", "VNET", "SUBNET", "NSG", "NsgRule", "IP", "PublicDnsLabel", "NIC", "TcpPorts") `
         -ExtraValues @{
             NetworkExecutionMode = $effectiveMode
         }
@@ -103,7 +103,7 @@ function Invoke-AzVmNetworkStep {
                 "-n", [string]$Context.IP,
                 "--allocation-method", "Static",
                 "--sku", "Standard",
-                "--dns-name", [string]$Context.VmName
+                "--dns-name", [string]$Context.PublicDnsLabel
             )
             $publicIpCreateArgs += @(Get-AzVmPublicIpZoneArgs -Location ([string]$Context.AzLocation))
             $publicIpCreateArgs += @("-o", "table")

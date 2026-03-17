@@ -414,8 +414,15 @@ function Invoke-AzVmMain {
     }
     finally {
         if ($script:TranscriptStarted) {
-            Stop-Transcript | Out-Null
-            $script:TranscriptStarted = $false
+            try {
+                Stop-Transcript -ErrorAction Stop | Out-Null
+            }
+            catch {
+                Write-Host ("Transcript stop skipped: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+            }
+            finally {
+                $script:TranscriptStarted = $false
+            }
         }
     }
 

@@ -3,6 +3,28 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.342] - 2026-03-17
+
+### Added
+- Added managed public DNS label allocation based on the effective VM name plus a managed attached-public-IP index, so new managed Windows VMs now receive labels such as `test-vm1` and `test-vm2` instead of labels derived from the public IP resource name.
+- Added live public-IP DNS-settings fallback for VM detail readback so `show` can recover the real FQDN even when `az vm show -d` omits `fqdns`.
+
+### Changed
+- Changed the Windows normal `vm-update` catalog so `101-install-sysinternals-suite` now runs first, `102-autologon-manager-user` runs immediately after it, and the remaining normal-band tasks shift upward while preserving their relative order.
+- Changed Windows Store-backed update tasks to require an interactive manager session before attempting `msstore` installs; when no interactive session is ready they now record a non-warning `skipped` store state, log one informational skip line, and exit cleanly.
+- Changed `105-install-teams-system` to use a `75` second timeout while keeping the unattended `winget install "Microsoft Teams" -s msstore` install path and its agreement flags.
+- Changed tracked Windows task manifests so helper assets are declared explicitly in `task.json` instead of being injected through the shared run-command template.
+
+### Fixed
+- Fixed Windows task-catalog ordering so dependency-safe ready-task selection now respects `priority` as the primary comparator instead of letting timeout-first ordering run higher-numbered tasks such as `vm-update #106` before lower-priority ready tasks.
+- Fixed the Windows renumber drift across shipped `app-state.zip` payloads, runtime app-state/export maps, summary readback, browser preflight checks, and public-shortcut task references so live task names now match the current canonical folder names.
+- Fixed `102-autologon-manager-user` so it now reports interactive-logon readiness and emits the standard reboot-required marker, which lets isolated task runs and the shared SSH runner restart the VM immediately before later Store-backed tasks continue.
+- Fixed the successful isolated-task cleanup path so completed tasks such as `126-install-google-drive` no longer fall into the PowerShell debugger during transcript shutdown.
+
+### Tests
+- Revalidated the full non-live gate with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the affected Windows update flow live only through isolated task runs on the active managed VM for `101`, `102`, `105`, `115`, `116`, `117`, `122`, `126`, and `10003`; no full end-to-end live `create` run was performed in this change set.
+
 ## [2026.3.17.341] - 2026-03-17
 
 ### Added

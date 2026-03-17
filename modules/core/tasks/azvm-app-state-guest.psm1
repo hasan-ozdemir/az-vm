@@ -1594,7 +1594,7 @@ function Get-AzVmTaskAppStateManagedProcessNames {
     if ([string]::Equals([string]$TaskName, '02-check-install-chrome', [System.StringComparison]::OrdinalIgnoreCase)) {
         return @('chrome')
     }
-    if ([string]::Equals([string]$TaskName, '110-install-edge-browser', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals([string]$TaskName, '103-install-edge-browser', [System.StringComparison]::OrdinalIgnoreCase)) {
         return @('msedge')
     }
 

@@ -299,6 +299,150 @@ function Resolve-AzVmNameFromTemplate {
     return $resolved.Replace("{N}", [string]$index)
 }
 
+function ConvertTo-AzVmAzureDnsSafeLabel {
+    param(
+        [string]$Value,
+        [string]$Fallback = 'vm0'
+    )
+
+    $label = if ([string]::IsNullOrWhiteSpace([string]$Value)) { '' } else { [string]$Value.Trim().ToLowerInvariant() }
+    $label = [regex]::Replace($label, '[^a-z0-9-]', '-')
+    $label = [regex]::Replace($label, '-{2,}', '-')
+    $label = $label.Trim('-')
+
+    if ([string]::IsNullOrWhiteSpace([string]$label)) {
+        $label = [string]$Fallback
+    }
+
+    if ($label.Length -gt 63) {
+        $label = ([string]$label.Substring(0, 63)).TrimEnd('-')
+    }
+
+    $label = $label.Trim('-')
+    if ([string]::IsNullOrWhiteSpace([string]$label)) {
+        $label = [string]$Fallback
+    }
+
+    if ($label.Length -lt 3) {
+        $label = $label.PadRight(3, '0')
+    }
+
+    return [string]$label
+}
+
+function Get-AzVmManagedPublicIpRows {
+    $rows = New-Object 'System.Collections.Generic.List[object]'
+    try {
+        $resourceGroups = @(Get-AzVmManagedResourceGroupRows)
+        foreach ($groupRow in @($resourceGroups)) {
+            $resourceGroup = [string]$groupRow.name
+            if ([string]::IsNullOrWhiteSpace([string]$resourceGroup)) {
+                continue
+            }
+
+            $publicIpJson = az network public-ip list -g $resourceGroup -o json --only-show-errors 2>$null
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$publicIpJson)) {
+                continue
+            }
+
+            foreach ($publicIpRow in @(ConvertFrom-JsonArrayCompat -InputObject $publicIpJson)) {
+                if ($null -eq $publicIpRow) {
+                    continue
+                }
+
+                $rows.Add($publicIpRow) | Out-Null
+            }
+        }
+    }
+    catch {
+        Throw-FriendlyError `
+            -Detail "Managed public IP inventory could not be listed while resolving the next public DNS label." `
+            -Code 22 `
+            -Summary "Managed public DNS label could not be resolved." `
+            -Hint "Run az login and verify access to list az-vm managed resource groups and public IPs."
+    }
+
+    return @($rows.ToArray())
+}
+
+function Test-AzVmManagedPublicIpAttached {
+    param([AllowNull()]$PublicIpRow)
+
+    if ($null -eq $PublicIpRow) {
+        return $false
+    }
+
+    $ipConfigurationId = ''
+    if ($PublicIpRow.PSObject.Properties.Match('ipConfiguration').Count -gt 0 -and $null -ne $PublicIpRow.ipConfiguration) {
+        if ($PublicIpRow.ipConfiguration.PSObject.Properties.Match('id').Count -gt 0) {
+            $ipConfigurationId = [string]$PublicIpRow.ipConfiguration.id
+        }
+    }
+
+    return (-not [string]::IsNullOrWhiteSpace([string]$ipConfigurationId))
+}
+
+function New-AzVmManagedPublicDnsLabelCandidate {
+    param(
+        [string]$VmName,
+        [int]$VmId
+    )
+
+    $effectiveVmId = if ($VmId -lt 1) { 1 } else { [int]$VmId }
+    $safeVmName = ConvertTo-AzVmAzureDnsSafeLabel -Value $VmName -Fallback 'vm'
+    $suffix = ('-vm{0}' -f $effectiveVmId)
+    $maxVmNameLength = [Math]::Max(1, 63 - $suffix.Length)
+    if ($safeVmName.Length -gt $maxVmNameLength) {
+        $safeVmName = ([string]$safeVmName.Substring(0, $maxVmNameLength)).TrimEnd('-')
+        if ([string]::IsNullOrWhiteSpace([string]$safeVmName)) {
+            $safeVmName = 'vm'
+        }
+    }
+
+    return (ConvertTo-AzVmAzureDnsSafeLabel -Value ($safeVmName + $suffix) -Fallback ('vm' + $effectiveVmId))
+}
+
+# Handles Resolve-AzVmPublicDnsLabel.
+function Resolve-AzVmPublicDnsLabel {
+    param(
+        [string]$PublicIpName,
+        [string]$VmName = '',
+        [int]$PreferredVmId = 0,
+        [object[]]$ManagedPublicIpRows = @()
+    )
+
+    $effectiveVmName = if ([string]::IsNullOrWhiteSpace([string]$VmName)) { [string]$PublicIpName } else { [string]$VmName }
+    $publicIpRows = if (@($ManagedPublicIpRows).Count -gt 0) { @($ManagedPublicIpRows) } else { @(Get-AzVmManagedPublicIpRows) }
+    $existingLabels = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $attachedCount = 0
+
+    foreach ($publicIpRow in @($publicIpRows)) {
+        if (Test-AzVmManagedPublicIpAttached -PublicIpRow $publicIpRow) {
+            $attachedCount++
+        }
+
+        $domainNameLabel = ''
+        if ($publicIpRow.PSObject.Properties.Match('dnsSettings').Count -gt 0 -and $null -ne $publicIpRow.dnsSettings) {
+            if ($publicIpRow.dnsSettings.PSObject.Properties.Match('domainNameLabel').Count -gt 0) {
+                $domainNameLabel = [string]$publicIpRow.dnsSettings.domainNameLabel
+            }
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$domainNameLabel)) {
+            [void]$existingLabels.Add($domainNameLabel.Trim().ToLowerInvariant())
+        }
+    }
+
+    $vmId = if ($PreferredVmId -gt 0) { [int]$PreferredVmId } else { ($attachedCount + 1) }
+    while ($true) {
+        $candidateLabel = New-AzVmManagedPublicDnsLabelCandidate -VmName $effectiveVmName -VmId $vmId
+        if (-not $existingLabels.Contains($candidateLabel)) {
+            return [string]$candidateLabel
+        }
+
+        $vmId++
+    }
+}
+
 # Handles Resolve-ConfigPath.
 function Resolve-ConfigPath {
     param(

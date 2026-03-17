@@ -1207,7 +1207,12 @@ function Add-StoreManagedShortcutSpec {
     $stateRecord = Read-StoreTaskStateRecord -TaskName $TaskName
     if ($null -ne $stateRecord -and -not [string]::Equals([string]$stateRecord.state, 'installed', [System.StringComparison]::OrdinalIgnoreCase)) {
         $summary = if ($stateRecord.PSObject.Properties.Match('summary').Count -gt 0) { [string]$stateRecord.summary } else { 'state record indicates the app is not launch-ready.' }
-        Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
+        if ([string]::Equals([string]$stateRecord.state, 'skipped', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
+        }
+        else {
+            Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
+        }
         return
     }
 
@@ -1684,22 +1689,22 @@ $quickAccessWebShortcuts = @(
 
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a1ChatGPT Web" -Url "https://chatgpt.com" -ProfileKind 'business' -Variant 'remote')
 if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a2CodexApp' -TaskName '116-install-codex-app' -AppId $codexAppId -ExecutablePath $codexAppExe
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a2CodexApp' -TaskName '117-install-codex-app' -AppId $codexAppId -ExecutablePath $codexAppExe
 }
 elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a2CodexApp' -TaskName '116-install-codex-app' -AppId '' -ExecutablePath $codexAppExe
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a2CodexApp' -TaskName '117-install-codex-app' -AppId '' -ExecutablePath $codexAppExe
 }
 if (-not [string]::IsNullOrWhiteSpace([string]$beMyEyesAppId)) {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a3Be My Eyes' -TaskName '125-install-be-my-eyes' -AppId $beMyEyesAppId
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a3Be My Eyes' -TaskName '115-install-be-my-eyes' -AppId $beMyEyesAppId
 }
 else {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a3Be My Eyes' -TaskName '125-install-be-my-eyes' -AppId ''
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a3Be My Eyes' -TaskName '115-install-be-my-eyes' -AppId ''
 }
 if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppBusinessAppId)) {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a4WhatsApp Business' -TaskName '120-install-whatsapp-system' -AppId $whatsAppBusinessAppId -ExecutablePath $whatsAppBusinessTarget
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a4WhatsApp Business' -TaskName '116-install-whatsapp-system' -AppId $whatsAppBusinessAppId -ExecutablePath $whatsAppBusinessTarget
 }
 else {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a4WhatsApp Business' -TaskName '120-install-whatsapp-system' -AppId '' -ExecutablePath $whatsAppBusinessTarget
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'a4WhatsApp Business' -TaskName '116-install-whatsapp-system' -AppId '' -ExecutablePath $whatsAppBusinessTarget
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name "a5WhatsApp Personal" -Url "https://web.whatsapp.com" -ProfileKind 'personal' -Variant 'remote')
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "a6AnyDesk" -TargetPath $anyDeskExe -AllowMissingTargetPath $true -ValidationKind "app" -CleanupAliases @("AnyDesk") -CleanupMatchTargetOnly $true)
@@ -1728,10 +1733,10 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d1RClone CLI" -Targ
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d2One Drive" -TargetPath $oneDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "d3Google Drive" -TargetPath $googleDriveExe -AllowMissingTargetPath $true -ValidationKind "app")
 if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId)) {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'd4ICloud' -TaskName '129-install-icloud-system' -AppId $iCloudAppId -ExecutablePath $iCloudExe
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'd4ICloud' -TaskName '122-install-icloud-system' -AppId $iCloudAppId -ExecutablePath $iCloudExe
 }
 else {
-    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'd4ICloud' -TaskName '129-install-icloud-system' -AppId '' -ExecutablePath $iCloudExe
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'd4ICloud' -TaskName '122-install-icloud-system' -AppId '' -ExecutablePath $iCloudExe
 }
 $mailShortcutArguments = if (-not [string]::IsNullOrWhiteSpace([string]$outlookExe)) {
     ('/c start "" "{0}" /select "outlook:\\{1}\\Inbox"' -f $outlookExe, $employeeEmailAddress)

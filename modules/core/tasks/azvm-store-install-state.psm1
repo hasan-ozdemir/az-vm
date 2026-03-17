@@ -90,7 +90,7 @@ function Remove-AzVmStoreInstallState {
 function Write-AzVmStoreInstallState {
     param(
         [string]$TaskName,
-        [ValidateSet('installed','degraded')]
+        [ValidateSet('installed','degraded','skipped')]
         [string]$State,
         [string]$Summary,
         [string]$PackageId = '',

@@ -577,17 +577,22 @@ function Normalize-AppStateZipPayload {
 
     $taskAppStateSpec = Get-AppStateNormalizationTaskAppStateSpec -ZipPath $ZipPath
     $taskUsesCanonicalManagerPayload = Test-AppStateNormalizationTaskUsesCanonicalManagerPayload -AppStateSpec $taskAppStateSpec
-    $scratchRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-normalize-' + [guid]::NewGuid().ToString('N'))
+    $scratchRoot = Join-Path ([System.Environment]::GetEnvironmentVariable('SystemDrive')) ('azvmn-' + [guid]::NewGuid().ToString('N'))
+    $expectedTaskName = [System.IO.Path]::GetFileName((Split-Path -Path (Split-Path -Path $ZipPath -Parent) -Parent))
     $result = [ordered]@{
         ZipPath = [string]$ZipPath
-        TaskName = ''
+        TaskName = [string]$expectedTaskName
         Changed = $false
         Status = 'unchanged'
         ForeignUsers = @()
     }
 
     try {
-        Expand-Archive -LiteralPath $ZipPath -DestinationPath $scratchRoot -Force
+        if (Test-Path -LiteralPath $scratchRoot) {
+            Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Ensure-AppStateNormalizationDirectory -Path $scratchRoot
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $scratchRoot)
         $manifestPath = Join-Path $scratchRoot 'app-state.manifest.json'
         if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
             $result.Status = 'missing-manifest'
@@ -595,7 +600,8 @@ function Normalize-AppStateZipPayload {
         }
 
         $manifest = ConvertFrom-Json -InputObject ([string](Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop)) -ErrorAction Stop
-        $result.TaskName = if ($manifest.PSObject.Properties.Match('taskName').Count -gt 0) { [string]$manifest.taskName } else { [System.IO.Path]::GetFileName((Split-Path -Path (Split-Path -Path $ZipPath -Parent) -Parent)) }
+        $manifestTaskName = if ($manifest.PSObject.Properties.Match('taskName').Count -gt 0) { [string]$manifest.taskName } else { '' }
+        $taskNameChanged = (-not [string]::Equals([string]$manifestTaskName, [string]$expectedTaskName, [System.StringComparison]::OrdinalIgnoreCase))
 
         $foreignUserSet = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
         foreach ($token in @(Get-AppStateNormalizationForeignTokensFromManifest -Manifest $manifest)) {
@@ -606,11 +612,11 @@ function Normalize-AppStateZipPayload {
         }
         $foreignTokens = @($foreignUserSet | Sort-Object)
         $result.ForeignUsers = @($foreignTokens)
-        if (@($foreignTokens).Count -lt 1) {
+        if (@($foreignTokens).Count -lt 1 -and -not $taskNameChanged) {
             return [pscustomobject]$result
         }
 
-        if (-not $taskUsesCanonicalManagerPayload) {
+        if (@($foreignTokens).Count -gt 0 -and -not $taskUsesCanonicalManagerPayload) {
             throw ("App-state zip '{0}' contains foreign profile tokens ({1}) but the owning task contract is not portable or profile-generic." -f [string]$ZipPath, ((@($foreignTokens) -join ', ')))
         }
 
@@ -843,17 +849,23 @@ function Normalize-AppStateZipPayload {
             }
         }
 
-        $manifest.profileDirectories = @($normalizedProfileDirectories.ToArray())
-        $manifest.profileFiles = @($normalizedProfileFiles.ToArray())
-        $manifest.registryImports = @($normalizedRegistryImports.ToArray())
+        if (@($foreignTokens).Count -gt 0) {
+            $manifest.profileDirectories = @($normalizedProfileDirectories.ToArray())
+            $manifest.profileFiles = @($normalizedProfileFiles.ToArray())
+            $manifest.registryImports = @($normalizedRegistryImports.ToArray())
+        }
+        if ($manifest.PSObject.Properties.Match('taskName').Count -lt 1) {
+            $manifest | Add-Member -NotePropertyName taskName -NotePropertyValue ([string]$expectedTaskName)
+        }
+        else {
+            $manifest.taskName = [string]$expectedTaskName
+        }
         Set-Content -LiteralPath $manifestPath -Value ($manifest | ConvertTo-Json -Depth 16) -Encoding UTF8
 
         Remove-Item -LiteralPath $ZipPath -Force -ErrorAction Stop
-        $archiveInputPaths = @(
-            Get-ChildItem -LiteralPath $scratchRoot -Force | Sort-Object FullName | Select-Object -ExpandProperty FullName
-        )
+        $archiveInputPaths = @(Get-ChildItem -LiteralPath $scratchRoot -Force -ErrorAction SilentlyContinue)
         if (@($archiveInputPaths).Count -gt 0) {
-            Compress-Archive -LiteralPath $archiveInputPaths -DestinationPath $ZipPath -Force
+            [System.IO.Compression.ZipFile]::CreateFromDirectory($scratchRoot, $ZipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
         }
 
         $result.Changed = $true

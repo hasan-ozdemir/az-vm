@@ -5239,3 +5239,17 @@ I completed the task-catalog and workflow refactor across the repo. The shared t
 
 I narrowed `10005-copy-settings-user` to a portable mirror of `manager` state only. The task now mirrors portable profile and registry state into `assistant`, `C:\Users\Default`, and `HKEY_USERS\.DEFAULT`, while excluding caches, temporary files, lock artifacts, DPAPI-bound secret stores, vault and credential stores, and other non-portable data. I removed the remaining dead curated-copy helper block from the script, updated the smoke contract for the new mirror behavior and the renumbered task names, and revalidated the entire change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
 
+### 2026-03-17 19:49 UTC
+
+**User Prompt**
+
+````text
+Implement the plan.
+````
+
+**Assistant Summary**
+
+I implemented the Windows publish fix pack that came out of the latest create-log review. The Windows normal `vm-update` catalog now starts with `101-install-sysinternals-suite` and `102-autologon-manager-user`, runtime task discovery now selects dependency-safe ready tasks by `priority` before timeout, and the renumber drift was repaired across shipped task-local `app-state.zip` manifests, runtime app-state/export maps, summary readback, browser preflight helpers, and public-shortcut task references. I also updated the Store-backed tasks so they check for an interactive manager session first, record a non-warning `skipped` state when no session is ready, and keep the Teams Store install on the requested unattended `winget` path with a `75` second timeout.
+
+I also replaced managed public DNS label allocation with the requested `vm_name-vm{id}` rule, using the count of managed attached public IPs plus collision fallback to the next free id, and updated VM detail readback to fetch the live public IP DNS settings when `az vm show -d` omits `fqdns`. Finally, I hardened transcript shutdown so successful isolated tasks such as Google Drive no longer fall into PowerShell debug mode, revalidated the repo with the full non-live test suite, and reran the affected Windows update tasks live only in isolation (`101`, `102`, `105`, `115`, `116`, `117`, `122`, `126`, and `10003`) without performing a full end-to-end live `create` run.
+

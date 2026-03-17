@@ -1,8 +1,0 @@
-{
-  "priority": 10006,
-  "enabled": true,
-  "timeout": 45,
-  "dependsOn": [
-    "10005-copy-settings-user"
-  ]
-}

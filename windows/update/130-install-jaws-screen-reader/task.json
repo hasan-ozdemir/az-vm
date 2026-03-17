@@ -1,0 +1,37 @@
+{
+  "priority": 130,
+  "enabled": true,
+  "timeout": 285,
+  "appState": {
+    "portableProfilePayload": true,
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [
+      {
+        "path": "AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      }
+    ],
+    "profileFiles": [],
+    "machineRegistryKeys": [
+      {
+        "path": "HKLM\\Software\\Freedom Scientific",
+        "distributionAllowList": []
+      },
+      {
+        "path": "HKLM\\Software\\WOW6432Node\\Freedom Scientific",
+        "distributionAllowList": []
+      }
+    ],
+    "userRegistryKeys": [
+      {
+        "path": "HKCU\\Software\\Freedom Scientific",
+        "targetProfiles": [],
+        "distributionAllowList": []
+      }
+    ]
+  }
+}

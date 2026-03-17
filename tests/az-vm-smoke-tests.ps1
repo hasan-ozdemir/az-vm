@@ -44,54 +44,54 @@ function Get-CurrentSmokeTaskName {
         '03-install-openssh-service' = '04-install-openssh-service'
         '04-configure-sshd-port' = '05-configure-sshd-port'
         '05-configure-rdp-system' = '02-configure-rdp-system'
-        '101-install-powershell-core' = '122-install-powershell-core'
-        '102-install-git-system' = '121-install-git-system'
-        '103-install-python-system' = '123-install-python-system'
-        '104-install-node-system' = '110-install-node-system'
-        '105-install-azure-cli' = '125-install-azure-cli'
-        '107-install-7zip-system' = '105-install-7zip-system'
-        '108-install-sysinternals-suite' = '127-install-sysinternals-suite'
-        '108-install-ffmpeg-system' = '112-install-ffmpeg-system'
-        '109-install-vscode-system' = '117-install-vscode-system'
-        '110-install-edge-browser' = '101-install-edge-browser'
-        '130-autologon-manager-user' = '10006-autologon-manager-user'
-        '109-install-ffmpeg-system' = '112-install-ffmpeg-system'
-        '110-install-vscode-system' = '117-install-vscode-system'
-        '111-install-edge-browser' = '101-install-edge-browser'
-        '112-install-azd-cli' = '107-install-azd-cli'
-        '113-install-wsl2-system' = '119-install-wsl2-system'
-        '114-install-docker-desktop' = '130-install-docker-desktop'
-        '115-install-npm-packages-global' = '131-install-npm-packages-global'
-        '116-install-codex-app' = '115-install-codex-app'
-        '116-install-ollama-system' = '132-install-ollama-system'
-        '117-install-codex-app' = '115-install-codex-app'
-        '118-install-teams-system' = '103-install-teams-system'
-        '118-install-onedrive-system' = '102-install-onedrive-system'
-        '119-install-onedrive-system' = '102-install-onedrive-system'
-        '119-install-google-drive' = '124-install-google-drive'
-        '120-install-google-drive' = '124-install-google-drive'
-        '120-install-whatsapp-system' = '114-install-whatsapp-system'
-        '121-install-whatsapp-system' = '114-install-whatsapp-system'
-        '121-install-anydesk-system' = '108-install-anydesk-system'
-        '122-install-anydesk-system' = '108-install-anydesk-system'
-        '123-install-windscribe-system' = '111-install-windscribe-system'
-        '123-install-vlc-system' = '126-install-vlc-system'
-        '124-install-itunes-system' = '118-install-itunes-system'
-        '124-install-vlc-system' = '126-install-vlc-system'
-        '125-install-itunes-system' = '118-install-itunes-system'
-        '125-install-be-my-eyes' = '113-install-be-my-eyes'
-        '126-install-be-my-eyes' = '113-install-be-my-eyes'
-        '127-install-nvda-system' = '116-install-nvda-system'
-        '128-install-rclone-system' = '104-install-rclone-system'
-        '129-install-icloud-system' = '120-install-icloud-system'
-        '129-configure-unlocker-io' = '109-configure-unlocker-io'
-        '131-install-icloud-system' = '120-install-icloud-system'
-        '130-install-vs2022community' = '128-install-vs2022community'
-        '131-install-jaws-screen-reader' = '129-install-jaws-screen-reader'
-        '132-install-vs2022community' = '128-install-vs2022community'
-        '132-configure-language-settings' = '133-configure-language-settings'
-        '133-install-sysinternals-suite' = '127-install-sysinternals-suite'
-        '134-autologon-manager-user' = '10006-autologon-manager-user'
+        '101-install-powershell-core' = '124-install-powershell-core'
+        '102-install-git-system' = '123-install-git-system'
+        '103-install-python-system' = '125-install-python-system'
+        '104-install-node-system' = '112-install-node-system'
+        '105-install-azure-cli' = '127-install-azure-cli'
+        '107-install-7zip-system' = '107-install-7zip-system'
+        '108-install-sysinternals-suite' = '101-install-sysinternals-suite'
+        '108-install-ffmpeg-system' = '114-install-ffmpeg-system'
+        '109-install-vscode-system' = '119-install-vscode-system'
+        '110-install-edge-browser' = '103-install-edge-browser'
+        '130-autologon-manager-user' = '102-autologon-manager-user'
+        '109-install-ffmpeg-system' = '114-install-ffmpeg-system'
+        '110-install-vscode-system' = '119-install-vscode-system'
+        '111-install-edge-browser' = '103-install-edge-browser'
+        '112-install-azd-cli' = '109-install-azd-cli'
+        '113-install-wsl2-system' = '121-install-wsl2-system'
+        '114-install-docker-desktop' = '131-install-docker-desktop'
+        '115-install-npm-packages-global' = '132-install-npm-packages-global'
+        '116-install-codex-app' = '117-install-codex-app'
+        '116-install-ollama-system' = '133-install-ollama-system'
+        '117-install-codex-app' = '117-install-codex-app'
+        '118-install-teams-system' = '105-install-teams-system'
+        '118-install-onedrive-system' = '104-install-onedrive-system'
+        '119-install-onedrive-system' = '104-install-onedrive-system'
+        '119-install-google-drive' = '126-install-google-drive'
+        '120-install-google-drive' = '126-install-google-drive'
+        '120-install-whatsapp-system' = '116-install-whatsapp-system'
+        '121-install-whatsapp-system' = '116-install-whatsapp-system'
+        '121-install-anydesk-system' = '110-install-anydesk-system'
+        '122-install-anydesk-system' = '110-install-anydesk-system'
+        '123-install-windscribe-system' = '113-install-windscribe-system'
+        '123-install-vlc-system' = '128-install-vlc-system'
+        '124-install-itunes-system' = '120-install-itunes-system'
+        '124-install-vlc-system' = '128-install-vlc-system'
+        '125-install-itunes-system' = '120-install-itunes-system'
+        '125-install-be-my-eyes' = '115-install-be-my-eyes'
+        '126-install-be-my-eyes' = '115-install-be-my-eyes'
+        '127-install-nvda-system' = '118-install-nvda-system'
+        '128-install-rclone-system' = '106-install-rclone-system'
+        '129-install-icloud-system' = '122-install-icloud-system'
+        '129-configure-unlocker-io' = '111-configure-unlocker-io'
+        '131-install-icloud-system' = '122-install-icloud-system'
+        '130-install-vs2022community' = '129-install-vs2022community'
+        '131-install-jaws-screen-reader' = '130-install-jaws-screen-reader'
+        '132-install-vs2022community' = '129-install-vs2022community'
+        '132-configure-language-settings' = '134-configure-language-settings'
+        '133-install-sysinternals-suite' = '101-install-sysinternals-suite'
+        '134-autologon-manager-user' = '102-autologon-manager-user'
         '10001-configure-apps-startup' = '10002-configure-apps-startup'
         '10002-create-shortcuts-public-desktop' = '10003-create-shortcuts-public-desktop'
         '10003-configure-ux-windows' = '10004-configure-ux-windows'
@@ -1460,8 +1460,8 @@ Invoke-Test -Name "Task command lists discovered tasks in runtime order" -Action
             return [ordered]@{
                 InventoryTasks = @(
                     [pscustomobject]@{
-                        Name = '10006-autologon-manager-user'
-                        RelativePath = '10006-autologon-manager-user/10006-autologon-manager-user.ps1'
+                        Name = '102-autologon-manager-user'
+                        RelativePath = '102-autologon-manager-user/102-autologon-manager-user.ps1'
                         TimeoutSeconds = 45
                         Priority = 10006
                         TaskType = 'final'
@@ -1477,7 +1477,7 @@ Invoke-Test -Name "Task command lists discovered tasks in runtime order" -Action
         $updateResult = Invoke-AzVmTaskCommand -Options @{ list = $true; 'vm-update' = $true } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
         Assert-True -Condition ($null -ne $updateResult) -Message 'Task command must return a result object.'
         Assert-True -Condition ($updateResult.Rows.Count -eq 1) -Message 'Task command vm-update filter must return only update-stage rows.'
-        Assert-True -Condition ([string]$updateResult.Rows[0].Name -eq '10006-autologon-manager-user') -Message 'Task command must preserve discovered update task names.'
+        Assert-True -Condition ([string]$updateResult.Rows[0].Name -eq '102-autologon-manager-user') -Message 'Task command must preserve discovered update task names.'
         Assert-True -Condition ([string]$updateResult.Rows[0].Stage -eq 'vm-update') -Message 'Task command must label update-stage rows.'
 
         $disabledResult = Invoke-AzVmTaskCommand -Options @{ list = $true; disabled = $true } -AutoMode:$false -WindowsFlag -LinuxFlag:$false
@@ -2354,6 +2354,39 @@ Invoke-Test -Name "Managed naming uses global gX and sequential global nX alloca
             }
         }
     }
+}
+
+Invoke-Test -Name "Managed public DNS label uses vm_name-vm{id} and skips stale label collisions" -Action {
+    $firstLabel = Resolve-AzVmPublicDnsLabel -VmName 'test' -ManagedPublicIpRows @(
+        [pscustomobject]@{
+            dnsSettings = [pscustomobject]@{}
+            ipConfiguration = [pscustomobject]@{ id = '' }
+        }
+    )
+    Assert-True -Condition ([string]$firstLabel -eq 'test-vm1') -Message 'Managed public DNS label must start at vm1 when no managed public IPs are attached yet.'
+
+    $managedPublicIpRows = @(
+        [pscustomobject]@{
+            dnsSettings = [pscustomobject]@{ domainNameLabel = 'test-vm1' }
+            ipConfiguration = [pscustomobject]@{ id = '/subscriptions/test/resourceGroups/rg-a/providers/Microsoft.Network/networkInterfaces/nic-a/ipConfigurations/ipconfig1' }
+        },
+        [pscustomobject]@{
+            dnsSettings = [pscustomobject]@{ domainNameLabel = 'test-vm2' }
+            ipConfiguration = [pscustomobject]@{ id = '/subscriptions/test/resourceGroups/rg-b/providers/Microsoft.Network/networkInterfaces/nic-b/ipConfigurations/ipconfig1' }
+        },
+        [pscustomobject]@{
+            dnsSettings = [pscustomobject]@{ domainNameLabel = 'test-vm3' }
+            ipConfiguration = [pscustomobject]@{ id = '' }
+        }
+    )
+    $collisionSkippedLabel = Resolve-AzVmPublicDnsLabel -VmName 'test' -ManagedPublicIpRows $managedPublicIpRows
+    Assert-True -Condition ([string]$collisionSkippedLabel -eq 'test-vm4') -Message 'Managed public DNS label must skip stale managed label collisions and advance to the next free vm id.'
+
+    $longVmName = ('examplevmsegment' * 5)
+    $truncatedLabel = Resolve-AzVmPublicDnsLabel -VmName $longVmName -PreferredVmId 12345 -ManagedPublicIpRows @()
+    Assert-True -Condition ($truncatedLabel.Length -le 63) -Message 'Managed public DNS label must stay within Azure length limits.'
+    Assert-True -Condition ($truncatedLabel -match '^[a-z0-9][a-z0-9-]*[a-z0-9]$') -Message 'Managed public DNS label must stay Azure-safe after normalization.'
+    Assert-True -Condition ($truncatedLabel -like '*-vm12345') -Message 'Managed public DNS label truncation must preserve the vm{id} suffix.'
 }
 
 Invoke-Test -Name "Create allows same VM name in other resource groups but rejects target-group duplicates" -Action {
@@ -4346,7 +4379,7 @@ Invoke-Test -Name "Task execution helper supports strict outcome override for up
             return [pscustomobject]@{
                 ActiveTasks = @(
                     [pscustomobject]@{
-                        Name = '10006-autologon-manager-user'
+                        Name = '102-autologon-manager-user'
                         TaskNumber = 10006
                         Script = 'Write-Host ok'
                         TimeoutSeconds = 45
@@ -4419,7 +4452,7 @@ Invoke-Test -Name "Task execution helper supports strict outcome override for up
         $result = Invoke-AzVmTaskExecutionWithTarget -Runtime $runtime -Options @{ 'vm-name' = 'samplevm' } -Stage 'update' -Requested '10006' -TaskOutcomeModeOverride 'strict'
 
         Assert-True -Condition ($null -ne $script:TaskUpdateInvocation) -Message 'Task update execution helper must invoke SSH task runner.'
-        Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskName -eq '10006-autologon-manager-user') -Message 'Task update execution helper must preserve selected task.'
+        Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskName -eq '102-autologon-manager-user') -Message 'Task update execution helper must preserve selected task.'
         Assert-True -Condition ([string]$script:TaskUpdateInvocation.TaskOutcomeMode -eq 'strict') -Message 'Strict override must flow into the SSH task outcome mode.'
         Assert-True -Condition ([string]$script:TaskUpdateInvocation.PerfTaskCategory -eq 'task-run') -Message 'Task update execution helper must use the task-run perf category.'
         Assert-True -Condition ([string]$result.Stage -eq 'update') -Message 'Task update execution helper must report update stage result.'
@@ -4678,48 +4711,50 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $expectedTrackedTimeouts = [ordered]@{
         '01-bootstrap-winget-system' = 60
         '02-check-install-chrome' = 90
-        '101-install-edge-browser' = 30
-        '102-install-onedrive-system' = 30
-        '103-install-teams-system' = 30
-        '104-install-rclone-system' = 30
-        '105-install-7zip-system' = 30
-        '106-install-gh-cli' = 30
-        '107-install-azd-cli' = 30
-        '108-install-anydesk-system' = 45
-        '109-configure-unlocker-io' = 45
-        '110-install-node-system' = 45
-        '111-install-windscribe-system' = 45
-        '112-install-ffmpeg-system' = 45
-        '113-install-be-my-eyes' = 60
-        '114-install-whatsapp-system' = 75
-        '115-install-codex-app' = 75
-        '116-install-nvda-system' = 75
-        '117-install-vscode-system' = 75
-        '118-install-itunes-system' = 75
-        '119-install-wsl2-system' = 90
-        '120-install-icloud-system' = 90
-        '121-install-git-system' = 90
-        '122-install-powershell-core' = 120
-        '123-install-python-system' = 120
-        '124-install-google-drive' = 120
-        '125-install-azure-cli' = 165
-        '126-install-vlc-system' = 180
-        '127-install-sysinternals-suite' = 180
-        '128-install-vs2022community' = 225
-        '129-install-jaws-screen-reader' = 285
-        '130-install-docker-desktop' = 360
-        '131-install-npm-packages-global' = 390
-        '132-install-ollama-system' = 480
-        '133-configure-language-settings' = 1575
+        '101-install-sysinternals-suite' = 180
+        '102-autologon-manager-user' = 45
+        '103-install-edge-browser' = 30
+        '104-install-onedrive-system' = 30
+        '105-install-teams-system' = 75
+        '106-install-rclone-system' = 30
+        '107-install-7zip-system' = 30
+        '108-install-gh-cli' = 30
+        '109-install-azd-cli' = 30
+        '110-install-anydesk-system' = 45
+        '111-configure-unlocker-io' = 45
+        '112-install-node-system' = 45
+        '113-install-windscribe-system' = 45
+        '114-install-ffmpeg-system' = 45
+        '115-install-be-my-eyes' = 60
+        '116-install-whatsapp-system' = 75
+        '117-install-codex-app' = 75
+        '118-install-nvda-system' = 75
+        '119-install-vscode-system' = 75
+        '120-install-itunes-system' = 75
+        '121-install-wsl2-system' = 90
+        '122-install-icloud-system' = 90
+        '123-install-git-system' = 90
+        '124-install-powershell-core' = 120
+        '125-install-python-system' = 120
+        '126-install-google-drive' = 120
+        '127-install-azure-cli' = 165
+        '128-install-vlc-system' = 180
+        '129-install-vs2022community' = 225
+        '130-install-jaws-screen-reader' = 285
+        '131-install-docker-desktop' = 360
+        '132-install-npm-packages-global' = 390
+        '133-install-ollama-system' = 480
+        '134-configure-language-settings' = 1575
         '10001-configure-settings-advanced-system' = 30
         '10002-configure-apps-startup' = 45
         '10003-create-shortcuts-public-desktop' = 45
         '10004-configure-ux-windows' = 180
         '10005-copy-settings-user' = 165
-        '10006-autologon-manager-user' = 45
     }
     Assert-True -Condition ([string]$activeNames[0] -eq '01-bootstrap-winget-system') -Message 'Winget bootstrap must be the first tracked Windows update task.'
     Assert-True -Condition ([string]$activeNames[1] -eq '02-check-install-chrome') -Message 'Chrome install check must be the second tracked Windows update task.'
+    Assert-True -Condition ([string]$activeNames[2] -eq '101-install-sysinternals-suite') -Message 'Sysinternals must be the first normal Windows update task.'
+    Assert-True -Condition ([string]$activeNames[3] -eq '102-autologon-manager-user') -Message 'Autologon must run immediately after Sysinternals once its dependency is satisfied.'
 
     foreach ($entry in $expectedTrackedTimeouts.GetEnumerator()) {
         $task = $active | Where-Object { [string]$_.Name -eq [string]$entry.Key } | Select-Object -First 1
@@ -4729,13 +4764,13 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
 
     $dependencyExpectedPairs = @(
         @('01-bootstrap-winget-system', '02-check-install-chrome'),
-        @('110-install-node-system', '131-install-npm-packages-global'),
-        @('119-install-wsl2-system', '130-install-docker-desktop'),
+        @('101-install-sysinternals-suite', '102-autologon-manager-user'),
+        @('112-install-node-system', '132-install-npm-packages-global'),
+        @('121-install-wsl2-system', '131-install-docker-desktop'),
         @('10001-configure-settings-advanced-system', '10005-copy-settings-user'),
         @('10002-configure-apps-startup', '10005-copy-settings-user'),
         @('10003-create-shortcuts-public-desktop', '10005-copy-settings-user'),
-        @('10004-configure-ux-windows', '10005-copy-settings-user'),
-        @('10005-copy-settings-user', '10006-autologon-manager-user')
+        @('10004-configure-ux-windows', '10005-copy-settings-user')
     )
     foreach ($pair in @($dependencyExpectedPairs)) {
         $beforeIndex = [array]::IndexOf($activeNames, [string]$pair[0])
@@ -4750,8 +4785,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '10002-configure-apps-startup',
         '10003-create-shortcuts-public-desktop',
         '10004-configure-ux-windows',
-        '10005-copy-settings-user',
-        '10006-autologon-manager-user'
+        '10005-copy-settings-user'
     )
     $lastSeenFinalIndex = -1
     foreach ($taskName in @($expectedFinalTail)) {
@@ -4760,12 +4794,9 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         Assert-True -Condition ($currentIndex -gt $lastSeenFinalIndex) -Message ("Windows final tracked task order must keep '{0}' after the previous final task." -f $taskName)
         $lastSeenFinalIndex = $currentIndex
     }
-    Assert-True -Condition ([string]$activeNames[-1] -eq '10006-autologon-manager-user') -Message 'Autologon manager must be the last active Windows update task after health-task removal.'
-
-    Assert-True -Condition ($activeNames -notcontains '101-install-sysinternals-suite') -Message 'Windows update catalog must not keep the old init-path sysinternals task name.'
-    Assert-True -Condition ($activeNames -notcontains '102-autologon-manager-user') -Message 'Windows update catalog must not keep the old init-path autologon task name.'
-    Assert-True -Condition ($activeNames -contains '127-install-sysinternals-suite') -Message 'Windows update catalog must include 127-install-sysinternals-suite.'
-    Assert-True -Condition ($activeNames -contains '10006-autologon-manager-user') -Message 'Windows update catalog must include 10006-autologon-manager-user.'
+    Assert-True -Condition ([string]$activeNames[-1] -eq '10005-copy-settings-user') -Message 'Copy user settings must remain the last active Windows update task.'
+    Assert-True -Condition ($activeNames -contains '101-install-sysinternals-suite') -Message 'Windows update catalog must include 101-install-sysinternals-suite.'
+    Assert-True -Condition ($activeNames -contains '102-autologon-manager-user') -Message 'Windows update catalog must include 102-autologon-manager-user.'
     Assert-True -Condition ($activeNames -notcontains '10006-capture-snapshot-health') -Message 'Windows update catalog must not keep the removed health snapshot task.'
 
     $initCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot 'windows\init') -Platform windows -Stage init
@@ -4900,8 +4931,8 @@ Invoke-Test -Name "Task json controls local-only task discovery" -Action {
         Assert-True -Condition ($active.Count -eq 3) -Message 'Tracked root tasks and local-only tasks must both be discoverable.'
         Assert-True -Condition ($disabled.Count -eq 1) -Message 'Tasks under local/disabled must be discovered as disabled.'
         Assert-True -Condition ([string]$activeNames[0] -eq '101-alpha-task') -Message 'Tracked tasks must keep their task.json priority.'
-        Assert-True -Condition ([string]$activeNames[1] -eq '1002-beta-task') -Message 'Local-only tasks must sort by normalized timeout before higher-timeout local peers.'
-        Assert-True -Condition ([string]$activeNames[2] -eq '1001-delta-task') -Message 'Local-only tasks without task.json priority must still fall back to their task number metadata even when timeout ordering places them later.'
+        Assert-True -Condition ([string]$activeNames[1] -eq '1001-delta-task') -Message 'Local-only tasks must now sort by priority before timeout once they are ready.'
+        Assert-True -Condition ([string]$activeNames[2] -eq '1002-beta-task') -Message 'Local-only tasks with higher priority numbers must follow lower-priority peers even when timeout ordering would previously place them earlier.'
 
         $alphaTask = $active | Where-Object { [string]$_.Name -eq '101-alpha-task' } | Select-Object -First 1
         $betaTask = $active | Where-Object { [string]$_.Name -eq '1002-beta-task' } | Select-Object -First 1
@@ -5353,7 +5384,7 @@ Invoke-Test -Name "Vm-update app-state plugin runtime removes legacy restore sur
     Assert-True -Condition (-not ($runCommandRunnerText -like '*-Transport ''run-command''*')) -Message 'VM init run-command runner must not keep the retired run-command app-state transport.'
     Assert-True -Condition ($localExportModuleText -like '*function Get-LocalAppStatePluginDirectoryPath*') -Message 'Local app-state export helpers must resolve task-local plugin directories.'
     Assert-True -Condition ($localExportModuleText -like '*Join-Path $candidate ''app-state''*') -Message 'Local app-state export helpers must write to each task-local app-state folder.'
-    Assert-True -Condition ($localExportModuleText -like '*''jaws'' = ''131-install-jaws-screen-reader''*') -Message 'Local app-state export helpers must map JAWS to its tracked task.'
+    Assert-True -Condition ($localExportModuleText -like '*''jaws'' = ''130-install-jaws-screen-reader''*') -Message 'Local app-state export helpers must map JAWS to its tracked task.'
     Assert-True -Condition ($localExportModuleText -like '*HKLM\\Software\\Freedom Scientific*') -Message 'Local app-state export helpers must export the JAWS machine Freedom Scientific subtree.'
     Assert-True -Condition ($localExportModuleText -like '*HKLM\\Software\\WOW6432Node\\Freedom Scientific*') -Message 'Local app-state export helpers must export the JAWS WOW6432 Freedom Scientific subtree.'
     Assert-True -Condition ($localExportModuleText -like '*HKCU\\Software\\Freedom Scientific*') -Message 'Local app-state export helpers must export the JAWS user Freedom Scientific subtree.'
@@ -5739,10 +5770,10 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition ($healthTaskScript -like '*effective-args =>*') -Message 'Health snapshot must read back managed launcher effective arguments.'
     foreach ($fragment in @(
         'STORE INSTALL STATE:',
-        '115-install-codex-app',
-        '114-install-whatsapp-system',
-        '113-install-be-my-eyes',
-        '120-install-icloud-system'
+        '117-install-codex-app',
+        '116-install-whatsapp-system',
+        '115-install-be-my-eyes',
+        '122-install-icloud-system'
     )) {
         Assert-True -Condition ($healthTaskScript -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include Store install state fragment '{0}'." -f [string]$fragment)
     }
@@ -5825,7 +5856,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     $ollamaTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '116-install-ollama-system') -Raw)
     $azdTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '112-install-azd-cli') -Raw)
     $azureCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '105-install-azure-cli') -Raw)
-    $ghCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '106-install-gh-cli') -Raw)
+    $ghCliTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '108-install-gh-cli') -Raw)
     $jawsTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '131-install-jaws-screen-reader') -Raw)
     $whatsAppTaskJsonText = [string](Get-Content -LiteralPath (Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '120-install-whatsapp-system') -Raw)
     $sshAssetsText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\ssh\assets.ps1') -Raw)
@@ -6588,7 +6619,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 }
 
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
-    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-autologon-manager-user'
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '102-autologon-manager-user'
     $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
 
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Autologon manager task file was not found.'
@@ -6608,7 +6639,7 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
         'Autologon note: DefaultPassword is not present in Winlogon.',
         'autologon-manager-user-completed',
         'autologon.exe was not found',
-        'Ensure 127-install-sysinternals-suite completed successfully.'
+        'Ensure 101-install-sysinternals-suite completed successfully.'
     )) {
         Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Autologon manager task must include fragment '{0}'." -f [string]$fragment)
     }
@@ -6839,7 +6870,7 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
         '103-install-python-system.ps1' = @('Existing Python installation is already healthy. Skipping choco install.', 'choco install python312')
         '104-install-node-system.ps1' = @('Existing Node.js installation is already healthy. Skipping choco install.', 'choco install nodejs-lts')
         '105-install-azure-cli.ps1' = @('Existing Azure CLI installation is already healthy:', 'choco install azure-cli')
-        '106-install-gh-cli.ps1' = @('Existing GitHub CLI installation is already healthy. Skipping choco install.')
+        '108-install-gh-cli.ps1' = @('Existing GitHub CLI installation is already healthy. Skipping choco install.')
         '107-install-7zip-system.ps1' = @('Existing 7-Zip installation is already healthy. Skipping choco install.')
         '133-install-sysinternals-suite.ps1' = @('Existing Sysinternals installation is already healthy:', 'choco install sysinternals')
         '109-install-ffmpeg-system.ps1' = @('Existing FFmpeg installation is already healthy. Skipping choco install.')
@@ -6981,5 +7012,6 @@ Write-Host ("Compatibility smoke summary -> Passed: {0}, Failed: {1}" -f $passCo
 if ($failCount -gt 0) {
     exit 1
 }
+
 
 

@@ -2,6 +2,21 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.342 - 2026-03-17
+
+### Summary
+This release fixes the Windows update-ordering and renumber drift that showed up in the latest create logs, restores autologon to the start of the normal update band, and switches managed public FQDN allocation to the requested `vm_name-vm{id}` format. The same pass also raises the Teams Store-install timeout to `75` seconds, makes Store-backed tasks skip cleanly when no interactive manager desktop is available, and hardens the successful isolated-task cleanup path so Google Drive no longer drops the session into PowerShell debug mode after a successful run.
+
+### Highlights
+- Reordered the Windows normal `vm-update` band so `101-install-sysinternals-suite` runs first, `102-autologon-manager-user` runs second, and the remaining normal tasks keep their relative order under the new numbering.
+- Fixed runtime task discovery so dependency-safe ready-task selection now sorts by `priority` first instead of letting timeout-first ordering run tasks such as `#106` ahead of lower-priority ready tasks.
+- Repaired renumber drift across shipped `app-state.zip` manifests, live app-state/export maps, summary readback, task-specific helper constants, and public-shortcut task references so canonical task names are used consistently again.
+- Changed `102-autologon-manager-user` to log interactive-session readiness and emit the reboot-required marker, which lets isolated task runs and the shared task runner restart immediately before later Store tasks continue.
+- Changed `105-install-teams-system` to keep the unattended Microsoft Store `winget` install path but use a `75s` timeout, and changed the other Store-backed tasks so a missing interactive session becomes a clean informational skip with persisted `skipped` state instead of a warning-style degradation.
+- Replaced the old public-IP-name-based DNS label logic with managed attached-public-IP counting, so newly created managed VMs now get labels such as `test-vm1.austriaeast.cloudapp.azure.com`, with collision fallback to the next free id and live DNS-settings fallback when `az vm show -d` omits `fqdns`.
+- Hardened transcript shutdown so successful isolated tasks such as `126-install-google-drive` now return normally instead of dropping the main PowerShell process into debug mode.
+- Revalidated the change non-live with the full local quality gates and live only through isolated Windows task reruns for `101`, `102`, `105`, `115`, `116`, `117`, `122`, `126`, and `10003`; this release does not claim a fresh end-to-end live `create` acceptance run.
+
 ## Release 2026.3.17.341 - 2026-03-17
 
 ### Summary

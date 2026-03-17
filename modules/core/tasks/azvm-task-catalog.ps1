@@ -263,15 +263,19 @@ function Sort-AzVmTaskInventoryRows {
             $readyRows = @(
                 $readyRows |
                     Sort-Object `
+                        @{ Expression = { [int]$_.Priority } }, `
                         @{ Expression = { [int]$_.TimeoutSeconds } }, `
                         @{ Expression = { [double]$_.ObservedDurationSeconds } }, `
                         @{ Expression = { [string]$_.Name } }
             )
 
-            foreach ($readyRow in @($readyRows)) {
-                $sortedRows.Add($readyRow) | Out-Null
-                [void]$remainingRows.Remove($readyRow)
+            $readyRow = @($readyRows | Select-Object -First 1)
+            if (@($readyRow).Count -lt 1) {
+                throw ("Task ordering failed in the '{0}' band because no ready task could be selected." -f [string]$band)
             }
+
+            $sortedRows.Add($readyRow[0]) | Out-Null
+            [void]$remainingRows.Remove($readyRow[0])
         }
     }
 

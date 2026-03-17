@@ -1,5 +1,104 @@
 # VM detail lookup helpers.
 
+function Get-AzVmVmPublicDnsSettings {
+    param(
+        [string]$ResourceGroup,
+        [string]$VmName,
+        [string]$PreferredPublicIpName = ''
+    )
+
+    function ConvertTo-AzVmVmPublicDnsSettings {
+        param([AllowNull()]$PublicIpObject)
+
+        if ($null -eq $PublicIpObject) {
+            return $null
+        }
+
+        $domainNameLabel = ''
+        $fqdn = ''
+        $ipAddress = ''
+        $publicIpName = ''
+
+        if ($PublicIpObject.PSObject.Properties.Match('name').Count -gt 0) {
+            $publicIpName = [string]$PublicIpObject.name
+        }
+        if ($PublicIpObject.PSObject.Properties.Match('ipAddress').Count -gt 0) {
+            $ipAddress = [string]$PublicIpObject.ipAddress
+        }
+        if ($PublicIpObject.PSObject.Properties.Match('dnsSettings').Count -gt 0 -and $null -ne $PublicIpObject.dnsSettings) {
+            if ($PublicIpObject.dnsSettings.PSObject.Properties.Match('domainNameLabel').Count -gt 0) {
+                $domainNameLabel = [string]$PublicIpObject.dnsSettings.domainNameLabel
+            }
+            if ($PublicIpObject.dnsSettings.PSObject.Properties.Match('fqdn').Count -gt 0) {
+                $fqdn = [string]$PublicIpObject.dnsSettings.fqdn
+            }
+        }
+
+        return [pscustomobject]@{
+            PublicIpName = [string]$publicIpName
+            IpAddress = [string]$ipAddress
+            DomainNameLabel = [string]$domainNameLabel
+            Fqdn = [string]$fqdn
+        }
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$PreferredPublicIpName)) {
+        $preferredPublicIpJson = az network public-ip show -g $ResourceGroup -n $PreferredPublicIpName -o json --only-show-errors 2>$null
+        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$preferredPublicIpJson)) {
+            $preferredPublicIp = ConvertFrom-JsonCompat -InputObject $preferredPublicIpJson
+            $preferredSettings = ConvertTo-AzVmVmPublicDnsSettings -PublicIpObject $preferredPublicIp
+            if ($null -ne $preferredSettings) {
+                return $preferredSettings
+            }
+        }
+    }
+
+    $vmJson = az vm show -g $ResourceGroup -n $VmName -o json --only-show-errors 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$vmJson)) {
+        return $null
+    }
+
+    $vmObject = ConvertFrom-JsonCompat -InputObject $vmJson
+    if ($null -eq $vmObject) {
+        return $null
+    }
+
+    $nicIds = @(
+        ConvertTo-ObjectArrayCompat -InputObject $vmObject.networkProfile.networkInterfaces |
+            ForEach-Object { [string]$_.id } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            Select-Object -Unique
+    )
+
+    foreach ($nicId in @($nicIds)) {
+        $nicJson = az network nic show --ids $nicId -o json --only-show-errors 2>$null
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$nicJson)) {
+            continue
+        }
+
+        $nicObject = ConvertFrom-JsonCompat -InputObject $nicJson
+        foreach ($ipConfig in @(ConvertTo-ObjectArrayCompat -InputObject $nicObject.ipConfigurations)) {
+            $publicIpId = [string]$ipConfig.publicIpAddress.id
+            if ([string]::IsNullOrWhiteSpace([string]$publicIpId)) {
+                continue
+            }
+
+            $publicIpJson = az network public-ip show --ids $publicIpId -o json --only-show-errors 2>$null
+            if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace([string]$publicIpJson)) {
+                continue
+            }
+
+            $publicIpObject = ConvertFrom-JsonCompat -InputObject $publicIpJson
+            $publicDnsSettings = ConvertTo-AzVmVmPublicDnsSettings -PublicIpObject $publicIpObject
+            if ($null -ne $publicDnsSettings) {
+                return $publicDnsSettings
+            }
+        }
+    }
+
+    return $null
+}
+
 # Handles Get-AzVmVmDetails.
 function Get-AzVmVmDetails {
     param(
@@ -28,9 +127,21 @@ function Get-AzVmVmDetails {
     if ([string]::IsNullOrWhiteSpace([string]$effectiveLocation)) {
         $effectiveLocation = [string]$vmDetails.location
     }
-    if ([string]::IsNullOrWhiteSpace($vmFqdn)) {
-        if (-not [string]::IsNullOrWhiteSpace([string]$effectiveLocation)) {
-            $vmFqdn = "$($Context.VmName).$effectiveLocation.cloudapp.azure.com"
+    $publicDnsSettings = $null
+    if ([string]::IsNullOrWhiteSpace($vmFqdn) -or [string]::IsNullOrWhiteSpace([string]$publicIP)) {
+        $publicDnsSettings = Get-AzVmVmPublicDnsSettings -ResourceGroup ([string]$Context.ResourceGroup) -VmName ([string]$Context.VmName) -PreferredPublicIpName ([string]$Context.IP)
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$publicIP) -and $null -ne $publicDnsSettings -and -not [string]::IsNullOrWhiteSpace([string]$publicDnsSettings.IpAddress)) {
+        $publicIP = [string]$publicDnsSettings.IpAddress
+    }
+
+    if ([string]::IsNullOrWhiteSpace($vmFqdn) -and $null -ne $publicDnsSettings) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$publicDnsSettings.Fqdn)) {
+            $vmFqdn = [string]$publicDnsSettings.Fqdn
+        }
+        elseif (-not [string]::IsNullOrWhiteSpace([string]$publicDnsSettings.DomainNameLabel) -and -not [string]::IsNullOrWhiteSpace([string]$effectiveLocation)) {
+            $vmFqdn = ("{0}.{1}.cloudapp.azure.com" -f [string]$publicDnsSettings.DomainNameLabel, [string]$effectiveLocation)
         }
     }
 

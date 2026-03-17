@@ -107,21 +107,6 @@ function Apply-AzVmTaskBlockReplacements {
                 }
             }
 
-            if ($taskName -in @('10004-configure-ux-windows', '10005-copy-settings-user', '113-install-be-my-eyes', '120-install-icloud-system')) {
-                $repoRoot = Resolve-AzVmTaskRepoRootFromPath -StartPath $directoryPath
-                if ([string]::IsNullOrWhiteSpace([string]$repoRoot)) {
-                    throw ("Repo root could not be resolved for task '{0}' from '{1}'." -f $taskName, $directoryPath)
-                }
-                $helperLocalPath = Join-Path $repoRoot 'tools\scripts\az-vm-interactive-session-helper.ps1'
-                if (-not (Test-Path -LiteralPath $helperLocalPath)) {
-                    throw ("Interactive session helper was not found for '{0}': {1}" -f $taskName, $helperLocalPath)
-                }
-
-                $assetCopies += [pscustomobject]@{
-                    LocalPath = [string](Resolve-Path -LiteralPath $helperLocalPath).Path
-                    RemotePath = 'C:/Windows/Temp/az-vm-interactive-session-helper.ps1'
-                }
-            }
         }
 
         $resolvedBlocks += [pscustomobject]@{
@@ -146,3 +131,4 @@ function Apply-AzVmTaskBlockReplacements {
 
     return $resolvedBlocks
 }
+

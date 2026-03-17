@@ -2087,10 +2087,10 @@ Write-UserLanguageStatus -UserName $assistantUser -UserPassword $assistantPasswo
 Write-DefaultLanguageStatus
 
 Write-Host "STORE INSTALL STATE:"
-Write-StoreInstallStateReadback -TaskName '115-install-codex-app' -Label 'Codex App'
-Write-StoreInstallStateReadback -TaskName '114-install-whatsapp-system' -Label 'WhatsApp'
-Write-StoreInstallStateReadback -TaskName '113-install-be-my-eyes' -Label 'Be My Eyes'
-Write-StoreInstallStateReadback -TaskName '120-install-icloud-system' -Label 'iCloud'
+Write-StoreInstallStateReadback -TaskName '117-install-codex-app' -Label 'Codex App'
+Write-StoreInstallStateReadback -TaskName '116-install-whatsapp-system' -Label 'WhatsApp'
+Write-StoreInstallStateReadback -TaskName '115-install-be-my-eyes' -Label 'Be My Eyes'
+Write-StoreInstallStateReadback -TaskName '122-install-icloud-system' -Label 'iCloud'
 
 Write-Host "JAWS HEALTH:"
 $jawsExpectedExe = 'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe'
@@ -2223,5 +2223,6 @@ try {
 catch {
     Write-Warning ("copy-exclusion-evidence-failed => {0}" -f $_.Exception.Message)
 }
+
 
 

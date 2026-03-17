@@ -2,6 +2,12 @@
   "priority": 10005,
   "enabled": true,
   "timeout": 165,
+  "assets": [
+    {
+      "local": "../../../tools/scripts/az-vm-interactive-session-helper.ps1",
+      "remote": "C:/Windows/Temp/az-vm-interactive-session-helper.ps1"
+    }
+  ],
   "dependsOn": [
     "10001-configure-settings-advanced-system",
     "10002-configure-apps-startup",

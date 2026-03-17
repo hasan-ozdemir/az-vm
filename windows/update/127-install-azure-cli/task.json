@@ -1,0 +1,27 @@
+{
+  "priority": 127,
+  "enabled": true,
+  "timeout": 165,
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [
+      {
+        "path": ".azure",
+        "targetProfiles": [],
+        "excludeNames": [
+          "logs",
+          ".azure",
+          "telemetry"
+        ],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": [
+          "*.log"
+        ]
+      }
+    ],
+    "profileFiles": [],
+    "machineRegistryKeys": [],
+    "userRegistryKeys": []
+  }
+}

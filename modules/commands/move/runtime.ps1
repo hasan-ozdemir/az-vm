@@ -743,6 +743,7 @@ function Invoke-AzVmChangeCommand {
                 NSG = $targetNsgName
                 NsgRule = $targetNsgRuleName
                 IP = $targetIpName
+                PublicDnsLabel = (Resolve-AzVmPublicDnsLabel -PublicIpName ([string]$targetIpName) -VmName ([string]$targetVmName))
                 NIC = $targetNicName
                 TcpPorts = @($context.TcpPorts)
                 VmName = $targetVmName
