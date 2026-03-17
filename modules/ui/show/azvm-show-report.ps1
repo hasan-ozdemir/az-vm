@@ -524,10 +524,23 @@ function Write-AzVmShowReport {
 
     Write-AzVmShowSectionHeader -Text "Selection And Summary"
     Write-AzVmShowKeyValueRow -Label "Target group filter" -Value ([string]$Dump.Selection.TargetGroup) -Indent 2
+    Write-AzVmShowKeyValueRow -Label "Target VM filter" -Value ([string]$Dump.Selection.TargetVmName) -Indent 2
     Write-AzVmShowKeyValueRow -Label "Included resource groups" -Value (@($Dump.Selection.IncludedResourceGroups)) -Indent 2
     Write-AzVmShowKeyValueRow -Label "Resource group count" -Value ([int]$Dump.Summary.ResourceGroupCount) -Indent 2
     Write-AzVmShowKeyValueRow -Label "Total VM count" -Value ([int]$Dump.Summary.TotalVmCount) -Indent 2
     Write-AzVmShowKeyValueRow -Label "Running VM count" -Value ([int]$Dump.Summary.RunningVmCount) -Indent 2
+
+    if ($Dump.TargetDerivedConfiguration) {
+        Write-AzVmShowSectionHeader -Text "Target-Derived Configuration"
+        Write-AzVmShowKeyValueRow -Label "Resource group" -Value ([string]$Dump.TargetDerivedConfiguration.ResourceGroup) -Indent 2
+        Write-AzVmShowKeyValueRow -Label "VM name" -Value ([string]$Dump.TargetDerivedConfiguration.VmName) -Indent 2
+        foreach ($key in @($Dump.TargetDerivedConfiguration.Summary.Keys)) {
+            Write-AzVmShowKeyValueRow -Label ([string]$key) -Value ($Dump.TargetDerivedConfiguration.Summary[[string]$key]) -Indent 2
+        }
+        if (@($Dump.TargetDerivedConfiguration.SkippedFeatureKeys).Count -gt 0) {
+            Write-AzVmShowKeyValueRow -Label "Skipped feature keys" -Value (@($Dump.TargetDerivedConfiguration.SkippedFeatureKeys)) -Indent 2
+        }
+    }
 
     Write-AzVmShowSectionHeader -Text ".env Configuration Values"
     $envValues = $Dump.Config.DotEnvValues

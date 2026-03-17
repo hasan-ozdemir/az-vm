@@ -168,7 +168,7 @@ function Test-AzVmAzureTouchingCommand {
         )
     }
 
-    return ([string]$CommandName -in @('create','update','configure','list','show','do','move','resize','set','exec','connect','delete'))
+    return ([string]$CommandName -in @('create','update','list','show','do','move','resize','set','exec','connect','delete'))
 }
 
 function Initialize-AzVmCommandSubscriptionState {

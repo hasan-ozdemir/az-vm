@@ -5183,3 +5183,17 @@ I traced the last interrupted end-to-end `az-vm create` attempt to one concrete 
 
 I also cleaned up the remaining operator-facing metadata wording that was still visible in logs. The language readback surfaces in `132-configure-language-settings` and `10006-capture-snapshot-health` no longer emit the raw `metadata-unavailable` token, and the nested-virtualization feature path now says Azure did not report the capability clearly and that guest validation will be used instead of using the older metadata-centric phrasing. After the cleanup, I revalidated the repo non-live with the smoke, documentation-contract, code-quality, and PowerShell compatibility gates, and I confirmed that the managed Azure inventory was back to an empty clean state so the next end-to-end create retry can start from zero when requested.
 
+### 2026-03-17 12:51 UTC
+
+**User Prompt**
+
+````text
+Turn `az-vm configure` into an interactive-only frontend for `.env`: show every supported setting with its current value, let me review and update the full configuration safely, use picker-style selection for every finite or discoverable multi-option field such as VM image, VM size, Azure region, and managed resource group, validate everything before save, preview the next managed resource names for the next VM, and keep `configure` focused only on `.env` editing instead of any other job.
+````
+
+**Assistant Summary**
+
+I completed the `configure` command conversion as a full interactive `.env` frontend. `az-vm configure` now opens a sectioned editor built from the supported dotenv key list, shows the current values, uses pickers for every finite or discoverable multi-option field, validates edits before save, stages changes in memory until final confirmation, and renders a next-create preview with effective platform inputs plus next managed resource names when Azure validation is available. The editor can open without `az login`, but Azure-backed fields stay read-only until Azure validation becomes available.
+
+I also moved the old live target-sync responsibility out of `configure` and into `show`, which now accepts `--vm-name` and can render a read-only target-derived configuration section for one managed VM without writing `.env`. I updated AGENTS, README, help text, smoke tests, and documentation-contract checks to match the new contract, then revalidated the full change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+

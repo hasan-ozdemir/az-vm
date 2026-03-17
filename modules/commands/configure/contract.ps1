@@ -3,11 +3,6 @@
 function Get-AzVmConfigureOptionSpecifications {
     return @(
         (Get-AzVmConfigurePerfOptionSpecification),
-        (Get-AzVmConfigureWindowsOptionSpecification),
-        (Get-AzVmConfigureLinuxOptionSpecification),
-        (Get-AzVmConfigureHelpOptionSpecification),
-        (Get-AzVmConfigureGroupOptionSpecification),
-        (Get-AzVmSharedSubscriptionIdOptionSpecification),
-        (Get-AzVmConfigureVmNameOptionSpecification)
+        (Get-AzVmConfigureHelpOptionSpecification)
     )
 }

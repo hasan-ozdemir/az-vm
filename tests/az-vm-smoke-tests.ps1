@@ -784,19 +784,19 @@ Invoke-Test -Name "Create and update accept vm-name override" -Action {
     Assert-AzVmCommandOptions -CommandName 'update' -Options @{ 'vm-name' = 'samplevm'; auto = $true }
 }
 
-Invoke-Test -Name "Configure and list accept current option contract" -Action {
-    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; windows = $true; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
-    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ 'vm-name' = 'samplevm'; linux = $true; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+Invoke-Test -Name "Configure and list accept the current option contract" -Action {
+    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ perf = $true }
+    Assert-AzVmCommandOptions -CommandName 'configure' -Options @{ help = $true }
     Assert-AzVmCommandOptions -CommandName 'list' -Options @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
     Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'group,vm'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
     Assert-AzVmCommandOptions -CommandName 'list' -Options @{ type = 'nsg,nsg-rule'; group = 'rg-samplevm-ate1-g1'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
+    Assert-AzVmCommandOptions -CommandName 'show' -Options @{ group = 'rg-samplevm-ate1-g1'; 'vm-name' = 'samplevm'; 'subscription-id' = '11111111-1111-1111-1111-111111111111' }
 }
 
 Invoke-Test -Name "Azure-touching commands accept subscription-id and local-only commands reject it" -Action {
     $commandOptionCases = @(
         @{ Command = 'create'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'update'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
-        @{ Command = 'configure'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'list'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'show'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
         @{ Command = 'do'; Options = @{ 'subscription-id' = '11111111-1111-1111-1111-111111111111' } },
@@ -823,7 +823,7 @@ Invoke-Test -Name "Azure-touching commands accept subscription-id and local-only
     }
     Assert-True -Condition $taskListSubscriptionThrew -Message "Task --list must reject subscription-id."
 
-    foreach ($commandName in @('help')) {
+    foreach ($commandName in @('help','configure')) {
         $threw = $false
         try {
             Assert-AzVmCommandOptions -CommandName $commandName -Options $subscriptionOptions
@@ -833,6 +833,55 @@ Invoke-Test -Name "Azure-touching commands accept subscription-id and local-only
         }
         Assert-True -Condition $threw -Message ("Command '{0}' must reject subscription-id." -f [string]$commandName)
     }
+}
+
+Invoke-Test -Name "Configure rejects retired targeting flags with interactive editor guidance" -Action {
+    foreach ($optionName in @('group','vm-name','windows','linux','subscription-id','auto')) {
+        $threw = $false
+        try {
+            $options = @{}
+            switch ([string]$optionName) {
+                'group' { $options[$optionName] = 'rg-samplevm-ate1-g1' }
+                'vm-name' { $options[$optionName] = 'samplevm' }
+                'subscription-id' { $options[$optionName] = '11111111-1111-1111-1111-111111111111' }
+                default { $options[$optionName] = $true }
+            }
+            Assert-AzVmCommandOptions -CommandName 'configure' -Options $options
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Message -like "*Option '--$optionName' is no longer supported for 'configure'.*") -Message ("Configure rejection for '{0}' must identify the retired configure flag cleanly." -f [string]$optionName)
+        }
+        Assert-True -Condition $threw -Message ("Configure must reject retired option '{0}'." -f [string]$optionName)
+    }
+}
+
+Invoke-Test -Name "Configure field schema covers supported dotenv keys and picker-backed multi-option fields" -Action {
+    $schema = @(Get-AzVmConfigureFieldSchema -SelectedPlatform 'windows')
+    $schemaKeys = @($schema | ForEach-Object { [string]$_.Key } | Sort-Object -Unique)
+    $supportedKeys = @(Get-AzVmSupportedDotEnvKeys | Sort-Object -Unique)
+    Assert-True -Condition (($supportedKeys -join '|') -eq ($schemaKeys -join '|')) -Message 'Configure field schema must cover every supported dotenv key exactly once.'
+
+    foreach ($pickerKind in @(
+        'vm-os-picker',
+        'resource-group-picker',
+        'subscription-picker',
+        'region-picker',
+        'storage-sku-picker',
+        'security-type-picker',
+        'toggle-picker',
+        'vm-image-picker',
+        'vm-size-picker',
+        'task-dir-picker',
+        'task-outcome-picker',
+        'pyssh-path-picker',
+        'tcp-ports-picker'
+    )) {
+        Assert-True -Condition (@($schema | Where-Object { [string]$_.EditorKind -eq [string]$pickerKind }).Count -gt 0) -Message ("Configure schema must include picker kind '{0}'." -f [string]$pickerKind)
+    }
+
+    Assert-True -Condition (-not (Test-AzVmAzureTouchingCommand -CommandName 'configure')) -Message 'Configure must not be treated as an Azure-touching command.'
+    Assert-True -Condition (Test-AzVmAzureTouchingCommand -CommandName 'show') -Message 'Show must remain an Azure-touching command.'
 }
 
 Invoke-Test -Name "Subscription resolver uses CLI then env then active precedence and persists CLI overrides" -Action {
@@ -2306,8 +2355,9 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
         'proposes the next global gX name plus globally unique nX resource ids',
         'Auto mode runs from the fully resolved selection set',
         'Auto mode runs from the resolved managed target',
-        'select one existing managed VM target, read actual Azure state, and sync target-derived values into .env',
+        'interactive-only. It edits supported .env keys in sections',
         'supports --type and --group for managed inventory output',
+        'show --group <resource-group> [--vm-name <vm-name>] [--subscription-id <subscription-id>]',
         'vm-summary always renders, even for partial step windows',
         '--disk-size requires exactly one intent flag: --expand or --shrink'
     )) {
@@ -2318,8 +2368,11 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
         '`create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.',
         'Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.',
         'Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`',
-        'Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.',
+        'Purpose: review, edit, validate, preview, and save the supported `.env` contract through one interactive frontend.',
+        'uses a picker for every finite or discoverable multi-option field',
+        '`configure` can open without Azure sign-in, but its Azure-backed pickers stay read-only until `az login` is available',
         'Purpose: print read-only managed inventory sections for az-vm-tagged resource groups and resources.',
+        'show --group=<resource-group> --vm-name=<vm-name>',
         'if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection',
         'Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.',
         '`configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.',
@@ -2327,7 +2380,7 @@ Invoke-Test -Name "Create update and resize docs reflect the current operator co
         'Managed resource ids use a global `nX` suffix that increments across all generated managed resources and is never reused by another managed resource of any type.',
         '`create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.',
         '`list` gives a read-only managed inventory view across groups and resource types',
-        '`configure` selects one managed VM target and synchronizes actual Azure state into `.env`',
+        '`configure` gives a safe interactive frontend for every supported `.env` key',
         '`--disk-size=... --shrink` is a non-mutating guidance path because Azure does not support shrinking an existing managed OS disk in place; the command prints supported rebuild and migration alternatives instead of risking disk integrity'
     )) {
         Assert-True -Condition ($readmeText -match [regex]::Escape([string]$fragment)) -Message ("README must include fragment '{0}'." -f [string]$fragment)

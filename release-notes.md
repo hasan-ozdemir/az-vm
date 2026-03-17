@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.338 - 2026-03-17
+
+### Summary
+This release turns `az-vm configure` into the interactive `.env` frontend you requested. The command now walks the full supported dotenv contract in sections, uses pickers for every finite or discoverable multi-option setting, validates edits before they can be saved, and shows a next-create preview before writing `.env`. The old live-target sync behavior has been moved out of `configure` and into `show`, which can now focus one VM with `--vm-name` and print a read-only target-derived configuration section.
+
+### Highlights
+- Replaced the old Azure target-sync behavior of `configure` with an interactive-only `.env` editor that stages all edits in memory until final confirmation.
+- Added picker-backed flows for VM OS, Azure subscription, region, resource group, VM size, VM image, disk SKU, security type, toggles, task directories, PYSSH path, and TCP port selection.
+- Kept `configure` usable without Azure sign-in while forcing Azure-backed fields to stay read-only until `az login` makes verification available.
+- Added `show --vm-name` so one managed VM can be inspected with a read-only target-derived configuration view, keeping live Azure inspection and local `.env` editing cleanly separated.
+- Revalidated the full contract non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+
 ## Release 2026.3.17.337 - 2026-03-17
 
 ### Summary

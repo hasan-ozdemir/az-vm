@@ -37,6 +37,9 @@ function Assert-AzVmCommandOptions {
     foreach ($key in @($Options.Keys)) {
         $optionName = [string]$key
         if ($allowed -notcontains $optionName) {
+            if ([string]::Equals([string]$CommandName, 'configure', [System.StringComparison]::OrdinalIgnoreCase) -and $optionName -in @('group','vm-name','windows','linux','subscription-id','auto')) {
+                Throw-FriendlyError -Detail ("Option '--{0}' is no longer supported for 'configure'." -f $optionName) -Code 2 -Summary "Configure is now the interactive .env editor." -Hint "Run 'az-vm configure' without targeting flags, then change Azure-backed values inside the interactive editor."
+            }
             Throw-FriendlyError -Detail ("Option '--{0}' is not supported for command '{1}'." -f $optionName, $CommandName) -Code 2 -Summary "Unsupported command option." -Hint ("Use valid options for '{0}' only." -f $CommandName)
         }
     }

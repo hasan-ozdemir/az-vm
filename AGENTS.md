@@ -65,9 +65,9 @@ Use these sources in this order when maintaining the repo:
 - `connect` owns interactive/test connection flows and requires exactly one transport flag: `--ssh` or `--rdp`.
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
-- `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.
+- `configure` is the interactive `.env` frontend: it must stay focused on reviewing, editing, validating, previewing, and saving supported `.env` values, and it must not sync `.env` from a live Azure target.
 - Azure-touching commands support `--subscription-id` plus `-s`; resolution precedence is CLI override -> `.env` `SELECTED_AZURE_SUBSCRIPTION_ID` -> active Azure CLI subscription.
-- Azure-touching commands require an authenticated Azure CLI session; help, README, and runtime errors must say `az login` is required.
+- Azure-touching commands require an authenticated Azure CLI session; help, README, and runtime errors must say `az login` is required. `configure` is the exception: it may open without `az login`, but Azure-backed configure fields must stay read-only until Azure validation is available.
 - Interactive `create` and `update` must prompt for Azure subscription selection when `--subscription-id` is omitted.
 - `list` is the managed inventory command: it must stay Azure-read-only, must not mutate Azure resources, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
 - Auto-mode strictness is part of the public contract: `create --auto` must resolve platform, VM name, Azure region, and platform VM size from CLI or `SELECTED_*` plus platform defaults in `.env`; `update --auto` must resolve one managed target from CLI or the selected target values in `.env`.

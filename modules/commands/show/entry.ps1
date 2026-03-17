@@ -19,6 +19,13 @@ function Invoke-AzVmShowCommand {
     if (-not [string]::IsNullOrWhiteSpace([string]$targetGroupValue)) {
         $targetGroup = $targetGroupValue.Trim()
     }
+    $targetVmName = [string](Get-AzVmCliOptionText -Options $Options -Name 'vm-name')
+    if ([string]::IsNullOrWhiteSpace([string]$targetVmName)) {
+        $targetVmName = ''
+    }
+    else {
+        $targetVmName = $targetVmName.Trim()
+    }
 
     $allGroupRows = @()
     try {
@@ -68,6 +75,12 @@ function Invoke-AzVmShowCommand {
         $groupDumps += (Get-AzVmResourceGroupInventoryDump -ResourceGroup ([string]$resourceGroup))
     }
 
+    $focusedTarget = Resolve-AzVmShowFocusedTarget -Options $Options -ConfigMap $configMap -SelectedGroupDumps $groupDumps
+    $targetDerivedConfiguration = $null
+    if ($null -ne $focusedTarget) {
+        $targetDerivedConfiguration = Get-AzVmShowTargetDerivedConfiguration -ResourceGroup ([string]$focusedTarget.ResourceGroup) -VmName ([string]$focusedTarget.VmName) -ConfigMap $configMap
+    }
+
     $totalVmCount = 0
     $runningVmCount = 0
     foreach ($groupDump in @($groupDumps)) {
@@ -104,6 +117,7 @@ function Invoke-AzVmShowCommand {
         }
         Selection = [ordered]@{
             TargetGroup = [string]$targetGroup
+            TargetVmName = [string]$targetVmName
             IncludedResourceGroups = @($selectedGroups)
         }
         Summary = [ordered]@{
@@ -111,6 +125,7 @@ function Invoke-AzVmShowCommand {
             TotalVmCount = [int]$totalVmCount
             RunningVmCount = [int]$runningVmCount
         }
+        TargetDerivedConfiguration = $targetDerivedConfiguration
         ResourceGroups = @($groupDumps)
     }
 

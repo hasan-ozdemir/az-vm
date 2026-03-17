@@ -305,3 +305,95 @@ function Remove-AzVmUnsupportedDotEnvKeys {
         -LineEnding "crlf" `
         -EnsureTrailingNewline
 }
+
+function Save-AzVmSupportedDotEnvValues {
+    param(
+        [string]$Path,
+        [hashtable]$ValueMap,
+        [string]$TemplatePath = ''
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path)) {
+        throw 'Save-AzVmSupportedDotEnvValues requires a destination path.'
+    }
+
+    $supportedKeys = @(Get-AzVmSupportedDotEnvKeys)
+    $supportedLookup = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($key in @($supportedKeys)) {
+        [void]$supportedLookup.Add([string]$key)
+    }
+
+    $normalizedValues = @{}
+    foreach ($key in @($supportedKeys)) {
+        $normalizedValues[[string]$key] = ''
+        if ($ValueMap -and $ValueMap.ContainsKey([string]$key)) {
+            $valueText = [string]$ValueMap[[string]$key]
+            if ($null -ne $valueText) {
+                $normalizedValues[[string]$key] = $valueText
+            }
+        }
+    }
+
+    $sourceLines = @()
+    if (Test-Path -LiteralPath $Path) {
+        $sourceLines = @((Get-Content -LiteralPath $Path -ErrorAction Stop))
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace([string]$TemplatePath) -and (Test-Path -LiteralPath $TemplatePath)) {
+        $sourceLines = @((Get-Content -LiteralPath $TemplatePath -ErrorAction Stop))
+    }
+
+    $writtenKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $outputLines = New-Object System.Collections.Generic.List[string]
+    foreach ($line in @($sourceLines)) {
+        $rawLine = [string]$line
+        $trimmedLine = $rawLine.Trim()
+        if ([string]::IsNullOrWhiteSpace([string]$trimmedLine) -or $trimmedLine.StartsWith('#')) {
+            [void]$outputLines.Add($rawLine)
+            continue
+        }
+
+        $match = [regex]::Match($rawLine, '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=')
+        if (-not $match.Success) {
+            [void]$outputLines.Add($rawLine)
+            continue
+        }
+
+        $key = [string]$match.Groups[1].Value
+        if (-not $supportedLookup.Contains($key)) {
+            continue
+        }
+        if ($writtenKeys.Contains($key)) {
+            continue
+        }
+
+        $valueText = [string]$normalizedValues[$key]
+        [void]$outputLines.Add(("{0}={1}" -f $key, $valueText))
+        [void]$writtenKeys.Add($key)
+    }
+
+    foreach ($key in @($supportedKeys)) {
+        if ($writtenKeys.Contains([string]$key)) {
+            continue
+        }
+
+        if ($outputLines.Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$outputLines[$outputLines.Count - 1])) {
+            [void]$outputLines.Add('')
+        }
+
+        $valueText = [string]$normalizedValues[[string]$key]
+        [void]$outputLines.Add(("{0}={1}" -f [string]$key, $valueText))
+        [void]$writtenKeys.Add([string]$key)
+    }
+
+    $parent = Split-Path -Path $Path -Parent
+    if (-not [string]::IsNullOrWhiteSpace([string]$parent) -and -not (Test-Path -LiteralPath $parent)) {
+        New-Item -ItemType Directory -Path $parent -Force | Out-Null
+    }
+
+    Write-TextFileNormalized `
+        -Path $Path `
+        -Content (@($outputLines) -join "`n") `
+        -Encoding "utf8NoBom" `
+        -LineEnding "crlf" `
+        -EnsureTrailingNewline
+}

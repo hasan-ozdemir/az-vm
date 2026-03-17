@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.338] - 2026-03-17
+
+### Added
+- Added a new interactive configure-editor module that turns `az-vm configure` into a sectioned `.env` frontend with picker-backed multi-option fields, staged validation, next-create preview, and one-shot save behavior for the full supported dotenv contract.
+- Added `show --vm-name` so `show` can focus one managed VM and render a read-only target-derived configuration section without writing `.env`.
+
+### Changed
+- Changed the `configure` command contract so it now accepts only `--help` and `--perf`, opens without `az login`, keeps Azure-backed fields read-only when Azure validation is unavailable, and rejects the retired targeting flags with a configure-specific guidance error.
+- Changed the repo documentation and contract tests so AGENTS, README, help text, and smoke/documentation checks now describe `configure` as the interactive `.env` frontend and `show` as the read-only home for live target-derived configuration.
+- Changed dotenv persistence so supported `.env` keys can now be written back in one final save pass while preserving the committed contract order and filtering out unsupported key assignments.
+
+### Tests
+- Revalidated the configure/frontend contract non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.17.337] - 2026-03-17
 
 ### Changed

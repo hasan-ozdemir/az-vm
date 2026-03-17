@@ -32,7 +32,7 @@ function Show-AzVmCommandHelpOverview {
         'Usage: az-vm <command> [--option value] [--option=value]'
         ''
         'Commands (full details: az-vm help <command>):'
-        '  configure  Select one managed VM target and sync target-derived values into .env.'
+        '  configure  Open the interactive .env editor and validate saved settings safely.'
         '  create     Create one fresh managed resource group and one fresh managed VM.'
         '  update     Update one existing managed VM in one existing managed resource group.'
         '  list       List managed resource groups and managed Azure resources by type.'
@@ -59,6 +59,7 @@ function Show-AzVmCommandHelpOverview {
         '  -q, --quiet                 Exec-only quiet output mode for one-shot commands.'
         '  -h, --help                  Show this overview or command-specific help.'
         "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
+        "  configure opens without az login; Azure-backed configure fields require az login to edit or verify."
         ''
         'Quick examples:'
         '  az-vm --version'
@@ -104,9 +105,10 @@ function Show-AzVmCommandHelpDetailed {
             '  -q, --quiet              # exec one-shot quiet output only'
             '  -h, --help'
             "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
+            "  configure opens without az login; Azure-backed configure fields require az login to edit or verify."
             ''
             'Command reference:'
-            '  configure  : read-only managed target selection and .env synchronization'
+            '  configure  : interactive .env editor with validation and next-create preview'
             '  create     : fresh-only managed deployment flow'
             '  update     : existing-managed-target maintenance flow'
             '  list       : managed inventory output'
@@ -137,13 +139,12 @@ function Show-AzVmCommandHelpDetailed {
         'configure' {
             Write-AzVmHelpLines @(
                 'Command: configure'
-                'Description: select one existing managed VM target, read actual Azure state, and sync target-derived values into .env.'
+                'Description: open the interactive .env editor, validate field values safely, preview the next create naming plan, and save the updated .env contract.'
                 'Usage:'
-                '  az-vm configure [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--windows|--linux] [--perf]'
+                '  az-vm configure [--perf]'
                 'Examples:'
                 '  az-vm configure'
-                '  az-vm configure --group <resource-group> --vm-name <vm-name> -s <subscription-guid>'
-                'Notes: configure is Azure-read-only. It selects only az-vm-managed resource groups and existing VMs, validates --windows/--linux against the actual VM OS type, writes only target-derived .env values, and clears stale opposite-platform keys.'
+                'Notes: configure is interactive-only. It edits supported .env keys in sections, uses pickers for every finite or discoverable multi-option field, validates before save, stages changes in memory until final confirmation, and shows a next-create preview before writing .env. configure opens without az login, but Azure-backed fields become read-only and advise running az login when Azure validation is unavailable.'
             )
             return
         }
@@ -208,11 +209,11 @@ function Show-AzVmCommandHelpDetailed {
                 'Description: print a full system and configuration dump for app resource groups and VMs.'
                 'Usage:'
                 '  az-vm show [--subscription-id <subscription-id>] [--perf]'
-                '  az-vm show --group <resource-group> [--subscription-id <subscription-id>]'
+                '  az-vm show --group <resource-group> [--vm-name <vm-name>] [--subscription-id <subscription-id>]'
                 'Examples:'
                 '  az-vm show'
-                '  az-vm show --group <resource-group> -s <subscription-guid>'
-                'Notes: password-bearing .env values are redacted in the rendered report. When the VM is running, nested virtualization is shown from guest validation evidence.'
+                '  az-vm show --group <resource-group> --vm-name <vm-name> -s <subscription-guid>'
+                'Notes: password-bearing .env values are redacted in the rendered report. When show can resolve exactly one managed VM target, it also prints a read-only target-derived configuration section using actual Azure state without writing .env. When the VM is running, nested virtualization is shown from guest validation evidence.'
             )
             return
         }

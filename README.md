@@ -112,7 +112,7 @@ On the current Windows hero path, one successful `create` is designed to leave b
 ### Prerequisites
 - Windows host with PowerShell and the Azure CLI available.
 - Azure subscription access with permission to create, update, and delete compute and networking resources.
-- Azure CLI sign-in is strictly required for Azure-touching commands. Run `az login` before using `configure`, `create`, `update`, `list`, `show`, `do`, `task --run-*`, `task --save-app-state`, `task --restore-app-state`, `connect`, `move`, `resize`, `set`, `exec`, or `delete`.
+- Azure CLI sign-in is strictly required for Azure-touching commands. Run `az login` before using `create`, `update`, `list`, `show`, `do`, `task --run-*`, `task --save-app-state`, `task --restore-app-state`, `connect`, `move`, `resize`, `set`, `exec`, or `delete`. `configure` can open without Azure sign-in, but its Azure-backed pickers stay read-only until `az login` is available.
 - Local Git for the repo workflow and hook support.
 - Python available when the repo-managed pyssh helper is needed.
 
@@ -146,7 +146,7 @@ On the current Windows hero path, one successful `create` is designed to leave b
 
 ### Fastest Safe Path To Value
 If you want the fastest safe path to value, use this order. The target outcome is not only "the VM exists"; it is "someone can connect and start real work quickly" with a machine that already looks curated. On the current Windows path that includes Store-aware public desktop shortcuts, managed short-launcher wrapping for overlong Chrome/Edge-style shortcut invocations, per-task git-ignored app-state zip plugins resolved from `<task-folder>/app-state/app-state.zip`, and WSL2 plus Docker Desktop prerequisite hardening before developer-runtime health is considered ready:
-1. Run `.\az-vm.cmd configure` and confirm the generated `.env` values.
+1. Run `.\az-vm.cmd configure` and review the interactive `.env` sections, picker-backed fields, and next-create preview before saving.
 2. Run `.\az-vm.cmd create --auto -s <subscription-guid>`. When `.env` already contains a complete `SELECTED_*` target plus the matching platform image and size defaults, the command can provision end-to-end without repeating platform, VM name, region, or size on the CLI.
 3. Run `.\az-vm.cmd show --group=<resource-group>` to verify the managed inventory while password-bearing `.env` values are redacted.
 4. Run `.\az-vm.cmd do --vm-action=status --vm-name=<vm-name>` to confirm the VM is started.
@@ -290,11 +290,11 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 
 | Command | Purpose | Mutation level | When to use it | Primary outcome |
 | --- | --- | --- | --- | --- |
-| `configure` | Select one existing managed VM target and sync target-derived config | Azure-read-only | Before create/update work, or when local `.env` needs to match a real target | One selected managed target aligned into `.env` |
+| `configure` | Review, edit, validate, preview, and save the supported `.env` contract | Local `.env` only | Before create/update work, or whenever the next VM configuration needs a safe frontend | Validated `.env` values with a next-create preview |
 | `create` | Build one fresh managed resource group and one fresh VM | Azure-mutating | First deployment or explicit rebuild flow | New managed VM environment |
 | `update` | Maintain one existing managed resource group and VM | Azure-mutating | Ongoing maintenance, guest-task refresh, redeploy-backed repair | Updated existing VM |
 | `list` | Print managed inventory by type | Azure-read-only | Inventory, targeting, quick visibility | Managed group/resource listings |
-| `show` | Print a full managed report | Azure-read-only | Health review, support handoff, release verification | Inventory and config dump |
+| `show` | Print a full managed report plus focused target-derived config when one VM is in scope | Azure-read-only | Health review, support handoff, release verification | Inventory and read-only target-derived configuration |
 | `do` | Apply lifecycle or repair actions | Azure-mutating or read-only for `status` | Power-state control, reapply, redeploy, hibernation flow | Target VM lifecycle action |
 | `task` | List discovered task inventory, run one task, or save/restore task app-state | Local/read-only for `--list`; Azure-touching for `--run-*` and VM app-state maintenance; local-machine for `--source=lm` / `--target=lm` | Understand task order, rerun one task, or refresh one task payload | Visible task inventory or one isolated task/app-state action |
 | `connect` | Launch or test SSH/RDP access | Azure-touching, local-client action | Linux or Windows SSH access, or Windows desktop access | Direct client launch or connection test |
@@ -311,10 +311,8 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 
 | Usage pattern | Key parameters | What it does | When to use it | Important notes |
 | --- | --- | --- | --- | --- |
-| `.\az-vm.cmd configure` | none | Interactive managed target selection | First targeting pass or local context realignment | Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`. |
-| `.\az-vm.cmd configure --group=<resource-group>` | `--group` | Targets one managed group and auto-selects only-VM groups when unambiguous | You know the group but want safe selection | Fails gracefully if the group has multiple VMs and no `--vm-name` was provided. |
-| `.\az-vm.cmd configure --vm-name=<vm-name>` | `--vm-name` | Searches az-vm-managed groups for a unique VM match | You know the VM name first | Requires uniqueness across managed groups. |
-| `.\az-vm.cmd configure --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--group`, `--vm-name`, `-s` | Direct managed target sync in one subscription | Deterministic `.env` alignment | Best for explicit maintenance targeting. |
+| `.\az-vm.cmd configure` | none | Opens the interactive `.env` editor | First configuration pass or safe local config maintenance | Purpose: review, edit, validate, preview, and save the supported `.env` contract through sections and pickers. |
+| `.\az-vm.cmd configure --help` | `--help` | Prints the configure editor contract | Operator discovery | `configure` is interactive-only and rejects target-selection flags such as `--group`, `--vm-name`, and `--subscription-id`. |
 
 #### `create`
 
@@ -351,6 +349,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd show` | none | Prints the broader managed report | Environment audit | Good for multi-group review. |
 | `.\az-vm.cmd show --group=<resource-group>` | `--group` | Prints one managed group report | Support handoff and verification | `show` prints the expected inventory while password-bearing `.env` values are redacted. |
+| `.\az-vm.cmd show --group=<resource-group> --vm-name=<vm-name>` | `--group`, `--vm-name` | Prints the managed report and one VM's target-derived configuration | Focused inspection of a single managed target | `show` stays read-only and uses actual Azure state without writing `.env`. |
 
 #### `do`
 
@@ -469,15 +468,15 @@ Practical outcomes:
 ### Inspect Managed Resource Groups And VM State
 ```powershell
 .\az-vm.cmd list --type=group,vm
-.\az-vm.cmd configure --group=<resource-group> --vm-name=<vm-name>
+.\az-vm.cmd configure
 .\az-vm.cmd show --group=<resource-group>
 .\az-vm.cmd do --vm-action=status --vm-name=<vm-name>
 ```
 
 Practical outcomes:
 - `list` gives a read-only managed inventory view across groups and resource types
-- `configure` selects one managed VM target and synchronizes actual Azure state into `.env`
-- `show` gives an inventory snapshot while password-bearing `.env` values are redacted
+- `configure` gives a safe interactive frontend for every supported `.env` key, with picker-backed multi-option fields and a next-create preview before save
+- `show` gives an inventory snapshot while password-bearing `.env` values are redacted, and adds target-derived configuration when one managed VM is in scope
 - `do --vm-action=status` is the quickest preflight check before a mutating change
 
 ### Run One Task Or Open A Remote Shell
@@ -551,13 +550,15 @@ Practical outcomes:
 Azure subscription selection precedence is: CLI `--subscription-id` / `-s` -> `.env` `SELECTED_AZURE_SUBSCRIPTION_ID` -> active Azure CLI subscription.
 
 ### `configure`
-Purpose: select one existing managed VM target, read actual Azure state, and sync target-derived values into `.env`.
+Purpose: review, edit, validate, preview, and save the supported `.env` contract through one interactive frontend.
 
 Behavior notes:
-- Azure-read-only command
-- validates `--windows` and `--linux` against the actual VM OS type
-- persists only target-derived values
-- best first step before support work, update work, or manual operator investigation
+- interactive-only `.env` editor
+- shows every supported `.env` key in section order derived from `.env.example`
+- uses a picker for every finite or discoverable multi-option field
+- stages edits in memory until final confirmation, then writes only supported `.env` keys once
+- renders a next-create preview with effective platform inputs plus next managed resource names when Azure validation is available
+- can open without `az login`, but Azure-backed fields stay read-only until Azure validation is available
 
 ### `create`
 Purpose: build one fresh managed resource group, one fresh managed VM, and then continue with the init/update workflow when selected.
@@ -852,7 +853,7 @@ Each task directory is self-contained. The folder holds one same-named script, o
 ### End-To-End Create And Update Flow
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
-- `configure` is the managed target-selection and `.env` synchronization command: it must stay Azure-read-only, select only az-vm-managed targets, and persist only target-derived values from actual Azure state.
+- `configure` is the interactive `.env` frontend: it must stay focused on reviewing, editing, validating, previewing, and saving supported `.env` values, and it must not sync `.env` from a live Azure target.
 - `list` is the managed inventory command: it must stay Azure-read-only, must not mutate Azure resources, and must expose managed resource listings through `--type` plus optional exact `--group` filtering.
 
 ### Safety Model And Failure Handling
