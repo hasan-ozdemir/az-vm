@@ -6535,6 +6535,7 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Set-Culture',
         'Set-WinHomeLocation',
         'Set-WinSystemLocale',
+        '$systemLocaleTarget = ''en-US''',
         'Set-TimeZone',
         'Copy-UserInternationalSettingsToSystem',
         'TASK_REBOOT_REQUIRED:configure-ux-windows',
@@ -6543,6 +6544,7 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
     )) {
         Assert-True -Condition ($uxTaskText -like ('*' + [string]$fragment + '*')) -Message ("UX task must now own regional fragment '{0}'." -f [string]$fragment)
     }
+    Assert-True -Condition (-not ($uxTaskText -like '*Set-WinSystemLocale -SystemLocale $turkishCulture*')) -Message 'UX task must no longer target tr-TR as the system locale.'
 
     Assert-True -Condition ($uxTaskJsonText -like '*"timeout": 180*') -Message 'UX task must keep the expanded regional-input timeout 180.'
 }

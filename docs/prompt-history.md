@@ -5155,3 +5155,17 @@ I completed the Windows task-catalog and workflow refactor around that request. 
 
 The same log-driven cleanup pass also removed the remaining successful-run warning noise from the Windows regional and health tasks by hardening temporary registry-hive mount/unmount handling in both `10003-configure-ux-windows` and `10006-capture-snapshot-health`. I validated the moved tasks and the cleaned health/reporting flow live in isolation on the active managed Windows VM with reruns of `133`, `134`, and `10006`, and the final readbacks confirmed `tr-TR` system locale, `Turkey Standard Time`, healthy VLC presence, and Winlogon autologon state for the managed `manager` account.
 
+### 2026-03-17 10:29 UTC
+
+**User Prompt**
+
+````text
+Return the system locale setting to `en-US` across the final Windows `vm-update` state, but keep UTF-8 enabled by default system-wide. The intended outcome is that applications such as VLC Player and Google Chrome see `en-US` as the system default locale while the remaining region, time zone, and format settings stay the same, with `en-US` as the primary language and Turkish (Turkey) as the secondary language.
+````
+
+**Assistant Summary**
+
+I updated the mixed Windows language-and-region contract so `10003-configure-ux-windows` now targets `en-US` for the machine system locale instead of `tr-TR`, while preserving the existing Turkish regional behavior: Turkish Q-only input, Turkish 24-hour formats, Turkey home location, Istanbul time zone, and UTF-8 ANSI/OEM code pages. To keep that mixed state stable, I also added an explicit post-propagation reassertion path so the task reapplies `en-US` system locale and then reapplies UTF-8 after the welcome-screen and new-user copy step.
+
+I revalidated the change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc checks. Then I revalidated it live in isolation on the active managed Windows VM by rerunning `10003-configure-ux-windows`, performing the required restart, rerunning `10006-capture-snapshot-health`, and taking direct `exec -q` readbacks. The final live state confirmed `en-US` for both system preferred UI language and system locale, `Turkey Standard Time`, UTF-8 `ACP/OEMCP` values `65001`, and Turkish regional/input state for the managed users.
+

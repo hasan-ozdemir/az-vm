@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.336 - 2026-03-17
+
+### Summary
+This release tightens the final Windows mixed language-and-region contract so applications now see `en-US` as the machine system locale again, while the managed VM still keeps English UI, Turkish regional formats, Turkish Q input, Istanbul time zone, and UTF-8 enabled by default. The same pass hardens the regional propagation flow so welcome-screen and new-user copy steps no longer risk drifting the intended system-locale target.
+
+### Highlights
+- Changed `10003-configure-ux-windows` so the system locale target is now `en-US` instead of `tr-TR`, matching the desired application-facing default locale for apps such as VLC and Chrome.
+- Kept the rest of the mixed regional state intact: English primary language, Turkish secondary language, Turkish Q-only input, Turkish 24-hour formats, Turkey home location, Istanbul time zone, and UTF-8 ANSI/OEM code pages.
+- Reasserted the `en-US` system locale after the welcome-screen and new-user propagation step so the final state remains stable even when broader international settings are copied system-wide.
+- Revalidated the change non-live plus live in isolation on the active managed Windows VM through `10003`, `10006`, and direct locale/timezone/input/codepage readbacks.
+
 ## Release 2026.3.17.335 - 2026-03-17
 
 ### Summary

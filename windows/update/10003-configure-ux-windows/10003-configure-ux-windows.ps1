@@ -20,6 +20,7 @@ $artifactFileNames = @('desktop.ini', 'Thumbs.db')
 $turkishInputTip = '041F:0000041F'
 $turkishKeyboardLayout = '0000041f'
 $turkishCulture = 'tr-TR'
+$systemLocaleTarget = 'en-US'
 $turkeyTimeZoneId = 'Turkey Standard Time'
 $turkeyGeoId = 235
 $utf8CodePage = '65001'
@@ -403,12 +404,12 @@ function Set-CurrentSessionRegionalState {
         Add-Detail 'regional-time-zone-complete'
     }
 
-    if ([string]::Equals([string]$systemLocaleBefore, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals([string]$systemLocaleBefore, $systemLocaleTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
         Add-Detail 'regional-system-locale-skip:already-set'
     }
     else {
         Add-Detail 'regional-system-locale-begin'
-        Set-WinSystemLocale -SystemLocale $turkishCulture
+        Set-WinSystemLocale -SystemLocale $systemLocaleTarget
         Add-Detail 'regional-system-locale-complete'
     }
 
@@ -426,6 +427,19 @@ function Set-CurrentSessionRegionalState {
     Set-RegistryPreloadKeyboardState -RootPath 'HKCU:'
     Add-Detail 'regional-copy-system-begin'
     Set-WelcomeScreenAndDefaultUserRegionalState
+    $systemLocaleAfterCopy = Get-SystemLocaleNameSafe
+    if ([string]::Equals([string]$systemLocaleAfterCopy, $systemLocaleTarget, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Detail 'regional-system-locale-reassert-skip:already-set'
+    }
+    else {
+        Add-Detail 'regional-system-locale-reassert-begin'
+        Set-WinSystemLocale -SystemLocale $systemLocaleTarget
+        Add-Detail 'regional-system-locale-reassert-complete'
+    }
+    Add-Detail 'regional-utf8-codepage-reassert-begin'
+    Set-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP' -Value $utf8CodePage
+    Set-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP' -Value $utf8CodePage
+    Add-Detail 'regional-utf8-codepage-reassert-complete'
 
     $timeZoneAfter = Get-TimeZoneIdSafe
     $homeLocationAfter = ''
@@ -498,7 +512,7 @@ function Set-CurrentSessionRegionalState {
         (-not [string]::Equals([string]$timeZoneBefore, [string]$timeZoneAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
         (-not [string]::Equals([string]$acpBefore, [string]$acpAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
         (-not [string]::Equals([string]$oemcpBefore, [string]$oemcpAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        (-not [string]::Equals([string]$systemLocaleAfter, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase))
+        (-not [string]::Equals([string]$systemLocaleAfter, $systemLocaleTarget, [System.StringComparison]::OrdinalIgnoreCase))
     )
 }
 

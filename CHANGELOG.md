@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.336] - 2026-03-17
+
+### Changed
+- Changed the Windows mixed language-and-region contract so `10003-configure-ux-windows` now restores the system locale target to `en-US` while still keeping Turkish Q input, Turkish regional formats, Istanbul time zone, and UTF-8 code-page intent enabled across the managed system.
+- Changed the Windows regional task flow so `10003-configure-ux-windows` now reasserts the intended `en-US` system locale after welcome-screen and new-user propagation, preventing locale drift while preserving Turkish user-format state.
+
+### Tests
+- Revalidated the updated locale contract non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the updated Windows regional flow live in isolation on the active managed Windows VM with `task --run-vm-update 10003`, `task --run-vm-update 10006`, and direct `exec -q` readbacks for system preferred UI language, system locale, time zone, UTF-8 code pages, and managed-user input/culture state.
+
 ## [2026.3.17.335] - 2026-03-17
 
 ### Added
