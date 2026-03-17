@@ -1,7 +1,7 @@
 {
   "priority": 132,
   "enabled": true,
-  "timeout": 2400,
+  "timeout": 1563,
   "assets": [
     {
       "local": "../../../tools/scripts/az-vm-interactive-session-helper.ps1",

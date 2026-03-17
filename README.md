@@ -566,7 +566,7 @@ Behavior notes:
 - `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
 - Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.
-- Windows `vm-update` begins after one planned restart at the start of Step 6, and the workflow performs one more restart automatically before `vm-summary` when any update task requests reboot.
+- Windows `vm-update` runs without a planned restart at Step 6 start, and the workflow performs one automatic restart before `vm-summary` only when any update task requests reboot.
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
@@ -577,7 +577,7 @@ Purpose: maintain one existing managed resource group and one existing VM target
 Behavior notes:
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
 - Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`, with single-VM auto-resolution allowed when the selected group contains exactly one VM.
-- Windows `vm-update` begins after one planned restart at the start of Step 6, and the workflow performs one more restart automatically before `vm-summary` when any update task requests reboot.
+- Windows `vm-update` runs without a planned restart at Step 6 start, and the workflow performs one automatic restart before `vm-summary` only when any update task requests reboot.
 - best fit for day-two maintenance, guest-task refresh, and Azure redeploy-backed repair
 
 ### `list`

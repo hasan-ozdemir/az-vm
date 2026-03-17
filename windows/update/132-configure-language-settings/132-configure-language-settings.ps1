@@ -10,14 +10,6 @@ $helperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
 
 $primaryLanguage = 'en-US'
 $secondaryLanguage = 'tr-TR'
-$turkishInputTip = '041F:0000041F'
-$turkishKeyboardLayout = '0000041f'
-$turkeyTimeZoneId = 'Turkey Standard Time'
-$turkishCulture = 'tr-TR'
-$turkeyGeoId = 235
-$utf8CodePage = '65001'
-$shortTimePattern = 'HH:mm'
-$longTimePattern = 'HH:mm:ss'
 
 if (-not (Test-Path -LiteralPath $helperPath)) {
     throw ("Interactive session helper was not found: {0}" -f $helperPath)
@@ -131,200 +123,6 @@ function Get-SystemPreferredUiLanguageSafe {
     }
 
     return ''
-}
-
-function Get-SystemLocaleNameSafe {
-    if (Get-Command Get-WinSystemLocale -ErrorAction SilentlyContinue) {
-        try {
-            $locale = Get-WinSystemLocale
-            if ($null -ne $locale -and $locale.PSObject.Properties.Match('Name').Count -gt 0) {
-                return [string]$locale.Name
-            }
-            return [string]$locale
-        }
-        catch {
-        }
-    }
-
-    return ''
-}
-
-function Get-TimeZoneIdSafe {
-    try {
-        $timeZone = Get-TimeZone -ErrorAction Stop
-        if ($null -ne $timeZone -and $timeZone.PSObject.Properties.Match('Id').Count -gt 0) {
-            return [string]$timeZone.Id
-        }
-    }
-    catch {
-    }
-
-    return ''
-}
-
-function Get-RegistryValueString {
-    param(
-        [string]$Path,
-        [string]$Name
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$Path) -or [string]::IsNullOrWhiteSpace([string]$Name)) {
-        return ''
-    }
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        return ''
-    }
-
-    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
-    if ($null -eq $item) {
-        return ''
-    }
-
-    return [string]$item.$Name
-}
-
-function Set-RegistryValueString {
-    param(
-        [string]$Path,
-        [string]$Name,
-        [string]$Value
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$Path) -or [string]::IsNullOrWhiteSpace([string]$Name)) {
-        return
-    }
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-
-    Set-ItemProperty -Path $Path -Name $Name -Value ([string]$Value) -Force
-}
-
-function Invoke-RegQuiet {
-    param(
-        [string]$Verb,
-        [string[]]$Arguments
-    )
-
-    $segments = @('reg', [string]$Verb)
-    foreach ($argument in @($Arguments)) {
-        $segments += ('"{0}"' -f [string]$argument)
-    }
-
-    $command = ((@($segments) -join ' ') + ' >nul 2>&1')
-    cmd.exe /d /c $command | Out-Null
-    return [int]$LASTEXITCODE
-}
-
-function Remove-RegistryMountIfPresent {
-    param([string]$MountName)
-
-    if ([string]::IsNullOrWhiteSpace([string]$MountName)) {
-        return
-    }
-
-    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
-}
-
-function Mount-RegistryHive {
-    param(
-        [string]$MountName,
-        [string]$HiveFilePath
-    )
-
-    if ([string]::IsNullOrWhiteSpace([string]$MountName)) {
-        throw 'Registry mount name is empty.'
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$HiveFilePath) -or -not (Test-Path -LiteralPath $HiveFilePath)) {
-        throw ("Registry hive file was not found: {0}" -f $HiveFilePath)
-    }
-
-    Remove-RegistryMountIfPresent -MountName $MountName
-    & reg.exe load ("HKU\{0}" -f $MountName) $HiveFilePath | Out-Null
-    if ($LASTEXITCODE -ne 0) {
-        throw ("reg load failed for HKU\{0} => {1}" -f $MountName, $HiveFilePath)
-    }
-
-    return ("Registry::HKEY_USERS\{0}" -f $MountName)
-}
-
-function Dismount-RegistryHive {
-    param([string]$MountName)
-
-    if ([string]::IsNullOrWhiteSpace([string]$MountName)) {
-        return
-    }
-
-    try {
-        Set-Location -Path 'C:\'
-    }
-    catch {
-    }
-
-    foreach ($attempt in 1..6) {
-        [System.GC]::Collect()
-        [System.GC]::WaitForPendingFinalizers()
-        Start-Sleep -Milliseconds 250
-
-        & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
-        if ($LASTEXITCODE -eq 0) {
-            return
-        }
-
-        Start-Sleep -Milliseconds 500
-    }
-
-    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
-    if ($exitCode -eq 0) {
-        return
-    }
-
-    Write-Warning ("reg unload failed for HKU\{0} with exit code {1}" -f $MountName, $exitCode)
-}
-
-function Set-RegistryPreloadKeyboardState {
-    param([string]$RootPath)
-
-    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
-        return
-    }
-
-    $preloadPath = Join-Path $RootPath 'Keyboard Layout\Preload'
-    $substitutesPath = Join-Path $RootPath 'Keyboard Layout\Substitutes'
-
-    if (-not (Test-Path -LiteralPath $preloadPath)) {
-        New-Item -Path $preloadPath -Force | Out-Null
-    }
-
-    $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction Stop
-    foreach ($property in @($preloadItem.Property)) {
-        if ([string]$property -ne '1') {
-            Remove-ItemProperty -Path $preloadPath -Name ([string]$property) -ErrorAction SilentlyContinue
-        }
-    }
-
-    Set-RegistryValueString -Path $preloadPath -Name '1' -Value $turkishKeyboardLayout
-
-    if (Test-Path -LiteralPath $substitutesPath) {
-        Remove-Item -LiteralPath $substitutesPath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-
-function Set-Registry24HourTimeState {
-    param([string]$RootPath)
-
-    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
-        return
-    }
-
-    $internationalPath = Join-Path $RootPath 'Control Panel\International'
-    Set-RegistryValueString -Path $internationalPath -Name 'LocaleName' -Value $turkishCulture
-    Set-RegistryValueString -Path $internationalPath -Name 'sShortTime' -Value $shortTimePattern
-    Set-RegistryValueString -Path $internationalPath -Name 'sTimeFormat' -Value $longTimePattern
-    Set-RegistryValueString -Path $internationalPath -Name 'iTime' -Value '1'
-    Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
 }
 
 function Get-LanguageCapabilityCatalog {
@@ -583,7 +381,8 @@ catch {
         -RunAsUser 'SYSTEM' `
         -RunAsPassword '' `
         -WorkerScriptText $workerScript `
-        -WaitTimeoutSeconds 1800
+        -WaitTimeoutSeconds 1800 `
+        -HeartbeatSeconds 10
 
     $rebootRequired = $false
     $capabilitySummary = ''
@@ -631,8 +430,7 @@ catch {
 function Invoke-UserLanguageConfiguration {
     param(
         [string]$UserName,
-        [string]$UserPassword,
-        [switch]$CopyToSystem
+        [string]$UserPassword
     )
 
     Write-StateIntent ("Language settings for user '{0}' will be configured." -f [string]$UserName)
@@ -640,7 +438,6 @@ function Invoke-UserLanguageConfiguration {
 
     $interactiveTaskName = ('{0}-{1}' -f $taskName, [string]$UserName)
     $paths = Get-AzVmInteractivePaths -TaskName $interactiveTaskName
-    $copyFlagLiteral = if ($CopyToSystem) { '$true' } else { '$false' }
     $workerScript = @'
 $ErrorActionPreference = "Stop"
 $helperPath = "__HELPER_PATH__"
@@ -648,63 +445,8 @@ $resultPath = "__RESULT_PATH__"
 $taskName = "__TASK_NAME__"
 $primaryLanguage = "__PRIMARY_LANGUAGE__"
 $secondaryLanguage = "__SECONDARY_LANGUAGE__"
-$inputTip = "__INPUT_TIP__"
-$turkishKeyboardLayout = "__TURKISH_KEYBOARD_LAYOUT__"
-$turkishCulture = "__TURKISH_CULTURE__"
-$shortTimePattern = "__SHORT_TIME__"
-$longTimePattern = "__LONG_TIME__"
-$turkeyGeoId = __TURKEY_GEO_ID__
-$copyToSystem = __COPY_TO_SYSTEM__
 
 . $helperPath
-
-function Ensure-RegistryPath {
-    param([string]$Path)
-
-    if ([string]::IsNullOrWhiteSpace([string]$Path)) {
-        return
-    }
-
-    if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
-    }
-}
-
-function Set-RegistryValueString {
-    param(
-        [string]$Path,
-        [string]$Name,
-        [string]$Value
-    )
-
-    Ensure-RegistryPath -Path $Path
-    Set-ItemProperty -Path $Path -Name $Name -Value ([string]$Value) -Force
-}
-
-function Set-24HourFormatState {
-    $internationalPath = 'HKCU:\Control Panel\International'
-    Set-RegistryValueString -Path $internationalPath -Name 'LocaleName' -Value $turkishCulture
-    Set-RegistryValueString -Path $internationalPath -Name 'sShortTime' -Value $shortTimePattern
-    Set-RegistryValueString -Path $internationalPath -Name 'sTimeFormat' -Value $longTimePattern
-    Set-RegistryValueString -Path $internationalPath -Name 'iTime' -Value '1'
-    Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
-}
-
-function Set-TurkishQKeyboardOnly {
-    $preloadPath = 'HKCU:\Keyboard Layout\Preload'
-    $substitutesPath = 'HKCU:\Keyboard Layout\Substitutes'
-    Ensure-RegistryPath -Path $preloadPath
-    $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction Stop
-    foreach ($property in @($preloadItem.Property)) {
-        if ([string]$property -ne '1') {
-            Remove-ItemProperty -Path $preloadPath -Name ([string]$property) -ErrorAction SilentlyContinue
-        }
-    }
-    Set-RegistryValueString -Path $preloadPath -Name '1' -Value $turkishKeyboardLayout
-    if (Test-Path -LiteralPath $substitutesPath) {
-        Remove-Item -LiteralPath $substitutesPath -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
 
 try {
     $languageList = New-WinUserLanguageList $primaryLanguage
@@ -715,16 +457,6 @@ try {
 
     Set-WinUserLanguageList -LanguageList $languageList -Force
     Set-WinUILanguageOverride -Language $primaryLanguage
-    Set-WinDefaultInputMethodOverride -InputTip $inputTip
-    Set-WinCultureFromLanguageListOptOut -OptOut $true
-    Set-Culture -CultureInfo $turkishCulture
-    Set-WinHomeLocation -GeoId $turkeyGeoId
-    Set-24HourFormatState
-    Set-TurkishQKeyboardOnly
-
-    if ($copyToSystem) {
-        Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
-    }
 
     $languageSummary = @(
         Get-WinUserLanguageList |
@@ -742,8 +474,7 @@ try {
 
     $details = @(
         ("language-list={0}" -f [string]$languageSummary),
-        ("culture={0}" -f [string]$cultureName),
-        ("copy-to-system={0}" -f [bool]$copyToSystem)
+        ("culture={0}" -f [string]$cultureName)
     )
     Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Language settings applied.' -Details $details
 }
@@ -758,98 +489,41 @@ catch {
     $workerScript = $workerScript.Replace('__TASK_NAME__', $interactiveTaskName)
     $workerScript = $workerScript.Replace('__PRIMARY_LANGUAGE__', $primaryLanguage)
     $workerScript = $workerScript.Replace('__SECONDARY_LANGUAGE__', $secondaryLanguage)
-    $workerScript = $workerScript.Replace('__INPUT_TIP__', $turkishInputTip)
-    $workerScript = $workerScript.Replace('__TURKISH_KEYBOARD_LAYOUT__', $turkishKeyboardLayout)
-    $workerScript = $workerScript.Replace('__TURKISH_CULTURE__', $turkishCulture)
-    $workerScript = $workerScript.Replace('__SHORT_TIME__', $shortTimePattern)
-    $workerScript = $workerScript.Replace('__LONG_TIME__', $longTimePattern)
-    $workerScript = $workerScript.Replace('__TURKEY_GEO_ID__', [string]$turkeyGeoId)
-    $workerScript = $workerScript.Replace('__COPY_TO_SYSTEM__', $copyFlagLiteral)
 
     $null = Invoke-AzVmInteractiveDesktopAutomation `
         -TaskName $interactiveTaskName `
         -RunAsUser $UserName `
         -RunAsPassword $UserPassword `
         -WorkerScriptText $workerScript `
-        -WaitTimeoutSeconds 900
+        -WaitTimeoutSeconds 900 `
+        -HeartbeatSeconds 10
 
     Write-StateSuccess ("Language settings for user '{0}' were configured successfully." -f [string]$UserName)
 }
 
 function Set-SystemLanguageState {
     $systemPreferredUiBefore = Get-SystemPreferredUiLanguageSafe
-    $systemLocaleBefore = Get-SystemLocaleNameSafe
-    $timeZoneBefore = Get-TimeZoneIdSafe
-    $acpBefore = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP'
-    $oemcpBefore = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP'
+    Write-StateIntent ('System language packages and UI settings will be configured.')
+    Write-StateStart ('Configuring system language packages and UI settings...')
 
-    Write-StateIntent ('System language, locale, and time settings will be configured.')
-    Write-StateStart ('Configuring system language, locale, and time settings...')
+    $englishRebootRequired = Install-LanguageComponents -LanguageTag $primaryLanguage -DisplayName 'English (United States)'
+    $turkishRebootRequired = Install-LanguageComponents -LanguageTag $secondaryLanguage -DisplayName 'Turkish (Turkey)'
 
-    Install-LanguageComponents -LanguageTag $primaryLanguage -DisplayName 'English (United States)' | Out-Null
-    Install-LanguageComponents -LanguageTag $secondaryLanguage -DisplayName 'Turkish (Turkey)' | Out-Null
-
+    Write-StateStart ("Applying system preferred UI language '{0}'..." -f $primaryLanguage)
     Set-SystemPreferredUILanguage -Language $primaryLanguage
-    Set-WinSystemLocale -SystemLocale $turkishCulture
-    Set-TimeZone -Id $turkeyTimeZoneId
-    Set-WinHomeLocation -GeoId $turkeyGeoId
-    Set-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP' -Value $utf8CodePage
-    Set-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP' -Value $utf8CodePage
-
     $systemPreferredUiAfter = Get-SystemPreferredUiLanguageSafe
-    $systemLocaleAfter = Get-SystemLocaleNameSafe
-    $timeZoneAfter = Get-TimeZoneIdSafe
-    $acpAfter = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP'
-    $oemcpAfter = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP'
 
     if (-not [string]::Equals([string]$systemPreferredUiAfter, $primaryLanguage, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw ("Unable to set the system preferred UI language to '{0}'." -f $primaryLanguage)
     }
-    if (-not [string]::Equals([string]$systemLocaleAfter, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw ("Unable to set the system locale to '{0}'." -f $turkishCulture)
-    }
-    if (-not [string]::Equals([string]$timeZoneAfter, $turkeyTimeZoneId, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw ("Unable to set the time zone to '{0}'." -f $turkeyTimeZoneId)
-    }
-    if (-not [string]::Equals([string]$acpAfter, $utf8CodePage, [System.StringComparison]::OrdinalIgnoreCase) -or -not [string]::Equals([string]$oemcpAfter, $utf8CodePage, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Unable to set UTF-8 ANSI and OEM code pages.'
-    }
 
-    Write-StateSuccess('System language, locale, and time settings were configured successfully.')
+    Write-StateSuccess('System language packages and UI settings were configured successfully.')
 
     return (
-        (-not [string]::Equals([string]$systemPreferredUiBefore, [string]$systemPreferredUiAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        (-not [string]::Equals([string]$systemLocaleBefore, [string]$systemLocaleAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        (-not [string]::Equals([string]$timeZoneBefore, [string]$timeZoneAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        (-not [string]::Equals([string]$acpBefore, [string]$acpAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        (-not [string]::Equals([string]$oemcpBefore, [string]$oemcpAfter, [System.StringComparison]::OrdinalIgnoreCase))
+        [bool]$englishRebootRequired -or
+        [bool]$turkishRebootRequired -or
+        (-not [string]::Equals([string]$systemPreferredUiBefore, [string]$systemPreferredUiAfter, [System.StringComparison]::OrdinalIgnoreCase))
     )
-}
-
-function Set-WelcomeScreenAndDefaultUserState {
-    Write-StateIntent('Welcome screen and new-user language settings will be normalized.')
-    Write-StateStart('Configuring welcome screen and new-user language settings...')
-
-    Set-RegistryPreloadKeyboardState -RootPath 'Registry::HKEY_USERS\.DEFAULT'
-    Set-Registry24HourTimeState -RootPath 'Registry::HKEY_USERS\.DEFAULT'
-
-    $defaultProfileHive = 'C:\Users\Default\NTUSER.DAT'
-    if (Test-Path -LiteralPath $defaultProfileHive) {
-        $defaultMountName = 'AzVm132Default'
-        $defaultRoot = $null
-        try {
-            $defaultRoot = Mount-RegistryHive -MountName $defaultMountName -HiveFilePath $defaultProfileHive
-            Set-RegistryPreloadKeyboardState -RootPath $defaultRoot
-            Set-Registry24HourTimeState -RootPath $defaultRoot
-        }
-        finally {
-            if (-not [string]::IsNullOrWhiteSpace([string]$defaultMountName)) {
-                Dismount-RegistryHive -MountName $defaultMountName
-            }
-        }
-    }
-
-    Write-StateSuccess('Welcome screen and new-user language settings were configured successfully.')
 }
 
 $rebootRequired = $false
@@ -866,11 +540,13 @@ try {
         $rebootRequired = $true
     }
 
-    Invoke-UserLanguageConfiguration -UserName $managerUser -UserPassword $managerPassword -CopyToSystem
+    Write-StateStart("Applying language list and UI override for '{0}'..." -f $managerUser)
+    Invoke-UserLanguageConfiguration -UserName $managerUser -UserPassword $managerPassword
+    Write-StateStart("Applying language list and UI override for '{0}'..." -f $assistantUser)
     Invoke-UserLanguageConfiguration -UserName $assistantUser -UserPassword $assistantPassword
-    Set-WelcomeScreenAndDefaultUserState
 
-    Write-Host ("language-targets => system-ui={0}; system-locale={1}; timezone={2}; primary-language={3}; secondary-language={4}; keyboard={5}; utf8-codepage={6}" -f $primaryLanguage, $turkishCulture, $turkeyTimeZoneId, $primaryLanguage, $secondaryLanguage, $turkishInputTip, $utf8CodePage)
+    Write-StateStart('Collecting final language verification output...')
+    Write-Host ("language-targets => system-ui={0}; primary-language={1}; secondary-language={2}" -f $primaryLanguage, $primaryLanguage, $secondaryLanguage)
     Write-Host ("installed-language => {0} => {1}" -f $primaryLanguage, (Get-LanguageFeatureSummary -InstalledLanguage (@(Get-InstalledLanguageSafe -LanguageTag $primaryLanguage) | Select-Object -First 1)))
     Write-Host ("installed-language => {0} => {1}" -f $secondaryLanguage, (Get-LanguageFeatureSummary -InstalledLanguage (@(Get-InstalledLanguageSafe -LanguageTag $secondaryLanguage) | Select-Object -First 1)))
 

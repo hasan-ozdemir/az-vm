@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.335 - 2026-03-17
+
+### Summary
+This release finishes the current Windows task-repair pass driven by the last two create logs. The repo now keeps the language-package work and the regional/input work in separate update tasks, carries Sysinternals plus manager autologon in the Windows update stage instead of Windows init, removes the planned restart at the start of `vm-update`, and tightens timeout plus progress behavior around the affected Windows tasks. The same pass also removes the lingering VLC and default-profile hive warning noise that was still appearing in isolated update reruns.
+
+### Highlights
+- Split Windows language configuration cleanly: `132-configure-language-settings` now owns language packages and UI language behavior, while `10003-configure-ux-windows` now owns Turkish Q input, Turkish regional formats, Istanbul time zone, UTF-8 code page intent, and welcome-screen/new-user propagation.
+- Moved the tracked Windows Sysinternals and manager autologon tasks into `vm-update` as `133-install-sysinternals-suite` and `134-autologon-manager-user`, and recalibrated the current Windows init/update timeout contract from recent live create evidence.
+- Removed the old planned restart at the start of `vm-update`; create and update now keep only the conditional workflow-owned restart after `vm-update` when a task explicitly requests reboot.
+- Fixed `123-install-vlc-system`, `10003-configure-ux-windows`, and `10006-capture-snapshot-health` so their isolated reruns now finish cleanly without the earlier timeout, `wmic`, or registry-hive warning noise.
+- Revalidated the full repair set non-live plus live in isolation on the active managed Windows VM through `132`, `10003`, `123`, `133`, `134`, and `10006`, together with direct locale/timezone/VLC/autologon readbacks.
+
 ## Release 2026.3.16.333 - 2026-03-16
 
 ### Summary

@@ -351,11 +351,6 @@ function Invoke-AzVmMain {
                 }
                 default {
                     Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-                    if ($platform -eq 'windows' -and @($updateTaskBlocks).Count -gt 0) {
-                        Write-Host 'VM update will begin after one planned restart.' -ForegroundColor DarkCyan
-                        Invoke-AzVmWorkflowRestartBarrier -Context $step1Context -Reason 'before-vm-update' -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds
-                    }
-
                     Invoke-Step 'Step 6/7 - VM update' {
                         if (@($updateDisabledTasks).Count -gt 0) {
                             $disabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })

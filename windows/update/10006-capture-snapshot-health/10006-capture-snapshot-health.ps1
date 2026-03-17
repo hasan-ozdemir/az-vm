@@ -800,7 +800,7 @@ function Remove-RegistryMountIfPresent {
         return
     }
 
-    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
+    $null = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
 }
 
 function Mount-RegistryHive {
@@ -817,8 +817,8 @@ function Mount-RegistryHive {
     }
 
     Remove-RegistryMountIfPresent -MountName $MountName
-    & reg.exe load ("HKU\{0}" -f $MountName) $HiveFilePath | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    $exitCode = Invoke-RegQuiet -Verb 'load' -Arguments @(("HKU\{0}" -f $MountName), $HiveFilePath)
+    if ($exitCode -ne 0) {
         throw ("reg load failed for HKU\{0} => {1}" -f $MountName, $HiveFilePath)
     }
 
@@ -838,13 +838,18 @@ function Dismount-RegistryHive {
     catch {
     }
 
+    $mountPath = ("Registry::HKEY_USERS\{0}" -f $MountName)
     foreach ($attempt in 1..6) {
+        if (-not (Test-Path -LiteralPath $mountPath)) {
+            return
+        }
+
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 400
 
-        & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
-        if ($LASTEXITCODE -eq 0) {
+        $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+        if ($exitCode -eq 0 -or -not (Test-Path -LiteralPath $mountPath)) {
             return
         }
 
@@ -852,7 +857,7 @@ function Dismount-RegistryHive {
     }
 
     $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
-    if ($exitCode -eq 0) {
+    if ($exitCode -eq 0 -or -not (Test-Path -LiteralPath $mountPath)) {
         return
     }
 
@@ -969,6 +974,65 @@ function Get-LanguageFeatureSummary {
 
     if ($parts.Count -eq 0) {
         return 'metadata-unavailable'
+    }
+
+    return (@($parts.ToArray()) -join ', ')
+}
+
+function Get-LanguageCapabilityCatalog {
+    param([string]$LanguageTag)
+
+    $languageTagText = [string]$LanguageTag
+    return [ordered]@{
+        'Language.Basic'        = ("Language.Basic~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.Handwriting'  = ("Language.Handwriting~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.OCR'          = ("Language.OCR~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.Speech'       = ("Language.Speech~~~{0}~0.0.1.0" -f $languageTagText)
+        'Language.TextToSpeech' = ("Language.TextToSpeech~~~{0}~0.0.1.0" -f $languageTagText)
+    }
+}
+
+function Get-LanguageCapabilityStateMap {
+    param([string]$LanguageTag)
+
+    if ([string]::IsNullOrWhiteSpace([string]$LanguageTag) -or -not (Get-Command Get-WindowsCapability -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    $catalog = Get-LanguageCapabilityCatalog -LanguageTag $LanguageTag
+    $availableCapabilities = @(
+        Get-WindowsCapability -Online -ErrorAction SilentlyContinue |
+            Where-Object { $_ -ne $null -and -not [string]::IsNullOrWhiteSpace([string]$_.Name) }
+    )
+
+    $stateMap = [ordered]@{}
+    foreach ($capabilityName in @($catalog.Keys)) {
+        $capabilityIdentity = [string]$catalog[$capabilityName]
+        $capability = $availableCapabilities | Where-Object { [string]$_.Name -eq $capabilityIdentity } | Select-Object -First 1
+        $stateMap[$capabilityName] = if ($null -eq $capability) { 'Unavailable' } else { [string]$capability.State }
+    }
+
+    return [pscustomobject]$stateMap
+}
+
+function Convert-LanguageCapabilityStateMapToSummary {
+    param([AllowNull()]$StateMap)
+
+    if ($null -eq $StateMap) {
+        return 'unavailable'
+    }
+
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($capabilityName in @('Language.Basic', 'Language.Handwriting', 'Language.OCR', 'Language.Speech', 'Language.TextToSpeech')) {
+        $stateValue = 'Unavailable'
+        if ($StateMap.PSObject.Properties.Match($capabilityName).Count -gt 0) {
+            $candidate = [string]$StateMap.$capabilityName
+            if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+                $stateValue = $candidate
+            }
+        }
+
+        $parts.Add(("{0}={1}" -f [string]$capabilityName, [string]$stateValue)) | Out-Null
     }
 
     return (@($parts.ToArray()) -join ', ')
@@ -1173,6 +1237,13 @@ function Write-InstalledLanguageStatus {
 
     $rows = @(Get-InstalledLanguageSafe -LanguageTag $LanguageTag)
     if (@($rows).Count -lt 1) {
+        $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $LanguageTag
+        $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+        if (-not [string]::IsNullOrWhiteSpace([string]$capabilitySummary) -and $capabilitySummary -match '(?i)InstallPending|Installed') {
+            Write-Host ("installed-language => {0} => installed=pending; features={1}" -f [string]$LanguageTag, [string]$capabilitySummary)
+            return
+        }
+
         Write-Host ("installed-language => {0} => installed=false" -f [string]$LanguageTag)
         return
     }

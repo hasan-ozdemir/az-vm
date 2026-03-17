@@ -178,7 +178,7 @@ function Invoke-AzVmPersistPendingSelections {
 function Invoke-AzVmWorkflowRestartBarrier {
     param(
         [hashtable]$Context,
-        [ValidateSet('before-vm-update','after-vm-update')]
+        [ValidateSet('after-vm-update')]
         [string]$Reason,
         [int]$SshConnectTimeoutSeconds = 5
     )
@@ -197,16 +197,6 @@ function Invoke-AzVmWorkflowRestartBarrier {
     $sshFailureHint = ''
 
     switch ($Reason) {
-        'before-vm-update' {
-            $startMessage = 'Restarting VM before vm-update...'
-            $successMessage = 'VM restart before vm-update completed successfully.'
-            $runningFailureSummary = 'VM could not be restarted before vm-update.'
-            $runningFailureHint = 'Check the VM in Azure Portal and rerun create/update after the guest returns to running state.'
-            $hostFailureSummary = 'VM restart before vm-update could not resolve SSH host.'
-            $hostFailureHint = 'Verify the managed VM still has a public IP or FQDN.'
-            $sshFailureSummary = 'VM restart before vm-update did not restore SSH connectivity.'
-            $sshFailureHint = 'Verify guest startup health and rerun create/update after SSH becomes reachable.'
-        }
         'after-vm-update' {
             $startMessage = 'VM update requested a restart. Restarting VM before vm-summary...'
             $successMessage = 'VM restart after vm-update completed successfully.'

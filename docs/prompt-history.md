@@ -5127,3 +5127,31 @@ I audited the current GitHub Actions run history with `gh`, confirmed that the l
 
 I finished by relisting the remaining Actions history and verifying that only the latest successful `quality-gate` run was still present. No tracked runtime code or documentation contract changed as part of the cleanup beyond this prompt-history record.
 
+### 2026-03-17 01:22 UTC
+
+**User Prompt**
+
+````text
+Investigate the last two `az-vm create` logs, fix only the warning-producing Windows `vm-update` tasks `132` and `123`, make `132-configure-language-settings` run in clearer visible phases instead of acting like a black box, move the lightweight locale/keyboard/time/regional work out of `132` and into `10003-configure-ux-windows`, and explain and eliminate the warning source in `123-install-vlc-system`.
+````
+
+**Assistant Summary**
+
+I traced the two warninging tasks back to their real causes in the latest create logs and repaired them in isolation. `132-configure-language-settings` was split so it now owns only language-package and UI-language work, while `10003-configure-ux-windows` now owns Turkish Q input, Turkish regional formats, Istanbul time zone, UTF-8 code-page intent, and welcome-screen/new-user propagation. I also added clearer phase output to `132`, extended the interactive helper heartbeat support used by the long language-install legs, and hardened the language verification path so the task now finishes cleanly in isolation instead of warning when Turkish language servicing is slow or staged.
+
+For `123-install-vlc-system`, I replaced the old short bounded wait with a bounded install plus bounded verification model, kept a visible `winget list --id VideoLAN.VLC` verification fallback, and removed the stale `refreshenv`/`wmic` noise so healthy reruns no longer produce warning lines. I then revalidated the affected flow on the active managed Windows VM with isolated reruns of `132`, `10003`, and `123`, plus direct `exec -q` readbacks for system locale, time zone, and VLC presence.
+
+### 2026-03-17 01:23 UTC
+
+**User Prompt**
+
+````text
+Keep that plan, but also move Windows init tasks `101` and `102` into `vm-update` as `133` and `134`, remove the planned restart at the start of `vm-update`, keep restart only as the final `vm-update` action when it is actually required, reset the task timeout contract from the latest create logs, and analyze the same logs for any additional warning/noise cleanup that should be folded into the plan.
+````
+
+**Assistant Summary**
+
+I completed the Windows task-catalog and workflow refactor around that request. The old init tasks `101-install-sysinternals-suite` and `102-autologon-manager-user` now live in Windows update as `133-install-sysinternals-suite` and `134-autologon-manager-user`, the planned restart at the start of `vm-update` is removed from the workflow and documentation surface, and the current Windows init/update task timeout table is recalibrated from the latest create evidence, with an additional timeout expansion for `10003-configure-ux-windows` after its responsibility split exposed a longer real isolated runtime.
+
+The same log-driven cleanup pass also removed the remaining successful-run warning noise from the Windows regional and health tasks by hardening temporary registry-hive mount/unmount handling in both `10003-configure-ux-windows` and `10006-capture-snapshot-health`. I validated the moved tasks and the cleaned health/reporting flow live in isolation on the active managed Windows VM with reruns of `133`, `134`, and `10006`, and the final readbacks confirmed `tr-TR` system locale, `Turkey Standard Time`, healthy VLC presence, and Winlogon autologon state for the managed `manager` account.
+

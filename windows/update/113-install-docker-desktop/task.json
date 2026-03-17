@@ -1,7 +1,7 @@
 {
   "priority": 113,
   "enabled": true,
-  "timeout": 1649,
+  "timeout": 346,
   "appState": {
     "machineDirectories": [
       {

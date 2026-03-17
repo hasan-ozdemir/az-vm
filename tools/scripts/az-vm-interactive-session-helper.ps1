@@ -583,6 +583,7 @@ function Invoke-AzVmInteractiveDesktopAutomation {
         [string]$RunAsPassword,
         [string]$WorkerScriptText,
         [int]$WaitTimeoutSeconds = 900,
+        [int]$HeartbeatSeconds = 0,
         [string]$RunAsMode = 'password'
     )
 
@@ -628,7 +629,10 @@ function Invoke-AzVmInteractiveDesktopAutomation {
 
         $pollSeconds = 2
         $heartbeatSeconds = 15
-        if ($WaitTimeoutSeconds -ge 1800) {
+        if ($HeartbeatSeconds -gt 0) {
+            $heartbeatSeconds = [Math]::Max(5, [int]$HeartbeatSeconds)
+        }
+        elseif ($WaitTimeoutSeconds -ge 1800) {
             $heartbeatSeconds = 30
         }
         $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, [int]$WaitTimeoutSeconds))

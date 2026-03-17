@@ -1,5 +1,5 @@
 $ErrorActionPreference = "Stop"
-Write-Host "Init task started: autologon-manager-user"
+Write-Host "Update task started: autologon-manager-user"
 
 $vmAdminUser = "__VM_ADMIN_USER__"
 $vmAdminPass = "__VM_ADMIN_PASS__"
@@ -220,7 +220,7 @@ if (Test-PlaceholderValue -Value $vmAdminPass) {
 Refresh-SessionPath
 $autologonExe = Resolve-AutologonExe
 if ([string]::IsNullOrWhiteSpace([string]$autologonExe)) {
-    throw "autologon.exe was not found. Ensure 101-install-sysinternals-suite completed successfully."
+    throw "autologon.exe was not found. Ensure 133-install-sysinternals-suite completed successfully."
 }
 
 Assert-LocalCredentialValid -UserName $vmAdminUser -Password $vmAdminPass
@@ -253,5 +253,5 @@ Start-Sleep -Seconds 1
 Assert-AutologonConfigured -ExpectedUserName $vmAdminUser
 
 Write-Host "autologon-manager-user-completed"
-Write-Host "Init task completed: autologon-manager-user"
+Write-Host "Update task completed: autologon-manager-user"
 

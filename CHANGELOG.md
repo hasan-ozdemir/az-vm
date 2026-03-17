@@ -3,6 +3,26 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.335] - 2026-03-17
+
+### Added
+- Added tracked Windows `vm-update` tasks `133-install-sysinternals-suite` and `134-autologon-manager-user` by moving the old tracked init responsibilities into the Windows update stage with their own portable task folders.
+- Added finer-grained progress lines for the Windows language and regional configuration flow so long-running update steps surface visible phase transitions instead of behaving like a single opaque block.
+
+### Changed
+- Changed the Windows update catalog and timeout contract so the tracked init catalog now ends at `06`, the tracked update catalog now includes `133` and `134`, and the current Windows init/update task timeouts are recalibrated from the latest live create evidence with the regional UX task expanded further after its ownership split.
+- Changed the Windows language pipeline so `132-configure-language-settings` now owns language-package and UI-language work only, while `10003-configure-ux-windows` now owns system locale, Turkish Q input, Turkish regional formats, Istanbul time zone, UTF-8 code-page intent, and welcome-screen/new-user propagation.
+- Changed the Windows create/update workflow contract so the planned restart at the start of `vm-update` is removed; the workflow now keeps only the conditional post-`vm-update` restart when a reboot request is actually raised.
+
+### Fixed
+- Fixed `123-install-vlc-system` so bounded winget waits now keep a visible `winget list --id VideoLAN.VLC` verification fallback, avoid stale `refreshenv`/`wmic` noise, and complete cleanly on healthy reruns instead of warning after a short timeout.
+- Fixed `10003-configure-ux-windows` by skipping already-correct heavy regional cmdlets on reruns, extending its timeout for the expanded responsibility set, and hardening default-profile hive unload handling so regional propagation no longer fails with registry-hive cleanup warnings.
+- Fixed `10006-capture-snapshot-health` default-user language readback by switching its temporary hive mount/unmount path to the same quiet checked registry helper model, removing the old `ERROR: The parameter is incorrect.` warning from successful health snapshots.
+
+### Tests
+- Revalidated the updated Windows task flow non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the affected live tasks in isolation on the active managed Windows VM with `task --run-vm-update 132`, `10003`, `123`, `133`, `134`, and `10006`, plus direct `exec -q` readbacks for system locale, time zone, VLC presence, and Winlogon autologon state.
+
 ## [2026.3.16.333] - 2026-03-16
 
 ### Added

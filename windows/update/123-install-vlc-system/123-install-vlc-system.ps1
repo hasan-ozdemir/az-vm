@@ -2,16 +2,13 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-vlc-system"
 
 $taskConfig = [ordered]@{
-    WingetInstallTimeoutSeconds = 120
+    WingetInstallTimeoutSeconds = 150
+    VerificationTimeoutSeconds = 20
+    VerificationPollSeconds = 5
     LogTailLineCount = 20
 }
 
 function Refresh-SessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`"" | Out-Null
-    }
-
     $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
@@ -114,10 +111,80 @@ function Invoke-ProcessWithTimeout {
     }
 }
 
+function Test-VlcInstalled {
+    param(
+        [switch]$AnnounceWingetListProbe
+    )
+
+    $installedExe = Resolve-VlcExe
+    if (-not [string]::IsNullOrWhiteSpace([string]$installedExe)) {
+        return [pscustomobject]@{
+            Installed = $true
+            VerificationMode = 'executable'
+            Path = [string]$installedExe
+        }
+    }
+
+    if ($AnnounceWingetListProbe) {
+        Write-Host 'Running: winget list --id VideoLAN.VLC'
+    }
+
+    $listOutput = & $wingetExe list --id VideoLAN.VLC 2>&1
+    $listExit = [int]$LASTEXITCODE
+    $listText = [string]($listOutput | Out-String)
+    if ($listExit -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$listText) -and $listText.ToLowerInvariant().Contains('vlc')) {
+        return [pscustomobject]@{
+            Installed = $true
+            VerificationMode = 'winget-list'
+            Path = ''
+        }
+    }
+
+    return [pscustomobject]@{
+        Installed = $false
+        VerificationMode = ''
+        Path = ''
+    }
+}
+
+function Wait-ForVlcInstallVerification {
+    param(
+        [int]$TimeoutSeconds,
+        [int]$PollSeconds
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, [int]$TimeoutSeconds))
+    $announcedWingetListProbe = $false
+    do {
+        $probe = Test-VlcInstalled -AnnounceWingetListProbe:(-not $announcedWingetListProbe)
+        $announcedWingetListProbe = $true
+        if ([bool]$probe.Installed) {
+            return $probe
+        }
+
+        if ([DateTime]::UtcNow -ge $deadline) {
+            break
+        }
+
+        Start-Sleep -Seconds ([Math]::Max(1, [int]$PollSeconds))
+    } while ($true)
+
+    return [pscustomobject]@{
+        Installed = $false
+        VerificationMode = ''
+        Path = ''
+    }
+}
+
 Refresh-SessionPath
-$existingExe = Resolve-VlcExe
-if (-not [string]::IsNullOrWhiteSpace([string]$existingExe)) {
-    Write-Host ("VLC executable already exists: {0}" -f $existingExe)
+$existingVlc = Test-VlcInstalled
+if ([bool]$existingVlc.Installed) {
+    if ([string]::Equals([string]$existingVlc.VerificationMode, 'executable', [System.StringComparison]::OrdinalIgnoreCase) -and -not [string]::IsNullOrWhiteSpace([string]$existingVlc.Path)) {
+        Write-Host ("VLC executable already exists: {0}" -f [string]$existingVlc.Path)
+    }
+    else {
+        Write-Host 'VLC is already installed according to winget.'
+    }
     Write-Host "install-vlc-system-completed"
     Write-Host "Update task completed: install-vlc-system"
     return
@@ -147,23 +214,20 @@ elseif ($installExit -ne 0 -and $installExit -ne -1978335189) {
 }
 
 Refresh-SessionPath
-$installedExe = Resolve-VlcExe
-if ([string]::IsNullOrWhiteSpace([string]$installedExe)) {
-    Write-Host "Running: winget list --id VideoLAN.VLC"
-    $listOutput = & $wingetExe list --id VideoLAN.VLC
-    $listText = [string]($listOutput | Out-String)
-    if ([string]::IsNullOrWhiteSpace($listText) -or -not $listText.ToLowerInvariant().Contains("vlc")) {
-        throw ("VLC install could not be verified. stdoutLog={0}; stderrLog={1}" -f [string]$installResult.StdoutLog, [string]$installResult.StderrLog)
-    }
+$verifiedVlc = Wait-ForVlcInstallVerification -TimeoutSeconds ([int]$taskConfig.VerificationTimeoutSeconds) -PollSeconds ([int]$taskConfig.VerificationPollSeconds)
+if (-not [bool]$verifiedVlc.Installed) {
+    throw ("VLC install could not be verified within {0}s. stdoutLog={1}; stderrLog={2}" -f [int]$taskConfig.VerificationTimeoutSeconds, [string]$installResult.StdoutLog, [string]$installResult.StderrLog)
+}
 
+if ([string]::Equals([string]$verifiedVlc.VerificationMode, 'winget-list', [System.StringComparison]::OrdinalIgnoreCase)) {
     Write-Host ("install-vlc-system-verified: winget-list (install-exit={0})" -f $installExit)
 }
 else {
     if ($needsPostInstallVerification) {
-        Write-Host ("install-vlc-system-verified: executable => {0} (install-exit={1})" -f [string]$installedExe, $installExit)
+        Write-Host ("install-vlc-system-verified: executable => {0} (install-exit={1})" -f [string]$verifiedVlc.Path, $installExit)
     }
     else {
-        Write-Host ("install-vlc-system-verified: executable => {0}" -f [string]$installedExe)
+        Write-Host ("install-vlc-system-verified: executable => {0}" -f [string]$verifiedVlc.Path)
     }
 }
 

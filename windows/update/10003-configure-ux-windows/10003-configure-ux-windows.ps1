@@ -11,10 +11,20 @@ if (-not $WorkerMode) {
 
 $managerUser = "__VM_ADMIN_USER__"
 $managerPassword = "__VM_ADMIN_PASS__"
+$assistantUser = "__ASSISTANT_USER__"
+$assistantPassword = "__ASSISTANT_PASS__"
 $notepadPath = Join-Path $env:WINDIR "System32\notepad.exe"
 $helperPath = "C:\Windows\Temp\az-vm-interactive-session-helper.ps1"
 $textExtensions = @(".txt", ".log", ".ini", ".cfg", ".conf", ".csv", ".xml", ".json", ".yaml", ".yml", ".md", ".ps1", ".cmd", ".bat", ".reg", ".sql")
 $artifactFileNames = @('desktop.ini', 'Thumbs.db')
+$turkishInputTip = '041F:0000041F'
+$turkishKeyboardLayout = '0000041f'
+$turkishCulture = 'tr-TR'
+$turkeyTimeZoneId = 'Turkey Standard Time'
+$turkeyGeoId = 235
+$utf8CodePage = '65001'
+$shortTimePattern = 'HH:mm'
+$longTimePattern = 'HH:mm:ss'
 $details = New-Object 'System.Collections.Generic.List[string]'
 
 if (-not (Test-Path -LiteralPath $helperPath)) {
@@ -163,10 +173,430 @@ function Dismount-RegistryHive {
         return
     }
 
-    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
-    if ($exitCode -ne 0) {
+    $mountPath = ("Registry::HKEY_USERS\{0}" -f $MountName)
+    for ($attempt = 1; $attempt -le 5; $attempt++) {
+        if (-not (Test-Path -LiteralPath $mountPath)) {
+            return
+        }
+
+        [System.GC]::Collect()
+        [System.GC]::WaitForPendingFinalizers()
+        Start-Sleep -Milliseconds 400
+        $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+        if ($exitCode -eq 0 -or -not (Test-Path -LiteralPath $mountPath)) {
+            return
+        }
+    }
+
+    if (Test-Path -LiteralPath $mountPath) {
         throw ("reg unload failed for HKU\{0}" -f $MountName)
     }
+}
+
+function Get-RegistryValueString {
+    param(
+        [string]$Path,
+        [string]$Name
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or [string]::IsNullOrWhiteSpace([string]$Name)) {
+        return ''
+    }
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return ''
+    }
+
+    $item = Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+    if ($null -eq $item) {
+        return ''
+    }
+
+    return [string]$item.$Name
+}
+
+function Set-RegistryValueString {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [string]$Value
+    )
+
+    Set-AzVmRegistryValue -Path $Path -Name $Name -Value ([string]$Value) -Kind String
+}
+
+function Get-SystemLocaleNameSafe {
+    if (Get-Command Get-WinSystemLocale -ErrorAction SilentlyContinue) {
+        try {
+            $locale = Get-WinSystemLocale
+            if ($null -ne $locale -and $locale.PSObject.Properties.Match('Name').Count -gt 0) {
+                return [string]$locale.Name
+            }
+
+            return [string]$locale
+        }
+        catch {
+        }
+    }
+
+    return ''
+}
+
+function Get-TimeZoneIdSafe {
+    try {
+        $timeZone = Get-TimeZone -ErrorAction Stop
+        if ($null -ne $timeZone -and $timeZone.PSObject.Properties.Match('Id').Count -gt 0) {
+            return [string]$timeZone.Id
+        }
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Get-CultureNameSafe {
+    try {
+        return [string](Get-Culture).Name
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Get-HomeLocationGeoIdSafe {
+    try {
+        return [string](Get-WinHomeLocation).GeoId
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Get-DefaultInputMethodTipSafe {
+    try {
+        $defaultInput = Get-WinDefaultInputMethodOverride
+        if ($null -ne $defaultInput -and $defaultInput.PSObject.Properties.Match('InputMethodTip').Count -gt 0) {
+            return [string]$defaultInput.InputMethodTip
+        }
+    }
+    catch {
+    }
+
+    return ''
+}
+
+function Set-RegistryPreloadKeyboardState {
+    param([string]$RootPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
+        return
+    }
+
+    $preloadPath = Join-Path $RootPath 'Keyboard Layout\Preload'
+    $substitutesPath = Join-Path $RootPath 'Keyboard Layout\Substitutes'
+    if (-not (Test-Path -LiteralPath $preloadPath)) {
+        New-Item -Path $preloadPath -Force | Out-Null
+    }
+
+    $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction Stop
+    foreach ($property in @($preloadItem.Property)) {
+        if ([string]$property -ne '1') {
+            Remove-ItemProperty -Path $preloadPath -Name ([string]$property) -ErrorAction SilentlyContinue
+        }
+    }
+
+    Set-RegistryValueString -Path $preloadPath -Name '1' -Value $turkishKeyboardLayout
+    if (Test-Path -LiteralPath $substitutesPath) {
+        Remove-Item -LiteralPath $substitutesPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Set-Registry24HourTimeState {
+    param([string]$RootPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
+        return
+    }
+
+    $internationalPath = Join-Path $RootPath 'Control Panel\International'
+    Set-RegistryValueString -Path $internationalPath -Name 'LocaleName' -Value $turkishCulture
+    Set-RegistryValueString -Path $internationalPath -Name 'sShortTime' -Value $shortTimePattern
+    Set-RegistryValueString -Path $internationalPath -Name 'sTimeFormat' -Value $longTimePattern
+    Set-RegistryValueString -Path $internationalPath -Name 'iTime' -Value '1'
+    Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
+}
+
+function Set-WelcomeScreenAndDefaultUserRegionalState {
+    Add-Detail 'regional-system-copy-begin'
+    Copy-UserInternationalSettingsToSystem -WelcomeScreen $true -NewUser $true
+
+    Set-RegistryPreloadKeyboardState -RootPath 'Registry::HKEY_USERS\.DEFAULT'
+    Set-Registry24HourTimeState -RootPath 'Registry::HKEY_USERS\.DEFAULT'
+
+    $defaultProfileHive = 'C:\Users\Default\NTUSER.DAT'
+    if (-not (Test-Path -LiteralPath $defaultProfileHive)) {
+        Add-Detail 'regional-default-user-skip:default-profile-hive-missing'
+        return
+    }
+
+    $defaultMountName = 'AzVm10003Default'
+    $defaultRoot = $null
+    try {
+        $defaultRoot = Mount-RegistryHive -MountName $defaultMountName -HiveFilePath $defaultProfileHive
+        Set-RegistryPreloadKeyboardState -RootPath $defaultRoot
+        Set-Registry24HourTimeState -RootPath $defaultRoot
+    }
+    finally {
+        if (-not [string]::IsNullOrWhiteSpace([string]$defaultMountName)) {
+            Dismount-RegistryHive -MountName $defaultMountName
+        }
+    }
+}
+
+function Set-CurrentSessionRegionalState {
+    $systemLocaleBefore = Get-SystemLocaleNameSafe
+    $timeZoneBefore = Get-TimeZoneIdSafe
+    $acpBefore = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP'
+    $oemcpBefore = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP'
+    $cultureBefore = Get-CultureNameSafe
+    $homeLocationBefore = Get-HomeLocationGeoIdSafe
+    $defaultInputBefore = Get-DefaultInputMethodTipSafe
+
+    Add-Detail 'regional-current-user-begin'
+    if ([string]::Equals([string]$defaultInputBefore, $turkishInputTip, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Detail 'regional-default-input-skip:already-set'
+    }
+    else {
+        Add-Detail 'regional-default-input-begin'
+        Set-WinDefaultInputMethodOverride -InputTip $turkishInputTip
+        Add-Detail 'regional-default-input-complete'
+    }
+
+    Add-Detail 'regional-culture-begin'
+    Set-WinCultureFromLanguageListOptOut -OptOut $true
+    if ([string]::Equals([string]$cultureBefore, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Detail 'regional-culture-skip:already-set'
+    }
+    else {
+        Set-Culture -CultureInfo $turkishCulture
+        Add-Detail 'regional-culture-complete'
+    }
+
+    if ([string]::Equals([string]$homeLocationBefore, [string]$turkeyGeoId, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Detail 'regional-home-location-skip:already-set'
+    }
+    else {
+        Add-Detail 'regional-home-location-begin'
+        Set-WinHomeLocation -GeoId $turkeyGeoId
+        Add-Detail 'regional-home-location-complete'
+    }
+
+    if ([string]::Equals([string]$timeZoneBefore, $turkeyTimeZoneId, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Detail 'regional-time-zone-skip:already-set'
+    }
+    else {
+        Add-Detail 'regional-time-zone-begin'
+        Set-TimeZone -Id $turkeyTimeZoneId
+        Add-Detail 'regional-time-zone-complete'
+    }
+
+    if ([string]::Equals([string]$systemLocaleBefore, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Add-Detail 'regional-system-locale-skip:already-set'
+    }
+    else {
+        Add-Detail 'regional-system-locale-begin'
+        Set-WinSystemLocale -SystemLocale $turkishCulture
+        Add-Detail 'regional-system-locale-complete'
+    }
+
+    Add-Detail 'regional-utf8-codepage-begin'
+    if (-not [string]::Equals([string]$acpBefore, $utf8CodePage, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Set-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP' -Value $utf8CodePage
+    }
+    if (-not [string]::Equals([string]$oemcpBefore, $utf8CodePage, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Set-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP' -Value $utf8CodePage
+    }
+    Add-Detail 'regional-utf8-codepage-complete'
+    Add-Detail 'regional-time-format-begin'
+    Set-Registry24HourTimeState -RootPath 'HKCU:'
+    Add-Detail 'regional-keyboard-preload-begin'
+    Set-RegistryPreloadKeyboardState -RootPath 'HKCU:'
+    Add-Detail 'regional-copy-system-begin'
+    Set-WelcomeScreenAndDefaultUserRegionalState
+
+    $timeZoneAfter = Get-TimeZoneIdSafe
+    $homeLocationAfter = ''
+    try {
+        $homeLocationAfter = [string](Get-WinHomeLocation).GeoId
+    }
+    catch {
+    }
+    $cultureAfter = ''
+    try {
+        $cultureAfter = [string](Get-Culture).Name
+    }
+    catch {
+    }
+    $defaultInputAfter = ''
+    try {
+        $defaultInput = Get-WinDefaultInputMethodOverride
+        if ($null -ne $defaultInput -and $defaultInput.PSObject.Properties.Match('InputMethodTip').Count -gt 0) {
+            $defaultInputAfter = [string]$defaultInput.InputMethodTip
+        }
+    }
+    catch {
+    }
+
+    $localeNameAfter = Get-RegistryValueString -Path 'HKCU:\Control Panel\International' -Name 'LocaleName'
+    $shortTimeAfter = Get-RegistryValueString -Path 'HKCU:\Control Panel\International' -Name 'sShortTime'
+    $longTimeAfter = Get-RegistryValueString -Path 'HKCU:\Control Panel\International' -Name 'sTimeFormat'
+    $keyboardAfter = Get-RegistryValueString -Path 'HKCU:\Keyboard Layout\Preload' -Name '1'
+    $systemLocaleAfter = Get-SystemLocaleNameSafe
+    $acpAfter = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'ACP'
+    $oemcpAfter = Get-RegistryValueString -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Nls\CodePage' -Name 'OEMCP'
+
+    if (-not [string]::Equals([string]$timeZoneAfter, $turkeyTimeZoneId, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Time zone verification failed: expected '{0}' but got '{1}'." -f $turkeyTimeZoneId, $timeZoneAfter)
+    }
+    if (-not [string]::Equals([string]$homeLocationAfter, [string]$turkeyGeoId, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Home location verification failed: expected '{0}' but got '{1}'." -f [string]$turkeyGeoId, $homeLocationAfter)
+    }
+    if (-not [string]::Equals([string]$cultureAfter, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Culture verification failed: expected '{0}' but got '{1}'." -f $turkishCulture, $cultureAfter)
+    }
+    if (-not [string]::Equals([string]$defaultInputAfter, $turkishInputTip, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Default input method verification failed: expected '{0}' but got '{1}'." -f $turkishInputTip, $defaultInputAfter)
+    }
+    if (-not [string]::Equals([string]$localeNameAfter, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("LocaleName verification failed: expected '{0}' but got '{1}'." -f $turkishCulture, $localeNameAfter)
+    }
+    if (-not [string]::Equals([string]$shortTimeAfter, $shortTimePattern, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Short time verification failed: expected '{0}' but got '{1}'." -f $shortTimePattern, $shortTimeAfter)
+    }
+    if (-not [string]::Equals([string]$longTimeAfter, $longTimePattern, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Long time verification failed: expected '{0}' but got '{1}'." -f $longTimePattern, $longTimeAfter)
+    }
+    if (-not [string]::Equals([string]$keyboardAfter, $turkishKeyboardLayout, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw ("Keyboard preload verification failed: expected '{0}' but got '{1}'." -f $turkishKeyboardLayout, $keyboardAfter)
+    }
+    if (-not [string]::Equals([string]$acpAfter, $utf8CodePage, [System.StringComparison]::OrdinalIgnoreCase) -or -not [string]::Equals([string]$oemcpAfter, $utf8CodePage, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'UTF-8 ANSI/OEM code page verification failed.'
+    }
+
+    Add-Detail ("regional-system-locale-effective:{0}" -f $systemLocaleAfter)
+    Add-Detail ("regional-time-zone:{0}" -f $timeZoneAfter)
+    Add-Detail ("regional-home-location:{0}" -f $homeLocationAfter)
+    Add-Detail ("regional-default-input:{0}" -f $defaultInputAfter)
+    Add-Detail ("regional-keyboard-preload:{0}" -f $keyboardAfter)
+    Add-Detail ("regional-24h-time:{0}|{1}" -f $shortTimeAfter, $longTimeAfter)
+
+    return (
+        (-not [string]::Equals([string]$systemLocaleBefore, [string]$systemLocaleAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
+        (-not [string]::Equals([string]$timeZoneBefore, [string]$timeZoneAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
+        (-not [string]::Equals([string]$acpBefore, [string]$acpAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
+        (-not [string]::Equals([string]$oemcpBefore, [string]$oemcpAfter, [System.StringComparison]::OrdinalIgnoreCase)) -or
+        (-not [string]::Equals([string]$systemLocaleAfter, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase))
+    )
+}
+
+function Invoke-AssistantRegionalInputConfiguration {
+    param(
+        [string]$UserName,
+        [string]$UserPassword
+    )
+
+    Add-Detail ("regional-assistant-start:{0}" -f [string]$UserName)
+    $interactiveTaskName = ('{0}-regional-{1}' -f $TaskName, [string]$UserName)
+    $paths = Get-AzVmInteractivePaths -TaskName $interactiveTaskName
+    $workerScript = @'
+$ErrorActionPreference = "Stop"
+$helperPath = "__HELPER_PATH__"
+$resultPath = "__RESULT_PATH__"
+$taskName = "__TASK_NAME__"
+$inputTip = "__INPUT_TIP__"
+$turkishKeyboardLayout = "__TURKISH_KEYBOARD_LAYOUT__"
+$turkishCulture = "__TURKISH_CULTURE__"
+$shortTimePattern = "__SHORT_TIME__"
+$longTimePattern = "__LONG_TIME__"
+$turkeyGeoId = __TURKEY_GEO_ID__
+
+. $helperPath
+
+function Ensure-RegistryPath {
+    param([string]$Path)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -Path $Path -Force | Out-Null
+    }
+}
+
+function Set-RegistryValueString {
+    param([string]$Path,[string]$Name,[string]$Value)
+    Ensure-RegistryPath -Path $Path
+    Set-ItemProperty -Path $Path -Name $Name -Value ([string]$Value) -Force
+}
+
+function Set-24HourFormatState {
+    $internationalPath = 'HKCU:\Control Panel\International'
+    Set-RegistryValueString -Path $internationalPath -Name 'LocaleName' -Value $turkishCulture
+    Set-RegistryValueString -Path $internationalPath -Name 'sShortTime' -Value $shortTimePattern
+    Set-RegistryValueString -Path $internationalPath -Name 'sTimeFormat' -Value $longTimePattern
+    Set-RegistryValueString -Path $internationalPath -Name 'iTime' -Value '1'
+    Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
+}
+
+function Set-TurkishQKeyboardOnly {
+    $preloadPath = 'HKCU:\Keyboard Layout\Preload'
+    $substitutesPath = 'HKCU:\Keyboard Layout\Substitutes'
+    Ensure-RegistryPath -Path $preloadPath
+    $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction Stop
+    foreach ($property in @($preloadItem.Property)) {
+        if ([string]$property -ne '1') {
+            Remove-ItemProperty -Path $preloadPath -Name ([string]$property) -ErrorAction SilentlyContinue
+        }
+    }
+    Set-RegistryValueString -Path $preloadPath -Name '1' -Value $turkishKeyboardLayout
+    if (Test-Path -LiteralPath $substitutesPath) {
+        Remove-Item -LiteralPath $substitutesPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+try {
+    Set-WinDefaultInputMethodOverride -InputTip $inputTip
+    Set-WinCultureFromLanguageListOptOut -OptOut $true
+    Set-Culture -CultureInfo $turkishCulture
+    Set-WinHomeLocation -GeoId $turkeyGeoId
+    Set-24HourFormatState
+    Set-TurkishQKeyboardOnly
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Regional settings applied.' -Details @('regional-ok')
+}
+catch {
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Regional settings failed.' -Details @([string]$_.Exception.Message)
+    throw
+}
+'@
+
+    $workerScript = $workerScript.Replace('__HELPER_PATH__', $helperPath)
+    $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
+    $workerScript = $workerScript.Replace('__TASK_NAME__', $interactiveTaskName)
+    $workerScript = $workerScript.Replace('__INPUT_TIP__', $turkishInputTip)
+    $workerScript = $workerScript.Replace('__TURKISH_KEYBOARD_LAYOUT__', $turkishKeyboardLayout)
+    $workerScript = $workerScript.Replace('__TURKISH_CULTURE__', $turkishCulture)
+    $workerScript = $workerScript.Replace('__SHORT_TIME__', $shortTimePattern)
+    $workerScript = $workerScript.Replace('__LONG_TIME__', $longTimePattern)
+    $workerScript = $workerScript.Replace('__TURKEY_GEO_ID__', [string]$turkeyGeoId)
+
+    $null = Invoke-AzVmInteractiveDesktopAutomation `
+        -TaskName $interactiveTaskName `
+        -RunAsUser $UserName `
+        -RunAsPassword $UserPassword `
+        -WorkerScriptText $workerScript `
+        -WaitTimeoutSeconds 300 `
+        -HeartbeatSeconds 10
+
+    Add-Detail ("regional-assistant-complete:{0}" -f [string]$UserName)
 }
 
 function Invoke-RegQuiet {
@@ -864,7 +1294,15 @@ $null = Invoke-AzVmInteractiveDesktopAutomation `
     -RunAsUser $managerUser `
     -RunAsPassword $managerPassword `
     -WorkerScriptText $workerScript `
-    -WaitTimeoutSeconds 300
+    -WaitTimeoutSeconds 300 `
+    -HeartbeatSeconds 10
+
+$regionalRebootRequired = Set-CurrentSessionRegionalState
+Invoke-AssistantRegionalInputConfiguration -UserName $assistantUser -UserPassword $assistantPassword
+
+if ([bool]$regionalRebootRequired) {
+    Write-Host 'TASK_REBOOT_REQUIRED:configure-ux-windows'
+}
 
 Write-Host "configure-ux-windows-completed"
 Write-Host "Update task completed: configure-ux-windows"

@@ -40,8 +40,8 @@ function Get-CurrentSmokeTaskName {
     param([string]$TaskName)
 
     $map = @{
-        '108-install-sysinternals-suite' = '101-install-sysinternals-suite'
-        '130-autologon-manager-user' = '102-autologon-manager-user'
+        '108-install-sysinternals-suite' = '133-install-sysinternals-suite'
+        '130-autologon-manager-user' = '134-autologon-manager-user'
         '109-install-ffmpeg-system' = '108-install-ffmpeg-system'
         '110-install-vscode-system' = '109-install-vscode-system'
         '111-install-edge-browser' = '110-install-edge-browser'
@@ -654,7 +654,7 @@ Invoke-Test -Name "CLI entrypoint keeps a normal banner path and a pre-banner ve
     Assert-True -Condition ($entryText -match '(?s)# Load modular function files.*?if \(\$MyInvocation\.InvocationName -eq ''\.''\) \{\s*return\s*\}\s*Write-AzVmCliBanner\s*try \{') -Message 'CLI entrypoint must still load modules when dot-sourced and print the banner only for normal command dispatch.'
 }
 
-Invoke-Test -Name "Workflow pipeline wraps Windows vm-update with planned and conditional restart barriers" -Action {
+Invoke-Test -Name "Workflow pipeline applies only the conditional post-vm-update restart barrier" -Action {
     $pipelineText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1') -Raw)
     $workflowText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-workflow.ps1') -Raw)
 
@@ -670,16 +670,16 @@ Invoke-Test -Name "Workflow pipeline wraps Windows vm-update with planned and co
         Assert-True -Condition ($pipelineText -match [regex]::Escape([string]$stepLabel)) -Message ("Pipeline must use the step label '{0}'." -f [string]$stepLabel)
     }
 
-    Assert-True -Condition ($pipelineText -match [regex]::Escape('VM update will begin after one planned restart.')) -Message 'Pipeline must announce the planned Windows restart before vm-update.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowRestartBarrier -Context $step1Context')) -Message 'Pipeline must call the shared restart barrier.'
-    Assert-True -Condition ($pipelineText -match [regex]::Escape("-Reason 'before-vm-update'")) -Message 'Pipeline must call the pre-vm-update restart barrier.'
+    Assert-True -Condition (-not ($pipelineText -match [regex]::Escape("-Reason 'before-vm-update'"))) -Message 'Pipeline must not call the removed pre-vm-update restart barrier.'
+    Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('VM update will begin after one planned restart.'))) -Message 'Pipeline must not announce the removed planned Windows restart before vm-update.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('$vmUpdateStageResult = Invoke-AzVmSshTaskBlocks')) -Message 'Pipeline must capture the vm-update stage result.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('-SuppressDeferredRestartHint')) -Message 'Pipeline must suppress the manual deferred restart hint during orchestrated vm-update.'
     Assert-True -Condition ($pipelineText -match '(?s)if \(\$null -ne \$vmUpdateStageResult -and \[bool\]\$vmUpdateStageResult\.RebootRequired\) \{\s*Invoke-AzVmWorkflowRestartBarrier -Context \$step1Context -Reason ''after-vm-update''') -Message 'Pipeline must restart automatically after vm-update when reboot is required.'
 
     Assert-True -Condition ($workflowText -match [regex]::Escape("function Invoke-AzVmWorkflowRestartBarrier")) -Message 'Workflow helper must expose the shared restart barrier.'
-    Assert-True -Condition ($workflowText -match [regex]::Escape('Restarting VM before vm-update...')) -Message 'Workflow helper must announce the pre-vm-update restart action.'
-    Assert-True -Condition ($workflowText -match [regex]::Escape('VM restart before vm-update completed successfully.')) -Message 'Workflow helper must report successful pre-vm-update restart.'
+    Assert-True -Condition (-not ($workflowText -match [regex]::Escape('Restarting VM before vm-update...'))) -Message 'Workflow helper must not keep the removed pre-vm-update restart action.'
+    Assert-True -Condition (-not ($workflowText -match [regex]::Escape('VM restart before vm-update completed successfully.'))) -Message 'Workflow helper must not keep the removed pre-vm-update restart success message.'
     Assert-True -Condition ($workflowText -match [regex]::Escape('VM update requested a restart. Restarting VM before vm-summary...')) -Message 'Workflow helper must announce the post-vm-update restart action.'
     Assert-True -Condition ($workflowText -match [regex]::Escape('VM restart after vm-update completed successfully.')) -Message 'Workflow helper must report successful post-vm-update restart.'
 }
@@ -4410,46 +4410,48 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $activeNames = @($active | ForEach-Object { [string]$_.Name })
 
     $expectedTrackedTimeouts = [ordered]@{
-        '01-bootstrap-winget-system' = 70
-        '02-check-install-chrome' = 128
-        '101-install-powershell-core' = 180
-        '102-install-git-system' = 240
-        '103-install-python-system' = 180
-        '104-install-node-system' = 240
-        '105-install-azure-cli' = 139
-        '106-install-gh-cli' = 30
-        '107-install-7zip-system' = 30
-        '108-install-ffmpeg-system' = 34
-        '109-install-vscode-system' = 104
-        '110-install-edge-browser' = 120
-        '111-install-azd-cli' = 88
-        '112-install-wsl2-system' = 137
-        '113-install-docker-desktop' = 1649
-        '114-install-npm-packages-global' = 420
-        '115-install-ollama-system' = 480
-        '116-install-codex-app' = 120
-        '117-install-teams-system' = 60
-        '118-install-onedrive-system' = 60
-        '119-install-google-drive' = 103
-        '120-install-whatsapp-system' = 90
-        '121-install-anydesk-system' = 120
-        '122-install-windscribe-system' = 63
-        '123-install-vlc-system' = 120
-        '124-install-itunes-system' = 57
-        '125-install-be-my-eyes' = 240
-        '126-install-nvda-system' = 54
-        '127-install-rclone-system' = 45
-        '128-configure-unlocker-io' = 23
-        '129-install-icloud-system' = 120
-        '130-install-vs2022community' = 7200
-        '131-install-jaws-screen-reader' = 300
-        '132-configure-language-settings' = 2400
-        '10001-configure-apps-startup' = 45
-        '10002-create-shortcuts-public-desktop' = 60
-        '10003-configure-ux-windows' = 60
-        '10004-configure-settings-advanced-system' = 5
-        '10005-copy-settings-user' = 300
-        '10006-capture-snapshot-health' = 120
+        '01-bootstrap-winget-system' = 49
+        '02-check-install-chrome' = 88
+        '101-install-powershell-core' = 53
+        '102-install-git-system' = 88
+        '103-install-python-system' = 119
+        '104-install-node-system' = 37
+        '105-install-azure-cli' = 151
+        '106-install-gh-cli' = 22
+        '107-install-7zip-system' = 22
+        '108-install-ffmpeg-system' = 41
+        '109-install-vscode-system' = 74
+        '110-install-edge-browser' = 12
+        '111-install-azd-cli' = 24
+        '112-install-wsl2-system' = 82
+        '113-install-docker-desktop' = 346
+        '114-install-npm-packages-global' = 383
+        '115-install-ollama-system' = 474
+        '116-install-codex-app' = 63
+        '117-install-teams-system' = 12
+        '118-install-onedrive-system' = 12
+        '119-install-google-drive' = 119
+        '120-install-whatsapp-system' = 65
+        '121-install-anydesk-system' = 33
+        '122-install-windscribe-system' = 37
+        '123-install-vlc-system' = 170
+        '124-install-itunes-system' = 74
+        '125-install-be-my-eyes' = 53
+        '126-install-nvda-system' = 68
+        '127-install-rclone-system' = 21
+        '128-configure-unlocker-io' = 35
+        '129-install-icloud-system' = 81
+        '130-install-vs2022community' = 221
+        '131-install-jaws-screen-reader' = 276
+        '132-configure-language-settings' = 1563
+        '133-install-sysinternals-suite' = 166
+        '134-autologon-manager-user' = 45
+        '10001-configure-apps-startup' = 32
+        '10002-create-shortcuts-public-desktop' = 38
+        '10003-configure-ux-windows' = 180
+        '10004-configure-settings-advanced-system' = 12
+        '10005-copy-settings-user' = 163
+        '10006-capture-snapshot-health' = 63
     }
     $expectedTrackedOrder = @($expectedTrackedTimeouts.Keys)
 
@@ -4470,17 +4472,17 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         $lastSeenIndex = $currentIndex
     }
 
-    Assert-True -Condition ($activeNames -notcontains '101-install-sysinternals-suite') -Message 'Windows update catalog must no longer keep 101-install-sysinternals-suite after the init move.'
-    Assert-True -Condition ($activeNames -notcontains '102-autologon-manager-user') -Message 'Windows update catalog must no longer keep 102-autologon-manager-user after the init move.'
+    Assert-True -Condition ($activeNames -notcontains '101-install-sysinternals-suite') -Message 'Windows update catalog must not keep the old init-path sysinternals task name.'
+    Assert-True -Condition ($activeNames -notcontains '102-autologon-manager-user') -Message 'Windows update catalog must not keep the old init-path autologon task name.'
+    Assert-True -Condition ($activeNames -contains '133-install-sysinternals-suite') -Message 'Windows update catalog must include 133-install-sysinternals-suite.'
+    Assert-True -Condition ($activeNames -contains '134-autologon-manager-user') -Message 'Windows update catalog must include 134-autologon-manager-user.'
 
     $initCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot 'windows\init') -Platform windows -Stage init
     $initActive = @($initCatalog.ActiveTasks)
     $sysinternalsTask = @($initActive | Where-Object { [string]$_.Name -eq '101-install-sysinternals-suite' } | Select-Object -First 1)
     $autologonTask = @($initActive | Where-Object { [string]$_.Name -eq '102-autologon-manager-user' } | Select-Object -First 1)
-    Assert-True -Condition (@($sysinternalsTask).Count -eq 1) -Message 'Windows init catalog must include 101-install-sysinternals-suite.'
-    Assert-True -Condition (@($autologonTask).Count -eq 1) -Message 'Windows init catalog must include 102-autologon-manager-user.'
-    Assert-True -Condition ([int]$sysinternalsTask[0].TimeoutSeconds -eq 180) -Message 'Windows init catalog must keep 101-install-sysinternals-suite timeout at 180.'
-    Assert-True -Condition ([int]$autologonTask[0].TimeoutSeconds -eq 20) -Message 'Windows init catalog must keep 102-autologon-manager-user timeout at 20.'
+    Assert-True -Condition (@($sysinternalsTask).Count -eq 0) -Message 'Windows init catalog must no longer include 101-install-sysinternals-suite.'
+    Assert-True -Condition (@($autologonTask).Count -eq 0) -Message 'Windows init catalog must no longer include 102-autologon-manager-user.'
 }
 
 Invoke-Test -Name "Exec quiet mode suppresses operator chatter for one-shot commands" -Action {
@@ -6307,7 +6309,7 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
 }
 
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
-    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage init -TaskName '130-autologon-manager-user'
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '134-autologon-manager-user'
     $healthTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10006-capture-snapshot-health'
 
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'Autologon manager task file was not found.'
@@ -6327,7 +6329,7 @@ Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
         'Autologon note: DefaultPassword is not present in Winlogon.',
         'autologon-manager-user-completed',
         'autologon.exe was not found',
-        'Ensure 101-install-sysinternals-suite completed successfully.'
+        'Ensure 133-install-sysinternals-suite completed successfully.'
     )) {
         Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Autologon manager task must include fragment '{0}'." -f [string]$fragment)
     }
@@ -6477,23 +6479,28 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Set-SystemPreferredUILanguage',
         'Set-WinUILanguageOverride',
         'Set-WinUserLanguageList',
+        'tr-TR',
+        'en-US',
+        'TASK_REBOOT_REQUIRED:configure-language-settings',
+        'Applying system preferred UI language',
+        'Collecting final language verification output'
+    )) {
+        Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Language settings task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($removedFragment in @(
         'Set-WinDefaultInputMethodOverride',
         'Set-WinCultureFromLanguageListOptOut',
         'Set-Culture',
         'Set-WinHomeLocation',
         'Set-WinSystemLocale',
         'Set-TimeZone',
-        'Copy-UserInternationalSettingsToSystem',
-        '041F:0000041F',
-        'Turkey Standard Time',
-        'tr-TR',
-        'en-US',
-        'TASK_REBOOT_REQUIRED:configure-language-settings'
+        'Copy-UserInternationalSettingsToSystem'
     )) {
-        Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Language settings task must include fragment '{0}'." -f [string]$fragment)
+        Assert-True -Condition (-not ($taskText -like ('*' + [string]$removedFragment + '*'))) -Message ("Language settings task must no longer own '{0}'." -f [string]$removedFragment)
     }
 
-    Assert-True -Condition ($taskJsonText -like '*"timeout": 2400*') -Message 'Language settings task must keep timeout 2400.'
+    Assert-True -Condition ($taskJsonText -like '*"timeout": 1563*') -Message 'Language settings task must keep the log-derived timeout 1563.'
     Assert-True -Condition (-not ($taskJsonText -like '*"appState"*')) -Message 'Language settings task must stay out of task-local app-state snapshot and restore.'
 
     foreach ($fragment in @(
@@ -6511,10 +6518,33 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Write-UserLanguageStatus -UserName $managerUser -UserPassword $managerPassword',
         'Write-UserLanguageStatus -UserName $assistantUser -UserPassword $assistantPassword',
         'welcome-screen-language =>',
-        'new-user-language =>'
+        'new-user-language =>',
+        'installed=pending; features='
     )) {
         Assert-True -Condition ($healthTaskText -like ('*' + [string]$fragment + '*')) -Message ("Health snapshot must include language fragment '{0}'." -f [string]$fragment)
     }
+
+    $uxTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10003-configure-ux-windows'
+    $uxTaskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10003-configure-ux-windows'
+    $uxTaskText = [string](Get-Content -LiteralPath $uxTaskPath -Raw)
+    $uxTaskJsonText = [string](Get-Content -LiteralPath $uxTaskJsonPath -Raw)
+
+    foreach ($fragment in @(
+        'Set-WinDefaultInputMethodOverride',
+        'Set-WinCultureFromLanguageListOptOut',
+        'Set-Culture',
+        'Set-WinHomeLocation',
+        'Set-WinSystemLocale',
+        'Set-TimeZone',
+        'Copy-UserInternationalSettingsToSystem',
+        'TASK_REBOOT_REQUIRED:configure-ux-windows',
+        'regional-current-user-begin',
+        'regional-assistant-start:'
+    )) {
+        Assert-True -Condition ($uxTaskText -like ('*' + [string]$fragment + '*')) -Message ("UX task must now own regional fragment '{0}'." -f [string]$fragment)
+    }
+
+    Assert-True -Condition ($uxTaskJsonText -like '*"timeout": 180*') -Message 'UX task must keep the expanded regional-input timeout 180.'
 }
 
 Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoid forceful package reinstalls" -Action {
@@ -6528,7 +6558,7 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
         '105-install-azure-cli.ps1' = @('Existing Azure CLI installation is already healthy:', 'choco install azure-cli')
         '106-install-gh-cli.ps1' = @('Existing GitHub CLI installation is already healthy. Skipping choco install.')
         '107-install-7zip-system.ps1' = @('Existing 7-Zip installation is already healthy. Skipping choco install.')
-        '108-install-sysinternals-suite.ps1' = @('Existing Sysinternals installation is already healthy:', 'choco install sysinternals')
+        '133-install-sysinternals-suite.ps1' = @('Existing Sysinternals installation is already healthy:', 'choco install sysinternals')
         '109-install-ffmpeg-system.ps1' = @('Existing FFmpeg installation is already healthy. Skipping choco install.')
         '112-install-azd-cli.ps1' = @('Existing azd installation is already healthy. Skipping winget install.')
         '118-install-teams-system.ps1' = @('Existing Microsoft Teams installation is already healthy. Skipping winget install.')
@@ -6539,12 +6569,7 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
     }
 
     foreach ($entry in $expectedHealthySkipFragments.GetEnumerator()) {
-        $taskPath = if ([string]$entry.Key -eq '108-install-sysinternals-suite.ps1') {
-            Get-RepoTaskScriptPath -Platform windows -Stage init -TaskName ([System.IO.Path]::GetFileNameWithoutExtension([string]$entry.Key))
-        }
-        else {
-            Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName ([System.IO.Path]::GetFileNameWithoutExtension([string]$entry.Key))
-        }
+        $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName ([System.IO.Path]::GetFileNameWithoutExtension([string]$entry.Key))
         $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
         foreach ($fragment in @($entry.Value)) {
             Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Task '{0}' must include fragment '{1}'." -f [string]$entry.Key, [string]$fragment)
