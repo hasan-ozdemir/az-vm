@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.343] - 2026-03-17
+
+### Changed
+- Changed the Windows public desktop shortcut task so optional unresolved app and console launch targets now log informational `public-shortcut-skip` lines instead of warning lines, which keeps partially installed isolated-task reruns from reporting false-positive shortcut warnings.
+- Changed the isolated `task --run-vm-update` contract so it still honors task-signaled immediate restarts but skips the workflow-only final Windows `vm-update` restart; end-to-end `create` and `update` remain the only flows that request that final restart before `vm-summary`.
+
+### Fixed
+- Fixed the Windows public desktop shortcut task so non-launch-ready Store app shortcuts such as Be My Eyes, WhatsApp Business, and iCloud no longer duplicate the earlier Store-task warning/degraded outcome during `10003-create-shortcuts-public-desktop`.
+- Fixed the shared Store install state reader so existing VMs can still read legacy pre-renumber state files for Be My Eyes, WhatsApp, Codex App, and iCloud while the runtime continues using the current canonical task names.
+- Fixed the documentation and help contract so README, detailed help, smoke coverage, and documentation-contract checks now describe the workflow-only final Windows `vm-update` restart correctly.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated live only through an isolated rerun of `task --run-vm-update 10003` on `rg-bizyum-ate1-g1` / `bizyum`, which completed with `warning=0`, `signal-warning=0`, and `final-restart=0`.
+
 ## [2026.3.17.342] - 2026-03-17
 
 ### Added

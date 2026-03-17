@@ -715,11 +715,21 @@ Invoke-Test -Name "Workflow pipeline delegates restarts to task runners and star
 
     Assert-True -Condition ($pipelineText -match [regex]::Escape('$vmUpdateStageResult = Invoke-Step ''Step 6/7 - VM update''')) -Message 'Pipeline must capture the vm-update stage result from the shared step wrapper.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('return (Invoke-AzVmSshTaskBlocks')) -Message 'VM update step must return the SSH stage result explicitly.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('-EnableFinalVmRestart')) -Message 'Pipeline vm-update stage must request the final vm-update restart only for end-to-end workflow runs.'
     Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowRestartBarrier'))) -Message 'Pipeline must not keep the retired deferred restart barrier call.'
     Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('-SuppressDeferredRestartHint'))) -Message 'Pipeline must not keep the retired deferred restart hint suppression flag.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowSummaryReadback')) -Message 'Pipeline summary must invoke the shared summary readback helper.'
     Assert-True -Condition ($workflowText -match [regex]::Escape('function Invoke-AzVmWorkflowSummaryReadback')) -Message 'Workflow helpers must expose the vm-summary readback helper.'
     Assert-True -Condition ($workflowText -match [regex]::Escape('vm-summary-readback')) -Message 'Workflow summary readback helper must build a dedicated readback task block.'
+}
+
+Invoke-Test -Name "Isolated vm-update task runs do not request the final vm-update restart" -Action {
+    $taskRuntimeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\runtime.ps1') -Raw)
+    $sshTaskRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-ssh-task-runner.ps1') -Raw)
+
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('[switch]$EnableFinalVmRestart')) -Message 'SSH task runner must expose an explicit final vm-update restart switch.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('if ($EnableFinalVmRestart -and @($TaskBlocks).Count -gt 0')) -Message 'SSH task runner must gate the final vm-update restart behind the explicit workflow switch.'
+    Assert-True -Condition (-not ($taskRuntimeText -match [regex]::Escape('-EnableFinalVmRestart'))) -Message 'Isolated task --run vm-update execution must not request the workflow-only final restart.'
 }
 
 Invoke-Test -Name "Shared step wrapper returns the action result to callers" -Action {
@@ -749,7 +759,7 @@ Invoke-Test -Name "Guest task output relay is enabled for vm-init and vm-update 
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Warning tasks:')) -Message 'SSH task runner must summarize warning tasks explicitly.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('WarningTasks = @($uniqueWarningTasks)')) -Message 'SSH task runner result contract must expose warning task names.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape("requested a restart. Restarting VM now")) -Message 'SSH task runner must restart immediately after reboot-signaling update tasks.'
-    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Running the final VM restart before vm-summary')) -Message 'SSH task runner must perform the unconditional final vm-update restart.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Running the final VM restart before vm-summary')) -Message 'SSH task runner must still support the workflow final vm-update restart.'
     Assert-True -Condition ($runCommandRunnerText -match [regex]::Escape("requested a restart. Restarting VM now")) -Message 'Run-command task runner must restart immediately after reboot-signaling init tasks.'
     Assert-True -Condition ($appStatePluginText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state replay must avoid re-printing live-relayed task output.'
     Assert-True -Condition ($appStateCaptureText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state capture must avoid re-printing live-relayed task output.'
@@ -5796,10 +5806,15 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($shortcutTaskScript.IndexOf('@("JAWS")', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must carry an explicit JAWS duplicate alias.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Ctrl+Shift+J', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must assign the JAWS hotkey.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('CleanupAliasMatchByNameOnly $true', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must support explicit alias-only cleanup for installer shortcuts that wrap the managed app target.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('if ([bool]$Spec.AllowMissingTargetPath -and ($validationKind -in @(''app'', ''console'')))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must treat optional app and console shortcut misses as informational skips.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Host $skipMessage', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must emit informational output for optional unresolved shortcuts.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Warning $skipMessage', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must retain warnings for non-optional unresolved shortcuts.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('unexpected-public-shortcut', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not keep unexpected Public Desktop cleanup logic.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for Codex when a Store app id is available.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppBusinessAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for WhatsApp when a Store app id is available.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for iCloud when a Store app id is available.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}"', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must log non-launch-ready Store state skips as informational output.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}"', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not duplicate Store task warnings for non-installed Store state records.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
     Assert-True -Condition (($healthTaskScript.IndexOf('MS EDGE SHORTCUT CONTRACT:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the dedicated MS Edge shortcut contract.'
@@ -6570,6 +6585,22 @@ Invoke-Test -Name "Local-machine app-state restore rolls back when verification 
 Invoke-Test -Name "Store install state and shortcut launcher helper modules exist" -Action {
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1')) -Message 'Shared Store install state helper must exist.'
     Assert-True -Condition (Test-Path -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-shortcut-launcher.psm1')) -Message 'Shared shortcut launcher helper must exist.'
+}
+
+Invoke-Test -Name "Store install state reader supports legacy task aliases" -Action {
+    $storeStateModuleText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1') -Raw)
+
+    foreach ($fragment in @(
+        'function Get-AzVmStoreInstallStateCandidateTaskNames',
+        "'125-install-be-my-eyes'",
+        "'120-install-whatsapp-system'",
+        "'116-install-codex-app'",
+        "'129-install-icloud-system'",
+        'requestedTaskName',
+        'resolvedTaskName'
+    )) {
+        Assert-True -Condition ($storeStateModuleText -like ('*' + [string]$fragment + '*')) -Message ("Store install state helper must include legacy alias fragment '{0}'." -f [string]$fragment)
+    }
 }
 
 Invoke-Test -Name "Shortcut launcher threshold uses combined target and arguments length" -Action {

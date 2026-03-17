@@ -5253,3 +5253,31 @@ I implemented the Windows publish fix pack that came out of the latest create-lo
 
 I also replaced managed public DNS label allocation with the requested `vm_name-vm{id}` rule, using the count of managed attached public IPs plus collision fallback to the next free id, and updated VM detail readback to fetch the live public IP DNS settings when `az vm show -d` omits `fqdns`. Finally, I hardened transcript shutdown so successful isolated tasks such as Google Drive no longer fall into PowerShell debug mode, revalidated the repo with the full non-live test suite, and reran the affected Windows update tasks live only in isolation (`101`, `102`, `105`, `115`, `116`, `117`, `122`, `126`, and `10003`) without performing a full end-to-end live `create` run.
 
+### 2026-03-17 20:25 UTC
+
+**User Prompt**
+
+````text
+Fix the warning-producing Public Desktop shortcut targets in update task `10003` through live VM investigation and code changes.
+````
+
+**Assistant Summary**
+
+I investigated the active managed Windows VMs live and traced the remaining `10003-create-shortcuts-public-desktop` warnings to two concrete sources: optional shortcut targets that were genuinely absent on partial VMs, and legacy pre-renumber Store state files that still marked Be My Eyes, WhatsApp Business, and iCloud as degraded. I then changed `10003` so optional unresolved app and console shortcut targets emit informational `public-shortcut-skip` lines instead of warnings, and so non-launch-ready Store state records no longer duplicate earlier Store-task degradation as a second warning during Public Desktop shortcut creation.
+
+I also extended the shared Store install state reader with legacy task-name aliases so existing VMs can still resolve the older JSON state files after the Windows renumber pass. After updating the smoke coverage for both behaviors, I reran isolated live task `10003` on the active managed Windows VM and confirmed the stage now completes with `warning=0` and `signal-warning=0`.
+
+### 2026-03-17 20:25 UTC
+
+**User Prompt**
+
+````text
+Update isolated `task --run` behavior so `vm-update` does not trigger the final Windows update restart unless the task itself requests a reboot; keep the final restart only for end-to-end `create` and `update` workflows.
+````
+
+**Assistant Summary**
+
+I changed the shared SSH task runner so the final Windows `vm-update` restart is now gated behind an explicit workflow-only switch instead of running for every isolated task invocation. The main `create` and `update` pipeline now pass that switch, while isolated `task --run-vm-update` continues to honor task-signaled immediate restarts but no longer performs the extra workflow-only restart before `vm-summary`.
+
+I updated README, CLI help, smoke coverage, documentation-contract checks, the changelog, and the release notes to match that contract. I then revalidated the repo non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc checks, and reran isolated live task `10003` to confirm the new behavior with `warning=0`, `signal-warning=0`, and `final-restart=0`.
+

@@ -57,25 +57,83 @@ function Get-AzVmStoreInstallStatePath {
     return (Join-Path (Get-AzVmStoreInstallStateRoot) ($safeName + '.json'))
 }
 
+function Get-AzVmStoreInstallStateCandidateTaskNames {
+    param([string]$TaskName)
+
+    $candidateTaskNames = New-Object 'System.Collections.Generic.List[string]'
+    if (-not [string]::IsNullOrWhiteSpace([string]$TaskName)) {
+        [void]$candidateTaskNames.Add([string]$TaskName)
+    }
+
+    switch ([string]$TaskName) {
+        '115-install-be-my-eyes' {
+            foreach ($legacyTaskName in @('125-install-be-my-eyes', '126-install-be-my-eyes')) {
+                [void]$candidateTaskNames.Add([string]$legacyTaskName)
+            }
+        }
+        '116-install-whatsapp-system' {
+            foreach ($legacyTaskName in @('120-install-whatsapp-system', '121-install-whatsapp-system')) {
+                [void]$candidateTaskNames.Add([string]$legacyTaskName)
+            }
+        }
+        '117-install-codex-app' {
+            [void]$candidateTaskNames.Add('116-install-codex-app')
+        }
+        '122-install-icloud-system' {
+            foreach ($legacyTaskName in @('129-install-icloud-system', '131-install-icloud-system')) {
+                [void]$candidateTaskNames.Add([string]$legacyTaskName)
+            }
+        }
+    }
+
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    $resolved = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($candidateTaskName in @($candidateTaskNames)) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidateTaskName)) {
+            continue
+        }
+
+        if ($seen.Add([string]$candidateTaskName)) {
+            [void]$resolved.Add([string]$candidateTaskName)
+        }
+    }
+
+    return @($resolved.ToArray())
+}
+
 function Read-AzVmStoreInstallState {
     param([string]$TaskName)
 
-    $statePath = Get-AzVmStoreInstallStatePath -TaskName $TaskName
-    if (-not (Test-Path -LiteralPath $statePath)) {
-        return $null
+    foreach ($candidateTaskName in @(Get-AzVmStoreInstallStateCandidateTaskNames -TaskName $TaskName)) {
+        $statePath = Get-AzVmStoreInstallStatePath -TaskName $candidateTaskName
+        if (-not (Test-Path -LiteralPath $statePath)) {
+            continue
+        }
+
+        $stateText = [string](Get-Content -LiteralPath $statePath -Raw -ErrorAction SilentlyContinue)
+        if ([string]::IsNullOrWhiteSpace([string]$stateText)) {
+            continue
+        }
+
+        try {
+            $stateRecord = ConvertFrom-Json -InputObject $stateText -ErrorAction Stop
+            if ($null -ne $stateRecord) {
+                if ($stateRecord.PSObject.Properties.Match('requestedTaskName').Count -lt 1) {
+                    $stateRecord | Add-Member -NotePropertyName requestedTaskName -NotePropertyValue ([string]$TaskName)
+                }
+                if ($stateRecord.PSObject.Properties.Match('resolvedTaskName').Count -lt 1) {
+                    $stateRecord | Add-Member -NotePropertyName resolvedTaskName -NotePropertyValue ([string]$candidateTaskName)
+                }
+            }
+
+            return $stateRecord
+        }
+        catch {
+            continue
+        }
     }
 
-    $stateText = [string](Get-Content -LiteralPath $statePath -Raw -ErrorAction SilentlyContinue)
-    if ([string]::IsNullOrWhiteSpace([string]$stateText)) {
-        return $null
-    }
-
-    try {
-        return (ConvertFrom-Json -InputObject $stateText -ErrorAction Stop)
-    }
-    catch {
-        return $null
-    }
+    return $null
 }
 
 function Remove-AzVmStoreInstallState {

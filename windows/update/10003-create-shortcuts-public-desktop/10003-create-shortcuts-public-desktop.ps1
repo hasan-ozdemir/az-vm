@@ -1138,7 +1138,14 @@ function Add-Spec {
     $Spec = ConvertTo-ManagedShortcutLauncherSpec -Spec $Spec
 
     if (-not (Test-ShortcutSpecEligible -Spec $Spec)) {
-        Write-Warning ("public-shortcut-skip: {0} => target or embedded command could not be resolved." -f [string]$Spec.Name)
+        $skipMessage = ("public-shortcut-skip: {0} => target or embedded command could not be resolved." -f [string]$Spec.Name)
+        $validationKind = [string]$Spec.ValidationKind
+        if ([bool]$Spec.AllowMissingTargetPath -and ($validationKind -in @('app', 'console'))) {
+            Write-Host $skipMessage
+        }
+        else {
+            Write-Warning $skipMessage
+        }
         return
     }
 
@@ -1207,12 +1214,7 @@ function Add-StoreManagedShortcutSpec {
     $stateRecord = Read-StoreTaskStateRecord -TaskName $TaskName
     if ($null -ne $stateRecord -and -not [string]::Equals([string]$stateRecord.state, 'installed', [System.StringComparison]::OrdinalIgnoreCase)) {
         $summary = if ($stateRecord.PSObject.Properties.Match('summary').Count -gt 0) { [string]$stateRecord.summary } else { 'state record indicates the app is not launch-ready.' }
-        if ([string]::Equals([string]$stateRecord.state, 'skipped', [System.StringComparison]::OrdinalIgnoreCase)) {
-            Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
-        }
-        else {
-            Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
-        }
+        Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
         return
     }
 

@@ -370,7 +370,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd task --list --vm-update --windows` | `--list`, `--vm-update`, `--windows` | Lists Windows update tasks | Update inspection | Good before isolated reruns. |
 | `.\az-vm.cmd task --list --disabled --vm-update --windows` | `--disabled` | Lists disabled tasks | Cleanup or contract review | Surfaces disabled reason and source. |
 | `.\az-vm.cmd task --run-vm-init 01 --group <resource-group> --vm-name <vm-name>` | `--run-vm-init`, target selectors | Runs one init task directly | Isolated bootstrap rerun | Uses Azure run-command against one managed VM. |
-| `.\az-vm.cmd task --run-vm-update 10002 --group <resource-group> --vm-name <vm-name> --windows` | `--run-vm-update`, platform | Runs one update task directly | Isolated guest fix | Uses the SSH task runner against one managed VM. |
+| `.\az-vm.cmd task --run-vm-update 10002 --group <resource-group> --vm-name <vm-name> --windows` | `--run-vm-update`, platform | Runs one update task directly | Isolated guest fix | Uses the SSH task runner against one managed VM; task-signaled immediate restarts still run, but the workflow-only final vm-update restart does not. |
 | `.\az-vm.cmd task --save-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--save-app-state`, `--vm-update-task`, target selectors | Captures one live task-owned app-state payload into the task-local `<task-folder>/app-state/app-state.zip` | Refreshing an operator-owned payload from the active VM | Cleanly skips when no capture coverage exists. |
 | `.\az-vm.cmd task --restore-app-state --vm-update-task=115 --group=<resource-group> --vm-name=<vm-name> -s <subscription-guid>` | `--restore-app-state`, `--vm-update-task`, target selectors | Replays one saved task-owned app-state payload to the active VM | Targeted state restore after reinstall or cleanup | Fails cleanly when the requested zip is missing or invalid, and otherwise verifies the guest replayed content and rolls back from guest-side backup staging on mismatch. |
 | `.\az-vm.cmd task --save-app-state --source=lm --user=.current. --vm-update-task=115 --windows` | `--save-app-state`, `--source=lm`, `--user=.current.` | Captures one local-machine task payload into the same task-local zip path | Refreshing a portable app-state payload from the operator machine | Windows-host-only. |
@@ -568,7 +568,7 @@ Behavior notes:
 - `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional.
 - `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path.
 - Auto `create` succeeds when CLI overrides or `.env` `SELECTED_*` values plus the platform defaults resolve platform, VM name, Azure region, and VM size.
-- Reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then continue with the next task. Windows `vm-update` also performs one additional final restart before `vm-summary`.
+- Reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then continue with the next task. During end-to-end `create` and `update`, Windows `vm-update` also performs one additional final restart before `vm-summary`.
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
@@ -579,7 +579,7 @@ Purpose: maintain one existing managed resource group and one existing VM target
 Behavior notes:
 - `update` now requires an existing managed resource group and VM, then applies create-or-update operations plus `az vm redeploy` in one guided maintenance flow.
 - Auto `update` resolves its target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`, with single-VM auto-resolution allowed when the selected group contains exactly one VM.
-- Reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then continue with the next task. Windows `vm-update` also performs one additional final restart before `vm-summary`.
+- Reboot-signaling `vm-init` and `vm-update` tasks restart the VM immediately, wait for recovery, and then continue with the next task. During end-to-end `create` and `update`, Windows `vm-update` also performs one additional final restart before `vm-summary`.
 - best fit for day-two maintenance, guest-task refresh, and Azure redeploy-backed repair
 
 ### `list`
@@ -802,7 +802,7 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 - Both stages use portable task folders plus `task.json` as the source of truth for ordering, timeout, and enable/disable state, and both now invoke the same per-task app-state restore helper as a post-task step when a matching task-local plugin zip exists.
 - The natural execution order for both stages is: builtin `initial` task folders, builtin `normal` task folders, local task folders from `local/`, then builtin `final` task folders.
 - Every task timeout is normalized to a minimum of `30` seconds and then rounded up in `15`-second slots.
-- Reboot-signaling tasks restart the VM immediately, wait for the required transport recovery, and then resume from the next task. Windows `vm-update` also performs one unconditional final restart before `vm-summary`.
+- Reboot-signaling tasks restart the VM immediately, wait for the required transport recovery, and then resume from the next task. During end-to-end `create` and `update`, Windows `vm-update` also performs one unconditional final restart before `vm-summary`; isolated `task --run-vm-update` reruns skip that workflow-only final restart.
 - `vm-summary` begins with a read-only guest readback block and then continues with the normal summary and connection details.
 
 ### Interactive Versus Auto Mode

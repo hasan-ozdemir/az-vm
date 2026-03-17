@@ -42,7 +42,8 @@ function Invoke-AzVmSshTaskBlocks {
         [int]$SshMaxRetries = 3,
         [int]$SshTaskTimeoutSeconds = 180,
         [int]$SshConnectTimeoutSeconds = 30,
-        [string]$ConfiguredPySshClientPath = ''
+        [string]$ConfiguredPySshClientPath = '',
+        [switch]$EnableFinalVmRestart
     )
 
     if (-not $TaskBlocks -or @($TaskBlocks).Count -eq 0) {
@@ -425,7 +426,7 @@ function Invoke-AzVmSshTaskBlocks {
             }
         }
 
-        if (@($TaskBlocks).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+        if ($EnableFinalVmRestart -and @($TaskBlocks).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
             if ($null -ne $session) {
                 Stop-AzVmPersistentSshSession -Session $session
                 $session = $null

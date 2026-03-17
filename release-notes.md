@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.343 - 2026-03-17
+
+### Summary
+This release cleans up the remaining warning noise around `10003-create-shortcuts-public-desktop` and narrows the final Windows `vm-update` restart to end-to-end workflow runs only. Public Desktop shortcut generation now treats optional missing app/console targets and already-degraded Store installs as informational skips, while isolated `task --run-vm-update` reruns keep task-signaled immediate restarts but no longer perform the workflow-only final restart before `vm-summary`.
+
+### Highlights
+- Changed `10003-create-shortcuts-public-desktop` so optional unresolved app and console targets log informational `public-shortcut-skip` lines instead of warnings, which removes false-positive shortcut warnings from partial or isolated Windows task reruns.
+- Fixed the same shortcut task so Store-backed shortcuts whose install state is already `skipped` or `degraded` no longer duplicate that condition as a second warning during Public Desktop shortcut creation.
+- Added legacy Store-state alias fallback for Be My Eyes, WhatsApp, Codex App, and iCloud so existing VMs with pre-renumber JSON state files still feed the current shortcut/runtime helpers correctly.
+- Scoped the final Windows `vm-update` restart behind an explicit workflow switch in the shared SSH task runner, so only end-to-end `create` and `update` request that extra restart; isolated `task --run-vm-update` reruns now finish without the workflow-only restart unless the task itself requested a reboot.
+- Updated README, CLI help, smoke coverage, and documentation-contract checks to describe the new isolated-task restart contract explicitly.
+- Revalidated the release non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates, then reran isolated live task `10003` on the active managed Windows VM and confirmed `warning=0`, `signal-warning=0`, and `final-restart=0`.
+
 ## Release 2026.3.17.342 - 2026-03-17
 
 ### Summary
