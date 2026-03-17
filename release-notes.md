@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.339 - 2026-03-17
+
+### Summary
+This release hardens the new interactive `configure` editor so stale Azure-backed selections no longer kick the operator out of the session. Managed resource-group selection now stays picker-driven and filterable, missing managed-resource-group inventory now clears `SELECTED_RESOURCE_GROUP` politely instead of throwing, and final save is blocked only by unresolved create-critical values rather than by blank-permitted defaults.
+
+### Highlights
+- Replaced the old hard-stop managed resource-group validation path in `configure` with a filterable numbered picker that refuses stale current values and guides the operator toward a real managed group when one exists.
+- Added the no-managed-resource-group recovery path: `SELECTED_RESOURCE_GROUP` now stays empty, the operator is told that no managed groups were found, and the editor points to `create` without terminating the session.
+- Added create-critical save gating so required values such as VM OS, VM name, region, active image, active size, and VM credentials are rechecked before `.env` is written, while blank-permitted fields can be retried or cleared without blocking the rest of the editor.
+- Revalidated the update non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+
 ## Release 2026.3.17.338 - 2026-03-17
 
 ### Summary

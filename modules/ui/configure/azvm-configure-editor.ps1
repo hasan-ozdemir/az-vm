@@ -128,6 +128,168 @@ function Get-AzVmConfigureMergedValues {
     return $result
 }
 
+function Get-AzVmConfigureSelectedPlatform {
+    param(
+        [hashtable]$Values
+    )
+
+    $platformText = [string](Get-ConfigValue -Config $Values -Key 'SELECTED_VM_OS' -DefaultValue 'windows')
+    if ([string]::IsNullOrWhiteSpace([string]$platformText)) {
+        return 'windows'
+    }
+
+    $normalized = $platformText.Trim().ToLowerInvariant()
+    if ($normalized -notin @('windows','linux')) {
+        return 'windows'
+    }
+
+    return $normalized
+}
+
+function Get-AzVmConfigureCreateCriticalKeys {
+    param(
+        [hashtable]$Values
+    )
+
+    $platform = Get-AzVmConfigureSelectedPlatform -Values $Values
+    $vmImageKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_IMAGE'
+    $vmSizeKey = Get-AzVmPlatformVmConfigKey -Platform $platform -BaseKey 'VM_SIZE'
+
+    return @(
+        'SELECTED_VM_OS',
+        'SELECTED_VM_NAME',
+        'SELECTED_AZURE_REGION',
+        [string]$vmImageKey,
+        [string]$vmSizeKey,
+        'VM_ADMIN_USER',
+        'VM_ADMIN_PASS',
+        'VM_ASSISTANT_USER',
+        'VM_ASSISTANT_PASS'
+    )
+}
+
+function Test-AzVmConfigureFieldIsCreateCritical {
+    param(
+        [string]$Key,
+        [hashtable]$Values
+    )
+
+    foreach ($candidate in @(Get-AzVmConfigureCreateCriticalKeys -Values $Values)) {
+        if ([string]::Equals([string]$candidate, [string]$Key, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Test-AzVmConfigureFieldAllowsBlank {
+    param(
+        [string]$Key,
+        [hashtable]$Values
+    )
+
+    return (-not (Test-AzVmConfigureFieldIsCreateCritical -Key $Key -Values $Values))
+}
+
+function Test-AzVmConfigureChoiceContainsValue {
+    param(
+        [object[]]$Rows,
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $false
+    }
+
+    foreach ($row in @(ConvertTo-ObjectArrayCompat -InputObject $Rows)) {
+        if ($null -eq $row) {
+            continue
+        }
+
+        if ([string]::Equals([string]$row.Value, [string]$Value, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-AzVmConfigureFriendlyErrorSummary {
+    param(
+        [System.Exception]$Exception
+    )
+
+    if ($null -eq $Exception) {
+        return 'The value is invalid.'
+    }
+
+    if ($Exception.Data -and $Exception.Data.Contains('Summary')) {
+        $summary = [string]$Exception.Data['Summary']
+        if (-not [string]::IsNullOrWhiteSpace([string]$summary)) {
+            return $summary
+        }
+    }
+
+    return [string]$Exception.Message
+}
+
+function Get-AzVmConfigureFriendlyErrorHint {
+    param(
+        [System.Exception]$Exception
+    )
+
+    if ($null -eq $Exception) {
+        return ''
+    }
+
+    if ($Exception.Data -and $Exception.Data.Contains('Hint')) {
+        return [string]$Exception.Data['Hint']
+    }
+
+    return ''
+}
+
+function Test-AzVmConfigureExceptionIsRecoverable {
+    param(
+        [System.Exception]$Exception
+    )
+
+    if ($null -eq $Exception) {
+        return $false
+    }
+
+    $typeName = [string]$Exception.GetType().FullName
+    if ($typeName -in @(
+        'System.Management.Automation.PipelineStoppedException',
+        'System.OperationCanceledException',
+        'System.Management.Automation.Host.HostException'
+    )) {
+        return $false
+    }
+
+    if ($Exception.Data -and $Exception.Data.Contains('ExitCode')) {
+        return $true
+    }
+
+    return $false
+}
+
+function Write-AzVmConfigureValidationMessage {
+    param(
+        [psobject]$Field,
+        [System.Exception]$Exception
+    )
+
+    $summary = Get-AzVmConfigureFriendlyErrorSummary -Exception $Exception
+    $hint = Get-AzVmConfigureFriendlyErrorHint -Exception $Exception
+
+    Write-Host ("{0}: {1}" -f [string]$Field.Label, [string]$summary) -ForegroundColor Yellow
+    if (-not [string]::IsNullOrWhiteSpace([string]$hint)) {
+        Write-Host $hint -ForegroundColor DarkGray
+    }
+}
+
 function ConvertTo-AzVmConfigureDisplayValue {
     param(
         [object]$Value,
@@ -350,11 +512,129 @@ function Get-AzVmConfigureChoiceRows {
     return @($rows)
 }
 
+function Get-AzVmConfigureSubscriptionRows {
+    param(
+        [hashtable]$State
+    )
+
+    $azureState = [hashtable]$State['Azure']
+    if ($null -eq $azureState -or -not [bool]$azureState['Available']) {
+        return @()
+    }
+
+    $rows = @()
+    foreach ($subscriptionRow in @(ConvertTo-ObjectArrayCompat -InputObject $azureState['SubscriptionRows'])) {
+        if ($null -eq $subscriptionRow) {
+            continue
+        }
+
+        $subscriptionId = [string]$subscriptionRow.id
+        if ([string]::IsNullOrWhiteSpace([string]$subscriptionId)) {
+            continue
+        }
+
+        $description = $subscriptionId
+        if ([bool]$subscriptionRow.isDefault) {
+            $description = "{0} [active default]" -f $description
+        }
+
+        $rows += [pscustomobject]@{
+            Value = $subscriptionId
+            Label = [string]$subscriptionRow.name
+            Description = $description
+        }
+    }
+
+    return @($rows)
+}
+
+function Get-AzVmConfigureRegionRows {
+    param(
+        [hashtable]$State
+    )
+
+    $azureState = [hashtable]$State['Azure']
+    if ($null -eq $azureState -or -not [bool]$azureState['Available']) {
+        return @()
+    }
+
+    $rows = @()
+    foreach ($location in @(Get-AzLocationCatalog)) {
+        if ($null -eq $location) {
+            continue
+        }
+
+        $locationName = [string]$location.Name
+        if ([string]::IsNullOrWhiteSpace([string]$locationName)) {
+            continue
+        }
+
+        $rows += [pscustomobject]@{
+            Value = $locationName.Trim().ToLowerInvariant()
+            Label = [string]$location.DisplayName
+            Description = $locationName.Trim().ToLowerInvariant()
+        }
+    }
+
+    return @($rows)
+}
+
+function Get-AzVmConfigureManagedResourceGroupRows {
+    param(
+        [hashtable]$State
+    )
+
+    $azureState = [hashtable]$State['Azure']
+    if ($null -eq $azureState -or -not [bool]$azureState['Available']) {
+        return @()
+    }
+
+    $rows = @()
+    try {
+        $groupRows = @(Get-AzVmManagedResourceGroupRows)
+    }
+    catch {
+        return @()
+    }
+
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($groupRow in @($groupRows)) {
+        if ($null -eq $groupRow) {
+            continue
+        }
+
+        $groupName = [string]$groupRow.name
+        if ([string]::IsNullOrWhiteSpace([string]$groupName) -or -not $seen.Add($groupName)) {
+            continue
+        }
+
+        $descriptionParts = New-Object 'System.Collections.Generic.List[string]'
+        $location = [string]$groupRow.location
+        if (-not [string]::IsNullOrWhiteSpace([string]$location)) {
+            [void]$descriptionParts.Add($location.Trim().ToLowerInvariant())
+        }
+        $groupId = [string]$groupRow.id
+        if (-not [string]::IsNullOrWhiteSpace([string]$groupId)) {
+            [void]$descriptionParts.Add($groupId.Trim())
+        }
+
+        $rows += [pscustomobject]@{
+            Value = $groupName.Trim()
+            Label = $groupName.Trim()
+            Description = (@($descriptionParts) -join ' | ')
+        }
+    }
+
+    return @($rows | Sort-Object Label)
+}
+
 function Select-AzVmConfigureChoiceInteractive {
     param(
         [string]$Title,
         [object[]]$Rows,
-        [string]$CurrentValue
+        [string]$CurrentValue,
+        [switch]$AllowEmptySelection,
+        [string]$EmptySelectionLabel = '(clear value)'
     )
 
     $allRows = @(
@@ -388,6 +668,13 @@ function Select-AzVmConfigureChoiceInteractive {
         if (-not [string]::IsNullOrWhiteSpace([string]$filterText)) {
             Write-Host ("Filter: {0}" -f $filterText) -ForegroundColor DarkGray
         }
+        $currentValueIsSelectable = Test-AzVmConfigureChoiceContainsValue -Rows $allRows -Value $CurrentValue
+        if (-not $currentValueIsSelectable -and -not [string]::IsNullOrWhiteSpace([string]$CurrentValue)) {
+            Write-Host 'The current value is no longer in the available option list. Select a new value.' -ForegroundColor Yellow
+        }
+        if ($AllowEmptySelection) {
+            Write-Host ("Type 'c' to set this field to {0}." -f $EmptySelectionLabel) -ForegroundColor DarkGray
+        }
 
         if (@($visibleRows).Count -le 0) {
             Write-Host 'No matching options were found.' -ForegroundColor Yellow
@@ -410,13 +697,27 @@ function Select-AzVmConfigureChoiceInteractive {
             }
         }
 
-        $raw = Read-Host "Enter number, 'f' to change filter, or press Enter to keep the current value"
+        $prompt = if ($AllowEmptySelection) {
+            "Enter number, 'f' to change filter, 'c' to clear, or press Enter to keep the current value"
+        }
+        else {
+            "Enter number, 'f' to change filter, or press Enter to keep the current value"
+        }
+        $raw = Read-Host $prompt
         if ([string]::IsNullOrWhiteSpace([string]$raw)) {
-            return $CurrentValue
+            if ($currentValueIsSelectable -or ($AllowEmptySelection -and [string]::IsNullOrWhiteSpace([string]$CurrentValue))) {
+                return $CurrentValue
+            }
+
+            Write-Host 'The current value cannot be kept because it is no longer valid.' -ForegroundColor Yellow
+            continue
         }
         if ([string]::Equals([string]$raw, 'f', [System.StringComparison]::OrdinalIgnoreCase)) {
             $filterText = Read-Host 'Enter a filter string'
             continue
+        }
+        if ($AllowEmptySelection -and [string]::Equals([string]$raw, 'c', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return ''
         }
         if ($raw -match '^\d+$') {
             $index = [int]$raw
@@ -513,12 +814,30 @@ function Assert-AzVmConfigureFieldValue {
     $text = if ($null -eq $Value) { '' } else { [string]$Value }
 
     switch ([string]$Key) {
+        'SELECTED_VM_OS' {
+            if ([string]::IsNullOrWhiteSpace([string]$text)) {
+                Throw-FriendlyError -Detail 'SELECTED_VM_OS is empty.' -Code 2 -Summary 'Selected VM OS is required.' -Hint 'Choose either windows or linux.'
+            }
+
+            $normalizedPlatform = $text.Trim().ToLowerInvariant()
+            if ($normalizedPlatform -notin @('windows','linux')) {
+                Throw-FriendlyError -Detail ("VM OS value '{0}' is invalid." -f $text) -Code 2 -Summary 'Selected VM OS is invalid.' -Hint 'Choose either windows or linux.'
+            }
+
+            return $normalizedPlatform
+        }
         'SELECTED_VM_NAME' {
-            if ([string]::IsNullOrWhiteSpace([string]$text)) { return '' }
+            if ([string]::IsNullOrWhiteSpace([string]$text)) {
+                Throw-FriendlyError -Detail 'SELECTED_VM_NAME is empty.' -Code 2 -Summary 'Selected VM name is required.' -Hint 'Enter a valid VM name.'
+            }
             if (-not (Test-AzVmVmNameFormat -VmName $text)) {
                 Throw-FriendlyError -Detail ("VM name '{0}' is invalid." -f $text) -Code 2 -Summary 'VM name value is invalid.' -Hint 'Use 3-16 characters, start with a letter, and keep only letters, numbers, or hyphen.'
             }
             return $text.Trim().ToLowerInvariant()
+        }
+        'SELECTED_AZURE_SUBSCRIPTION_ID' {
+            if ([string]::IsNullOrWhiteSpace([string]$text)) { return '' }
+            return [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $text -OptionSource 'configure editor')
         }
         'SELECTED_COMPANY_WEB_ADDRESS' {
             if ([string]::IsNullOrWhiteSpace([string]$text)) { return '' }
@@ -532,7 +851,9 @@ function Assert-AzVmConfigureFieldValue {
         }
         'SELECTED_COMPANY_EMAIL_ADDRESS' { return (Assert-AzVmConfigureEmailValue -Key $Key -Value $text) }
         'SELECTED_EMPLOYEE_EMAIL_ADDRESS' { return (Assert-AzVmConfigureEmailValue -Key $Key -Value $text) }
+        'VM_ADMIN_USER' { return (Assert-AzVmConfigureRequiredTextValue -Key $Key -Value $text -Label 'Admin user name') }
         'VM_ADMIN_PASS' { return (Assert-AzVmConfigureSecretValue -Key $Key -Value $text) }
+        'VM_ASSISTANT_USER' { return (Assert-AzVmConfigureRequiredTextValue -Key $Key -Value $text -Label 'Assistant user name') }
         'VM_ASSISTANT_PASS' { return (Assert-AzVmConfigureSecretValue -Key $Key -Value $text) }
         'VM_SSH_PORT' { return (Assert-AzVmConfigurePortValue -Key $Key -Value $text) }
         'VM_RDP_PORT' { return (Assert-AzVmConfigurePortValue -Key $Key -Value $text) }
@@ -620,6 +941,59 @@ function Invoke-AzVmConfigureAzureValueVerification {
             return $Value
         }
     }
+}
+
+function Select-AzVmConfigureListValue {
+    param(
+        [string]$Title,
+        [object[]]$Rows,
+        [string]$CurrentValue,
+        [switch]$AllowBlank,
+        [string]$EmptyStateSummary = '',
+        [string]$EmptyStateHint = ''
+    )
+
+    $resolvedRows = @(
+        ConvertTo-ObjectArrayCompat -InputObject $Rows |
+            Where-Object { $_ -ne $null -and -not [string]::IsNullOrWhiteSpace([string]$_.Label) }
+    )
+
+    if (@($resolvedRows).Count -le 0) {
+        if ($AllowBlank) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$EmptyStateSummary)) {
+                Write-Host $EmptyStateSummary -ForegroundColor Yellow
+            }
+            if (-not [string]::IsNullOrWhiteSpace([string]$EmptyStateHint)) {
+                Write-Host $EmptyStateHint -ForegroundColor DarkGray
+            }
+            return ''
+        }
+
+        Throw-FriendlyError `
+            -Detail ("No selectable values were available for '{0}'." -f [string]$Title) `
+            -Code 2 `
+            -Summary ("{0} picker cannot continue." -f [string]$Title) `
+            -Hint 'Retry after Azure-backed values are available again.'
+    }
+
+    return (Select-AzVmConfigureChoiceInteractive -Title $Title -Rows $resolvedRows -CurrentValue $CurrentValue -AllowEmptySelection:$AllowBlank)
+}
+
+function Assert-AzVmConfigureRequiredTextValue {
+    param(
+        [string]$Key,
+        [string]$Value,
+        [string]$Label
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        Throw-FriendlyError -Detail ("Value for {0} is empty." -f $Key) -Code 2 -Summary ("{0} is required." -f $Label) -Hint ("Enter a non-empty value for {0}." -f $Label.ToLowerInvariant())
+    }
+    if (Test-AzVmConfigPlaceholderValue -Value $Value) {
+        Throw-FriendlyError -Detail ("Value '{0}' is still a placeholder for {1}." -f $Value, $Key) -Code 2 -Summary ("{0} is invalid." -f $Label) -Hint ("Enter a real value for {0}." -f $Label.ToLowerInvariant())
+    }
+
+    return $Value.Trim()
 }
 
 function Edit-AzVmConfigureTcpPortsInteractive {
@@ -753,26 +1127,41 @@ function Edit-AzVmConfigureField {
 
     if ([bool]$Field.AzureBacked -and -not [bool]$State['Azure']['Available']) {
         Write-Host ([string]$State['Azure']['Hint']) -ForegroundColor Yellow
+        if (Test-AzVmConfigureFieldIsCreateCritical -Key ([string]$Field.Key) -Values $values) {
+            Write-Host 'This value must be verified before save. Run az login and revisit this field.' -ForegroundColor DarkGray
+        }
         return $currentValue
     }
 
     switch ([string]$Field.EditorKind) {
         'subscription-picker' {
-            $raw = Read-Host "Press Enter to keep the current value, or type 'p' to choose a different value"
-            if ([string]::IsNullOrWhiteSpace([string]$raw)) { return $currentValue }
-            $selectedRow = Select-AzVmSubscriptionInteractive -DefaultSubscriptionId $currentValue
-            Set-AzVmConfigureAzureSubscription -State ([hashtable]$State['Azure']) -SubscriptionRow $selectedRow
-            return [string]$selectedRow.id
+            $selectedSubscriptionId = [string](Select-AzVmConfigureListValue `
+                    -Title ([string]$Field.Label) `
+                    -Rows (Get-AzVmConfigureSubscriptionRows -State $State) `
+                    -CurrentValue $currentValue `
+                    -AllowBlank)
+            if (-not [string]::IsNullOrWhiteSpace([string]$selectedSubscriptionId)) {
+                $selectedRow = Find-AzVmSubscriptionRowById -SubscriptionRows @($State['Azure']['SubscriptionRows']) -SubscriptionId $selectedSubscriptionId
+                if ($null -ne $selectedRow) {
+                    Set-AzVmConfigureAzureSubscription -State ([hashtable]$State['Azure']) -SubscriptionRow $selectedRow
+                }
+            }
+            return $selectedSubscriptionId
         }
         'region-picker' {
-            $raw = Read-Host "Press Enter to keep the current value, or type 'p' to choose a different value"
-            if ([string]::IsNullOrWhiteSpace([string]$raw)) { return $currentValue }
-            return [string](Select-AzLocationInteractive -DefaultLocation $currentValue)
+            return [string](Select-AzVmConfigureListValue `
+                    -Title ([string]$Field.Label) `
+                    -Rows (Get-AzVmConfigureRegionRows -State $State) `
+                    -CurrentValue $currentValue)
         }
         'resource-group-picker' {
-            $raw = Read-Host "Press Enter to keep the current value, or type 'p' to choose a different value"
-            if ([string]::IsNullOrWhiteSpace([string]$raw)) { return $currentValue }
-            return [string](Select-AzVmResourceGroupInteractive -DefaultResourceGroup $currentValue -VmName '')
+            return [string](Select-AzVmConfigureListValue `
+                    -Title ([string]$Field.Label) `
+                    -Rows (Get-AzVmConfigureManagedResourceGroupRows -State $State) `
+                    -CurrentValue $currentValue `
+                    -AllowBlank `
+                    -EmptyStateSummary 'No managed resource groups were found in the current Azure subscription.' `
+                    -EmptyStateHint 'SELECTED_RESOURCE_GROUP will stay empty. Run create when you want to provision a new managed resource group.')
         }
         'vm-size-picker' {
             $raw = Read-Host "Press Enter to keep the current value, or type 'p' to choose a different value"
@@ -833,18 +1222,93 @@ function Invoke-AzVmConfigureSectionEditor {
     Write-Host ''
     Write-Host ("=== {0} ===" -f $SectionName) -ForegroundColor Green
     foreach ($field in @($fields)) {
-        $candidateValue = Edit-AzVmConfigureField -Field $field -State $State
-        $validatedValue = Assert-AzVmConfigureFieldValue -Key ([string]$field.Key) -Value ([string]$candidateValue) -State $State
-        if ([bool]$field.AzureBacked) {
-            $validatedValue = Invoke-AzVmConfigureAzureValueVerification -Key ([string]$field.Key) -Value ([string]$validatedValue) -State $State
-        }
-        $State['Values'][[string]$field.Key] = [string]$validatedValue
-        if ([string]::Equals([string]$field.Key, 'SELECTED_AZURE_SUBSCRIPTION_ID', [System.StringComparison]::OrdinalIgnoreCase) -and [bool]$State['Azure']['Available']) {
-            $selectedRow = Find-AzVmSubscriptionRowById -SubscriptionRows @($State['Azure']['SubscriptionRows']) -SubscriptionId ([string]$validatedValue)
-            if ($null -ne $selectedRow) {
-                Set-AzVmConfigureAzureSubscription -State ([hashtable]$State['Azure']) -SubscriptionRow $selectedRow
+        while ($true) {
+            try {
+                $candidateValue = Edit-AzVmConfigureField -Field $field -State $State
+                $validatedValue = Assert-AzVmConfigureFieldValue -Key ([string]$field.Key) -Value ([string]$candidateValue) -State $State
+                if ([bool]$field.AzureBacked) {
+                    $validatedValue = Invoke-AzVmConfigureAzureValueVerification -Key ([string]$field.Key) -Value ([string]$validatedValue) -State $State
+                }
+                $State['Values'][[string]$field.Key] = [string]$validatedValue
+                if ([string]::Equals([string]$field.Key, 'SELECTED_AZURE_SUBSCRIPTION_ID', [System.StringComparison]::OrdinalIgnoreCase) -and [bool]$State['Azure']['Available']) {
+                    $selectedRow = Find-AzVmSubscriptionRowById -SubscriptionRows @($State['Azure']['SubscriptionRows']) -SubscriptionId ([string]$validatedValue)
+                    if ($null -ne $selectedRow) {
+                        Set-AzVmConfigureAzureSubscription -State ([hashtable]$State['Azure']) -SubscriptionRow $selectedRow
+                    }
+                }
+                break
+            }
+            catch {
+                if (-not (Test-AzVmConfigureExceptionIsRecoverable -Exception $_.Exception)) {
+                    throw
+                }
+
+                Write-AzVmConfigureValidationMessage -Field $field -Exception $_.Exception
+                if (Test-AzVmConfigureFieldIsCreateCritical -Key ([string]$field.Key) -Values ([hashtable]$State['Values'])) {
+                    Write-Host 'This value is required before create-ready save can succeed. Choose or enter a valid value.' -ForegroundColor DarkGray
+                    continue
+                }
+
+                if (Test-AzVmConfigureFieldAllowsBlank -Key ([string]$field.Key) -Values ([hashtable]$State['Values'])) {
+                    $recoveryChoice = Read-Host "Press Enter to retry this field, or type 'c' to clear it and continue"
+                    if ([string]::Equals([string]$recoveryChoice, 'c', [System.StringComparison]::OrdinalIgnoreCase)) {
+                        $State['Values'][[string]$field.Key] = ''
+                        break
+                    }
+                    continue
+                }
+
+                continue
             }
         }
+    }
+}
+
+function Assert-AzVmConfigureSaveReady {
+    param(
+        [hashtable]$State
+    )
+
+    $values = [hashtable]$State['Values']
+    $selectedPlatform = Get-AzVmConfigureSelectedPlatform -Values $values
+    $fieldLookup = @{}
+    foreach ($field in @(Get-AzVmConfigureFieldSchema -SelectedPlatform $selectedPlatform)) {
+        $fieldLookup[[string]$field.Key] = $field
+    }
+
+    $issues = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($key in @(Get-AzVmConfigureCreateCriticalKeys -Values $values)) {
+        $field = $fieldLookup[[string]$key]
+        $fieldLabel = if ($null -ne $field) { [string]$field.Label } else { [string]$key }
+        $value = [string](Get-ConfigValue -Config $values -Key ([string]$key) -DefaultValue '')
+
+        try {
+            $validatedValue = Assert-AzVmConfigureFieldValue -Key ([string]$key) -Value $value -State $State
+            if ($null -ne $field -and [bool]$field.AzureBacked) {
+                if (-not [bool]$State['Azure']['Available']) {
+                    [void]$issues.Add(("{0}: run az login to verify this value before saving." -f $fieldLabel))
+                    continue
+                }
+
+                [void](Invoke-AzVmConfigureAzureValueVerification -Key ([string]$key) -Value ([string]$validatedValue) -State $State)
+            }
+        }
+        catch {
+            if (-not (Test-AzVmConfigureExceptionIsRecoverable -Exception $_.Exception)) {
+                throw
+            }
+
+            $summary = Get-AzVmConfigureFriendlyErrorSummary -Exception $_.Exception
+            [void]$issues.Add(("{0}: {1}" -f $fieldLabel, $summary))
+        }
+    }
+
+    if ($issues.Count -gt 0) {
+        Throw-FriendlyError `
+            -Detail ((@($issues) -join '; ')) `
+            -Code 2 `
+            -Summary 'Configure cannot save until all create-critical values are valid.' `
+            -Hint 'Revisit the relevant sections, fix the required values, and then choose Save again.'
     }
 }
 
@@ -995,10 +1459,26 @@ function Invoke-AzVmConfigureInteractiveEditor {
         Write-AzVmConfigurePreview -Values ([hashtable]$state['Values']) -AzureState ([hashtable]$state['Azure'])
         $action = Select-AzVmConfigureReviewAction
         if ([string]::Equals([string]$action, 'save', [System.StringComparison]::OrdinalIgnoreCase)) {
-            Save-AzVmSupportedDotEnvValues -Path $EnvFilePath -ValueMap ([hashtable]$state['Values']) -TemplatePath (Join-Path $RepoRoot '.env.example')
-            Write-Host ''
-            Write-Host (".env was saved successfully to '{0}'." -f $EnvFilePath) -ForegroundColor Green
-            return
+            try {
+                Assert-AzVmConfigureSaveReady -State $state
+                Save-AzVmSupportedDotEnvValues -Path $EnvFilePath -ValueMap ([hashtable]$state['Values']) -TemplatePath (Join-Path $RepoRoot '.env.example')
+                Write-Host ''
+                Write-Host (".env was saved successfully to '{0}'." -f $EnvFilePath) -ForegroundColor Green
+                return
+            }
+            catch {
+                if (-not (Test-AzVmConfigureExceptionIsRecoverable -Exception $_.Exception)) {
+                    throw
+                }
+
+                Write-Host ''
+                Write-Host (Get-AzVmConfigureFriendlyErrorSummary -Exception $_.Exception) -ForegroundColor Yellow
+                $hint = Get-AzVmConfigureFriendlyErrorHint -Exception $_.Exception
+                if (-not [string]::IsNullOrWhiteSpace([string]$hint)) {
+                    Write-Host $hint -ForegroundColor DarkGray
+                }
+                continue
+            }
         }
         if ([string]::Equals([string]$action, 'cancel', [System.StringComparison]::OrdinalIgnoreCase)) {
             Write-Host ''

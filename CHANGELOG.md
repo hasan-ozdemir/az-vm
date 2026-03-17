@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.339] - 2026-03-17
+
+### Changed
+- Changed the interactive `configure` editor so blank-permitted picker-backed fields now recover softly instead of aborting the session: stale current values can no longer be kept silently, filterable numbered pickers are reused for subscription, region, and managed resource-group selection, and `SELECTED_RESOURCE_GROUP` is now cleared automatically when the current subscription has no managed resource groups.
+- Changed the configure save contract so `.env` writes are blocked only when create-critical values remain unresolved; blank-permitted fields can now be cleared and the editor continues with explicit guidance instead of exiting on the first stale Azure-backed value.
+- Changed the operator and documentation surface so AGENTS, README, CLI help, smoke tests, and documentation-contract checks now describe the new configure recovery model, including the no-managed-resource-group guidance path.
+
+### Fixed
+- Fixed the stale `SELECTED_RESOURCE_GROUP` Enter path in `configure`; keeping an outdated managed resource group no longer throws `Resource group check failed before configure` and terminates the editor.
+
+### Tests
+- Revalidated the configure recovery update non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+
 ## [2026.3.17.338] - 2026-03-17
 
 ### Added

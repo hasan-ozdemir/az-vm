@@ -559,6 +559,7 @@ Behavior notes:
 - stages edits in memory until final confirmation, then writes only supported `.env` keys once
 - renders a next-create preview with effective platform inputs plus next managed resource names when Azure validation is available
 - can open without `az login`, but Azure-backed fields stay read-only until Azure validation is available
+- recovers softly for blank-permitted fields, including clearing `SELECTED_RESOURCE_GROUP` when no managed resource groups exist, and blocks save only when create-critical values remain unresolved
 
 ### `create`
 Purpose: build one fresh managed resource group, one fresh managed VM, and then continue with the init/update workflow when selected.

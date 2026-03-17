@@ -5197,3 +5197,17 @@ I completed the `configure` command conversion as a full interactive `.env` fron
 
 I also moved the old live target-sync responsibility out of `configure` and into `show`, which now accepts `--vm-name` and can render a read-only target-derived configuration section for one managed VM without writing `.env`. I updated AGENTS, README, help text, smoke tests, and documentation-contract checks to match the new contract, then revalidated the full change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
 
+### 2026-03-17 13:41 UTC
+
+**User Prompt**
+
+````text
+Fix the new configure flow so missing managed resource groups and similar picker-backed failures are handled smartly: when the current managed resource group is stale, do not exit with a hard error; instead list the real managed resource groups with a numbered picker that supports filtering, let the operator choose from that list, and continue. If there are no managed resource groups at all, keep SELECTED_RESOURCE_GROUP empty, inform the operator politely, point them to create, and continue to the next field. Apply the same recovery model to similar configure validation problems: blank-permitted values should recover softly and continue, while required values such as VM OS must stay in a correction loop until they are valid, with Ctrl+C still able to stop configure cleanly.
+````
+
+**Assistant Summary**
+
+I hardened the interactive `configure` editor so stale or missing managed resource-group state no longer terminates the session. Managed resource-group, subscription, and region selection now use the shared filterable numbered picker, stale current values can no longer be kept silently with Enter, and `SELECTED_RESOURCE_GROUP` now clears itself automatically when the current subscription has no managed resource groups, with a polite guidance message that points the operator to `create` instead of throwing `Resource group check failed before configure`.
+
+I also added create-critical save gating and soft recovery behavior across the editor. Blank-permitted fields can now be retried or cleared and the session continues, while create-critical values are rechecked before `.env` is written and block Save only when they remain unresolved. I updated AGENTS, README, CLI help, smoke tests, documentation-contract checks, release notes, and the changelog to match the new behavior, then revalidated the full change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
+

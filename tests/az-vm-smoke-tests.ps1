@@ -884,6 +884,169 @@ Invoke-Test -Name "Configure field schema covers supported dotenv keys and picke
     Assert-True -Condition (Test-AzVmAzureTouchingCommand -CommandName 'show') -Message 'Show must remain an Azure-touching command.'
 }
 
+Invoke-Test -Name "Configure choice picker rejects stale current values and supports filter plus clear" -Action {
+    try {
+        $script:ConfigurePickerResponses = New-Object 'System.Collections.Generic.Queue[string]'
+        foreach ($response in @('', 'f', 'beta', '1')) {
+            $script:ConfigurePickerResponses.Enqueue([string]$response)
+        }
+
+        function Read-Host {
+            param([string]$Prompt)
+            if ($script:ConfigurePickerResponses.Count -le 0) {
+                throw "No queued Read-Host response remained for prompt '$Prompt'."
+            }
+            return [string]$script:ConfigurePickerResponses.Dequeue()
+        }
+
+        $rows = @(
+            [pscustomobject]@{ Value = 'alpha'; Label = 'alpha'; Description = 'First option' }
+            [pscustomobject]@{ Value = 'beta'; Label = 'beta'; Description = 'Second option' }
+        )
+
+        $selected = Select-AzVmConfigureChoiceInteractive -Title 'Sample picker' -Rows $rows -CurrentValue 'stale'
+        Assert-True -Condition ([string]$selected -eq 'beta') -Message 'Configure choice picker must not keep a stale current value when Enter is pressed.'
+
+        $script:ConfigurePickerResponses = New-Object 'System.Collections.Generic.Queue[string]'
+        $script:ConfigurePickerResponses.Enqueue('c')
+        $cleared = Select-AzVmConfigureChoiceInteractive -Title 'Sample picker' -Rows $rows -CurrentValue 'alpha' -AllowEmptySelection
+        Assert-True -Condition ([string]::IsNullOrWhiteSpace([string]$cleared)) -Message 'Configure choice picker must support clearing blank-permitted values.'
+    }
+    finally {
+        Remove-Item Function:\global:Read-Host -ErrorAction SilentlyContinue
+        Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+        Remove-Variable -Name ConfigurePickerResponses -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Configure managed resource group picker clears when the managed list is empty" -Action {
+    $field = [pscustomobject]@{
+        Key = 'SELECTED_RESOURCE_GROUP'
+        Label = 'Selected resource group'
+        EditorKind = 'resource-group-picker'
+        AzureBacked = $true
+        Secret = $false
+    }
+
+    try {
+        function Get-AzVmManagedResourceGroupRows { return @() }
+
+        $state = @{
+            RepoRoot = $RepoRoot
+            Values = @{ SELECTED_RESOURCE_GROUP = 'rg-stale-ate1-g1' }
+            Azure = @{ Available = $true; Hint = ''; SubscriptionRows = @() }
+        }
+
+        $selectedGroup = Edit-AzVmConfigureField -Field $field -State $state
+        Assert-True -Condition ([string]::IsNullOrWhiteSpace([string]$selectedGroup)) -Message 'Configure must clear SELECTED_RESOURCE_GROUP when no managed resource groups exist.'
+    }
+    finally {
+        Remove-Item Function:\global:Get-AzVmManagedResourceGroupRows -ErrorAction SilentlyContinue
+        Remove-Item Function:\Get-AzVmManagedResourceGroupRows -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Configure managed resource group picker forces reselection when the current group is stale" -Action {
+    $field = [pscustomobject]@{
+        Key = 'SELECTED_RESOURCE_GROUP'
+        Label = 'Selected resource group'
+        EditorKind = 'resource-group-picker'
+        AzureBacked = $true
+        Secret = $false
+    }
+
+    try {
+        $script:ConfigureRgResponses = New-Object 'System.Collections.Generic.Queue[string]'
+        foreach ($response in @('', 'f', 'ate1', '1')) {
+            $script:ConfigureRgResponses.Enqueue([string]$response)
+        }
+
+        function Read-Host {
+            param([string]$Prompt)
+            if ($script:ConfigureRgResponses.Count -le 0) {
+                throw "No queued Read-Host response remained for prompt '$Prompt'."
+            }
+            return [string]$script:ConfigureRgResponses.Dequeue()
+        }
+
+        function Get-AzVmManagedResourceGroupRows {
+            return @(
+                [pscustomobject]@{ name = 'rg-samplevm-ate1-g2'; location = 'austriaeast'; id = '/subscriptions/example/resourceGroups/rg-samplevm-ate1-g2' }
+                [pscustomobject]@{ name = 'rg-samplevm-cin1-g3'; location = 'centralindia'; id = '/subscriptions/example/resourceGroups/rg-samplevm-cin1-g3' }
+            )
+        }
+
+        $state = @{
+            RepoRoot = $RepoRoot
+            Values = @{ SELECTED_RESOURCE_GROUP = 'rg-samplevm-ate1-g1' }
+            Azure = @{ Available = $true; Hint = ''; SubscriptionRows = @() }
+        }
+
+        $selectedGroup = Edit-AzVmConfigureField -Field $field -State $state
+        Assert-True -Condition ([string]$selectedGroup -eq 'rg-samplevm-ate1-g2') -Message 'Configure must force the operator to choose a real managed resource group when the current value is stale.'
+    }
+    finally {
+        Remove-Item Function:\global:Read-Host -ErrorAction SilentlyContinue
+        Remove-Item Function:\Read-Host -ErrorAction SilentlyContinue
+        Remove-Item Function:\global:Get-AzVmManagedResourceGroupRows -ErrorAction SilentlyContinue
+        Remove-Item Function:\Get-AzVmManagedResourceGroupRows -ErrorAction SilentlyContinue
+        Remove-Variable -Name ConfigureRgResponses -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "Configure save readiness blocks unresolved create-critical values but ignores blank resource-group defaults" -Action {
+    $baseValues = @{
+        SELECTED_VM_OS = 'windows'
+        SELECTED_VM_NAME = 'samplevm'
+        SELECTED_RESOURCE_GROUP = ''
+        SELECTED_AZURE_SUBSCRIPTION_ID = ''
+        SELECTED_AZURE_REGION = 'austriaeast'
+        WIN_VM_IMAGE = 'publisher:offer:sku:latest'
+        WIN_VM_SIZE = 'Standard_B4as_v2'
+        VM_ADMIN_USER = 'manager'
+        VM_ADMIN_PASS = 'secret-value'
+        VM_ASSISTANT_USER = 'assistant'
+        VM_ASSISTANT_PASS = 'secret-value'
+    }
+
+    try {
+        $blockedState = @{
+            RepoRoot = $RepoRoot
+            Values = $baseValues.Clone()
+            Azure = @{ Available = $false; Hint = 'Run az login to edit or verify this field.' }
+        }
+
+        $threw = $false
+        try {
+            Assert-AzVmConfigureSaveReady -State $blockedState
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Data['Summary'] -eq 'Configure cannot save until all create-critical values are valid.') -Message 'Configure save gating must identify unresolved create-critical values.'
+            Assert-True -Condition ([string]$_.Exception.Message -notlike '*SELECTED_RESOURCE_GROUP*') -Message 'Blank SELECTED_RESOURCE_GROUP must not block configure save readiness.'
+        }
+        Assert-True -Condition $threw -Message 'Configure save readiness must block unresolved Azure-backed create-critical values.'
+
+        function Assert-LocationExists { param([string]$Location) }
+        function Assert-VmSkuAvailableViaRest { param([string]$Location, [string]$VmSize) }
+        function Assert-VmImageAvailable { param([string]$Location, [string]$ImageUrn) }
+
+        $readyState = @{
+            RepoRoot = $RepoRoot
+            Values = $baseValues.Clone()
+            Azure = @{ Available = $true; Hint = '' }
+        }
+
+        Assert-AzVmConfigureSaveReady -State $readyState
+    }
+    finally {
+        foreach ($functionName in @('Assert-LocationExists','Assert-VmSkuAvailableViaRest','Assert-VmImageAvailable')) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 Invoke-Test -Name "Subscription resolver uses CLI then env then active precedence and persists CLI overrides" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-subscription-test-" + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path $tempRoot -Force

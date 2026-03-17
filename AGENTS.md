@@ -66,6 +66,7 @@ Use these sources in this order when maintaining the repo:
 - `create` is fresh-only: it creates one new managed resource group plus one new managed VM target and must not be documented or wired as an existing-resource reuse path.
 - `update` is existing-managed-target only: it requires one existing managed resource group plus one existing VM and must not fall through to implicit fresh-create behavior.
 - `configure` is the interactive `.env` frontend: it must stay focused on reviewing, editing, validating, previewing, and saving supported `.env` values, and it must not sync `.env` from a live Azure target.
+- `configure` must recover softly for blank-permitted fields: stale or empty picker-backed values should guide the operator back to a valid choice when possible, otherwise clear the staged value and continue; save may be blocked only by unresolved create-critical values.
 - Azure-touching commands support `--subscription-id` plus `-s`; resolution precedence is CLI override -> `.env` `SELECTED_AZURE_SUBSCRIPTION_ID` -> active Azure CLI subscription.
 - Azure-touching commands require an authenticated Azure CLI session; help, README, and runtime errors must say `az login` is required. `configure` is the exception: it may open without `az login`, but Azure-backed configure fields must stay read-only until Azure validation is available.
 - Interactive `create` and `update` must prompt for Azure subscription selection when `--subscription-id` is omitted.

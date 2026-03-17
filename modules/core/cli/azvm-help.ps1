@@ -144,7 +144,7 @@ function Show-AzVmCommandHelpDetailed {
                 '  az-vm configure [--perf]'
                 'Examples:'
                 '  az-vm configure'
-                'Notes: configure is interactive-only. It edits supported .env keys in sections, uses pickers for every finite or discoverable multi-option field, validates before save, stages changes in memory until final confirmation, and shows a next-create preview before writing .env. configure opens without az login, but Azure-backed fields become read-only and advise running az login when Azure validation is unavailable.'
+                'Notes: configure is interactive-only. It edits supported .env keys in sections, uses pickers for every finite or discoverable multi-option field, validates before save, stages changes in memory until final confirmation, and shows a next-create preview before writing .env. configure opens without az login, but Azure-backed fields become read-only and advise running az login when Azure validation is unavailable. Blank-permitted fields recover softly, and save is blocked only when create-critical values remain unresolved.'
             )
             return
         }
