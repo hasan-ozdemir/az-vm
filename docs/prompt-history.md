@@ -5211,3 +5211,17 @@ I hardened the interactive `configure` editor so stale or missing managed resour
 
 I also added create-critical save gating and soft recovery behavior across the editor. Blank-permitted fields can now be retried or cleared and the session continues, while create-critical values are rechecked before `.env` is written and block Save only when they remain unresolved. I updated AGENTS, README, CLI help, smoke tests, documentation-contract checks, release notes, and the changelog to match the new behavior, then revalidated the full change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates.
 
+### 2026-03-17 15:39 UTC
+
+**User Prompt**
+
+````text
+Publish to production: first align and push dev and main, then delete every az-vm-managed resource group, then run "az-vm create --auto --windows --perf" to bring up a new VM; if an error occurs during that create run, stop there, fix the code, go back to the beginning, and rerun the same create command with the same parameters. Warnings should not break the flow; instead, summarize them with possible remedies afterward. The goal is to finish with the new VM successfully published.
+````
+
+**Assistant Summary**
+
+Before retrying the full publish cycle, I analyzed the latest end-to-end create transcript and repaired the concrete blockers it exposed. I fixed the workflow step wrapper so Step 6 now returns the real `vm-update` stage result to the caller, which restores the conditional post-`vm-update` restart barrier before `vm-summary`. I also corrected `123-install-vlc-system` so its bounded `winget` verification path invokes the resolved `winget.exe` correctly, and I tightened `10003-configure-ux-windows` so it no longer emits a false warning when the persisted regional state is already correct but the same-session culture view still reports the old value.
+
+I also changed the shared SSH task-stage accounting so continue-mode task issues stay classified as warnings instead of being mixed into the failed-task bucket. After those changes, I revalidated the repo non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc gates, then revalidated the affected Windows update surfaces live in isolation on the active managed VM by rerunning `123-install-vlc-system`, `10003-configure-ux-windows`, and `10006-capture-snapshot-health`. The fix set was then prepared for release and for the next clean `create --auto --windows --perf` retry.
+

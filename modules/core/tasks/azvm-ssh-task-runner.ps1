@@ -74,6 +74,7 @@ function Invoke-AzVmSshTaskBlocks {
     $rebootCount = 0
     $successfulTasks = @()
     $failedTasks = @()
+    $warningTasks = @()
     $rebootRequestedTasks = @()
     $signalWarningTasks = @()
 
@@ -270,9 +271,9 @@ function Invoke-AzVmSshTaskBlocks {
             $taskElapsedSeconds = $taskWatch.Elapsed.TotalSeconds
 
             if ($null -ne $taskInvocationError) {
-                $failedTasks += $taskName
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
+                    $warningTasks += $taskName
                     $transportModeLabel = if ($persistentSessionEnabled) { 'persistent session' } else { 'one-shot ssh' }
                     Write-Warning ("Task warning: {0} failed in {1} => {2}" -f $taskName, $transportModeLabel, $taskInvocationError.Exception.Message)
                     Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskWatch.Elapsed.TotalSeconds)
@@ -290,6 +291,7 @@ function Invoke-AzVmSshTaskBlocks {
                     continue
                 }
 
+                $failedTasks += $taskName
                 $totalErrors++
                 Write-Host ("Task failed: {0}" -f $taskName) -ForegroundColor Red
                 $transportModeLabel = if ($persistentSessionEnabled) { 'persistent session' } else { 'one-shot ssh' }
@@ -331,17 +333,18 @@ function Invoke-AzVmSshTaskBlocks {
                 }
             }
             else {
-                $failedTasks += $taskName
                 $taskOutputWasRelayedLive = ($taskResult.PSObject.Properties.Match('OutputRelayedLive').Count -gt 0 -and [bool]$taskResult.OutputRelayedLive)
                 if (-not $taskOutputWasRelayedLive -and $taskResult.PSObject.Properties.Match('Output').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$taskResult.Output)) {
                     Write-Host ([string]$taskResult.Output)
                 }
                 if ($TaskOutcomeMode -eq 'continue') {
                     $totalWarnings++
+                    $warningTasks += $taskName
                     Write-Warning ("Task warning: {0} exited with code {1}" -f $taskName, $taskResult.ExitCode)
                     Write-Host ("Task completed: {0} ({1:N1}s) - warning" -f $taskName, $taskElapsedSeconds)
                 }
                 else {
+                    $failedTasks += $taskName
                     $totalErrors++
                     Write-Host ("Task failed: {0}" -f $taskName) -ForegroundColor Red
                     throw ("VM update task failed: {0} (exit {1})" -f $taskName, $taskResult.ExitCode)
@@ -364,6 +367,7 @@ function Invoke-AzVmSshTaskBlocks {
 
         $uniqueSuccessfulTasks = @($successfulTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
         $uniqueFailedTasks = @($failedTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
+        $uniqueWarningTasks = @($warningTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
         $uniqueSignalWarningTasks = @($signalWarningTasks | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -Unique)
 
         Write-Host ("VM update stage summary: success={0}, failed={1}, warning={2}, signal-warning={3}, error={4}, reboot={5}" -f @($uniqueSuccessfulTasks).Count, @($uniqueFailedTasks).Count, $totalWarnings, $signalWarningCount, $totalErrors, $rebootCount)
@@ -379,6 +383,12 @@ function Invoke-AzVmSshTaskBlocks {
             Write-Host 'Signal warning tasks:' -ForegroundColor Yellow
             foreach ($signalWarningTask in @($uniqueSignalWarningTasks)) {
                 Write-Host ("- {0}" -f [string]$signalWarningTask) -ForegroundColor Yellow
+            }
+        }
+        if (@($uniqueWarningTasks).Count -gt 0) {
+            Write-Host 'Warning tasks:' -ForegroundColor Yellow
+            foreach ($warningTaskName in @($uniqueWarningTasks)) {
+                Write-Host ("- {0}" -f [string]$warningTaskName) -ForegroundColor Yellow
             }
         }
         if (@($uniqueFailedTasks).Count -gt 0) {
@@ -421,6 +431,7 @@ function Invoke-AzVmSshTaskBlocks {
             FailedCount = @($uniqueFailedTasks).Count
             FailedTasks = @($uniqueFailedTasks)
             WarningCount = $totalWarnings
+            WarningTasks = @($uniqueWarningTasks)
             SignalWarningCount = [int]$signalWarningCount
             SignalWarningTasks = @($uniqueSignalWarningTasks)
             ErrorCount = $totalErrors

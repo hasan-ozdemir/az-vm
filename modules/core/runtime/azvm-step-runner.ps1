@@ -38,18 +38,20 @@ function Invoke-Step {
     }
 
     $before = @(Get-Variable)
+    $stepResult = $null
     $modeLabel = if ($script:AutoMode) { 'auto' } else { 'interactive' }
     if (-not $script:AzVmQuietOutput) {
         Write-Host ("Starting {0} (mode: {1})" -f $prompt, $modeLabel) -ForegroundColor Cyan
     }
     $stepWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    . $Action
+    $stepResult = . $Action
     if ($stepWatch.IsRunning) { $stepWatch.Stop() }
     if (-not $script:AzVmQuietOutput) {
         Write-Host ("Completed {0} ({1:N1}s)" -f $prompt, $stepWatch.Elapsed.TotalSeconds) -ForegroundColor DarkCyan
     }
     $after = @(Get-Variable)
     Publish-NewStepVariables -BeforeVariables $before -AfterVariables $after
+    return $stepResult
 }
 
 # Handles Confirm-YesNo.

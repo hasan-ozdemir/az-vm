@@ -351,7 +351,7 @@ function Invoke-AzVmMain {
                 }
                 default {
                     Invoke-AzVmPersistPendingSelections -Context $step1Context -EnvFilePath $envFilePath
-                    Invoke-Step 'Step 6/7 - VM update' {
+                    $vmUpdateStageResult = Invoke-Step 'Step 6/7 - VM update' {
                         if (@($updateDisabledTasks).Count -gt 0) {
                             $disabledNames = @($updateDisabledTasks | ForEach-Object { [string]$_.Name })
                             Write-Host ("Disabled update tasks (ignored): {0}" -f ($disabledNames -join ', ')) -ForegroundColor Yellow
@@ -359,25 +359,24 @@ function Invoke-AzVmMain {
 
                         if (@($updateTaskBlocks).Count -eq 0) {
                             Write-Host 'Update task folder inventory is empty; Step 6 vm-update stage is skipped.' -ForegroundColor Yellow
+                            return $null
                         }
-                        else {
-                            $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
-                            $sshHost = [string]$vmRuntimeDetails.VmFqdn
-                            if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
-                                $sshHost = [string]$vmRuntimeDetails.PublicIP
-                            }
-                            if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
-                                throw 'Step 6 could not resolve VM SSH host (FQDN/Public IP).'
-                            }
-
-                            $sshMaxRetries = 1
-                            if ($platform -ne 'windows') {
-                                $sshMaxRetriesText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')
-                                $sshMaxRetries = Resolve-AzVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
-                            }
-
-                            $vmUpdateStageResult = Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser ([string]$step1Context.VmUser) -SshPassword ([string]$step1Context.VmPass) -SshPort ([string]$step1Context.SshPort) -AssistantUser ([string]$step1Context.VmAssistantUser) -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath -SuppressDeferredRestartHint
+                        $vmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
+                        $sshHost = [string]$vmRuntimeDetails.VmFqdn
+                        if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
+                            $sshHost = [string]$vmRuntimeDetails.PublicIP
                         }
+                        if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
+                            throw 'Step 6 could not resolve VM SSH host (FQDN/Public IP).'
+                        }
+
+                        $sshMaxRetries = 1
+                        if ($platform -ne 'windows') {
+                            $sshMaxRetriesText = [string](Get-ConfigValue -Config $effectiveConfigMap -Key 'SSH_MAX_RETRIES' -DefaultValue '3')
+                            $sshMaxRetries = Resolve-AzVmSshRetryCount -RetryText $sshMaxRetriesText -DefaultValue 3
+                        }
+
+                        return (Invoke-AzVmSshTaskBlocks -Platform $platform -RepoRoot $repoRoot -SshHost $sshHost -SshUser ([string]$step1Context.VmUser) -SshPassword ([string]$step1Context.VmPass) -SshPort ([string]$step1Context.SshPort) -AssistantUser ([string]$step1Context.VmAssistantUser) -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName) -TaskBlocks $updateTaskBlocks -TaskOutcomeMode $taskOutcomeMode -SshMaxRetries $sshMaxRetries -SshTaskTimeoutSeconds $sshTaskTimeoutSeconds -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds -ConfiguredPySshClientPath $configuredPySshClientPath -SuppressDeferredRestartHint)
                     }
                     if ($null -ne $vmUpdateStageResult -and [bool]$vmUpdateStageResult.RebootRequired) {
                         Invoke-AzVmWorkflowRestartBarrier -Context $step1Context -Reason 'after-vm-update' -SshConnectTimeoutSeconds $sshConnectTimeoutSeconds

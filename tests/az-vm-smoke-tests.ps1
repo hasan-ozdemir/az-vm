@@ -673,7 +673,8 @@ Invoke-Test -Name "Workflow pipeline applies only the conditional post-vm-update
     Assert-True -Condition ($pipelineText -match [regex]::Escape('Invoke-AzVmWorkflowRestartBarrier -Context $step1Context')) -Message 'Pipeline must call the shared restart barrier.'
     Assert-True -Condition (-not ($pipelineText -match [regex]::Escape("-Reason 'before-vm-update'"))) -Message 'Pipeline must not call the removed pre-vm-update restart barrier.'
     Assert-True -Condition (-not ($pipelineText -match [regex]::Escape('VM update will begin after one planned restart.'))) -Message 'Pipeline must not announce the removed planned Windows restart before vm-update.'
-    Assert-True -Condition ($pipelineText -match [regex]::Escape('$vmUpdateStageResult = Invoke-AzVmSshTaskBlocks')) -Message 'Pipeline must capture the vm-update stage result.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('$vmUpdateStageResult = Invoke-Step ''Step 6/7 - VM update''')) -Message 'Pipeline must capture the vm-update stage result from the shared step wrapper.'
+    Assert-True -Condition ($pipelineText -match [regex]::Escape('return (Invoke-AzVmSshTaskBlocks')) -Message 'VM update step must return the SSH stage result explicitly.'
     Assert-True -Condition ($pipelineText -match [regex]::Escape('-SuppressDeferredRestartHint')) -Message 'Pipeline must suppress the manual deferred restart hint during orchestrated vm-update.'
     Assert-True -Condition ($pipelineText -match '(?s)if \(\$null -ne \$vmUpdateStageResult -and \[bool\]\$vmUpdateStageResult\.RebootRequired\) \{\s*Invoke-AzVmWorkflowRestartBarrier -Context \$step1Context -Reason ''after-vm-update''') -Message 'Pipeline must restart automatically after vm-update when reboot is required.'
 
@@ -682,6 +683,13 @@ Invoke-Test -Name "Workflow pipeline applies only the conditional post-vm-update
     Assert-True -Condition (-not ($workflowText -match [regex]::Escape('VM restart before vm-update completed successfully.'))) -Message 'Workflow helper must not keep the removed pre-vm-update restart success message.'
     Assert-True -Condition ($workflowText -match [regex]::Escape('VM update requested a restart. Restarting VM before vm-summary...')) -Message 'Workflow helper must announce the post-vm-update restart action.'
     Assert-True -Condition ($workflowText -match [regex]::Escape('VM restart after vm-update completed successfully.')) -Message 'Workflow helper must report successful post-vm-update restart.'
+}
+
+Invoke-Test -Name "Shared step wrapper returns the action result to callers" -Action {
+    $stepRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\runtime\azvm-step-runner.ps1') -Raw)
+
+    Assert-True -Condition ($stepRunnerText -match [regex]::Escape('$stepResult = . $Action')) -Message 'Step wrapper must capture the action result.'
+    Assert-True -Condition ($stepRunnerText -match [regex]::Escape('return $stepResult')) -Message 'Step wrapper must return the captured action result.'
 }
 
 Invoke-Test -Name "Guest task output relay is enabled for vm-init and vm-update transports" -Action {
@@ -701,6 +709,9 @@ Invoke-Test -Name "Guest task output relay is enabled for vm-init and vm-update 
     Assert-True -Condition ($sshSessionText -match [regex]::Escape('-RelayOutput')) -Message 'One-shot SSH task execution must enable live output relay.'
     Assert-True -Condition ($sshRunnerText -match [regex]::Escape('OutputRelayedLive = $true')) -Message 'Persistent SSH task execution must mark output as already relayed.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('The workflow will apply the required restart automatically before vm-summary.')) -Message 'SSH task runner must switch to the automatic restart hint for orchestrated vm-update.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('$warningTasks = @()')) -Message 'SSH task runner must track warning tasks separately from hard failures.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Warning tasks:')) -Message 'SSH task runner must summarize warning tasks explicitly.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('WarningTasks = @($uniqueWarningTasks)')) -Message 'SSH task runner result contract must expose warning task names.'
     Assert-True -Condition ($appStatePluginText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state replay must avoid re-printing live-relayed task output.'
     Assert-True -Condition ($appStateCaptureText -match [regex]::Escape('OutputRelayedLive')) -Message 'App-state capture must avoid re-printing live-relayed task output.'
     Assert-True -Condition ($runCommandParserText -match [regex]::Escape('function Get-AzVmRunCommandResultEnvelope')) -Message 'Run-command parsing must expose a non-throwing envelope helper.'
@@ -5049,9 +5060,11 @@ Invoke-Test -Name "Windows VLC task verifies the executable after bounded winget
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '124-install-vlc-system'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'VLC task must bound the winget install wait time.'
+    Assert-True -Condition ($taskScript -like '*Test-VlcInstalled -WingetExe $wingetExe*') -Message 'VLC task must pass the resolved winget path into install detection explicitly.'
     Assert-True -Condition ($taskScript -like '*post-install verification will determine whether the package is usable*') -Message 'VLC task must treat bounded wait overruns as verification-required, not immediate hard failure.'
     Assert-True -Condition ($taskScript -like '*install-vlc-system-verified: executable*') -Message 'VLC task must log executable-based verification after install.'
     Assert-True -Condition ($taskScript -like '*winget list --id VideoLAN.VLC*') -Message 'VLC task must keep a package-list verification fallback.'
+    Assert-True -Condition ($taskScript -like '*Wait-ForVlcInstallVerification* -WingetExe $wingetExe*') -Message 'VLC task must pass the resolved winget path into post-install verification.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'VLC task must clear non-fatal native exit codes before completing.'
 }
 
@@ -6756,11 +6769,13 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Copy-UserInternationalSettingsToSystem',
         'TASK_REBOOT_REQUIRED:configure-ux-windows',
         'regional-current-user-begin',
-        'regional-assistant-start:'
+        'regional-assistant-start:',
+        'regional-culture-effective:'
     )) {
         Assert-True -Condition ($uxTaskText -like ('*' + [string]$fragment + '*')) -Message ("UX task must now own regional fragment '{0}'." -f [string]$fragment)
     }
     Assert-True -Condition (-not ($uxTaskText -like '*Set-WinSystemLocale -SystemLocale $turkishCulture*')) -Message 'UX task must no longer target tr-TR as the system locale.'
+    Assert-True -Condition (-not ($uxTaskText -like '*Culture verification failed*')) -Message 'UX task must not rely on same-session Get-Culture verification that drifts during the mixed locale flow.'
 
     Assert-True -Condition ($uxTaskJsonText -like '*"timeout": 180*') -Message 'UX task must keep the expanded regional-input timeout 180.'
 }

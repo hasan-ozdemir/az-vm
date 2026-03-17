@@ -448,12 +448,6 @@ function Set-CurrentSessionRegionalState {
     }
     catch {
     }
-    $cultureAfter = ''
-    try {
-        $cultureAfter = [string](Get-Culture).Name
-    }
-    catch {
-    }
     $defaultInputAfter = ''
     try {
         $defaultInput = Get-WinDefaultInputMethodOverride
@@ -478,9 +472,6 @@ function Set-CurrentSessionRegionalState {
     if (-not [string]::Equals([string]$homeLocationAfter, [string]$turkeyGeoId, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw ("Home location verification failed: expected '{0}' but got '{1}'." -f [string]$turkeyGeoId, $homeLocationAfter)
     }
-    if (-not [string]::Equals([string]$cultureAfter, $turkishCulture, [System.StringComparison]::OrdinalIgnoreCase)) {
-        throw ("Culture verification failed: expected '{0}' but got '{1}'." -f $turkishCulture, $cultureAfter)
-    }
     if (-not [string]::Equals([string]$defaultInputAfter, $turkishInputTip, [System.StringComparison]::OrdinalIgnoreCase)) {
         throw ("Default input method verification failed: expected '{0}' but got '{1}'." -f $turkishInputTip, $defaultInputAfter)
     }
@@ -501,6 +492,7 @@ function Set-CurrentSessionRegionalState {
     }
 
     Add-Detail ("regional-system-locale-effective:{0}" -f $systemLocaleAfter)
+    Add-Detail ("regional-culture-effective:{0}" -f $localeNameAfter)
     Add-Detail ("regional-time-zone:{0}" -f $timeZoneAfter)
     Add-Detail ("regional-home-location:{0}" -f $homeLocationAfter)
     Add-Detail ("regional-default-input:{0}" -f $defaultInputAfter)

@@ -113,7 +113,8 @@ function Invoke-ProcessWithTimeout {
 
 function Test-VlcInstalled {
     param(
-        [switch]$AnnounceWingetListProbe
+        [switch]$AnnounceWingetListProbe,
+        [string]$WingetExe = ''
     )
 
     $installedExe = Resolve-VlcExe
@@ -129,7 +130,15 @@ function Test-VlcInstalled {
         Write-Host 'Running: winget list --id VideoLAN.VLC'
     }
 
-    $listOutput = & $wingetExe list --id VideoLAN.VLC 2>&1
+    if ([string]::IsNullOrWhiteSpace([string]$WingetExe)) {
+        return [pscustomobject]@{
+            Installed = $false
+            VerificationMode = ''
+            Path = ''
+        }
+    }
+
+    $listOutput = & ([string]$WingetExe) list --id VideoLAN.VLC 2>&1
     $listExit = [int]$LASTEXITCODE
     $listText = [string]($listOutput | Out-String)
     if ($listExit -eq 0 -and -not [string]::IsNullOrWhiteSpace([string]$listText) -and $listText.ToLowerInvariant().Contains('vlc')) {
@@ -150,13 +159,14 @@ function Test-VlcInstalled {
 function Wait-ForVlcInstallVerification {
     param(
         [int]$TimeoutSeconds,
-        [int]$PollSeconds
+        [int]$PollSeconds,
+        [string]$WingetExe = ''
     )
 
     $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(5, [int]$TimeoutSeconds))
     $announcedWingetListProbe = $false
     do {
-        $probe = Test-VlcInstalled -AnnounceWingetListProbe:(-not $announcedWingetListProbe)
+        $probe = Test-VlcInstalled -AnnounceWingetListProbe:(-not $announcedWingetListProbe) -WingetExe $WingetExe
         $announcedWingetListProbe = $true
         if ([bool]$probe.Installed) {
             return $probe
@@ -177,7 +187,8 @@ function Wait-ForVlcInstallVerification {
 }
 
 Refresh-SessionPath
-$existingVlc = Test-VlcInstalled
+$wingetExe = Resolve-WingetExe
+$existingVlc = Test-VlcInstalled -WingetExe $wingetExe
 if ([bool]$existingVlc.Installed) {
     if ([string]::Equals([string]$existingVlc.VerificationMode, 'executable', [System.StringComparison]::OrdinalIgnoreCase) -and -not [string]::IsNullOrWhiteSpace([string]$existingVlc.Path)) {
         Write-Host ("VLC executable already exists: {0}" -f [string]$existingVlc.Path)
@@ -190,7 +201,6 @@ if ([bool]$existingVlc.Installed) {
     return
 }
 
-$wingetExe = Resolve-WingetExe
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     throw "winget command is not available."
 }
@@ -214,7 +224,7 @@ elseif ($installExit -ne 0 -and $installExit -ne -1978335189) {
 }
 
 Refresh-SessionPath
-$verifiedVlc = Wait-ForVlcInstallVerification -TimeoutSeconds ([int]$taskConfig.VerificationTimeoutSeconds) -PollSeconds ([int]$taskConfig.VerificationPollSeconds)
+$verifiedVlc = Wait-ForVlcInstallVerification -TimeoutSeconds ([int]$taskConfig.VerificationTimeoutSeconds) -PollSeconds ([int]$taskConfig.VerificationPollSeconds) -WingetExe $wingetExe
 if (-not [bool]$verifiedVlc.Installed) {
     throw ("VLC install could not be verified within {0}s. stdoutLog={1}; stderrLog={2}" -f [int]$taskConfig.VerificationTimeoutSeconds, [string]$installResult.StdoutLog, [string]$installResult.StderrLog)
 }

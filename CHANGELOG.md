@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.340] - 2026-03-17
+
+### Changed
+- Changed the create/update workflow wrapper so Step 6 now returns the real `vm-update` stage result to the caller; the conditional post-`vm-update` restart barrier can now see `RebootRequired` reliably instead of falling through to `vm-summary` without restarting.
+- Changed the shared SSH task-stage accounting so continue-mode task issues are kept in the warning bucket and returned as `WarningTasks`, which keeps warning-only `vm-update` runs from being summarized as failed-task runs.
+- Changed `10003-configure-ux-windows` verification so it now trusts persisted regional state and logs the effective current-session culture for evidence, instead of warning just because `Get-Culture` in the same process still reports the preexisting culture.
+
+### Fixed
+- Fixed `123-install-vlc-system` so its post-install verification now invokes `winget list --id VideoLAN.VLC` through the resolved executable path correctly; the task no longer throws the invalid call-operator object warning during fresh create runs.
+- Fixed the workflow step wrapper contract in `Invoke-Step`; callers now receive the wrapped action result instead of only seeing timing/log output side effects.
+
+### Tests
+- Revalidated the workflow and task repairs non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the affected Windows update surfaces live in isolation on the active managed VM with `task --run-vm-update 123`, `task --run-vm-update 10003`, and `task --run-vm-update 10006`.
+
 ## [2026.3.17.339] - 2026-03-17
 
 ### Changed

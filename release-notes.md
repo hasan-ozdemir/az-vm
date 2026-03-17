@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.340 - 2026-03-17
+
+### Summary
+This release hardens the Windows create/update publish path before the next full retry. The workflow now preserves the real `vm-update` stage result so post-update restart requests are applied reliably, warning-only task issues stay classified as warnings instead of failed-task noise, `123-install-vlc-system` no longer trips over its `winget` verification call, and `10003-configure-ux-windows` no longer raises a false culture warning while the persisted regional state is already correct.
+
+### Highlights
+- Fixed the Step 6 wrapper contract so the conditional restart after `vm-update` can actually see the returned `RebootRequired` state and run before `vm-summary`.
+- Reclassified continue-mode SSH task issues as warnings in the shared task-stage result, keeping warning-only update runs out of the failed-task bucket.
+- Fixed `123-install-vlc-system` so bounded VLC verification now calls the resolved `winget.exe` path correctly instead of producing the invalid call-operator warning seen in the last full create transcript.
+- Tightened `10003-configure-ux-windows` verification so it reports the current-session culture for evidence but no longer treats that transient view as a hard mismatch when the persisted Turkish regional state is already applied.
+- Revalidated the repair set non-live with the full local quality gates and live in isolation on the active managed Windows VM through `123`, `10003`, and `10006`.
+
 ## Release 2026.3.17.339 - 2026-03-17
 
 ### Summary
