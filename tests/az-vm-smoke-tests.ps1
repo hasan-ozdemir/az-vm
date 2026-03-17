@@ -4412,7 +4412,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $expectedTrackedTimeouts = [ordered]@{
         '01-bootstrap-winget-system' = 49
         '02-check-install-chrome' = 88
-        '101-install-powershell-core' = 53
+        '101-install-powershell-core' = 120
         '102-install-git-system' = 88
         '103-install-python-system' = 119
         '104-install-node-system' = 37

@@ -70,7 +70,7 @@ function Get-LanguageFeatureSummary {
     param([AllowNull()]$InstalledLanguage)
 
     if ($null -eq $InstalledLanguage) {
-        return 'metadata-unavailable'
+        return 'details not reported by Windows'
     }
 
     $parts = New-Object 'System.Collections.Generic.List[string]'
@@ -107,7 +107,7 @@ function Get-LanguageFeatureSummary {
     }
 
     if ($parts.Count -eq 0) {
-        return 'metadata-unavailable'
+        return 'details not reported by Windows'
     }
 
     return (@($parts.ToArray()) -join ', ')

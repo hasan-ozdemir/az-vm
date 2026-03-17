@@ -160,7 +160,7 @@ function Write-AzVmFeatureMetadataFallbackMessage {
     param([string]$FeatureLabel)
 
     if (-not [string]::IsNullOrWhiteSpace([string]$FeatureLabel)) {
-        Write-Host ("Azure metadata did not confirm {0}. Guest validation will be used." -f ([string]$FeatureLabel).ToLowerInvariant()) -ForegroundColor Yellow
+        Write-Host ("Azure did not report {0} clearly. Guest validation will be used." -f ([string]$FeatureLabel).ToLowerInvariant()) -ForegroundColor Yellow
     }
 }
 
@@ -176,15 +176,15 @@ function Resolve-AzVmFeatureSupportReasonText {
     $evidenceText = if (@($Evidence).Count -gt 0) { @($Evidence) -join ', ' } else { '' }
     switch ([string]$ReasonCode) {
         'location-or-vm-size-missing' { return 'Azure region or VM size is empty.' }
-        'subscription-read-failed' { return 'Azure subscription metadata could not be read.' }
-        'compute-skus-read-failed' { return 'Azure compute SKU metadata could not be read from the REST API.' }
-        'compute-skus-parse-failed' { return 'Azure compute SKU metadata could not be parsed.' }
-        'vm-size-metadata-not-found' { return 'Azure compute SKU metadata for the selected region and VM size was not found.' }
-        'hibernation-capability-not-advertised' { return ("Azure metadata did not confirm capability '{0}' for this VM size in this region." -f [string]$CapabilityLabel) }
-        'nested-capability-not-advertised' { return 'Azure metadata did not confirm nested virtualization support for this VM size in this region.' }
+        'subscription-read-failed' { return 'Azure subscription details could not be read.' }
+        'compute-skus-read-failed' { return 'Azure VM size details could not be read from the REST API.' }
+        'compute-skus-parse-failed' { return 'Azure VM size details could not be parsed.' }
+        'vm-size-metadata-not-found' { return 'Azure did not return VM size details for the selected region and VM size.' }
+        'hibernation-capability-not-advertised' { return ("Azure did not list capability '{0}' for this VM size in this region." -f [string]$CapabilityLabel) }
+        'nested-capability-not-advertised' { return 'Azure did not list nested virtualization support for this VM size in this region.' }
         'nested-requires-standard-security' { return "Azure nested virtualization on this VM requires security type 'Standard' instead of 'TrustedLaunch'." }
         'nested-managed-by-security-type' { return 'Nested virtualization depends on VM size and security type for this VM.' }
-        'nested-capability-inconclusive' { return 'Azure metadata did not confirm nested virtualization. Guest validation will be used after deployment.' }
+        'nested-capability-inconclusive' { return 'Azure did not report nested virtualization clearly. Guest validation will be used after deployment.' }
         'hibernation-not-supported' {
             if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported that hibernation is unsupported.' }
             return "Azure reported: $evidenceText."
@@ -201,7 +201,7 @@ function Resolve-AzVmFeatureSupportReasonText {
             if ([string]::IsNullOrWhiteSpace([string]$evidenceText)) { return 'Azure reported nested virtualization support.' }
             return "Azure reported: $evidenceText."
         }
-        default { return ("{0} support metadata returned '{1}'." -f [string]$FeatureLabel, [string]$ReasonCode) }
+        default { return ("{0} support check returned '{1}'." -f [string]$FeatureLabel, [string]$ReasonCode) }
     }
 }
 

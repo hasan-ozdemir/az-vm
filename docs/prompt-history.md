@@ -5169,3 +5169,17 @@ I updated the mixed Windows language-and-region contract so `10003-configure-ux-
 
 I revalidated the change non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc checks. Then I revalidated it live in isolation on the active managed Windows VM by rerunning `10003-configure-ux-windows`, performing the required restart, rerunning `10006-capture-snapshot-health`, and taking direct `exec -q` readbacks. The final live state confirmed `en-US` for both system preferred UI language and system locale, `Turkey Standard Time`, UTF-8 `ACP/OEMCP` values `65001`, and Turkish regional/input state for the managed users.
 
+### 2026-03-17 11:17 UTC
+
+**User Prompt**
+
+````text
+Fix the remaining `metadata unavailable` style log messages, explain why the last end-to-end `az-vm create` run stopped halfway, tell me whether we solved that problem, and inspect the latest logs and screen output for any other likely issues before we decide whether to continue with another full create run.
+````
+
+**Assistant Summary**
+
+I traced the last interrupted end-to-end `az-vm create` attempt to one concrete runtime problem: `101-install-powershell-core` timed out on the fresh VM while Chocolatey was still installing PowerShell 7, so the create transcript reached `Task completed: 101-install-powershell-core ... - warning` and I stopped the workflow there instead of letting the run continue with a known task-warning state. I then hardened that task by raising its timeout to `120` seconds, accepting reboot-style Chocolatey success, and short-circuiting healthy installs by checking the real `pwsh.exe` path directly; an isolated live rerun of task `101` completed successfully on the partially created VM, so that specific create blocker is now fixed.
+
+I also cleaned up the remaining operator-facing metadata wording that was still visible in logs. The language readback surfaces in `132-configure-language-settings` and `10006-capture-snapshot-health` no longer emit the raw `metadata-unavailable` token, and the nested-virtualization feature path now says Azure did not report the capability clearly and that guest validation will be used instead of using the older metadata-centric phrasing. After the cleanup, I revalidated the repo non-live with the smoke, documentation-contract, code-quality, and PowerShell compatibility gates, and I confirmed that the managed Azure inventory was back to an empty clean state so the next end-to-end create retry can start from zero when requested.
+

@@ -53,9 +53,10 @@ $chocoExe = "$env:ProgramData\chocolatey\bin\choco.exe"
 if (-not (Test-Path -LiteralPath $chocoExe)) { throw "choco was not found." }
 Refresh-SessionPath
 
-if (Get-Command pwsh -ErrorAction SilentlyContinue) {
+$pwshExePath = Resolve-PwshExePath
+if (-not [string]::IsNullOrWhiteSpace([string]$pwshExePath)) {
     Write-Host "Existing PowerShell 7 installation is already healthy. Skipping choco install."
-    pwsh --version
+    & $pwshExePath --version
     Write-Host "Update task completed: install-powershell-core"
     return
 }
@@ -74,7 +75,7 @@ if (-not [string]::IsNullOrWhiteSpace([string]$pwshExePath)) {
     return
 }
 
-if ($installExitCode -ne 0 -and $installExitCode -ne 2) { throw "choco install powershell-core failed with exit code $installExitCode." }
+if ($installExitCode -ne 0 -and $installExitCode -ne 2 -and $installExitCode -ne 3010) { throw "choco install powershell-core failed with exit code $installExitCode." }
 throw "pwsh command was not found after install."
 Write-Host "Update task completed: install-powershell-core"
 

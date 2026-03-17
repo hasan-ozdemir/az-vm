@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.17.337 - 2026-03-17
+
+### Summary
+This release cleans up the remaining operator-facing metadata wording that was still leaking into Windows create/update logs and hardens the PowerShell Core install task that interrupted the latest live `az-vm create` attempt. Feature validation and language readback lines now use plainer, more direct wording, while `101-install-powershell-core` now gets enough time to finish on a fresh VM and can short-circuit a healthy existing install by checking the real `pwsh.exe` path directly.
+
+### Highlights
+- Replaced the old `metadata-unavailable` language readback text in `132-configure-language-settings` and `10006-capture-snapshot-health` with clearer operator-facing wording.
+- Refined nested-virtualization feature fallback messaging so create/update logs now say Azure did not report the capability clearly and that guest validation will be used, instead of using the older metadata-centric phrasing.
+- Hardened `101-install-powershell-core` by raising its tracked timeout to `120` seconds, accepting reboot-style Chocolatey completion, and treating a directly discovered healthy `pwsh.exe` install as success even when `Get-Command pwsh` is not yet refreshed.
+- Revalidated the cleanup non-live with the smoke, documentation-contract, code-quality, and PowerShell compatibility gates, and revalidated `101-install-powershell-core` live in isolation on the partially created Windows VM before returning the managed Azure inventory to a clean empty state.
+
 ## Release 2026.3.17.336 - 2026-03-17
 
 ### Summary

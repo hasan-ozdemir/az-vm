@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.17.337] - 2026-03-17
+
+### Changed
+- Changed Windows language readback wording in `132-configure-language-settings` and `10006-capture-snapshot-health` so operator-visible logs now say Windows did not report component details instead of emitting the raw `metadata-unavailable` token.
+- Changed nested-virtualization feature fallback messaging so create/update logs now say Azure did not report the capability clearly and that guest validation will be used, instead of the older metadata-centric phrasing.
+
+### Fixed
+- Fixed `101-install-powershell-core` so fresh Windows create runs no longer warn just because PowerShell 7 installation takes longer than the old `53s` timeout; the task now uses a `120s` tracked timeout, accepts Chocolatey reboot-style success, and short-circuits healthy installs by resolving the real `pwsh.exe` path directly.
+- Fixed the Windows smoke contract so the tracked `101-install-powershell-core` timeout matches the shipped task manifest again.
+
+### Tests
+- Revalidated the updated PowerShell task and operator-message cleanup non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated `101-install-powershell-core` live in isolation on the partially created managed Windows VM and confirmed that the managed Azure inventory is now clean and ready for the next full end-to-end create attempt.
+
 ## [2026.3.17.336] - 2026-03-17
 
 ### Changed
