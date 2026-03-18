@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.358 - 2026-03-18
+
+### Summary
+This release fixes the live create-resume path for interrupted fresh Windows builds. A partial `create` window that started at `vm-init` or later was still entering the fresh create naming path and generating a new managed resource group name, which made the resume command fail immediately with `ResourceGroupNotFound` even though the original create had already provisioned the real managed target successfully.
+
+### Highlights
+- Updated the create runtime so partial `create` windows that begin at `vm-init`, `vm-update`, or `vm-summary` now resolve and lock the existing managed VM target instead of generating a fresh `gX` resource group.
+- Updated the main pipeline so `create` can keep its create-mode workflow and banner while using existing-target step-1 semantics for those resume-only step windows.
+- Added a smoke regression that proves `create --step-from vm-init` reuses the actual managed resource group, location, and network/disk names from Azure.
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passes fully with the new resume contract.
+
 ## Release 2026.3.18.357 - 2026-03-18
 
 ### Summary

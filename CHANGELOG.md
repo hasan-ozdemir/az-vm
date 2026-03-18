@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.358] - 2026-03-18
+
+### Changed
+- Changed partial `create` step windows that start at `vm-init`, `vm-update`, or `vm-summary` so they now lock onto the existing managed VM target instead of generating a fresh `gX` resource group name during step-1 resolution.
+- Changed `Invoke-AzVmMain` so `create` can keep the create banner and action plan while resolving its step-1 context through existing-target semantics when a partial resume window requires it.
+
+### Fixed
+- Fixed the live publish resume bug where `create --step-from vm-init` could fail with `ResourceGroupNotFound` by generating a new managed resource group name even though the interrupted create had already provisioned `group`, `network`, and `vm-deploy` successfully.
+- Fixed the maintained smoke contract so partial create resume windows now prove they reuse the existing managed resource names and Azure location instead of trying to re-enter fresh-create naming rules.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite now includes a regression test for `create --step-from vm-init` existing-target reuse and passes fully.
+
 ## [2026.3.18.357] - 2026-03-18
 
 ### Changed

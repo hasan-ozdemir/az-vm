@@ -74,6 +74,8 @@ function Invoke-AzVmMain {
         [switch]$LinuxFlag,
         [ValidateSet('create','update')]
         [string]$CommandName = 'create',
+        [ValidateSet('create','update','configure','generic')]
+        [string]$Step1OperationName = '',
         [hashtable]$InitialConfigOverrides = @{},
         [psobject]$ActionPlan = $null
     )
@@ -100,12 +102,13 @@ function Invoke-AzVmMain {
         Start-Transcript -Path $logPath -Force
         $script:TranscriptStarted = $true
 
+        $effectiveStep1OperationName = if ([string]::IsNullOrWhiteSpace([string]$Step1OperationName)) { [string]$CommandName } else { [string]$Step1OperationName }
         $runtime = Initialize-AzVmCommandRuntimeContext `
             -AutoMode:$script:AutoMode `
             -WindowsFlag:$WindowsFlag `
             -LinuxFlag:$LinuxFlag `
             -ConfigMapOverrides $InitialConfigOverrides `
-            -OperationName $CommandName `
+            -OperationName $effectiveStep1OperationName `
             -UseInteractiveStep1 `
             -PersistGeneratedResourceGroup `
             -DeferDotEnvWrites

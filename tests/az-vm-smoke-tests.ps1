@@ -2103,6 +2103,132 @@ Invoke-Test -Name "Create runtime keeps fresh-target overrides for a fresh targe
     }
 }
 
+Invoke-Test -Name "Create runtime reuses the existing managed target for vm-init resume windows" -Action {
+    $originalFunctionDefinitions = @{}
+    foreach ($functionName in @(
+        'Get-AzVmRepoRoot',
+        'Read-DotEnvFile',
+        'Get-ConfigValue',
+        'Get-AzVmCliOptionText',
+        'Get-AzVmCliOptionBool',
+        'Resolve-AzVmActionPlan',
+        'Test-AzVmResourceGroupManaged',
+        'Get-AzVmVmNamesForResourceGroup',
+        'Test-AzVmAzResourceExists',
+        'Get-AzVmResourceGroupLocation',
+        'Get-AzVmManagedTargetOsType',
+        'Get-AzVmVmNetworkDescriptor',
+        'Get-AzVmResolvedSubscriptionContext',
+        'Set-AzVmConfigValueSource',
+        'Get-AzVmManagedVmMatchRows'
+    )) {
+        $command = Get-Command $functionName -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $originalFunctionDefinitions[$functionName] = [string]$command.Definition
+        }
+    }
+
+    function Get-AzVmRepoRoot { return $RepoRoot }
+    function Read-DotEnvFile {
+        param([string]$Path)
+        return @{
+            SELECTED_VM_NAME = 'samplevm'
+            SELECTED_RESOURCE_GROUP = ''
+            SELECTED_AZURE_REGION = 'swedencentral'
+            SELECTED_VM_OS = 'windows'
+            WIN_VM_SIZE = 'Standard_D4as_v5'
+        }
+    }
+    function Get-ConfigValue {
+        param([hashtable]$Config,[string]$Key,[string]$DefaultValue)
+        if ($Config.ContainsKey($Key)) { return [string]$Config[$Key] }
+        return [string]$DefaultValue
+    }
+    function Get-AzVmCliOptionText {
+        param([hashtable]$Options,[string]$Name)
+        if ($Options.ContainsKey($Name)) { return [string]$Options[$Name] }
+        return ''
+    }
+    function Get-AzVmCliOptionBool {
+        param([hashtable]$Options,[string]$Name,[bool]$DefaultValue)
+        if ($Options.ContainsKey($Name)) { return [bool]$Options[$Name] }
+        return [bool]$DefaultValue
+    }
+    function Resolve-AzVmActionPlan {
+        param([string]$CommandName,[hashtable]$Options)
+        return [pscustomobject]@{
+            Mode = 'range'
+            Target = 'vm-summary'
+            Actions = @('vm-init','vm-update','vm-summary')
+        }
+    }
+    function Test-AzVmResourceGroupManaged { param([string]$ResourceGroup) return $false }
+    function Get-AzVmVmNamesForResourceGroup { param([string]$ResourceGroup) return @('samplevm') }
+    function Test-AzVmAzResourceExists { param([string[]]$AzArgs) return $true }
+    function Get-AzVmResourceGroupLocation { param([string]$ResourceGroup) return 'austriaeast' }
+    function Get-AzVmManagedTargetOsType { param([string]$ResourceGroup,[string]$VmName) return 'windows' }
+    function Get-AzVmVmNetworkDescriptor {
+        param([string]$ResourceGroup,[string]$VmName)
+        return [pscustomobject]@{
+            OsDiskName = 'disk-samplevm-ate1-n7'
+            NicName = 'nic-samplevm-ate1-n6'
+            PublicIpName = 'ip-samplevm-ate1-n5'
+            NsgName = 'nsg-samplevm-ate1-n3'
+            VnetName = 'net-samplevm-ate1-n1'
+            SubnetName = 'subnet-samplevm-ate1-n2'
+        }
+    }
+    function Get-AzVmResolvedSubscriptionContext {
+        return [pscustomobject]@{
+            SubscriptionId = '11111111-1111-1111-1111-111111111111'
+            SubscriptionName = 'Example Sub'
+        }
+    }
+    function Set-AzVmConfigValueSource { param([string]$Key,[string]$Source) }
+    function Get-AzVmManagedVmMatchRows {
+        param([string]$VmName)
+        return @([pscustomobject]@{
+            ResourceGroup = 'rg-samplevm-ate1-g1'
+            VmName = 'samplevm'
+        })
+    }
+
+    try {
+        $runtime = New-AzVmCreateCommandRuntime -Options @{ auto = $true; 'step-from' = 'vm-init' } -WindowsFlag -LinuxFlag:$false -AutoMode
+
+        Assert-True -Condition ([string]$runtime.Step1OperationName -eq 'update') -Message 'Create vm-init resume windows must switch step-1 context resolution to existing-target mode.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.SELECTED_RESOURCE_GROUP -eq 'rg-samplevm-ate1-g1') -Message 'Create vm-init resume windows must reuse the existing managed resource group.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.SELECTED_AZURE_REGION -eq 'austriaeast') -Message 'Create vm-init resume windows must reuse the actual managed resource group location.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.PUBLIC_IP_NAME -eq 'ip-samplevm-ate1-n5') -Message 'Create vm-init resume windows must lock the existing managed network resource names.'
+        Assert-True -Condition ([string]$runtime.InitialConfigOverrides.VM_DISK_NAME -eq 'disk-samplevm-ate1-n7') -Message 'Create vm-init resume windows must reuse the existing managed OS disk name.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Get-AzVmRepoRoot',
+            'Read-DotEnvFile',
+            'Get-ConfigValue',
+            'Get-AzVmCliOptionText',
+            'Get-AzVmCliOptionBool',
+            'Resolve-AzVmActionPlan',
+            'Test-AzVmResourceGroupManaged',
+            'Get-AzVmVmNamesForResourceGroup',
+            'Test-AzVmAzResourceExists',
+            'Get-AzVmResourceGroupLocation',
+            'Get-AzVmManagedTargetOsType',
+            'Get-AzVmVmNetworkDescriptor',
+            'Get-AzVmResolvedSubscriptionContext',
+            'Set-AzVmConfigValueSource',
+            'Get-AzVmManagedVmMatchRows'
+        )) {
+            Remove-Item ("Function:\global:{0}" -f $functionName) -ErrorAction SilentlyContinue
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+            if ($originalFunctionDefinitions.ContainsKey($functionName)) {
+                Set-Item -Path ("Function:\global:{0}" -f $functionName) -Value ([scriptblock]::Create([string]$originalFunctionDefinitions[$functionName]))
+            }
+        }
+    }
+}
+
 Invoke-Test -Name "Create auto mode resolves from selected env values" -Action {
     $originalFunctionDefinitions = @{}
     foreach ($functionName in @('Get-AzVmRepoRoot','Read-DotEnvFile')) {

@@ -323,7 +323,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | `.\az-vm.cmd create --auto --windows --vm-name=<vm-name> --vm-region=<azure-region> --vm-size=<vm-sku>` | `--auto`, platform, name, region, size | Fresh unattended Windows build with explicit CLI overrides | Override-driven release or scripted setup | CLI overrides still win over `.env` selections. |
 | `.\az-vm.cmd delete --target=group --group=<resource-group> --yes` then `.\az-vm.cmd create --auto` | `delete`, `create` | Destructive rebuild of a managed target | Clean rebuild when intended | `create` now stays dedicated to one fresh managed resource group plus one fresh managed VM; use `delete` and then `create` when a destructive rebuild is intentional. |
 | `.\az-vm.cmd create --step=network --linux` | `--step` | Runs one top-level create step | Targeted orchestration testing | `create` never reuses an existing managed resource group or existing managed resource names, and `update` never falls through to an implicit fresh-create path. |
-| `.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf` | `--step-from`, `--step-to`, `--perf` | Runs a partial create window | Controlled reruns | `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages. |
+| `.\az-vm.cmd create --step-from=vm-deploy --step-to=vm-summary --perf` | `--step-from`, `--step-to`, `--perf` | Runs a partial create window | Controlled reruns | `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages. If the partial window starts at `vm-init` or later, the command reuses the already-created managed target instead of generating a new `gX` resource group. |
 
 #### `update`
 
@@ -572,6 +572,7 @@ Behavior notes:
 - if `--windows` or `--linux` is omitted, interactive mode asks for the VM OS type first and then scopes size, disk, and image defaults to that selection
 - Interactive `create` and `update` use `yes/no/cancel` review checkpoints only for `group`, `vm-deploy`, `vm-init`, and `vm-update`.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
+- Partial `create` windows that begin at `vm-init`, `vm-update`, or `vm-summary` reuse the existing managed target created earlier instead of generating a new managed resource group name.
 
 ### `update`
 Purpose: maintain one existing managed resource group and one existing VM target.
@@ -815,6 +816,7 @@ Use these as shared cross-platform intent flags instead of creating platform-spe
 - Auto `update` resolves its managed target from CLI overrides first, then `.env` `SELECTED_RESOURCE_GROUP` and `SELECTED_VM_NAME`.
 - Auto mode prints the same review context, but it continues without waiting for checkpoint confirmation.
 - `configure` and `vm-summary` stay visible in both interactive and auto mode, even when partial step selection skips interior stages.
+- Partial `create` windows that begin at `vm-init`, `vm-update`, or `vm-summary` reuse the existing managed target created earlier instead of generating a new managed resource group name.
 - Operator commands such as `show`, `do`, `connect`, and `exec` stay direct and do not require `--auto`.
 
 ### Naming And Managed Resource Rules

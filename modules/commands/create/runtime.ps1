@@ -70,6 +70,114 @@ function Assert-AzVmCreateAutoOptions {
     }
 }
 
+function Test-AzVmCreateResumeExistingTargetActionPlan {
+    param(
+        [psobject]$ActionPlan
+    )
+
+    if ($null -eq $ActionPlan) {
+        return $false
+    }
+
+    $actions = @($ActionPlan.Actions | ForEach-Object { [string]$_ })
+    if (@($actions).Count -eq 0) {
+        return $false
+    }
+
+    $runsExistingOnlyWindow = ($actions -notcontains 'group') -and ($actions -notcontains 'network') -and ($actions -notcontains 'vm-deploy')
+    $touchesExistingGuest = (@($actions | Where-Object { $_ -in @('vm-init','vm-update','vm-summary') }).Count -gt 0)
+    return ($runsExistingOnlyWindow -and $touchesExistingGuest)
+}
+
+function New-AzVmCreateResumeTargetOverrides {
+    param(
+        [hashtable]$Options,
+        [hashtable]$ConfigMap,
+        [string]$VmName
+    )
+
+    $resolvedVmName = [string]$VmName
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedVmName)) {
+        $resolvedVmName = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_VM_NAME' -DefaultValue '')
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedVmName)) {
+        Throw-FriendlyError `
+            -Detail "Create resume requires an existing managed VM target, but no VM name was resolved." `
+            -Code 66 `
+            -Summary "Create resume cannot resolve the existing VM target." `
+            -Hint "Set SELECTED_VM_NAME in .env or pass --vm-name before using create --step-from vm-init/vm-update."
+    }
+
+    $defaultResourceGroup = [string](Get-ConfigValue -Config $ConfigMap -Key 'SELECTED_RESOURCE_GROUP' -DefaultValue '')
+    $targetResourceGroup = ''
+    if (-not [string]::IsNullOrWhiteSpace([string]$defaultResourceGroup) -and (Test-AzVmResourceGroupManaged -ResourceGroup $defaultResourceGroup)) {
+        $activeVmNames = @(Get-AzVmVmNamesForResourceGroup -ResourceGroup $defaultResourceGroup)
+        foreach ($candidateVmName in @($activeVmNames)) {
+            if ([string]::Equals([string]$candidateVmName, [string]$resolvedVmName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $targetResourceGroup = [string]$defaultResourceGroup
+                break
+            }
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$targetResourceGroup)) {
+        $matches = @(Get-AzVmManagedVmMatchRows -VmName $resolvedVmName)
+        if (@($matches).Count -eq 0) {
+            Throw-FriendlyError `
+                -Detail ("Create resume could not find an existing managed VM named '{0}'." -f [string]$resolvedVmName) `
+                -Code 66 `
+                -Summary "Create resume cannot continue because the partial managed target was not found." `
+                -Hint "Rerun a full create first, or provide a VM name that already exists in a managed resource group."
+        }
+        if (@($matches).Count -gt 1) {
+            $matchGroups = @($matches | ForEach-Object { [string]$_.ResourceGroup } | Sort-Object -Unique)
+            Throw-FriendlyError `
+                -Detail ("Create resume found VM name '{0}' in multiple managed resource groups: {1}." -f [string]$resolvedVmName, ($matchGroups -join ', ')) `
+                -Code 66 `
+                -Summary "Create resume needs one exact managed target." `
+                -Hint "Set SELECTED_RESOURCE_GROUP in .env to the intended managed resource group before retrying create --step-from."
+        }
+
+        $targetResourceGroup = [string]$matches[0].ResourceGroup
+        $resolvedVmName = [string]$matches[0].VmName
+    }
+
+    if (-not (Test-AzVmAzResourceExists -AzArgs @('vm', 'show', '-g', $targetResourceGroup, '-n', $resolvedVmName))) {
+        Throw-FriendlyError `
+            -Detail ("Create resume target VM '{0}' was not found in managed resource group '{1}'." -f [string]$resolvedVmName, [string]$targetResourceGroup) `
+            -Code 66 `
+            -Summary "Create resume cannot continue because the partial VM target does not exist." `
+            -Hint "Rerun a full create first, or choose an existing managed VM target."
+    }
+
+    $targetLocation = Get-AzVmResourceGroupLocation -ResourceGroup $targetResourceGroup
+    $targetOsType = Get-AzVmManagedTargetOsType -ResourceGroup $targetResourceGroup -VmName $resolvedVmName
+    $networkDescriptor = Get-AzVmVmNetworkDescriptor -ResourceGroup $targetResourceGroup -VmName $resolvedVmName
+
+    $resumeOverrides = @{
+        SELECTED_AZURE_SUBSCRIPTION_ID = [string]$((Get-AzVmResolvedSubscriptionContext).SubscriptionId)
+        SELECTED_RESOURCE_GROUP = [string]$targetResourceGroup
+        SELECTED_VM_NAME = [string]$resolvedVmName
+        SELECTED_AZURE_REGION = [string]$targetLocation
+        VNET_NAME = [string]$networkDescriptor.VnetName
+        SUBNET_NAME = [string]$networkDescriptor.SubnetName
+        NSG_NAME = [string]$networkDescriptor.NsgName
+        PUBLIC_IP_NAME = [string]$networkDescriptor.PublicIpName
+        NIC_NAME = [string]$networkDescriptor.NicName
+        VM_DISK_NAME = [string]$networkDescriptor.OsDiskName
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$targetOsType)) {
+        $resumeOverrides['SELECTED_VM_OS'] = [string]$targetOsType
+    }
+
+    foreach ($overrideKey in @($resumeOverrides.Keys)) {
+        Set-AzVmConfigValueSource -Key ([string]$overrideKey) -Source 'azure value'
+    }
+
+    return $resumeOverrides
+}
+
 function New-AzVmCreateCommandRuntime {
     param(
         [hashtable]$Options,
@@ -130,11 +238,21 @@ function New-AzVmCreateCommandRuntime {
         Set-AzVmConfigValueSource -Key 'VM_SIZE' -Source 'cli value'
     }
 
+    $step1OperationName = 'create'
+    if (Test-AzVmCreateResumeExistingTargetActionPlan -ActionPlan $actionPlan) {
+        $resumeOverrides = New-AzVmCreateResumeTargetOverrides -Options $Options -ConfigMap $configMap -VmName ([string]$createOverrides['SELECTED_VM_NAME'])
+        foreach ($overrideKey in @($resumeOverrides.Keys)) {
+            $createOverrides[[string]$overrideKey] = [string]$resumeOverrides[[string]$overrideKey]
+        }
+        $step1OperationName = 'update'
+    }
+
     return [pscustomobject]@{
         ActionPlan = $actionPlan
         InitialConfigOverrides = $createOverrides
         WindowsFlag = [bool]$WindowsFlag
         LinuxFlag = [bool]$LinuxFlag
         AutoMode = [bool]$AutoMode
+        Step1OperationName = [string]$step1OperationName
     }
 }
