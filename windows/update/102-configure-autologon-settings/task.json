@@ -1,0 +1,8 @@
+{
+  "priority": 102,
+  "enabled": true,
+  "timeout": 45,
+  "dependsOn": [
+    "101-install-sysinternals-tool"
+  ]
+}

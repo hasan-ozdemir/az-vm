@@ -5350,3 +5350,17 @@ Fix the Public Desktop shortcuts so the assistant user can use them the same way
 I fixed the dual-user Windows Public Desktop shortcut path in two parts. First, I extended the shared interactive-session helper with a reusable AppX registration repair worker so the repo can validate or repair Store-backed `shell:AppsFolder` visibility under a selected managed user instead of trusting only the current SSH session. Then I updated `10003-create-shortcuts-public-desktop` so it now copies that helper as a tracked asset, repairs AppsFolder registrations for both `manager` and `assistant` across Teams, Be My Eyes, Codex App, WhatsApp Business, and iCloud before shortcut normalization, and keeps user-scoped shortcut contracts on `%UserProfile%` or `%LocalAppData%` rather than freezing them to one concrete user path.
 
 I revalidated the change non-live with the smoke, code-quality, documentation-contract, and PowerShell compatibility checks. On the live managed Windows VM, I reran isolated task `10003` in short loops, confirmed the new `public-shortcut-user-appid-repair` path succeeded for both managed users without stage warnings, and rechecked the critical shared desktop shortcuts to confirm they no longer preserve hard-coded `C:\Users\<name>\...` definitions where a user-relative contract is required.
+
+### 2026-03-18 04:07 UTC
+
+**User Prompt**
+
+````text
+Implement the approved Windows task refactor plan, then update the active Windows task names so they use a more contextual and consistent `[verb]-[entity]-[target-type]` contract instead of mixed suffixes like `-system` or ad hoc names.
+````
+
+**Assistant Summary**
+
+I implemented the approved Windows task refactor in one coordinated pass. The active Windows `vm-init` and `vm-update` catalog was renumbered and renamed onto a consistent `[verb]-[entity]-[target-type]` scheme, Chocolatey bootstrap moved to the Windows update initial band as `01-install-choco-tool`, the Windows OpenSSH init path was rewritten to use Windows capability servicing instead of Chocolatey, the old combined npm bootstrap task was split into `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, and `126-install-google-gemini-tool`, and the task-local app-state plugin zips were rebuilt so their embedded manifest `taskName` values now match the renamed task folders.
+
+I also replaced the Windows `refreshenv.cmd` path refresh pattern with a shared registry-backed helper module, tightened `121-install-wsl-feature` around `wsl --install --no-distribution`, hardened Docker readiness so `134-install-docker-desktop-application` now requires healthy `docker desktop status` and `docker info` probes before success, and fixed `136-configure-language-settings` so it now exits cleanly when the Turkish capability surface is already installed even if the lingering interactive worker does not write a result file. I revalidated the repo non-live with the smoke, code-quality, PowerShell compatibility, documentation-contract, and release-doc checks, then revalidated live in isolation on the active managed Windows VM through `task --run-vm-init 03`, `04`, and Windows update tasks `01`, `121`, `124`, `125`, `126`, `134`, and the fixed `136`, confirming that the final language rerun completed successfully, triggered its reboot, and returned the VM to a healthy SSH state.

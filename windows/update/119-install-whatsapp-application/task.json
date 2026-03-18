@@ -1,0 +1,88 @@
+{
+  "priority": 119,
+  "enabled": true,
+  "timeout": 90,
+  "assets": [
+    {
+      "local": "../../../modules/core/tasks/azvm-store-install-state.psm1",
+      "remote": "C:/Windows/Temp/az-vm-store-install-state.psm1"
+    },
+    {
+      "local": "../../../tools/scripts/az-vm-interactive-session-helper.ps1",
+      "remote": "C:/Windows/Temp/az-vm-interactive-session-helper.ps1"
+    }
+  ],
+  "appState": {
+    "machineDirectories": [],
+    "machineFiles": [],
+    "profileDirectories": [
+      {
+        "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\Settings",
+        "targetProfiles": [],
+        "excludeNames": [],
+        "excludePathPatterns": [],
+        "excludeFilePatterns": []
+      },
+      {
+        "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\LocalState",
+        "targetProfiles": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "DawnCache",
+          "Crashpad",
+          "CrashDumps",
+          "rotatedLogs",
+          "logq",
+          "Microsoft.AppCenter.Storage",
+          "Temp",
+          "tmp",
+          "Logs"
+        ],
+        "excludePathPatterns": [
+          "*\\transfers\\*",
+          "*\\Microsoft\\AppCenter\\*"
+        ],
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.db-shm",
+          "*.db-wal",
+          "*.etl",
+          "*.log"
+        ]
+      },
+      {
+        "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\RoamingState",
+        "targetProfiles": [],
+        "excludeNames": [
+          "Cache",
+          "Code Cache",
+          "GPUCache",
+          "DawnCache",
+          "Crashpad",
+          "CrashDumps",
+          "Temp",
+          "tmp",
+          "Logs"
+        ],
+        "excludePathPatterns": [
+          "*\\transfers\\*",
+          "*\\Microsoft\\AppCenter\\*"
+        ],
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.db-shm",
+          "*.db-wal",
+          "*.etl",
+          "*.log"
+        ]
+      }
+    ],
+    "profileFiles": [],
+    "machineRegistryKeys": [],
+    "userRegistryKeys": []
+  }
+}

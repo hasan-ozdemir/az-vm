@@ -112,20 +112,10 @@ function Test-TcpPortReachable {
     }
 }
 
-function Refresh-SessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
-    }
+Import-Module 'C:\Windows\Temp\az-vm-session-environment.psm1' -Force -DisableNameChecking
 
-    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
-    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
-        $env:Path = [string]$machinePath
-    }
-    else {
-        $env:Path = ("{0};{1}" -f [string]$machinePath, [string]$userPath)
-    }
+function Refresh-SessionPath {
+    Refresh-AzVmSessionPath | Out-Null
 }
 
 function Invoke-NativeCommandProbe {
@@ -2087,10 +2077,10 @@ Write-UserLanguageStatus -UserName $assistantUser -UserPassword $assistantPasswo
 Write-DefaultLanguageStatus
 
 Write-Host "STORE INSTALL STATE:"
-Write-StoreInstallStateReadback -TaskName '117-install-codex-app' -Label 'Codex App'
-Write-StoreInstallStateReadback -TaskName '116-install-whatsapp-system' -Label 'WhatsApp'
-Write-StoreInstallStateReadback -TaskName '115-install-be-my-eyes' -Label 'Be My Eyes'
-Write-StoreInstallStateReadback -TaskName '122-install-icloud-system' -Label 'iCloud'
+Write-StoreInstallStateReadback -TaskName '120-install-codex-application' -Label 'Codex App'
+Write-StoreInstallStateReadback -TaskName '119-install-whatsapp-application' -Label 'WhatsApp'
+Write-StoreInstallStateReadback -TaskName '118-install-be-my-eyes-application' -Label 'Be My Eyes'
+Write-StoreInstallStateReadback -TaskName '122-install-icloud-application' -Label 'iCloud'
 
 Write-Host "JAWS HEALTH:"
 $jawsExpectedExe = 'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe'

@@ -3,6 +3,27 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.348] - 2026-03-18
+
+### Changed
+- Changed the active Windows `vm-init` and `vm-update` task catalog to use a consistent `[verb]-[entity]-[target-type]` naming contract instead of the older mixed `-system`, `-app`, `-cli`, and ad hoc suffix set. The tracked Windows catalog now exposes names such as `01-install-choco-tool`, `114-install-teams-application`, `124-install-openai-codex-tool`, `134-install-docker-desktop-application`, and `10003-create-public-desktop-shortcuts`.
+- Changed Windows `vm-init` so Chocolatey is no longer a dependency of the OpenSSH bootstrap path. `03-install-openssh-service` now installs the Windows OpenSSH Server capability through capability servicing with an inbox `install-sshd.ps1` fallback, while Chocolatey bootstrap moved to the `vm-update` initial band as `01-install-choco-tool`.
+- Changed the old combined Windows npm bootstrap task into three standalone tracked tasks with separate task-local plugin zips and separate app-state manifests: `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, and `126-install-google-gemini-tool`.
+- Changed the Windows PATH refresh contract so the tracked init/update surface no longer shells through `refreshenv.cmd`. The repo now ships a shared registry-backed session helper at `modules/core/tasks/azvm-session-environment.psm1`, and the touched Windows task scripts, store-state helper, and summary readback now use that helper instead of the old `refreshenv` path.
+- Changed `121-install-wsl-feature` so it now starts with `wsl --install --no-distribution` before the existing DISM/feature reconciliation, WSL update, and default-version flow.
+- Changed `134-install-docker-desktop-application` so it now requires bounded daemon readiness before success: the task detached-starts Docker Desktop, then waits until both `docker desktop status` and `docker info` return healthy instead of warning and continuing while the engine is still cold.
+- Changed `136-configure-language-settings` so it now always emits a reboot-required marker on success, logs final capability summaries for `en-US` and `tr-TR`, and short-circuits the long-running Turkish scheduled-task worker when the Windows capability state is already satisfied even if the worker never writes its own result file.
+
+### Fixed
+- Fixed the active Windows task manifest, runtime lookup, shortcut, help, test, and task-local plugin surfaces so the renumbered and renamed Windows tasks now resolve through one consistent catalog without stale current-name drift.
+- Fixed the tracked Windows task-local app-state zip manifests so their embedded `taskName` values now match the owning folder names after the Windows task renumber and naming pass, including the three split CLI tasks.
+- Fixed isolated live validation of `136-configure-language-settings` on the active managed Windows VM by treating “capability state already satisfied” as a valid completion path for the lingering Turkish install worker instead of surfacing a warning after the SSH transport is closed by the guest.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated live in isolation on the active managed Windows VM through `task --run-vm-init 03`, `task --run-vm-init 04`, `task --run-vm-update 01`, `task --run-vm-update 121`, `task --run-vm-update 124`, `task --run-vm-update 125`, `task --run-vm-update 126`, `task --run-vm-update 134`, and a fixed rerun of `task --run-vm-update 136`.
+- Verified live follow-up state after the language-task fix: the VM returned to SSH cleanly after the reboot-signaled rerun of `136`, the system preferred UI language read back as `en-US`, and the Turkish language capability surface read back as installed.
+
 ## [2026.3.18.347] - 2026-03-18
 
 ### Changed

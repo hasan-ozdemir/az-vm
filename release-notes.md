@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.348 - 2026-03-18
+
+### Summary
+This release refactors the active Windows task catalog around two themes: a consistent `[verb]-[entity]-[target-type]` naming contract and a cleaner Windows guest bootstrap/runtime surface. Chocolatey now starts in the Windows `vm-update` initial band, OpenSSH no longer depends on Chocolatey during `vm-init`, the old combined npm bootstrap task is split into three standalone CLI tasks, and Windows PATH refresh no longer depends on `refreshenv.cmd`.
+
+### Highlights
+- Renamed the active Windows `vm-init` and `vm-update` catalog to a consistent target-type-oriented scheme, including `01-install-choco-tool`, `02-install-winget-tool`, `114-install-teams-application`, `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, `126-install-google-gemini-tool`, `134-install-docker-desktop-application`, and `10003-create-public-desktop-shortcuts`.
+- Moved Chocolatey bootstrap from `vm-init` to the Windows `vm-update` initial band and rewrote the Windows OpenSSH init path so `03-install-openssh-service` now installs the Windows capability with an inbox recovery path instead of requiring Chocolatey first.
+- Split the old combined Windows npm task into three standalone tracked tasks with separate task-local app-state plugin zips and separate manifest task names for Codex CLI, GitHub Copilot CLI, and Gemini CLI.
+- Replaced the Windows `refreshenv.cmd` path refresh pattern with a shared registry-backed helper module and propagated that helper through the touched Windows task surface, the Store install-state helper, and the Windows summary readback path.
+- Hardened `121-install-wsl-feature`, `134-install-docker-desktop-application`, and `136-configure-language-settings`: WSL now begins with `wsl --install --no-distribution`, Docker now waits for both `docker desktop status` and `docker info` readiness before success, and the language task now exits cleanly when the Turkish capability state is already satisfied even if the lingering scheduled worker never writes a result file.
+- Revalidated the release non-live and live in isolation on the active managed Windows VM, including successful isolated reruns of `03`, `04`, `01`, `121`, `124`, `125`, `126`, `134`, and the fixed `136` language task with its reboot and SSH recovery.
+
 ## Release 2026.3.18.347 - 2026-03-18
 
 ### Summary

@@ -205,6 +205,10 @@ function New-AzVmWorkflowSummaryReadbackTaskBlock {
     if ([string]::Equals([string]$Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase)) {
         $assetSpecs = @(
             [pscustomobject]@{
+                LocalPath = (Join-Path $RepoRoot 'modules\core\tasks\azvm-session-environment.psm1')
+                RemotePath = 'C:/Windows/Temp/az-vm-session-environment.psm1'
+            },
+            [pscustomobject]@{
                 LocalPath = (Join-Path $RepoRoot 'modules\core\tasks\azvm-store-install-state.psm1')
                 RemotePath = 'C:/Windows/Temp/az-vm-store-install-state.psm1'
             },

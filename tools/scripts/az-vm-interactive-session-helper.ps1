@@ -645,13 +645,13 @@ function New-AzVmInteractiveDesktopBlockMessage {
     $warningMessage = ''
     switch ([string]$Status.ReasonCode) {
         'autologon-disabled' {
-            $summary = ("{0} requires the {1} interactive desktop session, but autologon is disabled or not configured for that user. Run 102-autologon-manager-user and restart the VM before retrying the Microsoft Store task." -f $activity, $userText)
+            $summary = ("{0} requires the {1} interactive desktop session, but autologon is disabled or not configured for that user. Run 102-configure-autologon-settings and restart the VM before retrying the Microsoft Store task." -f $activity, $userText)
             $warningMessage = ("{0} blocked: autologon is disabled or not configured for {1}. Run 102-autologon-manager-user and restart the VM." -f $activity, $userText)
             break
         }
         'autologon-different-user' {
             $configuredUser = if ([string]::IsNullOrWhiteSpace([string]$Status.DefaultUserName)) { '(none)' } else { [string]$Status.DefaultUserName }
-            $summary = ("{0} requires the {1} interactive desktop session, but autologon is currently configured for '{2}'. Run 102-autologon-manager-user and restart the VM before retrying the Microsoft Store task." -f $activity, $userText, $configuredUser)
+            $summary = ("{0} requires the {1} interactive desktop session, but autologon is currently configured for '{2}'. Run 102-configure-autologon-settings and restart the VM before retrying the Microsoft Store task." -f $activity, $userText, $configuredUser)
             $warningMessage = ("{0} blocked: autologon is configured for '{1}' instead of {2}. Run 102-autologon-manager-user and restart the VM." -f $activity, $configuredUser, $userText)
             break
         }

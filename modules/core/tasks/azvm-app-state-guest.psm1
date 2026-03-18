@@ -1591,10 +1591,10 @@ function Stop-AzVmManagedProcessesGracefully {
 function Get-AzVmTaskAppStateManagedProcessNames {
     param([string]$TaskName)
 
-    if ([string]::Equals([string]$TaskName, '02-check-install-chrome', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals([string]$TaskName, '03-install-chrome-application', [System.StringComparison]::OrdinalIgnoreCase)) {
         return @('chrome')
     }
-    if ([string]::Equals([string]$TaskName, '103-install-edge-browser', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([string]::Equals([string]$TaskName, '103-install-edge-application', [System.StringComparison]::OrdinalIgnoreCase)) {
         return @('msedge')
     }
 

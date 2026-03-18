@@ -80,7 +80,39 @@ function Apply-AzVmTaskBlockReplacements {
             }
         }
 
+        $repoRoot = ''
+        foreach ($candidatePath in @($taskMetadataPath, $taskRootPath, $directoryPath, $stageRootDirectoryPath)) {
+            if ([string]::IsNullOrWhiteSpace([string]$candidatePath)) {
+                continue
+            }
+
+            $repoRoot = Resolve-AzVmTaskRepoRootFromPath -StartPath $candidatePath
+            if (-not [string]::IsNullOrWhiteSpace([string]$repoRoot)) {
+                break
+            }
+        }
+
+        $isWindowsPowerShellTask = $false
+        foreach ($pathCandidate in @($relativePath, $taskName, $directoryPath)) {
+            if ([string]::IsNullOrWhiteSpace([string]$pathCandidate)) {
+                continue
+            }
+
+            if ([string]$pathCandidate -match '(?i)\.ps1$' -or [string]$pathCandidate -match '^(?:windows[\\/])' -or [string]$pathCandidate -match '(?i)[\\/]windows[\\/]') {
+                $isWindowsPowerShellTask = $true
+                break
+            }
+        }
+
+        if ($isWindowsPowerShellTask -and -not [string]::IsNullOrWhiteSpace([string]$repoRoot)) {
+            $assetSpecs += [pscustomobject]@{
+                LocalPath = (Join-Path $repoRoot 'modules\core\tasks\azvm-session-environment.psm1')
+                RemotePath = 'C:/Windows/Temp/az-vm-session-environment.psm1'
+            }
+        }
+
         $assetCopies = @()
+        $assetCopyKeys = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
         if (-not [string]::IsNullOrWhiteSpace([string]$directoryPath)) {
             foreach ($assetSpec in @($assetSpecs)) {
                 $assetLocalPath = [string]$assetSpec.LocalPath
@@ -101,9 +133,13 @@ function Apply-AzVmTaskBlockReplacements {
                     throw ("Task asset was not found for '{0}': {1}" -f $taskName, $assetLocalPath)
                 }
 
-                $assetCopies += [pscustomobject]@{
-                    LocalPath = [string](Resolve-Path -LiteralPath $assetLocalPath).Path
-                    RemotePath = [string]$assetRemotePath
+                $resolvedLocalPath = [string](Resolve-Path -LiteralPath $assetLocalPath).Path
+                $copyKey = ("{0}|{1}" -f [string]$resolvedLocalPath, [string]$assetRemotePath)
+                if ($assetCopyKeys.Add([string]$copyKey)) {
+                    $assetCopies += [pscustomobject]@{
+                        LocalPath = [string]$resolvedLocalPath
+                        RemotePath = [string]$assetRemotePath
+                    }
                 }
             }
 

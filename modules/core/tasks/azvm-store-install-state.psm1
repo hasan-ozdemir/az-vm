@@ -1,13 +1,17 @@
 $ErrorActionPreference = 'Stop'
 
+$sessionEnvironmentHelperPath = 'C:\Windows\Temp\az-vm-session-environment.psm1'
+if (Test-Path -LiteralPath $sessionEnvironmentHelperPath) {
+    Import-Module $sessionEnvironmentHelperPath -Force -DisableNameChecking
+}
+
 function Invoke-AzVmRefreshSessionPath {
-    $refreshEnvCmd = "$env:ProgramData\chocolatey\bin\refreshenv.cmd"
-    if (Test-Path -LiteralPath $refreshEnvCmd) {
-        cmd.exe /d /c "`"$refreshEnvCmd`" >nul 2>&1" | Out-Null
+    if (Get-Command Refresh-AzVmSessionPath -ErrorAction SilentlyContinue) {
+        return (Refresh-AzVmSessionPath)
     }
 
-    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
-    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    $machinePath = [Environment]::ExpandEnvironmentVariables([string][Environment]::GetEnvironmentVariable('Path', 'Machine'))
+    $userPath = [Environment]::ExpandEnvironmentVariables([string][Environment]::GetEnvironmentVariable('Path', 'User'))
     if ([string]::IsNullOrWhiteSpace([string]$userPath)) {
         $env:Path = [string]$machinePath
     }
@@ -66,26 +70,26 @@ function Get-AzVmStoreInstallStateCandidateTaskNames {
     }
 
     switch ([string]$TaskName) {
-        '105-install-teams-system' {
-            foreach ($legacyTaskName in @('117-install-teams-system', '118-install-teams-system')) {
+        '114-install-teams-application' {
+            foreach ($legacyTaskName in @('117-install-teams-application', '118-install-teams-application')) {
                 [void]$candidateTaskNames.Add([string]$legacyTaskName)
             }
         }
-        '115-install-be-my-eyes' {
-            foreach ($legacyTaskName in @('125-install-be-my-eyes', '126-install-be-my-eyes')) {
+        '118-install-be-my-eyes-application-application' {
+            foreach ($legacyTaskName in @('125-install-be-my-eyes-application', '126-install-be-my-eyes-application')) {
                 [void]$candidateTaskNames.Add([string]$legacyTaskName)
             }
         }
-        '116-install-whatsapp-system' {
-            foreach ($legacyTaskName in @('120-install-whatsapp-system', '121-install-whatsapp-system')) {
+        '119-install-whatsapp-application' {
+            foreach ($legacyTaskName in @('120-install-whatsapp-application', '121-install-whatsapp-application')) {
                 [void]$candidateTaskNames.Add([string]$legacyTaskName)
             }
         }
-        '117-install-codex-app' {
-            [void]$candidateTaskNames.Add('116-install-codex-app')
+        '120-install-codex-application' {
+            [void]$candidateTaskNames.Add('116-install-codex-application')
         }
-        '122-install-icloud-system' {
-            foreach ($legacyTaskName in @('129-install-icloud-system', '131-install-icloud-system')) {
+        '122-install-icloud-application' {
+            foreach ($legacyTaskName in @('129-install-icloud-application', '131-install-icloud-application')) {
                 [void]$candidateTaskNames.Add([string]$legacyTaskName)
             }
         }

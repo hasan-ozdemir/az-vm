@@ -473,11 +473,11 @@ function Test-AzVmStoreBackedShortcutRefreshTask {
     }
 
     return ($taskName -in @(
-        '105-install-teams-system',
-        '115-install-be-my-eyes',
-        '116-install-whatsapp-system',
-        '117-install-codex-app',
-        '122-install-icloud-system'
+        '114-install-teams-application',
+        '118-install-be-my-eyes-application-application',
+        '119-install-whatsapp-application',
+        '120-install-codex-application',
+        '122-install-icloud-application'
     ))
 }
 
@@ -506,7 +506,7 @@ function Resolve-AzVmTaskExecutionPlanForStage {
     if ([string]::Equals([string]$Runtime.Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase) -and
         (Test-AzVmStoreBackedShortcutRefreshTask -TaskBlock $selectedTaskBlock)) {
         $shortcutRefreshTask = $tasks |
-            Where-Object { [string]::Equals([string]$_.Name, '10003-create-shortcuts-public-desktop', [System.StringComparison]::OrdinalIgnoreCase) } |
+            Where-Object { [string]::Equals([string]$_.Name, '10003-create-public-desktop-shortcuts', [System.StringComparison]::OrdinalIgnoreCase) } |
             Select-Object -First 1
         if ($null -ne $shortcutRefreshTask -and
             -not [string]::Equals([string]$shortcutRefreshTask.Name, [string]$selectedTaskBlock.Name, [System.StringComparison]::OrdinalIgnoreCase)) {
