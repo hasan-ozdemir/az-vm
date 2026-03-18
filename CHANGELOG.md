@@ -3,6 +3,18 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.355] - 2026-03-18
+
+### Changed
+- Changed `10003-create-public-desktop-shortcuts` so its classic application target discovery now mirrors the stronger install-task logic for Visual Studio 2022 Community and JAWS. The shortcut task now resolves `devenv.exe` through `vswhere.exe` plus canonical fallback paths and resolves `jfw.exe` through the Freedom Scientific registry roots before falling back to the canonical install paths.
+
+### Fixed
+- Fixed a shortcut-contract drift where `10003-create-public-desktop-shortcuts` could lag behind the hardened installers and miss a valid `VS2022` or `JAWS` target even though `132-install-vs2022community-application` or `133-install-jaws-application` had already verified the application successfully.
+- Fixed the public desktop shortcut smoke contract so the maintained test suite now pins the new `VS2022` and `JAWS` resolver fragments directly instead of trusting only the older hard-coded path assumptions.
+
+### Tests
+- Revalidated the non-live shortcut contract with `tests\az-vm-smoke-tests.ps1`. The `10003` shortcut coverage assertions passed with the new resolvers, while the suite still reports one unrelated pre-existing failure in `130-install-azure-cli-tool.ps1` about `--force`.
+
 ## [2026.3.18.354] - 2026-03-18
 
 ### Changed

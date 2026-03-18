@@ -295,6 +295,95 @@ function Resolve-ExecutableUnderDirectory {
     return ""
 }
 
+function Resolve-VsWhereExe {
+    foreach ($candidate in @(
+        'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe',
+        'C:\Program Files\Microsoft Visual Studio\Installer\vswhere.exe'
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$candidate) -and (Test-Path -LiteralPath $candidate)) {
+            return [string]$candidate
+        }
+    }
+
+    return ''
+}
+
+function Resolve-Vs2022CommunityExecutablePath {
+    $canonicalCandidates = @(
+        'C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe',
+        'C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe'
+    )
+
+    foreach ($candidate in @($canonicalCandidates)) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [string]$candidate
+        }
+    }
+
+    $vsWhereExe = Resolve-VsWhereExe
+    if (-not [string]::IsNullOrWhiteSpace([string]$vsWhereExe)) {
+        try {
+            $vsWhereOutput = & $vsWhereExe -latest -products Microsoft.VisualStudio.Product.Community -property installationPath 2>$null
+            $installationPath = [string]($vsWhereOutput | Out-String)
+            if (-not [string]::IsNullOrWhiteSpace([string]$installationPath)) {
+                $installationPath = $installationPath.Trim()
+                $resolvedCandidate = Join-Path $installationPath 'Common7\IDE\devenv.exe'
+                if (Test-Path -LiteralPath $resolvedCandidate) {
+                    return [string]$resolvedCandidate
+                }
+            }
+        }
+        catch {
+        }
+    }
+
+    return $canonicalCandidates[0]
+}
+
+function Resolve-JawsRootFromRegistry {
+    foreach ($registryPath in @(
+        'HKLM:\Software\Freedom Scientific\JAWS\2025',
+        'HKLM:\Software\WOW6432Node\Freedom Scientific\JAWS\2025'
+    )) {
+        if (-not (Test-Path -LiteralPath $registryPath)) {
+            continue
+        }
+
+        $targetPath = [string](Get-ItemProperty -LiteralPath $registryPath -Name 'Target' -ErrorAction SilentlyContinue).Target
+        if ([string]::IsNullOrWhiteSpace([string]$targetPath)) {
+            continue
+        }
+
+        $normalizedPath = $targetPath.Trim().TrimEnd('\')
+        if (Test-Path -LiteralPath $normalizedPath) {
+            return [string]$normalizedPath
+        }
+    }
+
+    return ''
+}
+
+function Resolve-JawsExecutablePath {
+    $registryRoot = Resolve-JawsRootFromRegistry
+    if (-not [string]::IsNullOrWhiteSpace([string]$registryRoot)) {
+        $registryCandidate = Resolve-ExecutableUnderDirectory -RootPaths @($registryRoot) -ExecutableName 'jfw.exe'
+        if (-not [string]::IsNullOrWhiteSpace([string]$registryCandidate)) {
+            return [string]$registryCandidate
+        }
+    }
+
+    foreach ($candidate in @(
+        'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe',
+        'C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe'
+    )) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [string]$candidate
+        }
+    }
+
+    return 'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe'
+}
+
 function Resolve-OfficeExecutable {
     param([string]$ExeName)
 
@@ -733,7 +822,13 @@ function Ensure-ManagedUserStoreAppRegistration {
             Write-Host ("public-shortcut-user-appid-repair: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $summary)
         }
         catch {
-            Write-Warning ("public-shortcut-user-appid-repair: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $_.Exception.Message)
+            $repairError = [string]$_.Exception.Message
+            if ($repairError -match '(?i)0x80070005|access is denied') {
+                Write-Host ("public-shortcut-user-appid-repair-skip: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $repairError) -ForegroundColor Yellow
+            }
+            else {
+                Write-Warning ("public-shortcut-user-appid-repair: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $repairError)
+            }
         }
     }
 }
@@ -1690,7 +1785,7 @@ $windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCand
     "C:\Program Files\Windscribe\Windscribe.exe",
     "C:\Program Files (x86)\Windscribe\Windscribe.exe"
 )
-$vs2022CommunityExe = "C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\devenv.exe"
+$vs2022CommunityExe = Resolve-Vs2022CommunityExecutablePath
 $vsCodeCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd") -ResolvedPath (Resolve-CommandPath -CommandName "code.cmd" -FallbackCandidates @(
     ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $assistantUser)
@@ -1728,10 +1823,7 @@ $itunesExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\iTu
     "C:\Program Files (x86)\iTunes\iTunes.exe"
 )) -FallbackPath "C:\Program Files\iTunes\iTunes.exe"
 $nvdaExe = "C:\Program Files (x86)\NVDA\nvda.exe"
-$jawsExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe" -ResolvedPath (Resolve-CommandPath -CommandName "jfw.exe" -FallbackCandidates @(
-    "C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe",
-    "C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe"
-)) -FallbackPath "C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe"
+$jawsExe = Resolve-JawsExecutablePath
 $edgeExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" -ResolvedPath (Resolve-CommandPath -CommandName "msedge.exe" -FallbackCandidates @(
     "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
     "C:\Program Files\Microsoft\Edge\Application\msedge.exe"

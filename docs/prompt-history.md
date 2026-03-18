@@ -5392,3 +5392,17 @@ Make and implement the plan for the remaining three items: fix and revalidate `1
 I completed the remaining warning-cleanup work for the Visual Studio 2022 Community and JAWS task chain. For `132-install-vs2022community-application`, I hardened the post-install readback so it now resolves `devenv.exe` through both canonical install paths and `vswhere.exe`, then tolerates transient non-standard Chocolatey exits when the product has actually landed cleanly. For `133-install-jaws-application`, I fixed the winget source/output handling, accepted the noisy exit codes that the live VM was returning when JAWS was already registering correctly, and treated the real success condition as a launchable `jfw.exe` resolved under the registered install root.
 
 I also rebuilt the JAWS task-local portable state from the local machine surface instead of leaving it partially filtered. The local save path now captures current-user Freedom Scientific HKCU data and `AppData\Roaming\Freedom Scientific\JAWS\2025\Settings` before later normalization to the managed `manager` profile, and the guest replay path now skips managed-user registry import cleanly when the target profile has no replayable hive file instead of creating a non-actionable signal warning. To close the full chain, I revalidated live in isolation on the active managed Windows VM by uninstalling Visual Studio 2022 Community and JAWS, rerunning `132` and `133` from clean state, and rerunning the JAWS follow-up tasks `1001` and `10002` until every stage summary reached `warning=0`, `signal-warning=0`, and `error=0`.
+
+### 2026-03-18 17:15 UTC
+
+**User Prompt**
+
+````text
+Check and analyze whether the `10003-create-public-desktop-shortcuts` vm-update task can fully discover and configure every Microsoft Store app shortcut, classic app shortcut, and Chrome/Edge shortcut target. If anything is skipped or incomplete, fix it where needed.
+````
+
+**Assistant Summary**
+
+I audited the current Windows Public Desktop shortcut contract against the actual `10003-create-public-desktop-shortcuts` task, the smoke suite, and the recent shortcut logs. The intended Store-backed shortcuts were already covered for Teams, Be My Eyes, Codex, WhatsApp Business, and iCloud, and the Chrome/Edge browser contract was already explicit: Chrome is the launcher behind the managed web/setup shortcuts and Edge has its dedicated managed app shortcut. The review did uncover one real drift, though: the shortcut task was still resolving `VS2022` and `JAWS` through simpler hard-coded assumptions even after the installer tasks `132-install-vs2022community-application` and `133-install-jaws-application` had been hardened to discover those applications more realistically.
+
+I fixed that drift directly in `10003-create-public-desktop-shortcuts`. The task now resolves `devenv.exe` through `vswhere.exe` plus canonical Community fallback paths, and resolves `jfw.exe` through the Freedom Scientific registry roots before falling back to the canonical JAWS install paths. I also tightened the smoke contract so it now pins those richer resolver fragments explicitly. After the change, I reran `tests\az-vm-smoke-tests.ps1`; the `10003` shortcut coverage checks passed with the new logic, and the only remaining failure was the unrelated pre-existing `130-install-azure-cli-tool.ps1` `--force` assertion.

@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.355 - 2026-03-18
+
+### Summary
+This release is a focused Windows shortcut-contract hardening pass. The Public Desktop shortcut task already covered the intended Store apps, classic apps, and Chrome/Edge browser shortcut surface, but its `VS2022` and `JAWS` target resolution was still weaker than the installer tasks that own those applications. The shortcut task now uses the same richer discovery paths, so it does not miss a valid target that the installer has already proven healthy.
+
+### Highlights
+- Updated `10003-create-public-desktop-shortcuts` so it now resolves `devenv.exe` through `vswhere.exe` and the canonical Community install paths instead of trusting one hard-coded path only.
+- Updated the same task so it now resolves `jfw.exe` through the Freedom Scientific registry roots before falling back to canonical JAWS install paths.
+- Revalidated the non-live shortcut contract in `tests\az-vm-smoke-tests.ps1`; the `10003` coverage assertions passed with the new resolvers, while the suite still reports one unrelated pre-existing failure in `130-install-azure-cli-tool.ps1` about `--force`.
+
 ## Release 2026.3.18.354 - 2026-03-18
 
 ### Summary
