@@ -694,6 +694,148 @@ function Test-AzVmUserInteractiveDesktopReady {
     return [bool]$status.Ready
 }
 
+function ConvertTo-AzVmPowerShellSingleQuotedLiteral {
+    param(
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ($null -eq $Value) {
+        return ''
+    }
+
+    return ([string]$Value).Replace("'", "''")
+}
+
+function ConvertTo-AzVmPowerShellStringArrayLiteral {
+    param(
+        [string[]]$Values = @()
+    )
+
+    $quotedValues = @(
+        @($Values) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { ("'" + (ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$_)) + "'") }
+    )
+
+    if (@($quotedValues).Count -eq 0) {
+        return '@()'
+    }
+
+    return ('@(' + ((@($quotedValues) -join ', ')) + ')')
+}
+
+function Get-AzVmCurrentUserStartAppMatches {
+    param(
+        [string[]]$AppIdPatterns = @()
+    )
+
+    $normalizedPatterns = @(
+        @($AppIdPatterns) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+    if (@($normalizedPatterns).Count -eq 0) {
+        return @()
+    }
+    if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        return @()
+    }
+
+    $matches = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($entry in @(Get-StartApps -ErrorAction SilentlyContinue)) {
+        $appIdText = [string]$entry.AppID
+        if ([string]::IsNullOrWhiteSpace([string]$appIdText)) {
+            continue
+        }
+
+        foreach ($pattern in @($normalizedPatterns)) {
+            if ($appIdText -like [string]$pattern) {
+                if (-not $matches.Contains([string]$appIdText)) {
+                    [void]$matches.Add([string]$appIdText)
+                }
+                break
+            }
+        }
+    }
+
+    return @($matches.ToArray())
+}
+
+function Invoke-AzVmUserAppxRegistrationRepair {
+    param(
+        [string]$TaskName,
+        [string]$RunAsUser,
+        [string]$RunAsPassword,
+        [string]$HelperPath,
+        [string]$PackageManifestPath,
+        [string[]]$AppIdPatterns = @(),
+        [int]$WaitTimeoutSeconds = 60,
+        [int]$HeartbeatSeconds = 10,
+        [string]$RunAsMode = 'password'
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$TaskName)) {
+        throw 'Interactive AppX repair task name is empty.'
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$RunAsUser)) {
+        throw 'Interactive AppX repair user is empty.'
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$HelperPath) -or -not (Test-Path -LiteralPath $HelperPath)) {
+        throw ("Interactive AppX repair helper path is invalid: {0}" -f [string]$HelperPath)
+    }
+    if ([string]::IsNullOrWhiteSpace([string]$PackageManifestPath) -or -not (Test-Path -LiteralPath $PackageManifestPath)) {
+        throw ("Interactive AppX repair manifest path is invalid: {0}" -f [string]$PackageManifestPath)
+    }
+
+    $normalizedPatterns = @(
+        @($AppIdPatterns) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+    if (@($normalizedPatterns).Count -eq 0) {
+        throw ("Interactive AppX repair app-id patterns are empty for task '{0}'." -f [string]$TaskName)
+    }
+
+    $paths = Get-AzVmInteractivePaths -TaskName $TaskName
+    $helperPathSafe = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$HelperPath)
+    $resultPathSafe = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$paths.ResultPath)
+    $taskNameSafe = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$paths.TaskName)
+    $manifestPathSafe = ConvertTo-AzVmPowerShellSingleQuotedLiteral -Value ([string]$PackageManifestPath)
+    $patternArrayLiteral = ConvertTo-AzVmPowerShellStringArrayLiteral -Values @($normalizedPatterns)
+
+    $workerScript = @(
+        '$ErrorActionPreference = ''Stop'''
+        '. ''' + $helperPathSafe + ''''
+        '$appIdPatterns = ' + $patternArrayLiteral
+        '$resultPath = ''' + $resultPathSafe + ''''
+        '$taskName = ''' + $taskNameSafe + ''''
+        '$manifestPath = ''' + $manifestPathSafe + ''''
+        'try {'
+        '    $matches = @(Get-AzVmCurrentUserStartAppMatches -AppIdPatterns $appIdPatterns)'
+        '    if (@($matches).Count -lt 1) {'
+        '        Add-AppxPackage -DisableDevelopmentMode -Register $manifestPath -ErrorAction Stop *> $null'
+        '        $matches = @(Get-AzVmCurrentUserStartAppMatches -AppIdPatterns $appIdPatterns)'
+        '    }'
+        '    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success (@($matches).Count -gt 0) -Summary (''app-id-match-count='' + [int]@($matches).Count) -Details @($matches)'
+        '}'
+        'catch {'
+        '    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary ([string]$_.Exception.Message)'
+        '    exit 1'
+        '}'
+    ) -join "`n"
+
+    return (Invoke-AzVmInteractiveDesktopAutomation `
+        -TaskName $TaskName `
+        -RunAsUser $RunAsUser `
+        -RunAsPassword $RunAsPassword `
+        -WorkerScriptText $workerScript `
+        -WaitTimeoutSeconds $WaitTimeoutSeconds `
+        -HeartbeatSeconds $HeartbeatSeconds `
+        -RunAsMode $RunAsMode)
+}
+
 function Remove-AzVmInteractiveScheduledTask {
     param(
         [string]$TaskName

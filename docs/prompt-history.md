@@ -5336,3 +5336,17 @@ Enable the same mechanism for every Microsoft Store application that is installe
 I completed the remaining Microsoft Store alignment by moving `105-install-teams-system` onto the same interactive-desktop and persisted Store-state workflow already used by the other Windows `winget -s msstore` tasks. The Teams task now validates launch readiness through the same shared helper path, preserves legacy pre-renumber Store state through alias lookup, and records launch-ready state that `10003-create-shortcuts-public-desktop` can consume consistently.
 
 I also changed isolated Windows `task --run-vm-update` behavior so reruns of the Store-backed tasks `105`, `115`, `116`, `117`, and `122` automatically append `10003-create-shortcuts-public-desktop` in the same isolated execution plan. After that change, I revalidated the repo non-live with the smoke, code-quality, documentation-contract, PowerShell compatibility, and release-doc checks, then reran the five Store-backed tasks live in isolation on the active managed Windows VM and confirmed through `exec` that `o2Teams`, `a2CodexApp`, `a3Be My Eyes`, `a4WhatsApp Business`, and `d4ICloud` all exist on the Public Desktop and resolve through `C:\Windows\explorer.exe` plus `shell:AppsFolder\...`.
+
+### 2026-03-18 02:09 UTC
+
+**User Prompt**
+
+````text
+Fix the Public Desktop shortcuts so the assistant user can use them the same way as the manager user, verify that on the live VM, and after I interrupted a long-running validation, continue in shorter step-by-step loops while checking the remote state carefully.
+````
+
+**Assistant Summary**
+
+I fixed the dual-user Windows Public Desktop shortcut path in two parts. First, I extended the shared interactive-session helper with a reusable AppX registration repair worker so the repo can validate or repair Store-backed `shell:AppsFolder` visibility under a selected managed user instead of trusting only the current SSH session. Then I updated `10003-create-shortcuts-public-desktop` so it now copies that helper as a tracked asset, repairs AppsFolder registrations for both `manager` and `assistant` across Teams, Be My Eyes, Codex App, WhatsApp Business, and iCloud before shortcut normalization, and keeps user-scoped shortcut contracts on `%UserProfile%` or `%LocalAppData%` rather than freezing them to one concrete user path.
+
+I revalidated the change non-live with the smoke, code-quality, documentation-contract, and PowerShell compatibility checks. On the live managed Windows VM, I reran isolated task `10003` in short loops, confirmed the new `public-shortcut-user-appid-repair` path succeeded for both managed users without stage warnings, and rechecked the critical shared desktop shortcuts to confirm they no longer preserve hard-coded `C:\Users\<name>\...` definitions where a user-relative contract is required.

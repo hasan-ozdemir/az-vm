@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.347 - 2026-03-18
+
+### Summary
+This release makes the managed Windows Public Desktop shortcut surface truly dual-user. `10003-create-shortcuts-public-desktop` now repairs Microsoft Store AppsFolder registrations for both `manager` and `assistant` before it normalizes shortcuts, and the same task now preserves user-relative shortcut commands instead of freezing user-scoped CLI or app paths to whichever profile generated the shortcut set.
+
+### Highlights
+- Added a reusable AppX registration repair helper to `tools/scripts/az-vm-interactive-session-helper.ps1`, so the repo can validate or repair `shell:AppsFolder` visibility for a selected managed user through the existing scheduled-task automation path instead of trusting only the current SSH session inventory.
+- Changed `10003-create-shortcuts-public-desktop` so it now copies that helper as a tracked task asset, runs manager-and-assistant AppsFolder repair for Teams, Be My Eyes, Codex App, WhatsApp Business, and iCloud, and uses a `120` second task timeout to cover that extra dual-user validation work.
+- Fixed the Public Desktop shortcut generation path so user-scoped shortcuts such as `k1Codex CLI`, `k2Gemini CLI`, `k3Github Copilot CLI`, `t4Ollama App`, and `v5VS Code` now keep `%UserProfile%` or `%LocalAppData%` in their managed contract instead of persisting one concrete `C:\Users\<name>\...` path into a shared desktop shortcut.
+- Revalidated live on the active managed Windows VM through isolated reruns of `10003`, then confirmed from the repaired VM state that the dual-user Store AppID repairs complete successfully for both managed users and that the critical user-scoped Public Desktop shortcuts now keep the intended user-relative launch contract.
+
 ## Release 2026.3.18.346 - 2026-03-18
 
 ### Summary

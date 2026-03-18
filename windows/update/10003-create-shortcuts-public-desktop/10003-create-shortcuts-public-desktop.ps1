@@ -7,7 +7,9 @@ $companyEmailAddress = "__SELECTED_COMPANY_EMAIL_ADDRESS__"
 $employeeEmailAddress = "__SELECTED_EMPLOYEE_EMAIL_ADDRESS__"
 $employeeFullName = "__SELECTED_EMPLOYEE_FULL_NAME__"
 $managerUser = "__VM_ADMIN_USER__"
+$managerPassword = "__VM_ADMIN_PASS__"
 $assistantUser = "__ASSISTANT_USER__"
+$assistantPassword = "__ASSISTANT_PASS__"
 $publicDesktop = "C:\Users\Public\Desktop"
 $publicChromeUserDataDir = "C:\Users\Public\AppData\Local\Google\Chrome\UserData"
 $publicEdgeUserDataDir = "C:\Users\Public\AppData\Local\Microsoft\msedge\UserData"
@@ -24,6 +26,7 @@ $unresolvedEmployeeEmailAddressToken = ('__' + 'SELECTED_EMPLOYEE_EMAIL_ADDRESS'
 $unresolvedEmployeeFullNameToken = ('__' + 'SELECTED_EMPLOYEE_FULL_NAME' + '__')
 $storeHelperPath = 'C:\Windows\Temp\az-vm-store-install-state.psm1'
 $launcherHelperPath = 'C:\Windows\Temp\az-vm-shortcut-launcher.psm1'
+$interactiveHelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
 # Use the direct .lnk target+arguments form until the combined invocation exceeds
 # the practical shortcut-length ceiling; only then emit a managed launcher script.
 $managedShortcutInvocationThreshold = 259
@@ -33,6 +36,9 @@ if (Test-Path -LiteralPath $storeHelperPath) {
 }
 if (Test-Path -LiteralPath $launcherHelperPath) {
     Import-Module $launcherHelperPath -Force -DisableNameChecking
+}
+if (Test-Path -LiteralPath $interactiveHelperPath) {
+    . $interactiveHelperPath
 }
 
 function Test-InvalidCompanyName {
@@ -598,6 +604,148 @@ function Resolve-AppPackageExecutablePath {
     }
 
     return ""
+}
+
+function Get-AppPackagesByHints {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    if (@($allPackages).Count -eq 0) {
+        return @()
+    }
+
+    $normalizedNameFragment = [string]$NameFragment
+    if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+        $normalizedNameFragment = $normalizedNameFragment.Trim().ToLowerInvariant()
+    }
+
+    $normalizedHints = @(
+        @($PackageNameHints) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } |
+            ForEach-Object { $_.Trim().ToLowerInvariant() }
+    )
+
+    return @(
+        $allPackages | Where-Object {
+            $pkgName = [string]$_.Name
+            $pkgFamily = [string]$_.PackageFamilyName
+            $installLocation = [string]$_.InstallLocation
+            if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+                return $false
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$pkgName) -and [string]::IsNullOrWhiteSpace([string]$pkgFamily)) {
+                return $false
+            }
+
+            $pkgNameLower = $pkgName.ToLowerInvariant()
+            $pkgFamilyLower = $pkgFamily.ToLowerInvariant()
+            if (-not [string]::IsNullOrWhiteSpace([string]$normalizedNameFragment)) {
+                if ($pkgNameLower.Contains($normalizedNameFragment) -or $pkgFamilyLower.Contains($normalizedNameFragment)) {
+                    return $true
+                }
+            }
+
+            foreach ($hint in @($normalizedHints)) {
+                if ($pkgNameLower.Contains($hint) -or $pkgFamilyLower.Contains($hint)) {
+                    return $true
+                }
+            }
+
+            return $false
+        }
+    )
+}
+
+function Resolve-AppPackageManifestPath {
+    param(
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    foreach ($package in @(Get-AppPackagesByHints -NameFragment $NameFragment -PackageNameHints $PackageNameHints)) {
+        $installLocation = [string]$package.InstallLocation
+        if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+            continue
+        }
+
+        $manifestPath = Join-Path $installLocation 'AppxManifest.xml'
+        if (Test-Path -LiteralPath $manifestPath) {
+            return [string]$manifestPath
+        }
+    }
+
+    return ''
+}
+
+function Ensure-ManagedUserStoreAppRegistration {
+    param(
+        [string]$RepairTaskName,
+        [string]$DisplayName,
+        [string]$NameFragment,
+        [string[]]$PackageNameHints = @()
+    )
+
+    if (-not (Get-Command Invoke-AzVmUserAppxRegistrationRepair -ErrorAction SilentlyContinue)) {
+        return
+    }
+
+    $packages = @(Get-AppPackagesByHints -NameFragment $NameFragment -PackageNameHints $PackageNameHints)
+    if (@($packages).Count -eq 0) {
+        return
+    }
+
+    $primaryPackage = @(
+        $packages | Where-Object {
+            -not [string]::IsNullOrWhiteSpace([string]$_.PackageFamilyName) -and
+            -not [string]::IsNullOrWhiteSpace([string]$_.InstallLocation)
+        } | Select-Object -First 1
+    )[0]
+    if ($null -eq $primaryPackage) {
+        return
+    }
+
+    $manifestPath = Resolve-AppPackageManifestPath -NameFragment $NameFragment -PackageNameHints $PackageNameHints
+    if ([string]::IsNullOrWhiteSpace([string]$manifestPath)) {
+        return
+    }
+
+    $packageFamily = [string]$primaryPackage.PackageFamilyName
+    if ([string]::IsNullOrWhiteSpace([string]$packageFamily)) {
+        return
+    }
+
+    $appIdPatterns = @("{0}!*" -f [string]$packageFamily)
+    foreach ($registrationTarget in @(
+        [pscustomobject]@{ Label = 'manager'; UserName = [string]$managerUser; Password = [string]$managerPassword },
+        [pscustomobject]@{ Label = 'assistant'; UserName = [string]$assistantUser; Password = [string]$assistantPassword }
+    )) {
+        if ([string]::IsNullOrWhiteSpace([string]$registrationTarget.UserName) -or [string]::IsNullOrWhiteSpace([string]$registrationTarget.Password)) {
+            continue
+        }
+
+        $registrationTaskName = ("{0}-{1}-appid-repair" -f [string]$RepairTaskName, [string]$registrationTarget.Label)
+        try {
+            $result = Invoke-AzVmUserAppxRegistrationRepair `
+                -TaskName $registrationTaskName `
+                -RunAsUser ([string]$registrationTarget.UserName) `
+                -RunAsPassword ([string]$registrationTarget.Password) `
+                -HelperPath $interactiveHelperPath `
+                -PackageManifestPath $manifestPath `
+                -AppIdPatterns $appIdPatterns `
+                -WaitTimeoutSeconds 45 `
+                -HeartbeatSeconds 10 `
+                -RunAsMode 'password'
+            $summary = if ($result.PSObject.Properties.Match('Summary').Count -gt 0) { [string]$result.Summary } else { 'completed' }
+            Write-Host ("public-shortcut-user-appid-repair: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $summary)
+        }
+        catch {
+            Write-Warning ("public-shortcut-user-appid-repair: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $_.Exception.Message)
+        }
+    }
 }
 
 function Resolve-ExistingOrFallbackPath {
@@ -1557,16 +1705,34 @@ $vsCodeCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("%LocalAppData%\
     ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Local\Programs\Microsoft VS Code\bin\code.cmd" -f $assistantUser)
 )) -FallbackPath ("%LocalAppData%\Programs\Microsoft VS Code\bin\code.cmd")
-$codexCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser) -ResolvedPath (Resolve-CommandPath -CommandName "codex.cmd" -FallbackCandidates @(
+$codexCmdResolvedPath = Resolve-CommandPath -CommandName "codex.cmd" -FallbackCandidates @(
     ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $assistantUser),
     "C:\Program Files\nodejs\codex.cmd"
-)) -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\codex.cmd" -f $managerUser)
-$geminiCmdPath = Resolve-ExistingOrFallbackPath -PreferredPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser) -ResolvedPath (Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @(
+)
+$codexCmdPath = if (-not [string]::IsNullOrWhiteSpace([string]$codexCmdResolvedPath) -and $codexCmdResolvedPath.ToLowerInvariant().Contains('\users\')) {
+    '%UserProfile%\AppData\Roaming\npm\codex.cmd'
+}
+elseif (-not [string]::IsNullOrWhiteSpace([string]$codexCmdResolvedPath)) {
+    [string]$codexCmdResolvedPath
+}
+else {
+    ''
+}
+$geminiCmdResolvedPath = Resolve-CommandPath -CommandName "gemini.cmd" -FallbackCandidates @(
     ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser),
     ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $assistantUser),
     "C:\Program Files\nodejs\gemini.cmd"
-)) -FallbackPath ("C:\Users\{0}\AppData\Roaming\npm\gemini.cmd" -f $managerUser)
+)
+$geminiCmdPath = if (-not [string]::IsNullOrWhiteSpace([string]$geminiCmdResolvedPath) -and $geminiCmdResolvedPath.ToLowerInvariant().Contains('\users\')) {
+    '%UserProfile%\AppData\Roaming\npm\gemini.cmd'
+}
+elseif (-not [string]::IsNullOrWhiteSpace([string]$geminiCmdResolvedPath)) {
+    [string]$geminiCmdResolvedPath
+}
+else {
+    ''
+}
 $itunesExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\iTunes\iTunes.exe" -ResolvedPath (Resolve-CommandPath -CommandName "iTunes.exe" -FallbackCandidates @(
     "C:\Program Files\iTunes\iTunes.exe",
     "C:\Program Files (x86)\iTunes\iTunes.exe"
@@ -1584,17 +1750,29 @@ $vlcExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\VideoL
     "C:\Program Files\VideoLAN\VLC\vlc.exe",
     "C:\Program Files (x86)\VideoLAN\VLC\vlc.exe"
 )) -FallbackPath "C:\Program Files\VideoLAN\VLC\vlc.exe"
-$oneDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe" -ResolvedPath (Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @(
+$oneDriveResolvedPath = Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @(
     "C:\Program Files\Microsoft OneDrive\OneDrive.exe",
     ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser),
     ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $assistantUser)
-)) -FallbackPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe"
+)
+$oneDriveExe = if (-not [string]::IsNullOrWhiteSpace([string]$oneDriveResolvedPath) -and $oneDriveResolvedPath.ToLowerInvariant().Contains('\users\')) {
+    '%LocalAppData%\Microsoft\OneDrive\OneDrive.exe'
+}
+else {
+    Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Microsoft OneDrive\OneDrive.exe" -ResolvedPath $oneDriveResolvedPath -FallbackPath "%LocalAppData%\Microsoft\OneDrive\OneDrive.exe"
+}
 $googleDriveResolvedExe = Resolve-CommandPath -CommandName "GoogleDriveFS.exe" -FallbackCandidates @("C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe")
 if ([string]::IsNullOrWhiteSpace([string]$googleDriveResolvedExe)) {
     $googleDriveResolvedExe = Resolve-ExecutableUnderDirectory -RootPaths @("C:\Program Files\Google\Drive File Stream") -ExecutableName "GoogleDriveFS.exe"
 }
 $googleDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe" -ResolvedPath $googleDriveResolvedExe -FallbackPath "C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe"
 $iCloudExe = Resolve-ICloudExecutablePath
+
+Ensure-ManagedUserStoreAppRegistration -RepairTaskName '10003-teams' -DisplayName 'Microsoft Teams' -NameFragment 'teams' -PackageNameHints @('teams')
+Ensure-ManagedUserStoreAppRegistration -RepairTaskName '10003-bemyeyes' -DisplayName 'Be My Eyes' -NameFragment 'bemyeyes' -PackageNameHints @('be my eyes', 'bemyeyes', $beMyEyesStoreProductId)
+Ensure-ManagedUserStoreAppRegistration -RepairTaskName '10003-codex' -DisplayName 'Codex app' -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0', '9PLM9XGG6VKS')
+Ensure-ManagedUserStoreAppRegistration -RepairTaskName '10003-whatsapp' -DisplayName 'WhatsApp Business' -NameFragment 'whatsapp' -PackageNameHints @('whatsapp', '5319275A.WhatsAppDesktop', '9NKSQGP7F2NH')
+Ensure-ManagedUserStoreAppRegistration -RepairTaskName '10003-icloud' -DisplayName 'iCloud' -NameFragment 'icloud' -PackageNameHints @('AppleInc.iCloud', '9PKTQ5699M62', 'icloud')
 
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
 $teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @("C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe")
@@ -1769,7 +1947,7 @@ $codexCliLaunchCommand = if (-not [string]::IsNullOrWhiteSpace([string]$codexCmd
 else {
     '/c start "" /max /high codex -c model_reasoning_summary=detailed -c hide_agent_reasoning=false -c show_raw_agent_reasoning=true -c tui.animations=true --enable multi_agent --enable fast_mode --yolo -s danger-full-access --cd "%UserProfile%" --search'
 }
-Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments $codexCliLaunchCommand -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $codexCmdPath -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "console")
+Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k1Codex CLI" -TargetPath $cmdExe -Arguments $codexCliLaunchCommand -WorkingDirectory "%UserProfile%" -IconLocation (Resolve-IconLocation -PreferredPath $codexCmdResolvedPath -FallbackPath $cmdExe) -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -TargetPath $cmdExe -Arguments ('/c cd /d %UserProfile% & start "" "{0}" --screen-reader --yolo' -f $geminiCmdPath) -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k3Github Copilot CLI" -TargetPath $cmdExe -Arguments '/c cd /d %UserProfile% & %UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5' -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 

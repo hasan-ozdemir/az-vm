@@ -4757,7 +4757,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '134-configure-language-settings' = 1575
         '10001-configure-settings-advanced-system' = 30
         '10002-configure-apps-startup' = 45
-        '10003-create-shortcuts-public-desktop' = 45
+        '10003-create-shortcuts-public-desktop' = 120
         '10004-configure-ux-windows' = 180
         '10005-copy-settings-user' = 165
     }
@@ -5212,6 +5212,10 @@ Invoke-Test -Name "Interactive session helper distinguishes Store desktop readin
         'function Wait-AzVmUserInteractiveDesktopReady',
         'function Write-AzVmInteractiveDesktopStatusLine',
         'function New-AzVmInteractiveDesktopBlockMessage',
+        'function Get-AzVmCurrentUserStartAppMatches',
+        'function Invoke-AzVmUserAppxRegistrationRepair',
+        'Add-AppxPackage -DisableDevelopmentMode -Register $manifestPath -ErrorAction Stop *> $null',
+        'app-id-match-count=',
         'autologon-disabled',
         'autologon-pending',
         'explorer-not-ready',
@@ -5890,7 +5894,16 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'public-desktop-removed: {0} => managed-by {1}',
         'CleanupAliases = @(',
         'CleanupMatchTargetOnly = [bool]$CleanupMatchTargetOnly',
-        'CleanupAliasMatchByNameOnly = [bool]$CleanupAliasMatchByNameOnly'
+        'CleanupAliasMatchByNameOnly = [bool]$CleanupAliasMatchByNameOnly',
+        '__VM_ADMIN_PASS__',
+        '__ASSISTANT_PASS__',
+        'az-vm-interactive-session-helper.ps1',
+        'Ensure-ManagedUserStoreAppRegistration',
+        'Invoke-AzVmUserAppxRegistrationRepair',
+        'public-shortcut-user-appid-repair:',
+        '%UserProfile%\AppData\Roaming\npm\codex.cmd',
+        '%UserProfile%\AppData\Roaming\npm\gemini.cmd',
+        '%LocalAppData%\Microsoft\OneDrive\OneDrive.exe'
     )
 
     foreach ($shortcutName in @($expectedShortcutNames)) {

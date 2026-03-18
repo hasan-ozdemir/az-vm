@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.347] - 2026-03-18
+
+### Changed
+- Changed `tools/scripts/az-vm-interactive-session-helper.ps1` so it now exposes a reusable AppX registration repair worker that can run under a selected managed user through the existing scheduled-task automation path and verify `shell:AppsFolder` visibility by AppID pattern instead of only relying on the current SSH session.
+- Changed `10003-create-shortcuts-public-desktop` so it now copies the interactive-session helper as a tracked task asset, repairs Store-backed AppsFolder registrations for both managed users before shortcut normalization, and keeps the task budget aligned with that extra work by raising its tracked timeout to `120` seconds.
+- Changed the same Public Desktop task so user-scoped shortcut commands that are meant to follow the current profile now keep `%UserProfile%` or `%LocalAppData%` in the managed shortcut contract instead of collapsing those paths into whichever managed user happened to run the task.
+
+### Fixed
+- Fixed the active managed Windows shortcut surface so `o2Teams`, `a3Be My Eyes`, `a2CodexApp`, `a4WhatsApp Business`, and `d4ICloud` now repair and verify usable AppsFolder launch targets for both `manager` and `assistant`, not just for the currently active shortcut-refresh session.
+- Fixed the Public Desktop normalization path so rerunning `10003-create-shortcuts-public-desktop` now rewrites stale launcher-backed and console-backed shortcuts such as `k1Codex CLI` and `k2Gemini CLI` back to the intended user-relative contract instead of preserving hard-coded `C:\Users\<name>\...` arguments from older generations.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated live in isolation on the active managed Windows VM through repeated reruns of `task --run-vm-update 10003`, confirming password-logon AppID repair success for both `manager` and `assistant` across Teams, Be My Eyes, Codex, WhatsApp Business, and iCloud with no stage warnings.
+- Rechecked the live Public Desktop shortcut definitions after the repair runs and confirmed that the critical user-scoped shortcuts now keep `%UserProfile%` or `%LocalAppData%` in their raw `.lnk` or managed-launcher contract instead of storing a concrete managed username path.
+
 ## [2026.3.18.346] - 2026-03-18
 
 ### Changed
