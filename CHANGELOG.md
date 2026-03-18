@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.356] - 2026-03-18
+
+### Changed
+- Changed `130-install-azure-cli-tool` so it now repairs an unhealthy existing Azure CLI without `--force`, verifies the uninstall result through Chocolatey package readback, and ensures the resolved Azure CLI command directory is written back into machine PATH even when the task short-circuits on an already-healthy install.
+- Changed `134-install-docker-desktop-application` so its bounded winget source recovery now uses `winget source reset` without `--force`.
+
+### Fixed
+- Fixed the remaining tracked Windows `vm-update` `--force` drift that was still failing the maintained smoke contract, including the Azure CLI reinstall path and the Docker Desktop winget source repair path.
+- Fixed a live Azure CLI path drift where `130-install-azure-cli-tool` could succeed through a direct executable fallback while later fresh `cmd` sessions still failed to resolve `az`.
+
+### Tests
+- Revalidated the no-force Windows update contract with `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite now passes fully.
+- Revalidated `130-install-azure-cli-tool` live in isolation on the active managed Windows VM by uninstalling Azure CLI to clean state, rerunning `task --run-vm-update 130`, and confirming a fresh `cmd /c az version` succeeds afterward with the task summary at `warning=0`, `signal-warning=0`, and `error=0`.
+
 ## [2026.3.18.355] - 2026-03-18
 
 ### Changed

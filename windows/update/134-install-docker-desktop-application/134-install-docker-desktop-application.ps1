@@ -836,9 +836,9 @@ function Ensure-WingetSourcesReady {
     Write-Host ("docker-step-repair: winget-source-list-exit={0}" -f [int]$sourceListResult.ExitCode)
     $sourceUpdateResult = Invoke-ProcessWithTimeout -Label 'winget source update' -FilePath $WingetExe -Arguments @('source', 'update') -TimeoutSeconds 60
     if (-not $sourceUpdateResult.Success) {
-        $sourceResetResult = Invoke-ProcessWithTimeout -Label 'winget source reset --force' -FilePath $WingetExe -Arguments @('source', 'reset', '--force') -TimeoutSeconds 60
+        $sourceResetResult = Invoke-ProcessWithTimeout -Label 'winget source reset' -FilePath $WingetExe -Arguments @('source', 'reset') -TimeoutSeconds 60
         if (-not $sourceResetResult.Success) {
-            throw ("winget source update failed with exit code {0}; winget source reset --force failed with exit code {1}." -f [int]$sourceUpdateResult.ExitCode, [int]$sourceResetResult.ExitCode)
+            throw ("winget source update failed with exit code {0}; winget source reset failed with exit code {1}." -f [int]$sourceUpdateResult.ExitCode, [int]$sourceResetResult.ExitCode)
         }
 
         $sourceUpdateResult = Invoke-ProcessWithTimeout -Label 'winget source update' -FilePath $WingetExe -Arguments @('source', 'update') -TimeoutSeconds 60

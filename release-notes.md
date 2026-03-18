@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.356 - 2026-03-18
+
+### Summary
+This release closes the last tracked Windows `vm-update` `--force` gap and finishes the Azure CLI validation path. The maintained smoke suite had still been failing because `130-install-azure-cli-tool` kept one forceful Chocolatey uninstall path and `134-install-docker-desktop-application` still used `winget source reset --force`. The Azure CLI task also had one live drift left: it could prove `az` healthy through a direct executable path while fresh later `cmd` shells still could not resolve `az`.
+
+### Highlights
+- Updated `130-install-azure-cli-tool` so an unhealthy existing Azure CLI is removed without `--force`, uninstall success is confirmed from Chocolatey package state, and the resolved Azure CLI command directory is added back into machine PATH before the task exits.
+- Added a bounded `winget install Microsoft.AzureCLI` fallback in `130-install-azure-cli-tool` for the observed live case where the Chocolatey path does not materialize a resolvable `az` command cleanly enough.
+- Updated `134-install-docker-desktop-application` so its bounded winget source repair uses `winget source reset` without `--force`.
+- Revalidated `130-install-azure-cli-tool` live in isolation on the active managed Windows VM by uninstalling Azure CLI to clean state, rerunning the task, and confirming a fresh `cmd /c az version` succeeds with the final task summary at `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated `tests\az-vm-smoke-tests.ps1` and `tests\code-quality-check.ps1`; both now pass for this no-force contract update.
+
 ## Release 2026.3.18.355 - 2026-03-18
 
 ### Summary

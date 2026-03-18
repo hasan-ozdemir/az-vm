@@ -5406,3 +5406,17 @@ Check and analyze whether the `10003-create-public-desktop-shortcuts` vm-update 
 I audited the current Windows Public Desktop shortcut contract against the actual `10003-create-public-desktop-shortcuts` task, the smoke suite, and the recent shortcut logs. The intended Store-backed shortcuts were already covered for Teams, Be My Eyes, Codex, WhatsApp Business, and iCloud, and the Chrome/Edge browser contract was already explicit: Chrome is the launcher behind the managed web/setup shortcuts and Edge has its dedicated managed app shortcut. The review did uncover one real drift, though: the shortcut task was still resolving `VS2022` and `JAWS` through simpler hard-coded assumptions even after the installer tasks `132-install-vs2022community-application` and `133-install-jaws-application` had been hardened to discover those applications more realistically.
 
 I fixed that drift directly in `10003-create-public-desktop-shortcuts`. The task now resolves `devenv.exe` through `vswhere.exe` plus canonical Community fallback paths, and resolves `jfw.exe` through the Freedom Scientific registry roots before falling back to the canonical JAWS install paths. I also tightened the smoke contract so it now pins those richer resolver fragments explicitly. After the change, I reran `tests\az-vm-smoke-tests.ps1`; the `10003` shortcut coverage checks passed with the new logic, and the only remaining failure was the unrelated pre-existing `130-install-azure-cli-tool.ps1` `--force` assertion.
+
+### 2026-03-18 17:37 UTC
+
+**User Prompt**
+
+````text
+Fix and update: do not use `--force` anywhere in the tracked Windows update task surface. Also put task `130` through an uninstall-first then install test and guarantee that everything is healthy there; if we still receive any warning, let me know.
+````
+
+**Assistant Summary**
+
+I removed the remaining tracked Windows `vm-update` `--force` usage from the Azure CLI and Docker Desktop paths. In `130-install-azure-cli-tool`, the unhealthy reinstall path now uninstalls Chocolatey Azure CLI without `--force`, verifies the uninstall outcome from Chocolatey package state, and then ensures the resolved Azure CLI command directory is present in machine PATH even when the task short-circuits on an already-healthy install. I also added one bounded `winget install Microsoft.AzureCLI` fallback for the observed live case where the Chocolatey path did not leave a fresh shell with a resolvable `az` command. In `134-install-docker-desktop-application`, the bounded winget source repair now uses `winget source reset` without `--force`.
+
+I revalidated the maintained non-live contract with `tests\az-vm-smoke-tests.ps1` and `tests\code-quality-check.ps1`; both passed. Then I revalidated task `130` live in isolation on the active managed Windows VM by uninstalling Azure CLI to clean state, rerunning `task --run-vm-update 130`, and confirming that a fresh later `cmd /c az version` succeeds. The final isolated task summary reached `warning=0`, `signal-warning=0`, and `error=0`. During the first install rerun, Chocolatey printed one non-blocking package-manager line about an ignored pending reboot request, but the repo task itself still completed without a tracked warning.
