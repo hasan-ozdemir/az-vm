@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.357 - 2026-03-18
+
+### Summary
+This release fixes the latest failing `quality-gate` workflow on `main`. The run was failing in the non-live smoke and compatibility jobs because the committed task contracts were still behind the intended Windows `106`, `121`, and `135` behavior. The updated contracts restore the tracked `106` timeout, make WSL bootstrap accept the feature-enabled ready state after `wsl --install --no-distribution`, and narrow the Ollama installer process filter so the version/readiness checks work cleanly in both Windows PowerShell 5.1 and PowerShell 7+.
+
+### Highlights
+- Updated `106-install-7zip-tool` back to the tracked 90-second timeout expected by the compatibility matrix.
+- Updated `121-install-wsl-feature` to add `Test-WslBootstrapSatisfied`, which treats the WSL and VirtualMachinePlatform feature-enabled state as a valid bootstrap completion condition when the live `wsl` runtime is still settling after install.
+- Updated `135-install-ollama-tool` so its installer process filter no longer matches unrelated app names and its `ollama --version` output is normalized through a warning-filtered helper.
+- Revalidated `tests\az-vm-smoke-tests.ps1` and `tests\powershell-compatibility-check.ps1` locally; both now pass, including the Windows PowerShell 5.1 compatibility target that had been failing in CI.
+
 ## Release 2026.3.18.356 - 2026-03-18
 
 ### Summary

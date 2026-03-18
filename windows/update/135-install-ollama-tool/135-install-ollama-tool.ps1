@@ -13,7 +13,7 @@ $taskConfig = [ordered]@{
         'C:\Program Files\Ollama\ollama.exe'
     )
     OllamaApiPort = 11434
-    InstallerCommandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState|Docker\.DockerDesktop|Ollama\.Ollama|Microsoft Teams|microsoft\.azd|windscribe|whatsapp|anydesk|vscode'
+    InstallerCommandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState'
     InstallerNameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
     WingetInstallTimeoutSeconds = 600
     OllamaApiWaitTimeoutSeconds = 60
@@ -65,6 +65,24 @@ function Resolve-OllamaExe {
     }
 
     return ''
+}
+
+function Write-OllamaVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OllamaExe
+    )
+
+    $versionLines = @(& $OllamaExe --version 2>&1 | ForEach-Object { [string]$_ } | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$_) -and
+        -not ([string]$_ -match '^(?i)warning:')
+    })
+    $exitCode = [int]$LASTEXITCODE
+    foreach ($line in @($versionLines)) {
+        Write-Host $line
+    }
+
+    return $exitCode
 }
 
 function Get-OllamaApiVersion {
@@ -506,8 +524,7 @@ Refresh-SessionPath
 $ollamaExe = Resolve-OllamaExe
 if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
     Write-Host "Resolved existing Ollama executable: $ollamaExe"
-    & $ollamaExe --version
-    $existingVersionExit = [int]$LASTEXITCODE
+    $existingVersionExit = Write-OllamaVersion -OllamaExe $ollamaExe
     if ($existingVersionExit -eq 0) {
         $existingReadiness = Ensure-OllamaApiReady -OllamaExe $ollamaExe -Reason ("Existing Ollama API is not responding on 127.0.0.1:{0} yet." -f [int]$taskConfig.OllamaApiPort)
         if (-not [string]::IsNullOrWhiteSpace([string]$existingReadiness.Version)) {
@@ -574,9 +591,9 @@ if ([string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
 Wait-InstallerProcessesSettled -TimeoutSeconds ([int]$taskConfig.InstallerSettleTimeoutSeconds) -OllamaExe $ollamaExe | Out-Null
 
 Write-Host "Resolved Ollama executable: $ollamaExe"
-& $ollamaExe --version
-if ($LASTEXITCODE -ne 0) {
-    throw "ollama --version failed with exit code $LASTEXITCODE."
+$versionExit = Write-OllamaVersion -OllamaExe $ollamaExe
+if ($versionExit -ne 0) {
+    throw "ollama --version failed with exit code $versionExit."
 }
 
 $readiness = Ensure-OllamaApiReady -OllamaExe $ollamaExe

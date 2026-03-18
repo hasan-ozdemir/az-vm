@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.357] - 2026-03-18
+
+### Changed
+- Changed `106-install-7zip-tool` so its tracked timeout matches the current install-task budget again.
+- Changed `121-install-wsl-feature` so `wsl --install --no-distribution` is now followed by an explicit `Test-WslBootstrapSatisfied` readiness check that accepts the feature-enabled state when the live `wsl` probe is still catching up.
+- Changed `135-install-ollama-tool` so its installer-process filter is narrowed to the live package manager surfaces and its `ollama --version` readback is normalized through a warning-filtered helper.
+
+### Fixed
+- Fixed the Windows PowerShell 5.1 compatibility failure in the maintained smoke matrix by restoring the tracked `106` timeout contract and by making the WSL and Ollama task readbacks resilient enough to pass in both Windows PowerShell 5.1 and PowerShell 7+.
+- Fixed the latest failing GitHub Actions `quality-gate` run on `main`, which had been failing in the non-live smoke and compatibility jobs because the committed contracts still lagged behind the intended `106`, `121`, and `135` task behavior.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passes fully.
+- Revalidated `tests\powershell-compatibility-check.ps1`; the compatibility matrix now passes on both Windows PowerShell 5.1 and PowerShell 7+.
+
 ## [2026.3.18.356] - 2026-03-18
 
 ### Changed

@@ -60,6 +60,19 @@ function Test-WslReady {
     return ([int]$LASTEXITCODE -eq 0)
 }
 
+function Test-WslBootstrapSatisfied {
+    if (Test-WslReady) {
+        return $true
+    }
+
+    $wslFeatureState = Get-WindowsOptionalFeatureState -FeatureName 'Microsoft-Windows-Subsystem-Linux'
+    $vmpFeatureState = Get-WindowsOptionalFeatureState -FeatureName 'VirtualMachinePlatform'
+    return (
+        [string]::Equals([string]$wslFeatureState, 'Enabled', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$vmpFeatureState, 'Enabled', [System.StringComparison]::OrdinalIgnoreCase)
+    )
+}
+
 function Invoke-WslBootstrapInstall {
     $bootstrapExit = Invoke-NativeStep -Label "wsl --install --no-distribution" -AcceptedExitCodes @(0,1,3010) -Action {
         wsl.exe --install --no-distribution
@@ -154,8 +167,12 @@ if (-not $wslReadyBeforeBootstrap -or -not $wslPackageInstalled) {
     Write-Host "Running: winget install --id Microsoft.WSL --accept-source-agreements --accept-package-agreements --silent --disable-interactivity"
     & $wingetExe install --id Microsoft.WSL --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
     $wingetExit = [int]$LASTEXITCODE
-    if ($wingetExit -ne 0 -and $wingetExit -ne -1978335189) {
+    if ($wingetExit -ne 0 -and $wingetExit -ne -1978335189 -and $wingetExit -ne -1978335159) {
         throw "winget install Microsoft.WSL failed with exit code $wingetExit."
+    }
+
+    if ($wingetExit -eq -1978335159 -and -not (Test-WslBootstrapSatisfied)) {
+        throw "winget install Microsoft.WSL returned installer exit code 1603 and WSL is still not ready."
     }
 
     Refresh-SessionPath
