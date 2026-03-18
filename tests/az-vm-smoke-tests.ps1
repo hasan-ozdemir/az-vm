@@ -4735,9 +4735,9 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '112-install-node-system' = 45
         '113-install-windscribe-system' = 45
         '114-install-ffmpeg-system' = 45
-        '115-install-be-my-eyes' = 60
-        '116-install-whatsapp-system' = 75
-        '117-install-codex-app' = 75
+        '115-install-be-my-eyes' = 90
+        '116-install-whatsapp-system' = 90
+        '117-install-codex-app' = 90
         '118-install-nvda-system' = 75
         '119-install-vscode-system' = 75
         '120-install-itunes-system' = 75
@@ -5181,11 +5181,31 @@ Invoke-Test -Name "Windows WhatsApp task keeps a one-shot Store state contract" 
     Assert-True -Condition ($taskScript -like '*Get-AzVmInteractivePaths*') -Message 'WhatsApp task must provision an interactive worker path.'
     Assert-True -Condition ($taskScript -like '*RunAsMode ''interactiveToken''*') -Message 'WhatsApp task must use the manager interactive desktop token.'
     Assert-True -Condition ($taskScript -like '*no next-boot follow-up was scheduled*') -Message 'WhatsApp task must classify incomplete Store installs without scheduling a later boot follow-up.'
-    Assert-True -Condition ($taskScript -like '*requires the manager interactive desktop session*') -Message 'WhatsApp task must keep a warning-producing path when the manager interactive desktop is not ready.'
+    Assert-True -Condition ($taskScript -like '*Wait-AzVmUserInteractiveDesktopReady*') -Message 'WhatsApp task must wait briefly for the manager desktop when autologon is already configured.'
+    Assert-True -Condition ($taskScript -like '*New-AzVmInteractiveDesktopBlockMessage*') -Message 'WhatsApp task must classify blocked desktop states with the shared helper message builder.'
+    Assert-True -Condition ($taskScript -like '*Write-AzVmInteractiveDesktopStatusLine*') -Message 'WhatsApp task must log the resolved interactive desktop status before warning.'
     Assert-True -Condition ($taskScript -like '*cannot be deferred to a later boot*') -Message 'WhatsApp task must fail explicitly instead of leaving deferred RunOnce work behind.'
     Assert-True -Condition ($taskScript -like '*Write-AzVmStoreInstallState*') -Message 'WhatsApp task must persist explicit store install state records.'
     Assert-True -Condition ($taskScript -like '*9NKSQGP7F2NH*') -Message 'WhatsApp task must keep the Store package id in the install contract.'
     Assert-True -Condition ($taskScript -like '*install --id $packageId --source msstore --accept-source-agreements --accept-package-agreements*') -Message 'WhatsApp task must keep the Microsoft Store winget install contract.'
+}
+
+Invoke-Test -Name "Interactive session helper distinguishes Store desktop readiness states" -Action {
+    $helperPath = Join-Path $RepoRoot 'tools\scripts\az-vm-interactive-session-helper.ps1'
+    $helperText = [string](Get-Content -LiteralPath $helperPath -Raw)
+    foreach ($fragment in @(
+        'function Get-AzVmUserInteractiveDesktopStatus',
+        'function Wait-AzVmUserInteractiveDesktopReady',
+        'function Write-AzVmInteractiveDesktopStatusLine',
+        'function New-AzVmInteractiveDesktopBlockMessage',
+        'autologon-disabled',
+        'autologon-pending',
+        'explorer-not-ready',
+        "PSObject.Properties.Match([string]`$PropertyName).Count -lt 1",
+        'Run 102-autologon-manager-user and restart the VM before retrying the Microsoft Store task.'
+    )) {
+        Assert-True -Condition ($helperText -like ('*' + [string]$fragment + '*')) -Message ("Interactive session helper must include fragment '{0}'." -f [string]$fragment)
+    }
 }
 
 Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
@@ -6631,18 +6651,18 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
     $installTaskMap = [ordered]@{
         '115-install-npm-packages-global.ps1' = @('@github/copilot@latest', '@openai/codex@latest', '@google/gemini-cli@latest')
         '124-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
-        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
+        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd')
         '131-install-jaws-screen-reader.ps1' = @('FreedomScientific.JAWS.2025', 'jfw.exe', '--exact', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity')
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
         '123-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '120-install-whatsapp-system.ps1' = @('9NKSQGP7F2NH', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'Write-AzVmStoreInstallState')
-        '129-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
+        '120-install-whatsapp-system.ps1' = @('9NKSQGP7F2NH', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'Write-AzVmStoreInstallState')
+        '129-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '130-install-vs2022community.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-completed')
         '118-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '119-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
-        '116-install-codex-app.ps1' = @('9PLM9XGG6VKS', 'OpenAI.Codex', 'Codex.exe', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
+        '116-install-codex-app.ps1' = @('9PLM9XGG6VKS', 'OpenAI.Codex', 'Codex.exe', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {
@@ -7017,7 +7037,8 @@ Invoke-Test -Name "Be My Eyes task publishes interactive helper asset" -Action {
     $assetCopies = @($resolvedTask.AssetCopies)
     Assert-True -Condition ([string]$resolvedTask.Script -like '*az-vm-store-install-state.psm1*') -Message "Be My Eyes task must import the shared Store helper asset."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "Be My Eyes task must call the interactive helper."
-    Assert-True -Condition ([string]$resolvedTask.Script -like '*Test-AzVmUserInteractiveDesktopReady*') -Message "Be My Eyes task must check for an interactive desktop before running the Store install."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*Wait-AzVmUserInteractiveDesktopReady*') -Message "Be My Eyes task must wait briefly for the manager desktop when autologon is already configured."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*New-AzVmInteractiveDesktopBlockMessage*') -Message "Be My Eyes task must classify blocked interactive-desktop states with the shared helper."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*cannot be deferred to a later boot*') -Message "Be My Eyes task must fail explicitly instead of scheduling a deferred install."
     Assert-True -Condition ($assetCopies.Count -ge 2) -Message "Be My Eyes task must materialize helper assets."
 }
@@ -7039,7 +7060,8 @@ Invoke-Test -Name "iCloud task publishes interactive helper asset" -Action {
     $assetCopies = @($resolvedTask.AssetCopies)
     Assert-True -Condition ([string]$resolvedTask.Script -like '*az-vm-store-install-state.psm1*') -Message "iCloud task must import the shared Store helper asset."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message "iCloud task must call the interactive helper."
-    Assert-True -Condition ([string]$resolvedTask.Script -like '*Test-AzVmUserInteractiveDesktopReady*') -Message "iCloud task must check for an interactive desktop before running the Store install."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*Wait-AzVmUserInteractiveDesktopReady*') -Message "iCloud task must wait briefly for the manager desktop when autologon is already configured."
+    Assert-True -Condition ([string]$resolvedTask.Script -like '*New-AzVmInteractiveDesktopBlockMessage*') -Message "iCloud task must classify blocked interactive-desktop states with the shared helper."
     Assert-True -Condition ([string]$resolvedTask.Script -like '*cannot be deferred to a later boot*') -Message "iCloud task must fail explicitly instead of scheduling a deferred install."
     Assert-True -Condition ($assetCopies.Count -ge 2) -Message "iCloud task must materialize helper assets."
 }

@@ -5309,3 +5309,16 @@ I changed the touched Windows Store-backed tasks so a missing interactive manage
 
 I kept `10003-create-shortcuts-public-desktop` non-duplicative: it no longer re-raises a second warning when the Store task already warned, but it can now recover cleanly when the live VM already has a real AppsFolder launch target despite stale degraded/skipped state. I revalidated the update non-live with the smoke and code-quality gates and live through isolated reruns of the touched Windows update tasks plus a final remote shortcut readback.
 
+### 2026-03-18 00:41 UTC
+
+**User Prompt**
+
+````text
+Test and fix the Windows Microsoft Store app flow on the target VM after I manually disabled autologon and uninstalled the four Store apps. Restart that VM, try to install the four apps without autologon, update the related `vm-update` tasks so they handle that situation cleanly, then run the autologon `vm-update` task, restart again, and try the same Store installs once more so the post-autologon path is also handled cleanly.
+````
+
+**Assistant Summary**
+
+I reproduced both live scenarios on the active managed Windows VM. First I confirmed a clean no-autologon boot with `AutoAdminLogon=0`, no active interactive user, no `explorer.exe` desktop, and all four Store-backed apps removed. I then reran `115-install-be-my-eyes`, `116-install-whatsapp-system`, `117-install-codex-app`, and `122-install-icloud-system` in isolation and used those results to harden the shared interactive-session helper and the Store tasks.
+
+The fix separates blocked desktop states instead of treating every missing desktop the same. The helper now distinguishes autologon disabled, wrong-user autologon, pending post-boot desktop, and `explorer.exe`-not-ready cases, logs an explicit `interactive-desktop-state` line, and safely handles missing Winlogon registry values under strict mode. The four Store tasks now use that helper, persist clearer degraded Store state when autologon is missing, and perform one short bounded wait only when autologon is already configured for the manager user but the desktop is still coming up. After that, I reran `102-autologon-manager-user`, let its reboot complete, and reran `115`, `116`, `117`, and `122` again. All four installs succeeded, and a final `exec` readback confirmed launch-ready AppIDs for Be My Eyes, WhatsApp, Codex, and iCloud.

@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.345] - 2026-03-18
+
+### Changed
+- Changed the shared Windows interactive-session helper and the Store-backed update tasks for Be My Eyes, WhatsApp, Codex App, and iCloud so they now distinguish `autologon-disabled`, `autologon-different-user`, pending autologon desktop, and `explorer.exe`-not-ready states instead of collapsing every missing desktop into one generic warning.
+- Changed the same four Store-backed tasks so they now log an explicit interactive desktop status line before warning or installing, and they perform one short bounded wait only when autologon is already configured for the manager user but the post-boot desktop is still coming up.
+- Changed the tracked timeouts for `115-install-be-my-eyes`, `116-install-whatsapp-system`, and `117-install-codex-app` from `60/75/75` seconds to `90` seconds so the bounded desktop-readiness wait still fits inside the isolated task budget.
+
+### Fixed
+- Fixed the shared interactive-session helper so missing Winlogon values no longer throw under strict mode when autologon has been disabled and the related registry values are absent.
+- Fixed the live no-autologon Windows Store path so isolated reruns of `115`, `116`, `117`, and `122` now persist degraded Store state with explicit guidance to run `102-autologon-manager-user` and restart, instead of failing with a registry-property crash or a vague desktop-missing warning.
+- Fixed the live post-autologon Windows Store path so the same four tasks succeed again after `102-autologon-manager-user` triggers its reboot and the manager desktop comes back, with launch-ready Store state restored for all four apps.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated live on the active managed Windows VM through one explicit no-autologon cycle and one post-autologon cycle: remote cleanup of the four Store apps, a restart into `AutoAdminLogon=0`, isolated reruns of `115`, `116`, `117`, and `122` to confirm the new warning path, an isolated rerun of `102-autologon-manager-user`, and fresh isolated reruns of `115`, `116`, `117`, and `122` to confirm successful reinstall plus final `exec` AppID readback for all four apps.
+
 ## [2026.3.18.344] - 2026-03-18
 
 ### Changed

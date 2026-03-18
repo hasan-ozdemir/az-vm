@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.345 - 2026-03-18
+
+### Summary
+This release hardens the Windows Microsoft Store task flow around autologon state. The touched Store-backed tasks now explain exactly why the manager desktop is unavailable when autologon has been disabled, wait briefly when autologon is already configured but the post-boot desktop is still initializing, and then continue to the real Store install only when the interactive desktop is actually ready.
+
+### Highlights
+- Changed the shared interactive-session helper so Store tasks now emit an explicit `interactive-desktop-state` line and classify `autologon-disabled`, wrong-user autologon, pending desktop, and `explorer.exe`-not-ready cases separately.
+- Fixed the no-autologon path for `115-install-be-my-eyes`, `116-install-whatsapp-system`, `117-install-codex-app`, and `122-install-icloud-system` so they now produce clear warning guidance to run `102-autologon-manager-user` and restart the VM, instead of crashing on missing Winlogon values or emitting a generic desktop-missing message.
+- Changed the same four tasks so they perform one bounded desktop-readiness wait only when autologon is already configured for the manager user, which keeps the post-autologon boot path deterministic without hiding true no-autologon warnings.
+- Increased the tracked timeouts for `115-install-be-my-eyes`, `116-install-whatsapp-system`, and `117-install-codex-app` to `90` seconds so the bounded readiness wait still fits inside isolated task runs.
+- Revalidated live through a full two-phase isolated-task scenario on the active managed Windows VM: autologon disabled plus all four Store apps removed, reboot into a no-desktop state, isolated reruns of `115`, `116`, `117`, and `122` confirming the new warning path, an isolated rerun of `102-autologon-manager-user` with its reboot, and post-reboot reruns of `115`, `116`, `117`, and `122` confirming successful reinstall and final AppID readback for Be My Eyes, WhatsApp, Codex, and iCloud.
+
 ## Release 2026.3.18.344 - 2026-03-18
 
 ### Summary

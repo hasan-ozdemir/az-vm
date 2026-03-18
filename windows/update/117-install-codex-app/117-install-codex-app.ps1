@@ -11,6 +11,7 @@ $packageId = '9PLM9XGG6VKS'
 $legacyRunOnceName = 'AzVmInstallCodexApp'
 $portableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
 $interactiveTaskSuffix = 'interactive-install'
+$interactiveDesktopWaitSeconds = 30
 $waitTimeoutSeconds = 240
 $storeSessionErrorRegex = '(?i)0x80070520|logon session|microsoft store|msstore'
 
@@ -180,11 +181,14 @@ if (Test-AzVmRunOnceEntryPresent -Name $legacyRunOnceName) {
     Write-Host 'store-install-cleanup => task=117-install-codex-app; removed-stale-run-once=True'
 }
 
-if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
+$interactiveDesktopStatus = Wait-AzVmUserInteractiveDesktopReady -UserName $managerUser -WaitSeconds $interactiveDesktopWaitSeconds -PollSeconds 5
+Write-AzVmInteractiveDesktopStatusLine -Status $interactiveDesktopStatus
+if (-not [bool]$interactiveDesktopStatus.Ready) {
+    $blockMessage = New-AzVmInteractiveDesktopBlockMessage -ActivityDescription 'Codex app install' -ExpectedUserName $managerUser -Status $interactiveDesktopStatus
     Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Codex app install requires the manager interactive desktop session before the Microsoft Store package can be installed.' -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ([string]$blockMessage.Summary) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
     Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    throw 'Codex app install requires the manager interactive desktop session and should stay a warning until that desktop is ready.'
+    throw ([string]$blockMessage.WarningMessage)
 }
 
 $workerTaskName = "{0}-{1}" -f $taskName, $interactiveTaskSuffix

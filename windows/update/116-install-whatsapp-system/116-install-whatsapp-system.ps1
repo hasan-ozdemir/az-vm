@@ -13,6 +13,7 @@ $taskConfig = [ordered]@{
     LegacyRunOnceName = 'AzVmInstallWhatsApp'
     PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
     InteractiveTaskSuffix = 'interactive-install'
+    InteractiveDesktopWaitSeconds = 30
     WaitTimeoutSeconds = 240
     StoreSessionErrorRegex = '(?i)0x80070520|logon session|microsoft store|msstore'
 }
@@ -228,11 +229,14 @@ if (Test-AzVmRunOnceEntryPresent -Name ([string]$taskConfig.LegacyRunOnceName)) 
     Write-Host 'store-install-cleanup => task=116-install-whatsapp-system; removed-stale-run-once=True'
 }
 
-if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
+$interactiveDesktopStatus = Wait-AzVmUserInteractiveDesktopReady -UserName $managerUser -WaitSeconds ([int]$taskConfig.InteractiveDesktopWaitSeconds) -PollSeconds 5
+Write-AzVmInteractiveDesktopStatusLine -Status $interactiveDesktopStatus
+if (-not [bool]$interactiveDesktopStatus.Ready) {
+    $blockMessage = New-AzVmInteractiveDesktopBlockMessage -ActivityDescription 'WhatsApp install' -ExpectedUserName $managerUser -Status $interactiveDesktopStatus
     Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
-    $stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State degraded -Summary 'WhatsApp install requires the manager interactive desktop session before the Microsoft Store package can be installed.' -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName ([string]$taskConfig.TaskName) -State degraded -Summary ([string]$blockMessage.Summary) -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
     Write-AzVmStoreInstallStateStatusLine -TaskName ([string]$taskConfig.TaskName) -StateRecord $stateRecord
-    throw 'WhatsApp install requires the manager interactive desktop session and should stay a warning until that desktop is ready.'
+    throw ([string]$blockMessage.WarningMessage)
 }
 
 $workerTaskName = "{0}-{1}" -f ([string]$taskConfig.TaskName), ([string]$taskConfig.InteractiveTaskSuffix)

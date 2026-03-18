@@ -323,16 +323,96 @@ function Get-AzVmLocalPrincipalName {
     return ("{0}\{1}" -f $env:COMPUTERNAME, [string]$UserName)
 }
 
-function Test-AzVmUserInteractiveDesktopReady {
+function Get-AzVmUserNameVariants {
     param(
         [string]$UserName
     )
 
+    $variants = New-Object 'System.Collections.Generic.List[string]'
     if ([string]::IsNullOrWhiteSpace([string]$UserName)) {
+        return @($variants.ToArray())
+    }
+
+    foreach ($candidate in @(
+        [string]$UserName,
+        ('.\' + [string]$UserName),
+        ("{0}\{1}" -f [string]$env:COMPUTERNAME, [string]$UserName)
+    )) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidate)) {
+            continue
+        }
+
+        if (-not $variants.Contains([string]$candidate)) {
+            [void]$variants.Add([string]$candidate)
+        }
+    }
+
+    return @($variants.ToArray())
+}
+
+function Test-AzVmUserNameMatch {
+    param(
+        [string]$ObservedUserName,
+        [string]$ExpectedUserName
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ObservedUserName) -or [string]::IsNullOrWhiteSpace([string]$ExpectedUserName)) {
         return $false
     }
 
-    $principalName = Get-AzVmLocalPrincipalName -UserName $UserName
+    foreach ($candidate in @(Get-AzVmUserNameVariants -UserName $ExpectedUserName)) {
+        if ([string]::Equals([string]$ObservedUserName, [string]$candidate, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-AzVmWinlogonAutologonState {
+    function Get-WinlogonPropertyText {
+        param(
+            [AllowNull()]
+            [psobject]$InputObject,
+            [string]$PropertyName
+        )
+
+        if ($null -eq $InputObject -or [string]::IsNullOrWhiteSpace([string]$PropertyName)) {
+            return ''
+        }
+
+        if ($InputObject.PSObject.Properties.Match([string]$PropertyName).Count -lt 1) {
+            return ''
+        }
+
+        return [string]$InputObject.([string]$PropertyName)
+    }
+
+    $winlogon = $null
+    try {
+        $winlogon = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -ErrorAction Stop
+    }
+    catch {
+        $winlogon = $null
+    }
+
+    $autoAdminLogon = Get-WinlogonPropertyText -InputObject $winlogon -PropertyName 'AutoAdminLogon'
+    $defaultUserName = Get-WinlogonPropertyText -InputObject $winlogon -PropertyName 'DefaultUserName'
+    $defaultDomainName = Get-WinlogonPropertyText -InputObject $winlogon -PropertyName 'DefaultDomainName'
+    $defaultPassword = Get-WinlogonPropertyText -InputObject $winlogon -PropertyName 'DefaultPassword'
+
+    return [pscustomobject]@{
+        AutoAdminLogon = [string]$autoAdminLogon
+        AutoAdminLogonEnabled = [string]::Equals([string]$autoAdminLogon, '1', [System.StringComparison]::OrdinalIgnoreCase)
+        DefaultUserName = [string]$defaultUserName
+        DefaultDomainName = [string]$defaultDomainName
+        DefaultPasswordPresent = (-not [string]::IsNullOrWhiteSpace([string]$defaultPassword))
+    }
+}
+
+function Get-AzVmExplorerProcessOwners {
+    $owners = New-Object 'System.Collections.Generic.List[string]'
+
     try {
         $explorerProcesses = @(Get-Process -Name 'explorer' -IncludeUserName -ErrorAction Stop)
         foreach ($process in @($explorerProcesses)) {
@@ -341,8 +421,8 @@ function Test-AzVmUserInteractiveDesktopReady {
                 continue
             }
 
-            if ([string]::Equals($ownerName, $principalName, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
+            if (-not $owners.Contains([string]$ownerName)) {
+                [void]$owners.Add([string]$ownerName)
             }
         }
     }
@@ -358,17 +438,260 @@ function Test-AzVmUserInteractiveDesktopReady {
             }
 
             $ownerUser = [string]$owner.User
+            if ([string]::IsNullOrWhiteSpace([string]$ownerUser)) {
+                continue
+            }
+
             $ownerDomain = [string]$owner.Domain
-            if ([string]::Equals($ownerUser, $UserName, [System.StringComparison]::OrdinalIgnoreCase) -and `
-                [string]::Equals($ownerDomain, $env:COMPUTERNAME, [System.StringComparison]::OrdinalIgnoreCase)) {
-                return $true
+            $qualifiedOwner = if ([string]::IsNullOrWhiteSpace([string]$ownerDomain)) {
+                $ownerUser
+            }
+            else {
+                ("{0}\{1}" -f [string]$ownerDomain, [string]$ownerUser)
+            }
+
+            if (-not $owners.Contains([string]$qualifiedOwner)) {
+                [void]$owners.Add([string]$qualifiedOwner)
             }
         }
         catch {
         }
     }
 
-    return $false
+    return @($owners.ToArray())
+}
+
+function Get-AzVmUserInteractiveDesktopStatus {
+    param(
+        [string]$UserName
+    )
+
+    $winlogonState = Get-AzVmWinlogonAutologonState
+    $activeUser = ''
+    try {
+        $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+        $activeUser = [string]$computerSystem.UserName
+    }
+    catch {
+        $activeUser = ''
+    }
+
+    $bootAgeSeconds = 0
+    try {
+        $operatingSystem = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $bootAgeSeconds = [int][Math]::Round(((Get-Date) - [DateTime]$operatingSystem.LastBootUpTime).TotalSeconds, 0)
+    }
+    catch {
+        $bootAgeSeconds = 0
+    }
+
+    $explorerOwners = @(Get-AzVmExplorerProcessOwners)
+    $activeUserMatch = Test-AzVmUserNameMatch -ObservedUserName ([string]$activeUser) -ExpectedUserName $UserName
+    $explorerReady = $false
+    foreach ($owner in @($explorerOwners)) {
+        if (Test-AzVmUserNameMatch -ObservedUserName ([string]$owner) -ExpectedUserName $UserName) {
+            $explorerReady = $true
+            break
+        }
+    }
+
+    $autologonUserMatch = [string]::Equals([string]$winlogonState.DefaultUserName, [string]$UserName, [System.StringComparison]::OrdinalIgnoreCase)
+    $ready = ($activeUserMatch -and $explorerReady)
+    $reasonCode = 'desktop-unavailable'
+    $note = 'The expected interactive desktop session is not ready.'
+
+    if ([bool]$ready) {
+        $reasonCode = 'ready'
+        $note = 'The expected interactive desktop session is ready.'
+    }
+    elseif (-not [bool]$winlogonState.AutoAdminLogonEnabled) {
+        $reasonCode = 'autologon-disabled'
+        $note = ("Autologon is disabled or not configured for '{0}'." -f [string]$UserName)
+    }
+    elseif (-not [bool]$autologonUserMatch) {
+        $reasonCode = 'autologon-different-user'
+        if ([string]::IsNullOrWhiteSpace([string]$winlogonState.DefaultUserName)) {
+            $note = ("Autologon is enabled but DefaultUserName is empty instead of '{0}'." -f [string]$UserName)
+        }
+        else {
+            $note = ("Autologon is enabled for '{0}' instead of '{1}'." -f [string]$winlogonState.DefaultUserName, [string]$UserName)
+        }
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace([string]$activeUser) -and -not [bool]$activeUserMatch) {
+        $reasonCode = 'other-user-active'
+        $note = ("Another interactive user is active: '{0}'." -f [string]$activeUser)
+    }
+    elseif ([bool]$activeUserMatch -and -not [bool]$explorerReady) {
+        $reasonCode = 'explorer-not-ready'
+        $note = ("User '{0}' is signed in, but explorer.exe is not ready yet." -f [string]$UserName)
+    }
+    elseif ([bool]$winlogonState.AutoAdminLogonEnabled -and [bool]$autologonUserMatch) {
+        $reasonCode = 'autologon-pending'
+        $note = ("Autologon is configured for '{0}', but the desktop session has not appeared yet after boot." -f [string]$UserName)
+    }
+
+    return [pscustomobject]@{
+        UserName = [string]$UserName
+        Ready = [bool]$ready
+        ReasonCode = [string]$reasonCode
+        Note = [string]$note
+        AutoAdminLogon = [string]$winlogonState.AutoAdminLogon
+        AutoAdminLogonEnabled = [bool]$winlogonState.AutoAdminLogonEnabled
+        DefaultUserName = [string]$winlogonState.DefaultUserName
+        DefaultDomainName = [string]$winlogonState.DefaultDomainName
+        DefaultPasswordPresent = [bool]$winlogonState.DefaultPasswordPresent
+        ActiveUser = [string]$activeUser
+        ActiveUserMatch = [bool]$activeUserMatch
+        ExplorerOwners = @($explorerOwners)
+        ExplorerReady = [bool]$explorerReady
+        BootAgeSeconds = [int]$bootAgeSeconds
+        WaitApplied = $false
+        WaitedSeconds = 0
+    }
+}
+
+function Write-AzVmInteractiveDesktopStatusLine {
+    param(
+        [AllowNull()]
+        [psobject]$Status,
+        [string]$Label = 'interactive-desktop-state'
+    )
+
+    if ($null -eq $Status) {
+        Write-Host ("{0} => state=none" -f [string]$Label)
+        return
+    }
+
+    $activeUser = if ([string]::IsNullOrWhiteSpace([string]$Status.ActiveUser)) { '(none)' } else { [string]$Status.ActiveUser }
+    $defaultUserName = if ([string]::IsNullOrWhiteSpace([string]$Status.DefaultUserName)) { '(none)' } else { [string]$Status.DefaultUserName }
+    Write-Host (
+        "{0} => ready={1}; reason={2}; autologon={3}; default-user={4}; active-user={5}; explorer-ready={6}; waited={7}s; uptime={8}s; note={9}" -f `
+        [string]$Label,
+        [bool]$Status.Ready,
+        [string]$Status.ReasonCode,
+        [bool]$Status.AutoAdminLogonEnabled,
+        $defaultUserName,
+        $activeUser,
+        [bool]$Status.ExplorerReady,
+        [int]$Status.WaitedSeconds,
+        [int]$Status.BootAgeSeconds,
+        [string]$Status.Note
+    )
+}
+
+function Wait-AzVmUserInteractiveDesktopReady {
+    param(
+        [string]$UserName,
+        [int]$WaitSeconds = 0,
+        [int]$PollSeconds = 5
+    )
+
+    $status = Get-AzVmUserInteractiveDesktopStatus -UserName $UserName
+    $waitSecondsValue = [Math]::Max(0, [int]$WaitSeconds)
+    $pollSecondsValue = [Math]::Max(1, [int]$PollSeconds)
+    $canWait = ($waitSecondsValue -gt 0) -and (([string]$status.ReasonCode -eq 'autologon-pending') -or ([string]$status.ReasonCode -eq 'explorer-not-ready'))
+    if (-not $canWait) {
+        return $status
+    }
+
+    Write-Host ("interactive-desktop-wait => user={0}; reason={1}; timeout={2}s" -f [string]$UserName, [string]$status.ReasonCode, [int]$waitSecondsValue)
+    $startTime = Get-Date
+    $deadline = $startTime.AddSeconds($waitSecondsValue)
+    do {
+        Start-Sleep -Seconds $pollSecondsValue
+        $status = Get-AzVmUserInteractiveDesktopStatus -UserName $UserName
+        if ([bool]$status.Ready) {
+            break
+        }
+    } while ((Get-Date) -lt $deadline)
+
+    $waitedSeconds = [int][Math]::Round(((Get-Date) - $startTime).TotalSeconds, 0)
+    $status = $status | Select-Object *
+    if ($status.PSObject.Properties.Match('WaitApplied').Count -gt 0) {
+        $status.WaitApplied = $true
+    }
+    else {
+        $status | Add-Member -NotePropertyName WaitApplied -NotePropertyValue $true
+    }
+    if ($status.PSObject.Properties.Match('WaitedSeconds').Count -gt 0) {
+        $status.WaitedSeconds = $waitedSeconds
+    }
+    else {
+        $status | Add-Member -NotePropertyName WaitedSeconds -NotePropertyValue $waitedSeconds
+    }
+
+    return $status
+}
+
+function New-AzVmInteractiveDesktopBlockMessage {
+    param(
+        [string]$ActivityDescription,
+        [string]$ExpectedUserName,
+        [AllowNull()]
+        [psobject]$Status
+    )
+
+    $activity = if ([string]::IsNullOrWhiteSpace([string]$ActivityDescription)) { 'Microsoft Store install' } else { [string]$ActivityDescription.Trim() }
+    $userText = if ([string]::IsNullOrWhiteSpace([string]$ExpectedUserName)) { 'the expected user' } else { [string]$ExpectedUserName.Trim() }
+    if ($null -eq $Status) {
+        return [pscustomobject]@{
+            Summary = ("{0} requires the {1} interactive desktop session, but its readiness could not be determined." -f $activity, $userText)
+            WarningMessage = ("{0} blocked: the {1} interactive desktop session could not be verified." -f $activity, $userText)
+            ReasonCode = 'status-unavailable'
+        }
+    }
+
+    $summary = ''
+    $warningMessage = ''
+    switch ([string]$Status.ReasonCode) {
+        'autologon-disabled' {
+            $summary = ("{0} requires the {1} interactive desktop session, but autologon is disabled or not configured for that user. Run 102-autologon-manager-user and restart the VM before retrying the Microsoft Store task." -f $activity, $userText)
+            $warningMessage = ("{0} blocked: autologon is disabled or not configured for {1}. Run 102-autologon-manager-user and restart the VM." -f $activity, $userText)
+            break
+        }
+        'autologon-different-user' {
+            $configuredUser = if ([string]::IsNullOrWhiteSpace([string]$Status.DefaultUserName)) { '(none)' } else { [string]$Status.DefaultUserName }
+            $summary = ("{0} requires the {1} interactive desktop session, but autologon is currently configured for '{2}'. Run 102-autologon-manager-user and restart the VM before retrying the Microsoft Store task." -f $activity, $userText, $configuredUser)
+            $warningMessage = ("{0} blocked: autologon is configured for '{1}' instead of {2}. Run 102-autologon-manager-user and restart the VM." -f $activity, $configuredUser, $userText)
+            break
+        }
+        'other-user-active' {
+            $activeUser = if ([string]::IsNullOrWhiteSpace([string]$Status.ActiveUser)) { '(unknown)' } else { [string]$Status.ActiveUser }
+            $summary = ("{0} requires the {1} interactive desktop session, but another interactive user is active: '{2}'." -f $activity, $userText, $activeUser)
+            $warningMessage = ("{0} blocked: another interactive user is active ({1})." -f $activity, $activeUser)
+            break
+        }
+        'explorer-not-ready' {
+            $summary = ("{0} requires the {1} interactive desktop session. Autologon is configured and the user is signed in, but explorer.exe was still not ready within the bounded wait. Retry after the desktop finishes initializing." -f $activity, $userText)
+            $warningMessage = ("{0} blocked: {1} is signed in, but explorer.exe is not ready yet. Retry after the desktop finishes initializing." -f $activity, $userText)
+            break
+        }
+        'autologon-pending' {
+            $summary = ("{0} requires the {1} interactive desktop session. Autologon is configured, but the desktop session did not appear within the bounded wait after boot. Retry after the autologon desktop is available." -f $activity, $userText)
+            $warningMessage = ("{0} blocked: autologon is configured for {1}, but the desktop session is not ready yet. Retry after the desktop appears." -f $activity, $userText)
+            break
+        }
+        default {
+            $summary = ("{0} requires the {1} interactive desktop session. {2}" -f $activity, $userText, [string]$Status.Note)
+            $warningMessage = ("{0} blocked: {1}" -f $activity, [string]$Status.Note)
+            break
+        }
+    }
+
+    return [pscustomobject]@{
+        Summary = [string]$summary
+        WarningMessage = [string]$warningMessage
+        ReasonCode = [string]$Status.ReasonCode
+    }
+}
+
+function Test-AzVmUserInteractiveDesktopReady {
+    param(
+        [string]$UserName
+    )
+
+    $status = Get-AzVmUserInteractiveDesktopStatus -UserName $UserName
+    return [bool]$status.Ready
 }
 
 function Remove-AzVmInteractiveScheduledTask {
