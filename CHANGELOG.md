@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.351] - 2026-03-18
+
+### Changed
+- Changed the Windows PowerShell Azure Run Command wrapper so tracked `vm-init` tasks no longer execute inside a nested background job before the guest script runs. The wrapper now writes the decoded task script to a temp file, invokes it directly in the same Run Command PowerShell session, relays the output, and lets the outer Azure CLI timeout override enforce the task budget.
+- Changed `03-install-openssh-service` again so its tracked first-install timeout budget now reflects the measured behavior of the active Windows image under the simplified wrapper path.
+
+### Fixed
+- Fixed the remaining OpenSSH bootstrap blocker on the 2026-03-18 live publish retry path: nested `Start-Job` execution inside the Windows Run Command wrapper was stretching or destabilizing `Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0`, which kept the capability at `NotPresent` even with the earlier Azure CLI timeout override in place.
+- Fixed first-install OpenSSH recovery on the active Windows image by combining the direct PowerShell Run Command execution path with the raised `03-install-openssh-service` task budget; after that change, a disposable live VM could remove the OpenSSH Server capability, rerun `03`, then rerun `04` and pass `connect --ssh --test` successfully.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated live in isolation on the disposable managed Windows VM by explicitly removing `OpenSSH.Server~~~~0.0.1.0`, rerunning `task --run-vm-init 03`, rerunning `task --run-vm-init 04`, and then passing `connect --ssh --test`.
+
 ## [2026.3.18.350] - 2026-03-18
 
 ### Changed

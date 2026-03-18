@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.351 - 2026-03-18
+
+### Summary
+This release removes one more hidden blocker from the Windows publish path. The previous fix kept Azure CLI alive long enough for long `vm-init` Run Command tasks, but the Windows PowerShell wrapper was still launching guest scripts inside a nested background job. On the active image, that nested job path interfered with `Add-WindowsCapability` and kept OpenSSH Server from landing cleanly. The wrapper now runs PowerShell init tasks directly inside the Run Command session, and the OpenSSH task budget was lifted to match the measured first-install duration under that simpler path.
+
+### Highlights
+- Simplified the Windows PowerShell Run Command wrapper so it now executes tracked init scripts directly instead of through `Start-Job` plus a second nested `powershell.exe` timeout layer.
+- Raised the tracked timeout budget for `03-install-openssh-service` to cover the measured first-install path on the active Windows image when OpenSSH Server is genuinely absent.
+- Revalidated the exact first-install scenario live by removing the OpenSSH Server capability from the disposable managed VM, rerunning `03`, rerunning `04`, and then passing `connect --ssh --test`.
+
 ## Release 2026.3.18.350 - 2026-03-18
 
 ### Summary
