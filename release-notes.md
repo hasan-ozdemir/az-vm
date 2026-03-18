@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.352 - 2026-03-18
+
+### Summary
+This release closes a workflow-level race in the Windows publish path. The earlier OpenSSH fixes made `03-install-openssh-service` reliable on a stabilized disposable VM, but the full `create` workflow was still entering `vm-init` while Azure sometimes kept the brand-new VM in provisioning state `Updating`. The pipeline now waits for provisioning recovery before `vm-init`, and the redeploy repair used during that wait can run longer than the generic Azure CLI timeout.
+
+### Highlights
+- Added a provisioning-ready gate before `vm-init` so create/update do not start init tasks while Azure still reports the target VM as `Updating`.
+- Extended the Azure CLI timeout budget for the built-in provisioning-repair redeploy path, preventing the repo-wide `AZURE_COMMAND_TIMEOUT_SECONDS=300` value from cutting off that recovery action too early.
+- Added non-live regression coverage for both the new `vm-init` provisioning gate and the extended redeploy timeout contract.
+
 ## Release 2026.3.18.351 - 2026-03-18
 
 ### Summary

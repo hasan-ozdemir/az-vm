@@ -312,6 +312,14 @@ function Invoke-AzVmMain {
                         }
                         else {
                             $combinedShell = if ($platform -eq 'linux') { 'bash' } else { 'powershell' }
+                            $provisioningWaitResult = Wait-AzVmProvisioningReadyOrRepair -ResourceGroup ([string]$step1Context.ResourceGroup) -VmName ([string]$step1Context.VmName)
+                            if (-not [bool]$provisioningWaitResult.Ready) {
+                                Throw-FriendlyError `
+                                    -Detail ("VM '{0}' is still not provisioning-ready before vm-init." -f [string]$step1Context.VmName) `
+                                    -Code 62 `
+                                    -Summary "VM init cannot start while Azure provisioning is still not ready." `
+                                    -Hint "Wait for Azure provisioning to recover and rerun create, or inspect the VM in Azure Portal if the automatic redeploy repair did not resolve the issue."
+                            }
                             $initVmRuntimeDetails = Get-AzVmVmDetails -Context $step1Context
                             $initSshHost = [string]$initVmRuntimeDetails.VmFqdn
                             if ([string]::IsNullOrWhiteSpace([string]$initSshHost)) {

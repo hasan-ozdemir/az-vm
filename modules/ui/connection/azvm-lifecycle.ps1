@@ -246,10 +246,12 @@ function Wait-AzVmProvisioningReadyOrRepair {
 
         if (($updatingAttemptCount -ge $UpdatingAttemptsBeforeRedeploy) -and ($redeployCount -lt $MaxRedeployCount)) {
             Write-Host ("VM provisioning is still 'Updating' for '{0}' in group '{1}'. Triggering Azure redeploy repair..." -f $VmName, $ResourceGroup) -ForegroundColor Yellow
-            Invoke-TrackedAction -Label ("az vm redeploy -g {0} -n {1}" -f $ResourceGroup, $VmName) -Action {
-                az vm redeploy -g $ResourceGroup -n $VmName -o none --only-show-errors
-                Assert-LastExitCode "az vm redeploy"
-            } | Out-Null
+            Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds 900 -Action {
+                Invoke-TrackedAction -Label ("az vm redeploy -g {0} -n {1}" -f $ResourceGroup, $VmName) -Action {
+                    az vm redeploy -g $ResourceGroup -n $VmName -o none --only-show-errors
+                    Assert-LastExitCode "az vm redeploy"
+                } | Out-Null
+            }
             $redeployCount++
             $updatingAttemptCount = 0
 

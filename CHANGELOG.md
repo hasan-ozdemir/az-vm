@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.352] - 2026-03-18
+
+### Changed
+- Changed the create/update workflow so `vm-init` no longer starts immediately after VM deploy if Azure still reports the VM in provisioning state `Updating`. The pipeline now waits for provisioning recovery and can trigger the existing bounded Azure redeploy repair before the first init task runs.
+- Changed the shared provisioning-repair helper so its Azure redeploy action now uses an extended Azure CLI timeout budget instead of inheriting the generic `300` second command timeout.
+
+### Fixed
+- Fixed the fresh Windows publish retry path on 2026-03-18 where `03-install-openssh-service` kept timing out on newly created VMs even though the same task passed on a later disposable retry. The key difference was provisioning readiness: the full workflow entered `vm-init` while Azure still reported the VM as `Updating`, whereas the later isolated retry ran only after the guest had stabilized.
+- Fixed the downstream repair path so a provisioning recovery redeploy is no longer cut off at `300` seconds while the VM is still converging.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1` and `tests\code-quality-check.ps1`.
+- Added smoke coverage that pins both contracts: create waits for provisioning recovery before `vm-init`, and provisioning-repair redeploys use the extended Azure CLI timeout helper.
+
 ## [2026.3.18.351] - 2026-03-18
 
 ### Changed
