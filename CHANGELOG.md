@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.362] - 2026-03-18
+
+### Changed
+- Changed `Resolve-AzVmPublicDnsLabel` so an explicitly provided empty managed public IP list is now treated as an explicit test/runtime override instead of falling through to live Azure inventory reads.
+- Changed the OpenSSH live-validation changelog note to use generic managed-target wording instead of committing a concrete managed VM name.
+
+### Fixed
+- Fixed the remaining GitHub Actions smoke and compatibility failure where the managed public DNS label test still tried to read live Azure inventory in CI when the test intentionally passed an empty managed public IP list.
+- Fixed the sensitive-content audit regression caused by recording a concrete managed VM name in the top changelog entry.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\code-quality-check.ps1`.
+
 ## [2026.3.18.361] - 2026-03-18
 
 ### Changed
@@ -26,7 +39,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Tests
 - Revalidated `tests\az-vm-smoke-tests.ps1`, `tests\powershell-compatibility-check.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
-- Revalidated the live Windows bootstrap path on `rg-bizyum-ate1-g1` / `bizyum` with isolated `task --run-vm-init 03`, isolated `task --run-vm-init 04`, and `connect --ssh --test`.
+- Revalidated the live Windows bootstrap path on the current managed Windows VM with isolated `task --run-vm-init 03`, isolated `task --run-vm-init 04`, and `connect --ssh --test`.
 
 ## [2026.3.18.359] - 2026-03-18
 

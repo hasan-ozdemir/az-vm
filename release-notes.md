@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.362 - 2026-03-18
+
+### Summary
+This release closes the last CI-only drift that was still blocking the remote quality gate. The managed public DNS label helper now honors an explicitly provided empty managed public IP list, which keeps the smoke and compatibility tests fully local in GitHub Actions instead of attempting live Azure inventory reads.
+
+### Highlights
+- Updated `Resolve-AzVmPublicDnsLabel` so explicit empty managed public IP overrides stay local and deterministic.
+- Removed the concrete managed VM name from the latest changelog note so the sensitive-content audit stays green.
+- Revalidated the affected non-live gates locally before re-publishing `main`.
+
 ## Release 2026.3.18.361 - 2026-03-18
 
 ### Summary

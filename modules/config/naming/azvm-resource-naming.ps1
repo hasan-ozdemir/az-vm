@@ -412,7 +412,8 @@ function Resolve-AzVmPublicDnsLabel {
     )
 
     $effectiveVmName = if ([string]::IsNullOrWhiteSpace([string]$VmName)) { [string]$PublicIpName } else { [string]$VmName }
-    $publicIpRows = if (@($ManagedPublicIpRows).Count -gt 0) { @($ManagedPublicIpRows) } else { @(Get-AzVmManagedPublicIpRows) }
+    $managedRowsWereProvided = $PSBoundParameters.ContainsKey('ManagedPublicIpRows')
+    $publicIpRows = if ($managedRowsWereProvided) { @($ManagedPublicIpRows) } else { @(Get-AzVmManagedPublicIpRows) }
     $existingLabels = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
     $attachedCount = 0
 
