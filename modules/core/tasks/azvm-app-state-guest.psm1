@@ -303,6 +303,40 @@ function Get-AzVmMountedUserHive {
     }
 }
 
+function Test-AzVmAppStateProfileRegistryReplayAvailable {
+    param([AllowNull()]$ProfileTarget)
+
+    if ($null -eq $ProfileTarget) {
+        return $false
+    }
+
+    $profilePath = if ($ProfileTarget.PSObject.Properties.Match('ProfilePath').Count -gt 0) { [string]$ProfileTarget.ProfilePath } else { '' }
+    if ([string]::IsNullOrWhiteSpace([string]$profilePath) -or -not (Test-Path -LiteralPath $profilePath -PathType Container)) {
+        return $false
+    }
+
+    $ntUserDatPath = Join-Path $profilePath 'NTUSER.DAT'
+    if (Test-Path -LiteralPath $ntUserDatPath -PathType Leaf) {
+        return $true
+    }
+
+    try {
+        $profile = @(Get-CimInstance Win32_UserProfile -ErrorAction SilentlyContinue | Where-Object {
+            [string]::Equals(([string]$_.LocalPath).TrimEnd('\'), ([string]$profilePath).TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)
+        } | Select-Object -First 1)
+        if (@($profile).Count -gt 0) {
+            $entry = $profile[0]
+            if ($entry.PSObject.Properties.Match('Loaded').Count -gt 0 -and [bool]$entry.Loaded) {
+                return $true
+            }
+        }
+    }
+    catch {
+    }
+
+    return $false
+}
+
 function Close-AzVmMountedUserHive {
     param([AllowNull()]$MountInfo)
 
@@ -993,6 +1027,11 @@ function Get-AzVmTaskAppStateReplayOperations {
         }
 
         foreach ($profileTarget in @(Get-AzVmAppStateSelectedProfileTargets -ProfileTargets $ProfileTargets -Entry $entry)) {
+            if (-not (Test-AzVmAppStateProfileRegistryReplayAvailable -ProfileTarget $profileTarget)) {
+                Write-Host ("app-state-user-registry-skip => {0} => no-hive-file" -f [string]$profileTarget.Label)
+                continue
+            }
+
             $key = ('registry|profile|{0}|{1}' -f [string]$profileTarget.Label, $registryPath.ToLowerInvariant())
             if ($seen.ContainsKey($key)) { continue }
             $operations.Add([pscustomobject]@{

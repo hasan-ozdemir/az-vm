@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.354 - 2026-03-18
+
+### Summary
+This release closes the remaining isolated warning paths that were still open after the Docker fix. Visual Studio 2022 Community and JAWS both needed more realistic post-install readback on the active managed Windows VM, and the JAWS task-local app-state flow still needed to capture the real local HKCU/settings payload while skipping impossible guest replay work for a managed user profile that had no hive file.
+
+### Highlights
+- Updated `132-install-vs2022community-application` so it now resolves `devenv.exe` through both canonical install paths and `vswhere.exe`, then tolerates transient non-standard Chocolatey exits if Visual Studio 2022 Community has already landed cleanly.
+- Updated `133-install-jaws-application` so it now repairs noisy winget source state, tolerates the observed noisy install exit when package registration and install evidence exist, and resolves `jfw.exe` recursively under the registered installation root instead of assuming one fixed path.
+- Updated the task-local JAWS state flow end to end: local portable app-state capture now includes the current-user Freedom Scientific HKCU payload and `AppData\Roaming\Freedom Scientific\JAWS\2025\Settings`, and guest replay now skips managed-user registry import when there is no real hive surface to target.
+- Revalidated live in isolation on the active managed Windows VM by uninstalling Visual Studio 2022 Community and JAWS, rerunning `132` and `133` from clean state, then rerunning the JAWS follow-up tasks `1001` and `10002` until every stage summary reached `warning=0`, `signal-warning=0`, and `error=0`.
+
 ## Release 2026.3.18.353 - 2026-03-18
 
 ### Summary
@@ -10,7 +21,7 @@ This release closes the remaining Windows Docker Desktop gap that was still leav
 ### Highlights
 - Updated `134-install-docker-desktop-application` so it now treats `vmcompute`, `hns`, and `wslservice` as first-class prerequisites when present, seeds the managed Docker Desktop profile with the accepted license/settings state, keeps `com.docker.service` in the manual/stopped WSL2-aligned mode, and explicitly runs `docker desktop start` before the bounded `docker desktop status` and `docker info` probes.
 - Removed the stale tracked Docker Desktop task-local app-state plugin zip because it was replaying transient Desktop lockfiles into healthy reruns and producing a non-actionable app-state signal warning even when the Docker engine itself was ready. The task now relies on its managed in-script profile seeding for the required Desktop state.
-- Revalidated the exact live path on `rg-bizyum-ate1-g1` / `bizyum`: `docker desktop status`, `docker info`, and `wsl -l -v` all showed the expected running Docker Desktop engine state, and isolated `task --run-vm-update 134 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` finished with `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated the exact live path on the active managed Windows VM: `docker desktop status`, `docker info`, and `wsl -l -v` all showed the expected running Docker Desktop engine state, and isolated `task --run-vm-update 134 --perf` against that target finished with `warning=0`, `signal-warning=0`, and `error=0`.
 
 ## Release 2026.3.18.352 - 2026-03-18
 

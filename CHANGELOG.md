@@ -3,6 +3,24 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.354] - 2026-03-18
+
+### Changed
+- Changed `132-install-vs2022community-application` so its post-install verification now resolves `devenv.exe` through both canonical install paths and `vswhere.exe`, and can tolerate transient non-standard Chocolatey exits when Visual Studio 2022 Community has already materialized correctly.
+- Changed `133-install-jaws-application` so its bounded winget repair and verification path now tolerates known noisy exit codes when the package has actually registered, resolves `jfw.exe` recursively under the installed root, and rechecks package/source health before deciding failure.
+- Changed the portable local app-state save path for tracked task-local plugins so current-user profile directories and HKCU registry payloads are captured before later normalization to the managed `manager` profile contract.
+- Changed guest app-state replay so a managed user registry import is skipped cleanly when the target profile has no replayable hive surface, instead of scheduling a doomed replay operation that later degrades the task into a signal warning.
+
+### Fixed
+- Fixed the remaining isolated warning path in `132-install-vs2022community-application` on the active managed Windows VM where transient Chocolatey feed or exit noise could still leave the task warning even though `devenv.exe` had landed correctly.
+- Fixed the remaining isolated warning path in `133-install-jaws-application` by hardening winget source/output handling, accepting the observed `0x80070002`-style noisy exit when the package was actually installed, and treating the real success condition as a launchable `jfw.exe`.
+- Fixed the JAWS task-local app-state capture workflow so the rebuilt local snapshot now includes both the Freedom Scientific HKCU state and the managed portable settings payload derived from `AppData\Roaming\Freedom Scientific\JAWS\2025\Settings`.
+- Fixed the final JAWS follow-up isolated sweep by preventing no-hive `assistant` registry replay attempts from generating non-actionable app-state signal warnings during the tracked guest app-state replay path.
+
+### Tests
+- Revalidated live in isolation on the active managed Windows VM by uninstalling Visual Studio 2022 Community and JAWS, rerunning `task --run-vm-update 132` and `133` clean-state, then rerunning the JAWS follow-up tasks `1001` and `10002`; the final stage summaries reached `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated the updated non-live contracts in `tests\az-vm-smoke-tests.ps1`, including the new portable capture-plan rewrite and the no-hive guest app-state replay skip. The suite still reports one unrelated pre-existing failure in `130-install-azure-cli-tool.ps1` about `--force`.
+
 ## [2026.3.18.353] - 2026-03-18
 
 ### Changed
@@ -14,7 +32,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Tests
 - Revalidated the Docker Desktop smoke contract in `tests\az-vm-smoke-tests.ps1`; the Docker-specific assertions passed, while the suite still reports one pre-existing unrelated failure in `130-install-azure-cli-tool.ps1` about `--force`.
-- Revalidated live in isolation on `rg-bizyum-ate1-g1` / `bizyum` by checking `docker desktop status`, `docker info`, and `wsl -l -v`, then rerunning `task --run-vm-update 134 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` until the stage summary reached `warning=0`, `signal-warning=0`, `error=0`.
+- Revalidated live in isolation on the active managed Windows VM by checking `docker desktop status`, `docker info`, and `wsl -l -v`, then rerunning `task --run-vm-update 134 --perf` against that target until the stage summary reached `warning=0`, `signal-warning=0`, `error=0`.
 
 ## [2026.3.18.352] - 2026-03-18
 

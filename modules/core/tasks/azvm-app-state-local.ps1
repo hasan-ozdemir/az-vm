@@ -1664,6 +1664,33 @@ function Convert-AzVmTaskAppStateZipToPortableProfilePayload {
     }
 }
 
+function Convert-AzVmTaskCapturePlanToPortableProfileSourcePlan {
+    param([psobject]$CapturePlan)
+
+    if ($null -eq $CapturePlan) {
+        return $null
+    }
+
+    $clone = ConvertFrom-Json -InputObject (ConvertTo-JsonCompat -InputObject $CapturePlan -Depth 12) -ErrorAction Stop
+    foreach ($collectionName in @('profileDirectories', 'profileFiles', 'userRegistryKeys')) {
+        if ($clone.PSObject.Properties.Match($collectionName).Count -lt 1) {
+            continue
+        }
+
+        foreach ($entry in @($clone.$collectionName)) {
+            if ($null -eq $entry) {
+                continue
+            }
+
+            if ($entry.PSObject.Properties.Match('targetProfiles').Count -gt 0) {
+                $entry.targetProfiles = @()
+            }
+        }
+    }
+
+    return $clone
+}
+
 function Save-AzVmTaskAppStateFromLocalMachine {
     param(
         [psobject]$TaskBlock,
@@ -1683,7 +1710,12 @@ function Save-AzVmTaskAppStateFromLocalMachine {
     Ensure-AzVmAppStatePluginDirectory -Path $pluginDirectory
     Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 
-    $planJson = ConvertTo-AzVmTaskAppStateCapturePlanJson -CapturePlan $capturePlan
+    $effectiveCapturePlan = $capturePlan
+    if (Test-AzVmTaskPortableProfilePayload -TaskBlock $TaskBlock) {
+        $effectiveCapturePlan = Convert-AzVmTaskCapturePlanToPortableProfileSourcePlan -CapturePlan $capturePlan
+    }
+
+    $planJson = ConvertTo-AzVmTaskAppStateCapturePlanJson -CapturePlan $effectiveCapturePlan
     $planPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-app-state-plan-{0}.json' -f ([guid]::NewGuid().ToString('N')))
     $guestHelperPath = Get-AzVmAppStateGuestHelperPath
     Set-Content -LiteralPath $planPath -Value $planJson -Encoding UTF8
