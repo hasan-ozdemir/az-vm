@@ -7,6 +7,26 @@ function Get-OpenSshService {
     return (Get-Service sshd -ErrorAction SilentlyContinue)
 }
 
+function Get-OpenSshServiceExecutablePath {
+    $openSshExecutableCandidates = @(
+        'C:\Windows\System32\OpenSSH\sshd.exe',
+        'C:\Program Files\OpenSSH-Win64\sshd.exe',
+        'C:\Program Files\OpenSSH\sshd.exe'
+    )
+
+    return ($openSshExecutableCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+
+function Get-OpenSshKeyGenExecutablePath {
+    $openSshKeyGenCandidates = @(
+        'C:\Windows\System32\OpenSSH\ssh-keygen.exe',
+        'C:\Program Files\OpenSSH-Win64\ssh-keygen.exe',
+        'C:\Program Files\OpenSSH\ssh-keygen.exe'
+    )
+
+    return ($openSshKeyGenCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+
 function Get-OpenSshInstallScriptPath {
     $openSshInstallScriptCandidates = @(
         'C:\Windows\System32\OpenSSH\install-sshd.ps1',
@@ -52,6 +72,19 @@ function Get-OpenSshCapabilityState {
     return ''
 }
 
+function Ensure-OpenSshHostKeyMaterial {
+    $keyGenPath = Get-OpenSshKeyGenExecutablePath
+    if ([string]::IsNullOrWhiteSpace([string]$keyGenPath)) {
+        return
+    }
+
+    Write-Host ("Running OpenSSH host key generation: {0} -A" -f [string]$keyGenPath)
+    & $keyGenPath -A
+    if ($LASTEXITCODE -ne 0) {
+        throw ("OpenSSH host key generation failed with exit code {0}." -f $LASTEXITCODE)
+    }
+}
+
 function Install-OpenSshCapability {
     param([string]$CapabilityName)
 
@@ -88,6 +121,42 @@ function Install-OpenSshCapability {
     return ($rebootRequired -or ($capabilityState -eq 'InstallPending'))
 }
 
+function Repair-OpenSshServiceRegistration {
+    $installScript = Get-OpenSshInstallScriptPath
+    if (-not [string]::IsNullOrWhiteSpace([string]$installScript)) {
+        Write-Host ("Running OpenSSH service installer: {0}" -f [string]$installScript)
+        powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installScript
+        if ($LASTEXITCODE -ne 0) {
+            throw ("OpenSSH install-sshd.ps1 failed with exit code {0}." -f $LASTEXITCODE)
+        }
+
+        return (Wait-OpenSshServiceRegistration -TimeoutSeconds 30)
+    }
+
+    $sshdExecutablePath = Get-OpenSshServiceExecutablePath
+    if ([string]::IsNullOrWhiteSpace([string]$sshdExecutablePath)) {
+        return $null
+    }
+
+    Ensure-OpenSshHostKeyMaterial
+    New-Item -Path 'C:\ProgramData\ssh' -ItemType Directory -Force | Out-Null
+
+    $existingService = Get-OpenSshService
+    if ($null -eq $existingService) {
+        Write-Host ("Registering sshd service directly from executable: {0}" -f [string]$sshdExecutablePath)
+        try {
+            New-Service -Name 'sshd' -BinaryPathName ("`"{0}`"" -f [string]$sshdExecutablePath) -DisplayName 'OpenSSH SSH Server' -Description 'SSH protocol based service to provide secure encrypted communications between two untrusted hosts over an insecure network.' -StartupType Automatic | Out-Null
+        }
+        catch {
+            if ($_.Exception.Message -notmatch '(?i)already exists') {
+                throw
+            }
+        }
+    }
+
+    return (Wait-OpenSshServiceRegistration -TimeoutSeconds 30)
+}
+
 function Ensure-OpenSshServiceInstalled {
     $service = Get-OpenSshService
     if ($null -ne $service) {
@@ -98,38 +167,46 @@ function Ensure-OpenSshServiceInstalled {
     }
 
     $rebootRequired = Install-OpenSshCapability -CapabilityName $openSshCapabilityName
-    $service = Wait-OpenSshServiceRegistration -TimeoutSeconds 20
+    $service = Wait-OpenSshServiceRegistration -TimeoutSeconds 45
     if ($null -ne $service) {
         return [pscustomobject]@{
             Service = $service
             RebootRequired = $rebootRequired
+            PendingReason = ''
         }
     }
 
-    $installScript = Get-OpenSshInstallScriptPath
-    if ([string]::IsNullOrWhiteSpace([string]$installScript)) {
-        throw ("OpenSSH capability was installed, but sshd service registration is still missing and install-sshd.ps1 was not found. capability-state={0}" -f (Get-OpenSshCapabilityState -CapabilityName $openSshCapabilityName))
+    $capabilityState = Get-OpenSshCapabilityState -CapabilityName $openSshCapabilityName
+    $service = Repair-OpenSshServiceRegistration
+    if ($null -ne $service) {
+        return [pscustomobject]@{
+            Service = $service
+            RebootRequired = $rebootRequired
+            PendingReason = ''
+        }
     }
 
-    Write-Host ("Running OpenSSH service installer: {0}" -f $installScript)
-    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installScript
-    if ($LASTEXITCODE -ne 0) {
-        throw ("OpenSSH install-sshd.ps1 failed with exit code {0}." -f $LASTEXITCODE)
+    if ($rebootRequired -or [string]::Equals([string]$capabilityState, 'InstallPending', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Service = $null
+            RebootRequired = $true
+            PendingReason = ("capability-state={0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$capabilityState)) { 'unknown' } else { [string]$capabilityState }))
+        }
     }
 
-    $service = Wait-OpenSshServiceRegistration -TimeoutSeconds 30
-    if ($null -eq $service) {
-        throw "OpenSSH setup completed but sshd service was not found."
-    }
-
-    return [pscustomobject]@{
-        Service = $service
-        RebootRequired = $rebootRequired
-    }
+    throw "OpenSSH setup completed but sshd service was not found."
 }
 
 $installResult = Ensure-OpenSshServiceInstalled
 $sshdService = $installResult.Service
+if ($null -eq $sshdService) {
+    Write-Host ("openssh-service-pending-reboot: {0}" -f [string]$installResult.PendingReason)
+    Write-Host "TASK_REBOOT_REQUIRED:install-openssh-service"
+    Write-Host "openssh-ready"
+    Write-Host "Init task completed: install-openssh-service"
+    return
+}
+
 Set-Service -Name sshd -StartupType Automatic
 if (Get-Service ssh-agent -ErrorAction SilentlyContinue) {
     Set-Service -Name ssh-agent -StartupType Automatic

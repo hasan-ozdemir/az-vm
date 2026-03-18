@@ -6898,8 +6898,13 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
 
     foreach ($fragment in @(
         'Wait-OpenSshServiceRegistration',
+        'Get-OpenSshServiceExecutablePath',
+        'Ensure-OpenSshHostKeyMaterial',
+        'Registering sshd service directly from executable:',
         'Get-OpenSshInstallScriptPath',
         'openssh-service-ready:',
+        'openssh-service-pending-reboot:',
+        'TASK_REBOOT_REQUIRED:install-openssh-service',
         'OpenSSH setup completed but sshd service was not found.'
     )) {
         Assert-True -Condition ($installTaskText -like ('*' + [string]$fragment + '*')) -Message ("OpenSSH install task must include fragment '{0}'." -f [string]$fragment)
@@ -6907,7 +6912,11 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
 
     foreach ($fragment in @(
         'Wait-SshdListener',
+        'Recover-OpenSshService',
         'OpenSSH service is missing. Running service installer before sshd_config changes.',
+        'OpenSSH service is missing. Attempting direct service recovery before sshd_config changes from',
+        'Ensure-OpenSshHostKeyMaterial',
+        'Running OpenSSH host key generation:',
         'Start-Service -Name sshd',
         'Restart-Service -Name sshd -Force',
         'listener did not bind to the configured port in time',

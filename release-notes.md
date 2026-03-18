@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.349 - 2026-03-18
+
+### Summary
+This release is a targeted Windows OpenSSH hotfix for the live publish path. The first-run OpenSSH capability install on the active Windows image needed more than the old `180` second init budget, and the inbox image exposed `sshd.exe` plus `ssh-keygen.exe` without exposing `install-sshd.ps1`. The OpenSSH init chain now tolerates that reality and keeps the first live `create` path from stalling before SSH comes up.
+
+### Highlights
+- Raised the tracked timeout budget for `03-install-openssh-service` so a first-run Windows capability install can complete inside Azure Run Command instead of being cut off before `sshd` registration settles.
+- Fixed `03-install-openssh-service` so it now recovers missing `sshd` registration directly from the OpenSSH executable and can emit a reboot-required marker when the capability is still pending.
+- Fixed `04-configure-sshd-service` so it now shares the same direct `sshd.exe` recovery path and regenerates host keys through `ssh-keygen.exe` before the repo-managed `444` listener is started.
+- Revalidated the fix non-live and then live in isolation on `rg-bizyum-ate1-g1/bizyum` with successful reruns of `03`, `04`, and `connect --ssh --test`.
+
 ## Release 2026.3.18.348 - 2026-03-18
 
 ### Summary

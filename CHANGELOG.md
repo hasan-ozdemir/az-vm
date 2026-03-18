@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.349] - 2026-03-18
+
+### Changed
+- Changed the Windows OpenSSH `vm-init` bootstrap again so `03-install-openssh-service` now has a realistic first-install timeout budget for Azure Run Command and no longer depends on an `install-sshd.ps1` script being present on the guest image before the task can finish the first create.
+
+### Fixed
+- Fixed the fresh Windows `create --auto --windows --perf` failure observed on 2026-03-18 where `03-install-openssh-service` timed out during the first OpenSSH capability install, `04-configure-sshd-service` then ran before the `sshd` service registration had settled, and the later SSH transport bootstrap failed because no host key could be resolved on port `444`.
+- Fixed both Windows OpenSSH init tasks so they now recover from inbox-capability installs that provide `sshd.exe` and `ssh-keygen.exe` but not `install-sshd.ps1`: `03-install-openssh-service` can register `sshd` directly from the OpenSSH executable when needed and can mark the task as reboot-required when servicing is still pending, while `04-configure-sshd-service` now uses the same direct-recovery path before editing `sshd_config`.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated live in isolation on the active managed Windows VM through `task --run-vm-init 03`, `task --run-vm-init 04`, and `connect --ssh --test` against `rg-bizyum-ate1-g1/bizyum`, confirming that the repaired init chain leaves `sshd` registered and reachable on port `444`.
+
 ## [2026.3.18.348] - 2026-03-18
 
 ### Changed

@@ -5,6 +5,26 @@ function Get-OpenSshService {
     return (Get-Service sshd -ErrorAction SilentlyContinue)
 }
 
+function Get-OpenSshServiceExecutablePath {
+    $openSshExecutableCandidates = @(
+        'C:\Windows\System32\OpenSSH\sshd.exe',
+        'C:\Program Files\OpenSSH-Win64\sshd.exe',
+        'C:\Program Files\OpenSSH\sshd.exe'
+    )
+
+    return ($openSshExecutableCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+
+function Get-OpenSshKeyGenExecutablePath {
+    $openSshKeyGenCandidates = @(
+        'C:\Windows\System32\OpenSSH\ssh-keygen.exe',
+        'C:\Program Files\OpenSSH-Win64\ssh-keygen.exe',
+        'C:\Program Files\OpenSSH\ssh-keygen.exe'
+    )
+
+    return ($openSshKeyGenCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+
 function Get-OpenSshInstallScriptPath {
     $openSshInstallScriptCandidates = @(
         "C:\Windows\System32\OpenSSH\install-sshd.ps1",
@@ -13,6 +33,19 @@ function Get-OpenSshInstallScriptPath {
     )
 
     return ($openSshInstallScriptCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
+}
+
+function Ensure-OpenSshHostKeyMaterial {
+    $keyGenPath = Get-OpenSshKeyGenExecutablePath
+    if ([string]::IsNullOrWhiteSpace([string]$keyGenPath)) {
+        return
+    }
+
+    Write-Host ("Running OpenSSH host key generation: {0} -A" -f [string]$keyGenPath)
+    & $keyGenPath -A
+    if ($LASTEXITCODE -ne 0) {
+        throw ("OpenSSH host key generation failed with exit code {0}." -f $LASTEXITCODE)
+    }
 }
 
 function Wait-SshdListener {
@@ -34,22 +67,43 @@ function Wait-SshdListener {
     return $false
 }
 
+function Recover-OpenSshService {
+    $installScript = Get-OpenSshInstallScriptPath
+    if (-not [string]::IsNullOrWhiteSpace([string]$installScript)) {
+        Write-Host "OpenSSH service is missing. Running service installer before sshd_config changes."
+        powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installScript
+        if ($LASTEXITCODE -ne 0) {
+            throw "OpenSSH install-sshd.ps1 failed while recovering the sshd service."
+        }
+
+        return (Get-OpenSshService)
+    }
+
+    $sshdExecutablePath = Get-OpenSshServiceExecutablePath
+    if ([string]::IsNullOrWhiteSpace([string]$sshdExecutablePath)) {
+        return $null
+    }
+
+    Write-Host ("OpenSSH service is missing. Attempting direct service recovery before sshd_config changes from {0}." -f [string]$sshdExecutablePath)
+    Ensure-OpenSshHostKeyMaterial
+    New-Item -Path 'C:\ProgramData\ssh' -ItemType Directory -Force | Out-Null
+    try {
+        New-Service -Name 'sshd' -BinaryPathName ("`"{0}`"" -f [string]$sshdExecutablePath) -DisplayName 'OpenSSH SSH Server' -Description 'SSH protocol based service to provide secure encrypted communications between two untrusted hosts over an insecure network.' -StartupType Automatic | Out-Null
+    }
+    catch {
+        if ($_.Exception.Message -notmatch '(?i)already exists') {
+            throw
+        }
+    }
+    Start-Sleep -Seconds 2
+    return (Get-OpenSshService)
+}
+
 $sshdService = Get-OpenSshService
 if ($null -eq $sshdService) {
-    $installScript = Get-OpenSshInstallScriptPath
-    if ([string]::IsNullOrWhiteSpace([string]$installScript)) {
-        throw "OpenSSH service is missing and install-sshd.ps1 could not be found."
-    }
-
-    Write-Host "OpenSSH service is missing. Running service installer before sshd_config changes."
-    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installScript
-    if ($LASTEXITCODE -ne 0) {
-        throw "OpenSSH install-sshd.ps1 failed while recovering the sshd service."
-    }
-
-    $sshdService = Get-OpenSshService
+    $sshdService = Recover-OpenSshService
     if ($null -eq $sshdService) {
-        throw "OpenSSH service is still missing after running install-sshd.ps1."
+        throw "OpenSSH service is still missing after the recovery path completed."
     }
 }
 
@@ -101,6 +155,7 @@ New-Item -Path "HKLM:\SOFTWARE\OpenSSH" -Force
 Set-ItemProperty -Path "HKLM:\SOFTWARE\OpenSSH" -Name "DefaultShell" -Value "C:\Windows\System32\cmd.exe"
 
 $sshdService = Get-OpenSshService
+Ensure-OpenSshHostKeyMaterial
 Set-Service -Name sshd -StartupType Automatic
 if ([string]::Equals([string]$sshdService.Status, 'Running', [System.StringComparison]::OrdinalIgnoreCase)) {
     Restart-Service -Name sshd -Force
