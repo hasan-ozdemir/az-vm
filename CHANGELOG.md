@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.361] - 2026-03-18
+
+### Changed
+- Changed the maintained Windows update task manifests back to the live timeout budgets that the compatibility matrix expects for `110`, `111`, `113`, `115`, `119`, `122`, `123`, `126`, `127`, `128`, `129`, `130`, `132`, and `133`.
+
+### Fixed
+- Fixed the remaining `quality-gate` contract drift on `main`, where the tracked Windows update manifests still carried shorter timeouts than the validated live task budgets and caused the smoke and compatibility jobs to fail remotely.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`, `tests\powershell-compatibility-check.ps1`, `tests\code-quality-check.ps1`, and `tests\documentation-contract-check.ps1`.
+
 ## [2026.3.18.360] - 2026-03-18
 
 ### Changed

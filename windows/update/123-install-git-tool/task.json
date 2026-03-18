@@ -1,5 +1,5 @@
 {
   "priority": 123,
   "enabled": true,
-  "timeout": 90
+  "timeout": 180
 }

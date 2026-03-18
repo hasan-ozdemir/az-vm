@@ -1,7 +1,7 @@
 {
   "priority": 133,
   "enabled": true,
-  "timeout": 285,
+  "timeout": 360,
   "appState": {
     "portableProfilePayload": true,
     "machineDirectories": [],
@@ -9,7 +9,9 @@
     "profileDirectories": [
       {
         "path": "AppData\\Roaming\\Freedom Scientific\\JAWS\\2025\\Settings",
-        "targetProfiles": [],
+        "targetProfiles": [
+          "manager"
+        ],
         "excludeNames": [],
         "excludePathPatterns": [],
         "excludeFilePatterns": []
@@ -29,7 +31,9 @@
     "userRegistryKeys": [
       {
         "path": "HKCU\\Software\\Freedom Scientific",
-        "targetProfiles": [],
+        "targetProfiles": [
+          "manager"
+        ],
         "distributionAllowList": []
       }
     ]

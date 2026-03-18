@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.361 - 2026-03-18
+
+### Summary
+This release restores the tracked Windows `vm-update` timeout contracts that the remote quality gate expects. Local validation had already been running against the longer live task budgets, but `main` still carried shorter timeout manifests for several maintained Windows tasks, which kept the smoke and compatibility jobs red on GitHub Actions.
+
+### Highlights
+- Updated the tracked timeout budgets for Windows tasks `110`, `111`, `113`, `115`, `119`, `122`, `123`, `126`, `127`, `128`, `129`, `130`, `132`, and `133`.
+- Realigned the remote smoke and compatibility expectations with the live task budgets that were already being validated locally.
+- Revalidated the affected non-live gates locally before re-publishing the branch heads.
+
 ## Release 2026.3.18.360 - 2026-03-18
 
 ### Summary
