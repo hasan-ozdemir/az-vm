@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.359] - 2026-03-18
+
+### Changed
+- Changed the maintained Windows GitHub CLI task back to the tracked 180-second timeout so the compatibility matrix matches the live task contract again.
+- Changed the latest prompt-history workflow-fix entry to remove the banned personal token from tracked documentation.
+
+### Fixed
+- Fixed the latest failing `quality-gate` run on `main`, which was still failing in the sensitive-content audit and the compatibility matrix because `docs/prompt-history.md` contained a banned token and `107-install-gh-tool` still carried the old 30-second timeout in `HEAD`.
+
+### Tests
+- Revalidated `tests\code-quality-check.ps1`; the sensitive-content audit now passes again.
+- Revalidated `tests\powershell-compatibility-check.ps1`; the tracked Windows compatibility matrix now sees `107-install-gh-tool` at 180 seconds.
+
 ## [2026.3.18.358] - 2026-03-18
 
 ### Changed

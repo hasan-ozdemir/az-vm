@@ -5419,7 +5419,19 @@ Investigate the failing main GitHub Actions workflow in this repo and fix it if 
 
 I inspected the latest failing `quality-gate` run on `main` and found the workflow itself was not the problem. The failure was in the committed contract surface that the workflow already runs: the non-live smoke matrix and the PowerShell compatibility matrix were failing because `106-install-7zip-tool` still had the old 30-second timeout, `121-install-wsl-feature` lacked an explicit bootstrap-satisfied readiness check, and `135-install-ollama-tool` still used an overly broad stale-installer filter. I updated those task contracts so they match the intended behavior, then revalidated locally.
 
-The result is that `tests\az-vm-smoke-tests.ps1` now passes fully and `tests\powershell-compatibility-check.ps1` now passes on both Windows PowerShell 5.1 and PowerShell 7+. I did not need to change `.github/workflows/quality-gate.yml` itself because the workflow was already correct; the committed task contracts were the stale part. The exact files changed in this fix are [windows/update/106-install-7zip-tool/task.json](C:/Users/hasan/source/az/az-vm/windows/update/106-install-7zip-tool/task.json), [windows/update/121-install-wsl-feature/121-install-wsl-feature.ps1](C:/Users/hasan/source/az/az-vm/windows/update/121-install-wsl-feature/121-install-wsl-feature.ps1), [windows/update/135-install-ollama-tool/135-install-ollama-tool.ps1](C:/Users/hasan/source/az/az-vm/windows/update/135-install-ollama-tool/135-install-ollama-tool.ps1), [CHANGELOG.md](C:/Users/hasan/source/az/az-vm/CHANGELOG.md), and [release-notes.md](C:/Users/hasan/source/az/az-vm/release-notes.md).
+The result is that `tests\az-vm-smoke-tests.ps1` now passes fully and `tests\powershell-compatibility-check.ps1` now passes on both Windows PowerShell 5.1 and PowerShell 7+. I did not need to change `.github/workflows/quality-gate.yml` itself because the workflow was already correct; the committed task contracts were the stale part. The exact files changed in this fix are [windows/update/106-install-7zip-tool/task.json](windows/update/106-install-7zip-tool/task.json), [windows/update/121-install-wsl-feature/121-install-wsl-feature.ps1](windows/update/121-install-wsl-feature/121-install-wsl-feature.ps1), [windows/update/135-install-ollama-tool/135-install-ollama-tool.ps1](windows/update/135-install-ollama-tool/135-install-ollama-tool.ps1), [CHANGELOG.md](CHANGELOG.md), and [release-notes.md](release-notes.md).
+
+### 2026-03-18 19:28 UTC
+
+**User Prompt**
+
+````text
+Inspect the failing main GitHub Actions workflow precisely, patch the minimal files needed, run the relevant non-live validation locally, and report back with the exact files changed and results.
+````
+
+**Assistant Summary**
+
+I fixed the two committed surfaces that were breaking the main `quality-gate` workflow: `windows/update/107-install-gh-tool/task.json` now keeps the tracked 180-second timeout, and the workflow-fix entry in `docs/prompt-history.md` no longer contains the banned personal token. I also updated `CHANGELOG.md` and `release-notes.md` for the new release cut, then revalidated the affected non-live gates locally. `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1` all passed after the patch.
 
 ### 2026-03-18 17:37 UTC
 

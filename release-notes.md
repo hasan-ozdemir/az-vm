@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.359 - 2026-03-18
+
+### Summary
+This release restores the main GitHub Actions quality gate. Two stale committed surfaces were causing the run to fail: the tracked Windows GitHub CLI task in `HEAD` still used a 30-second timeout even though the live contract expects 180 seconds, and `docs/prompt-history.md` still carried a banned personal token that the sensitive-content audit rejects.
+
+### Highlights
+- Updated the maintained Windows `107-install-gh-tool` timeout contract back to 180 seconds.
+- Redacted the banned personal token from the prompt-history workflow-fix entry.
+- Revalidated the affected non-live gates locally so the quality gate now matches the intended committed state again.
+
 ## Release 2026.3.18.358 - 2026-03-18
 
 ### Summary
