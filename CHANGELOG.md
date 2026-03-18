@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.360] - 2026-03-18
+
+### Changed
+- Changed the Windows `03-install-openssh-service` init task to bootstrap OpenSSH Server from the official Win32-OpenSSH MSI instead of waiting on the Windows capability download path during `az vm run-command`.
+- Changed the OpenSSH init smoke contract so it now asserts the MSI bootstrap fragments in addition to the existing service-recovery paths.
+
+### Fixed
+- Fixed the slow and unreliable Windows `vm-init` OpenSSH bootstrap path that could leave fresh Windows 11 builds stuck for minutes in Azure Run Command while `Add-WindowsCapability` waited on servicing.
+- Fixed the `03-install-openssh-service` ready-state log so the task now refreshes and reports the live `sshd` service state after starting it.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`, `tests\powershell-compatibility-check.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated the live Windows bootstrap path on `rg-bizyum-ate1-g1` / `bizyum` with isolated `task --run-vm-init 03`, isolated `task --run-vm-init 04`, and `connect --ssh --test`.
+
 ## [2026.3.18.359] - 2026-03-18
 
 ### Changed

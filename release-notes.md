@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.360 - 2026-03-18
+
+### Summary
+This release replaces the slow Windows 11 OpenSSH capability bootstrap in `vm-init` with an official Win32-OpenSSH MSI bootstrap. Fresh Windows builds were spending minutes inside Azure Run Command while the capability path waited on servicing; the new path installs the official server package directly, recovers the `sshd` service deterministically, and reaches a working SSH listener fast enough for the rest of the init flow.
+
+### Highlights
+- Updated `03-install-openssh-service` to download and install the official Win32-OpenSSH MSI, then recover or register `sshd` only when needed.
+- Updated the install task so it refreshes and logs the real running `sshd` state after startup instead of reporting a stale stopped state.
+- Updated the OpenSSH smoke contract to assert the MSI bootstrap fragments alongside the existing service-recovery paths.
+- Revalidated the non-live gates plus the live Windows bootstrap path with isolated `03`, isolated `04`, and `connect --ssh --test` on the current managed VM.
+
 ## Release 2026.3.18.359 - 2026-03-18
 
 ### Summary

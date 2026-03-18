@@ -7094,6 +7094,11 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
     foreach ($fragment in @(
         'Wait-OpenSshServiceRegistration',
         'Get-OpenSshServiceExecutablePath',
+        'Install-OpenSshServerPackage',
+        'Downloading OpenSSH MSI from',
+        'Invoke-WebRequest -Uri $openSshServerMsiUrl -OutFile $openSshServerMsiPath',
+        "Start-Process -FilePath 'msiexec.exe'",
+        'OpenSSH MSI installation exited with code',
         'Ensure-OpenSshHostKeyMaterial',
         'Registering sshd service directly from executable:',
         'Get-OpenSshInstallScriptPath',

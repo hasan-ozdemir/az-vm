@@ -1,7 +1,8 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Init task started: install-openssh-service"
 
-$openSshCapabilityName = 'OpenSSH.Server~~~~0.0.1.0'
+$openSshServerMsiUrl = 'https://github.com/PowerShell/Win32-OpenSSH/releases/download/10.0.0.0p2-Preview/OpenSSH-Win64-v10.0.0.0.msi'
+$openSshServerMsiPath = 'C:\Windows\Temp\OpenSSH-Win64-v10.0.0.0.msi'
 
 function Get-OpenSshService {
     return (Get-Service sshd -ErrorAction SilentlyContinue)
@@ -9,9 +10,9 @@ function Get-OpenSshService {
 
 function Get-OpenSshServiceExecutablePath {
     $openSshExecutableCandidates = @(
-        'C:\Windows\System32\OpenSSH\sshd.exe',
+        'C:\Program Files\OpenSSH\sshd.exe',
         'C:\Program Files\OpenSSH-Win64\sshd.exe',
-        'C:\Program Files\OpenSSH\sshd.exe'
+        'C:\Windows\System32\OpenSSH\sshd.exe'
     )
 
     return ($openSshExecutableCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
@@ -19,9 +20,9 @@ function Get-OpenSshServiceExecutablePath {
 
 function Get-OpenSshKeyGenExecutablePath {
     $openSshKeyGenCandidates = @(
-        'C:\Windows\System32\OpenSSH\ssh-keygen.exe',
+        'C:\Program Files\OpenSSH\ssh-keygen.exe',
         'C:\Program Files\OpenSSH-Win64\ssh-keygen.exe',
-        'C:\Program Files\OpenSSH\ssh-keygen.exe'
+        'C:\Windows\System32\OpenSSH\ssh-keygen.exe'
     )
 
     return ($openSshKeyGenCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
@@ -29,9 +30,9 @@ function Get-OpenSshKeyGenExecutablePath {
 
 function Get-OpenSshInstallScriptPath {
     $openSshInstallScriptCandidates = @(
-        'C:\Windows\System32\OpenSSH\install-sshd.ps1',
+        'C:\Program Files\OpenSSH\install-sshd.ps1',
         'C:\Program Files\OpenSSH-Win64\install-sshd.ps1',
-        'C:\Program Files\OpenSSH\install-sshd.ps1'
+        'C:\Windows\System32\OpenSSH\install-sshd.ps1'
     )
 
     return ($openSshInstallScriptCandidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1)
@@ -53,25 +54,6 @@ function Wait-OpenSshServiceRegistration {
     return $null
 }
 
-function Get-OpenSshCapabilityState {
-    param([string]$CapabilityName)
-
-    if (-not (Get-Command Get-WindowsCapability -ErrorAction SilentlyContinue)) {
-        return ''
-    }
-
-    try {
-        $capability = Get-WindowsCapability -Online -Name $CapabilityName -ErrorAction Stop
-        if ($null -ne $capability -and $capability.PSObject.Properties.Match('State').Count -gt 0) {
-            return [string]$capability.State
-        }
-    }
-    catch {
-    }
-
-    return ''
-}
-
 function Ensure-OpenSshHostKeyMaterial {
     $keyGenPath = Get-OpenSshKeyGenExecutablePath
     if ([string]::IsNullOrWhiteSpace([string]$keyGenPath)) {
@@ -85,40 +67,33 @@ function Ensure-OpenSshHostKeyMaterial {
     }
 }
 
-function Install-OpenSshCapability {
-    param([string]$CapabilityName)
-
-    $capabilityState = Get-OpenSshCapabilityState -CapabilityName $CapabilityName
-    if ($capabilityState -in @('Installed', 'InstallPending')) {
-        Write-Host ("OpenSSH capability already present: {0}" -f $capabilityState)
-        return ($capabilityState -eq 'InstallPending')
-    }
-
-    $rebootRequired = $false
-    if (Get-Command Add-WindowsCapability -ErrorAction SilentlyContinue) {
-        Write-Host ("Running: Add-WindowsCapability -Online -Name {0}" -f $CapabilityName)
-        $result = Add-WindowsCapability -Online -Name $CapabilityName -ErrorAction Stop
-        foreach ($propertyName in @('RestartNeeded', 'RebootRequired')) {
-            if ($null -ne $result -and $result.PSObject.Properties.Match($propertyName).Count -gt 0 -and [bool]$result.$propertyName) {
-                $rebootRequired = $true
-            }
-        }
-    }
-    else {
-        Write-Host ("Running: dism.exe /online /add-capability /capabilityname:{0} /quiet /norestart" -f $CapabilityName)
-        & dism.exe /online /add-capability "/capabilityname:$CapabilityName" /quiet /norestart
-        if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 3010) {
-            throw ("OpenSSH capability installation failed with exit code {0}." -f $LASTEXITCODE)
-        }
-
-        if ($LASTEXITCODE -eq 3010) {
-            $rebootRequired = $true
+function Install-OpenSshServerPackage {
+    $service = Get-OpenSshService
+    if ($null -ne $service) {
+        return [pscustomobject]@{
+            RebootRequired = $false
         }
     }
 
-    $capabilityState = Get-OpenSshCapabilityState -CapabilityName $CapabilityName
-    Write-Host ("openssh-capability-state => {0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$capabilityState)) { 'unknown' } else { $capabilityState }))
-    return ($rebootRequired -or ($capabilityState -eq 'InstallPending'))
+    $sshdExecutablePath = Get-OpenSshServiceExecutablePath
+    if (-not [string]::IsNullOrWhiteSpace([string]$sshdExecutablePath)) {
+        return [pscustomobject]@{
+            RebootRequired = $false
+        }
+    }
+
+    Write-Host ("Downloading OpenSSH MSI from {0}" -f [string]$openSshServerMsiUrl)
+    Invoke-WebRequest -Uri $openSshServerMsiUrl -OutFile $openSshServerMsiPath
+
+    Write-Host ("Running OpenSSH MSI installer: msiexec.exe /i {0} /qn /norestart" -f [string]$openSshServerMsiPath)
+    $installProcess = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/i', $openSshServerMsiPath, '/qn', '/norestart') -Wait -PassThru
+    if ($installProcess.ExitCode -ne 0 -and $installProcess.ExitCode -ne 3010) {
+        throw ("OpenSSH MSI installation exited with code {0}." -f [int]$installProcess.ExitCode)
+    }
+
+    return [pscustomobject]@{
+        RebootRequired = ($installProcess.ExitCode -eq 3010)
+    }
 }
 
 function Repair-OpenSshServiceRegistration {
@@ -163,34 +138,34 @@ function Ensure-OpenSshServiceInstalled {
         return [pscustomobject]@{
             Service = $service
             RebootRequired = $false
+            PendingReason = ''
         }
     }
 
-    $rebootRequired = Install-OpenSshCapability -CapabilityName $openSshCapabilityName
+    $installResult = Install-OpenSshServerPackage
     $service = Wait-OpenSshServiceRegistration -TimeoutSeconds 45
     if ($null -ne $service) {
         return [pscustomobject]@{
             Service = $service
-            RebootRequired = $rebootRequired
+            RebootRequired = [bool]$installResult.RebootRequired
             PendingReason = ''
         }
     }
 
-    $capabilityState = Get-OpenSshCapabilityState -CapabilityName $openSshCapabilityName
     $service = Repair-OpenSshServiceRegistration
     if ($null -ne $service) {
         return [pscustomobject]@{
             Service = $service
-            RebootRequired = $rebootRequired
+            RebootRequired = [bool]$installResult.RebootRequired
             PendingReason = ''
         }
     }
 
-    if ($rebootRequired -or [string]::Equals([string]$capabilityState, 'InstallPending', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ([bool]$installResult.RebootRequired) {
         return [pscustomobject]@{
             Service = $null
             RebootRequired = $true
-            PendingReason = ("capability-state={0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$capabilityState)) { 'unknown' } else { [string]$capabilityState }))
+            PendingReason = 'msi-reboot-required'
         }
     }
 
@@ -211,6 +186,16 @@ Set-Service -Name sshd -StartupType Automatic
 if (Get-Service ssh-agent -ErrorAction SilentlyContinue) {
     Set-Service -Name ssh-agent -StartupType Automatic
 }
+
+if (-not [string]::Equals([string]$sshdService.Status, 'Running', [System.StringComparison]::OrdinalIgnoreCase)) {
+    try {
+        Start-Service -Name sshd -ErrorAction Stop
+    }
+    catch {
+    }
+}
+
+$sshdService = Get-OpenSshService
 
 Write-Host ("openssh-service-ready: status={0}; start-type={1}" -f [string]$sshdService.Status, [string]$sshdService.StartType)
 if ([bool]$installResult.RebootRequired) {
