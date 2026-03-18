@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.353 - 2026-03-18
+
+### Summary
+This release closes the remaining Windows Docker Desktop gap that was still leaving `docker info` unhealthy on the active managed VM even after the Desktop frontend and WSL features appeared to be present. The working local machine pattern showed one more required step: after the interactive Desktop launch, the task still needed to request `docker desktop start` explicitly so the backend would materialize the Linux engine and the `docker-desktop` WSL distro.
+
+### Highlights
+- Updated `134-install-docker-desktop-application` so it now treats `vmcompute`, `hns`, and `wslservice` as first-class prerequisites when present, seeds the managed Docker Desktop profile with the accepted license/settings state, keeps `com.docker.service` in the manual/stopped WSL2-aligned mode, and explicitly runs `docker desktop start` before the bounded `docker desktop status` and `docker info` probes.
+- Removed the stale tracked Docker Desktop task-local app-state plugin zip because it was replaying transient Desktop lockfiles into healthy reruns and producing a non-actionable app-state signal warning even when the Docker engine itself was ready. The task now relies on its managed in-script profile seeding for the required Desktop state.
+- Revalidated the exact live path on `rg-bizyum-ate1-g1` / `bizyum`: `docker desktop status`, `docker info`, and `wsl -l -v` all showed the expected running Docker Desktop engine state, and isolated `task --run-vm-update 134 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` finished with `warning=0`, `signal-warning=0`, and `error=0`.
+
 ## Release 2026.3.18.352 - 2026-03-18
 
 ### Summary

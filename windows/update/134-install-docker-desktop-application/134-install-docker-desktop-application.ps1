@@ -2,6 +2,11 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-docker-desktop-application"
 
 $taskConfig = [ordered]@{
+    TaskName = '134-install-docker-desktop-application'
+    ManagerUser = '__VM_ADMIN_USER__'
+    ManagerPassword = '__VM_ADMIN_PASS__'
+    InteractiveHelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
+    InteractiveLaunchTaskSuffix = 'interactive-launch'
     PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
     DockerDesktopPackageId = 'Docker.DockerDesktop'
     DockerDesktopExecutablePath = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'
@@ -12,14 +17,26 @@ $taskConfig = [ordered]@{
     DockerStartupShortcutPath = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp\Docker Desktop.lnk'
     DockerInstallTimeoutSeconds = 900
     DockerVersionTimeoutSeconds = 8
-    DockerStatusTimeoutSeconds = 20
-    DockerInfoTimeoutSeconds = 20
-    DockerReadinessTimeoutSeconds = 180
+    DockerStatusTimeoutSeconds = 30
+    DockerInfoTimeoutSeconds = 45
+    DockerDesktopStartTimeoutSeconds = 90
+    DockerReadinessTimeoutSeconds = 360
     DockerReadinessPollSeconds = 5
+    InteractiveDesktopWaitSeconds = 45
+    InteractiveLaunchTimeoutSeconds = 120
+    DockerWslBootstrapTimeoutSeconds = 180
+    DockerPrerequisiteServices = @('vmcompute', 'hns', 'wslservice', 'LxssManager')
     DockerLocalUsers = @('__VM_ADMIN_USER__', '__ASSISTANT_USER__')
 }
 
 Import-Module 'C:\Windows\Temp\az-vm-session-environment.psm1' -Force -DisableNameChecking
+
+$interactiveHelperPath = [string]$taskConfig.InteractiveHelperPath
+if (-not (Test-Path -LiteralPath $interactiveHelperPath)) {
+    throw ("Interactive session helper was not found: {0}" -f $interactiveHelperPath)
+}
+
+. $interactiveHelperPath
 
 function Refresh-SessionPath {
     Refresh-AzVmSessionPath | Out-Null
@@ -39,13 +56,56 @@ function Resolve-WingetExe {
     return ""
 }
 
+function Resolve-DockerExePath {
+    $dockerCommand = Get-Command docker -ErrorAction SilentlyContinue
+    if ($dockerCommand -and -not [string]::IsNullOrWhiteSpace([string]$dockerCommand.Source)) {
+        return [string]$dockerCommand.Source
+    }
+
+    $candidate = 'C:\Program Files\Docker\Docker\resources\bin\docker.exe'
+    if (Test-Path -LiteralPath $candidate) {
+        return [string]$candidate
+    }
+
+    return 'docker'
+}
+
+function Convert-CimDateTimeToUtc {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return $null
+    }
+
+    try {
+        return [System.Management.ManagementDateTimeConverter]::ToDateTime([string]$Value).ToUniversalTime()
+    }
+    catch {
+        return $null
+    }
+}
+
 function Get-StaleInstallerProcesses {
+    $nowUtc = [DateTime]::UtcNow
     $nameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
     $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
         $name = [string]$_.Name
         $commandLine = [string]$_.CommandLine
-        ($name -match $nameRegex) -or ($commandLine -match 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState')
-    } | Select-Object ProcessId, Name, CommandLine
+        $matchesKnownInstaller = ($name -match $nameRegex)
+        $matchesDockerInstall = ($commandLine -match 'Docker\.DockerDesktop|Docker Desktop Installer|DockerDesktopInstaller')
+        $matchesPortableWinget = ($commandLine -match 'ProgramData\\az-vm\\tools\\winget-x64')
+        $matchesInstallState = ($commandLine -match 'WinGet\\defaultState')
+        if (-not ($matchesKnownInstaller -or $matchesDockerInstall -or $matchesPortableWinget -or $matchesInstallState)) {
+            return $false
+        }
+
+        $createdUtc = Convert-CimDateTimeToUtc -Value ([string]$_.CreationDate)
+        if ($null -eq $createdUtc) {
+            return $true
+        }
+
+        return (($nowUtc - $createdUtc).TotalSeconds -ge 20)
+    } | Select-Object ProcessId, Name, CommandLine, CreationDate
 
     return @($processes)
 }
@@ -205,6 +265,69 @@ function Invoke-ProcessWithTimeout {
     }
 }
 
+function Invoke-DockerPrerequisiteCommand {
+    param(
+        [string]$Label,
+        [string]$FilePath,
+        [string[]]$Arguments = @(),
+        [int]$TimeoutSeconds = 60,
+        [int[]]$AcceptedExitCodes = @(0)
+    )
+
+    $result = Invoke-ProcessWithTimeout -Label $Label -FilePath $FilePath -Arguments $Arguments -TimeoutSeconds $TimeoutSeconds
+    if ($result.TimedOut) {
+        throw ("{0} timed out." -f [string]$Label)
+    }
+
+    if (-not (@($AcceptedExitCodes) -contains [int]$result.ExitCode)) {
+        throw ("{0} failed with exit code {1}." -f [string]$Label, [int]$result.ExitCode)
+    }
+
+    return $result
+}
+
+function Ensure-DockerPrerequisiteServiceStarted {
+    param([string]$ServiceName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ServiceName)) {
+        return
+    }
+
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($null -eq $service) {
+        Write-Host ("docker-step-info: prerequisite-service-skip => {0} => not-found" -f [string]$ServiceName)
+        return
+    }
+
+    try {
+        if ([string]::Equals([string]$service.StartType, 'Disabled', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Set-Service -Name ([string]$service.Name) -StartupType Manual -ErrorAction Stop
+        }
+        elseif ([string]::Equals([string]$service.Name, 'vmcompute', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Set-Service -Name ([string]$service.Name) -StartupType Manual -ErrorAction Stop
+        }
+    }
+    catch {
+        Write-Host ("docker-step-info: prerequisite-service-startup-type-skip => {0} => {1}" -f [string]$service.Name, $_.Exception.Message)
+    }
+
+    $service.Refresh()
+    if ([string]$service.Status -eq 'Running') {
+        Write-Host ("docker-step-ok: prerequisite-service-running => {0}" -f [string]$service.Name)
+        return
+    }
+
+    $netStartResult = Invoke-ProcessWithTimeout -Label ("net start {0}" -f [string]$service.Name) -FilePath 'cmd.exe' -Arguments @('/d', '/c', ("net start ""{0}""" -f [string]$service.Name)) -TimeoutSeconds 30
+    if (-not $netStartResult.Success) {
+        $service = Get-Service -Name ([string]$service.Name) -ErrorAction SilentlyContinue
+        if ($null -eq $service -or [string]$service.Status -ne 'Running') {
+            throw ("docker prerequisite service failed to start: {0} (exit={1})" -f [string]$ServiceName, [int]$netStartResult.ExitCode)
+        }
+    }
+
+    Write-Host ("docker-step-ok: prerequisite-service-started => {0}" -f [string]$service.Name)
+}
+
 function Start-DockerDesktopProcess {
     param([string]$DockerDesktopExe)
 
@@ -290,16 +413,207 @@ function Ensure-DockerStartupShortcut {
     Write-Host "docker-step-ok: startup-shortcut"
 }
 
-function Resolve-DockerServices {
-    $services = @(Get-Service -Name 'com.docker*' -ErrorAction SilentlyContinue | Sort-Object Name)
-    if (@($services).Count -eq 0) {
-        $primaryService = Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
-        if ($null -ne $primaryService) {
-            $services = @($primaryService)
+function Ensure-DockerDesktopInteractiveLaunch {
+    param([string]$DockerDesktopExe)
+
+    if ([string]::IsNullOrWhiteSpace([string]$DockerDesktopExe) -or -not (Test-Path -LiteralPath $DockerDesktopExe)) {
+        throw ("Docker Desktop interactive launch path is invalid: {0}" -f [string]$DockerDesktopExe)
+    }
+
+    if (Test-DockerDesktopInteractiveProcessRunning -ExpectedUserName ([string]$taskConfig.ManagerUser)) {
+        Write-Host 'docker-step-ok: docker-desktop-interactive-process-already-running'
+        return
+    }
+
+    Stop-NonInteractiveDockerDesktopProcesses -ExpectedUserName ([string]$taskConfig.ManagerUser)
+    Stop-DockerServiceForInteractiveLaunch
+
+    $interactiveDesktopStatus = Wait-AzVmUserInteractiveDesktopReady -UserName ([string]$taskConfig.ManagerUser) -WaitSeconds ([int]$taskConfig.InteractiveDesktopWaitSeconds) -PollSeconds 5
+    Write-AzVmInteractiveDesktopStatusLine -Status $interactiveDesktopStatus -Label 'docker-interactive-desktop-state'
+    if (-not [bool]$interactiveDesktopStatus.Ready) {
+        $blockMessage = New-AzVmInteractiveDesktopBlockMessage -ActivityDescription 'Docker Desktop launch' -ExpectedUserName ([string]$taskConfig.ManagerUser) -Status $interactiveDesktopStatus
+        throw ([string]$blockMessage.WarningMessage)
+    }
+
+    $workerTaskName = "{0}-{1}" -f ([string]$taskConfig.TaskName), ([string]$taskConfig.InteractiveLaunchTaskSuffix)
+    $paths = Get-AzVmInteractivePaths -TaskName $workerTaskName
+    $workerScript = @'
+$ErrorActionPreference = "Stop"
+$helperPath = "__HELPER_PATH__"
+$resultPath = "__RESULT_PATH__"
+$taskName = "__TASK_NAME__"
+$dockerDesktopExe = "__DOCKER_DESKTOP_EXE__"
+
+. $helperPath
+
+function Test-DockerDesktopRunning {
+    $processes = @(Get-Process -Name 'Docker Desktop' -IncludeUserName -ErrorAction SilentlyContinue)
+    foreach ($process in @($processes)) {
+        try {
+            $sessionId = [int]$process.SessionId
+            $userName = [string]$process.UserName
+            if ($sessionId -gt 0 -and [string]::Equals([string]$userName, '__EXPECTED_USER__', [System.StringComparison]::OrdinalIgnoreCase)) {
+                return $true
+            }
+        }
+        catch {
         }
     }
 
-    return @($services)
+    return $false
+}
+
+if (-not (Test-DockerDesktopRunning)) {
+    Start-Process -FilePath $dockerDesktopExe -ArgumentList '--minimized' -WindowStyle Hidden
+}
+
+$deadline = [DateTime]::UtcNow.AddSeconds(45)
+while ([DateTime]::UtcNow -lt $deadline) {
+    if (Test-DockerDesktopRunning) {
+        Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Docker Desktop launched in the interactive desktop session.'
+        exit 0
+    }
+
+    Start-Sleep -Seconds 2
+}
+
+Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Docker Desktop did not appear in the interactive desktop session.'
+exit 1
+'@
+
+    $workerScript = $workerScript.Replace('__HELPER_PATH__', $interactiveHelperPath)
+    $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
+    $workerScript = $workerScript.Replace('__TASK_NAME__', $workerTaskName)
+    $workerScript = $workerScript.Replace('__DOCKER_DESKTOP_EXE__', [string]$DockerDesktopExe)
+    $workerScript = $workerScript.Replace('__EXPECTED_USER__', ('{0}\{1}' -f $env:COMPUTERNAME, ([string]$taskConfig.ManagerUser)))
+
+    $null = Invoke-AzVmInteractiveDesktopAutomation `
+        -TaskName $workerTaskName `
+        -RunAsUser ([string]$taskConfig.ManagerUser) `
+        -RunAsPassword ([string]$taskConfig.ManagerPassword) `
+        -WorkerScriptText $workerScript `
+        -WaitTimeoutSeconds ([int]$taskConfig.InteractiveLaunchTimeoutSeconds) `
+        -RunAsMode 'interactiveToken'
+
+    Write-Host 'docker-step-ok: interactive-desktop-launch'
+}
+
+function Resolve-DockerServices {
+    $primaryService = Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
+    if ($null -ne $primaryService) {
+        return @($primaryService)
+    }
+
+    return @()
+}
+
+function Ensure-DockerPlatformPrerequisites {
+    if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+        throw 'wsl.exe is not available. Docker Desktop requires WSL support.'
+    }
+
+    foreach ($serviceName in @($taskConfig.DockerPrerequisiteServices)) {
+        Ensure-DockerPrerequisiteServiceStarted -ServiceName ([string]$serviceName)
+    }
+
+    [void](Invoke-DockerPrerequisiteCommand -Label 'wsl --install --no-distribution' -FilePath 'wsl.exe' -Arguments @('--install', '--no-distribution') -TimeoutSeconds ([int]$taskConfig.DockerWslBootstrapTimeoutSeconds) -AcceptedExitCodes @(0,1,3010))
+    [void](Invoke-DockerPrerequisiteCommand -Label 'wsl --update' -FilePath 'wsl.exe' -Arguments @('--update') -TimeoutSeconds ([int]$taskConfig.DockerWslBootstrapTimeoutSeconds) -AcceptedExitCodes @(0,1,3010))
+    [void](Invoke-DockerPrerequisiteCommand -Label 'wsl --set-default-version 2' -FilePath 'wsl.exe' -Arguments @('--set-default-version', '2') -TimeoutSeconds 90 -AcceptedExitCodes @(0,1))
+    [void](Invoke-DockerPrerequisiteCommand -Label 'wsl --shutdown' -FilePath 'wsl.exe' -Arguments @('--shutdown') -TimeoutSeconds 45 -AcceptedExitCodes @(0,1))
+
+    foreach ($serviceName in @($taskConfig.DockerPrerequisiteServices)) {
+        Ensure-DockerPrerequisiteServiceStarted -ServiceName ([string]$serviceName)
+    }
+
+    Write-Host 'docker-step-ok: platform-prerequisites'
+}
+
+function Write-Utf8FileWithoutBom {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $parentPath = Split-Path -Path $Path -Parent
+    if (-not [string]::IsNullOrWhiteSpace([string]$parentPath) -and -not (Test-Path -LiteralPath $parentPath)) {
+        New-Item -Path $parentPath -ItemType Directory -Force | Out-Null
+    }
+
+    [System.IO.File]::WriteAllText($Path, [string]$Content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
+function Ensure-DockerMasterProfileState {
+    $dockerProfileRoot = Join-Path $env:USERPROFILE '.docker'
+    $dockerRoamingRoot = Join-Path $env:APPDATA 'Docker'
+    $dockerDesktopRoamingRoot = Join-Path $env:APPDATA 'Docker Desktop'
+
+    $configJson = @'
+{
+  "auths": {},
+  "credsStore": "desktop",
+  "currentContext": "desktop-linux",
+  "plugins": {
+    "-x-cli-hints": {
+      "enabled": "false"
+    }
+  },
+  "features": {
+    "hooks": "false"
+  }
+}
+'@
+
+    $daemonJson = @'
+{
+  "builder": {
+    "gc": {
+      "defaultKeepStorage": "20GB",
+      "enabled": true
+    }
+  },
+  "experimental": false
+}
+'@
+
+    $windowsDaemonJson = @'
+{
+  "experimental": false
+}
+'@
+
+    $settingsStoreJson = @'
+{
+  "AnalyticsEnabled": false,
+  "AutoStart": true,
+  "ContainerTerminal": "system",
+  "DesktopTerminalEnabled": true,
+  "DisplayedOnboarding": true,
+  "EnableCLIHints": false,
+  "EnableDockerAI": true,
+  "InferenceCanUseGPUVariant": true,
+  "IntegratedWslDistros": [],
+  "LicenseTermsVersion": 2,
+  "OpenUIOnStartupDisabled": true,
+  "SbomIndexing": false,
+  "SettingsVersion": 43,
+  "ThemeSource": "dark",
+  "UseContainerdSnapshotter": true
+}
+'@
+
+    $installStateJson = @'
+{
+  "previouslyInstalled": true
+}
+'@
+
+    Write-Utf8FileWithoutBom -Path (Join-Path $dockerProfileRoot 'config.json') -Content $configJson
+    Write-Utf8FileWithoutBom -Path (Join-Path $dockerProfileRoot 'daemon.json') -Content $daemonJson
+    Write-Utf8FileWithoutBom -Path (Join-Path $dockerProfileRoot 'windows-daemon.json') -Content $windowsDaemonJson
+    Write-Utf8FileWithoutBom -Path (Join-Path $dockerRoamingRoot 'settings-store.json') -Content $settingsStoreJson
+    Write-Utf8FileWithoutBom -Path (Join-Path $dockerDesktopRoamingRoot 'install-state.json') -Content $installStateJson
+
+    Write-Host 'docker-step-ok: master-profile-state'
 }
 
 function Ensure-DockerServicesStarted {
@@ -310,26 +624,108 @@ function Ensure-DockerServicesStarted {
 
     foreach ($service in @($services)) {
         try {
-            Set-Service -Name ([string]$service.Name) -StartupType Automatic -ErrorAction Stop
+            Set-Service -Name ([string]$service.Name) -StartupType Manual -ErrorAction Stop
         }
         catch {
-            Write-Warning ("docker-step-warning: failed to set service startup type for {0}: {1}" -f [string]$service.Name, $_.Exception.Message)
+            Write-Host ("docker-step-info: service-startup-type-skip => {0} => {1}" -f [string]$service.Name, $_.Exception.Message)
         }
 
-        try {
-            if ([string]$service.Status -ne 'Running') {
-                Start-Service -Name ([string]$service.Name) -ErrorAction Stop
-            }
-        }
-        catch {
-            Write-Warning ("docker-step-warning: failed to start service {0}: {1}" -f [string]$service.Name, $_.Exception.Message)
-        }
+        $service.Refresh()
+        Write-Host ("docker-step-ok: service-config => {0} => startType={1}; status={2}" -f [string]$service.Name, [string]$service.StartType, [string]$service.Status)
     }
 
     Start-Sleep -Seconds 2
     $resolvedServices = @(Resolve-DockerServices)
     $runningServices = @($resolvedServices | Where-Object { [string]$_.Status -eq 'Running' })
     Write-Host ("docker-step-ok: service-config => total={0}; running={1}" -f @($resolvedServices).Count, @($runningServices).Count)
+}
+
+function Ensure-DockerDesktopStarted {
+    param([string]$DockerExe)
+
+    if ([string]::IsNullOrWhiteSpace([string]$DockerExe)) {
+        throw 'docker.exe is not available. Docker Desktop start requires the Docker CLI.'
+    }
+
+    $startResult = Invoke-ProcessWithTimeout -Label 'docker desktop start' -FilePath $DockerExe -Arguments @('desktop', 'start') -TimeoutSeconds ([int]$taskConfig.DockerDesktopStartTimeoutSeconds)
+    if ($startResult.TimedOut) {
+        throw 'docker desktop start timed out.'
+    }
+
+    if (-not $startResult.Success) {
+        throw ("docker desktop start failed with exit code {0}." -f [int]$startResult.ExitCode)
+    }
+
+    Write-Host 'docker-step-ok: desktop-start-requested'
+}
+
+function Stop-DockerServiceForInteractiveLaunch {
+    $service = Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
+    if ($null -eq $service) {
+        return
+    }
+
+    $service.Refresh()
+    if ([string]$service.Status -ne 'Running') {
+        Write-Host ("docker-step-ok: service-stopped-before-interactive-launch => {0}" -f [string]$service.Name)
+        return
+    }
+
+    try {
+        Stop-Service -Name ([string]$service.Name) -Force -ErrorAction Stop
+    }
+    catch {
+        $service = Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue
+        if ($null -ne $service -and [string]$service.Status -eq 'Running') {
+            throw ("docker service failed to stop before interactive launch: {0} ({1})" -f [string]$taskConfig.DockerServiceName, $_.Exception.Message)
+        }
+    }
+
+    Write-Host ("docker-step-ok: service-stopped-before-interactive-launch => {0}" -f [string]$taskConfig.DockerServiceName)
+}
+
+function Test-DockerDesktopInteractiveProcessRunning {
+    param([string]$ExpectedUserName)
+
+    $processes = @(Get-Process -Name 'Docker Desktop' -IncludeUserName -ErrorAction SilentlyContinue)
+    foreach ($process in @($processes)) {
+        $sessionId = 0
+        try { $sessionId = [int]$process.SessionId } catch { $sessionId = 0 }
+        $userName = ''
+        try { $userName = [string]$process.UserName } catch { $userName = '' }
+        if ($sessionId -gt 0 -and (Test-AzVmUserNameMatch -ObservedUserName $userName -ExpectedUserName $ExpectedUserName)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Stop-NonInteractiveDockerDesktopProcesses {
+    param([string]$ExpectedUserName)
+
+    $stoppedProcessIds = New-Object 'System.Collections.Generic.List[int]'
+    $processes = @(Get-Process -Name 'Docker Desktop' -IncludeUserName -ErrorAction SilentlyContinue)
+    foreach ($process in @($processes)) {
+        $sessionId = 0
+        try { $sessionId = [int]$process.SessionId } catch { $sessionId = 0 }
+        $userName = ''
+        try { $userName = [string]$process.UserName } catch { $userName = '' }
+        if ($sessionId -gt 0 -and (Test-AzVmUserNameMatch -ObservedUserName $userName -ExpectedUserName $ExpectedUserName)) {
+            continue
+        }
+
+        try {
+            Stop-Process -Id ([int]$process.Id) -Force -ErrorAction Stop
+            [void]$stoppedProcessIds.Add([int]$process.Id)
+        }
+        catch {
+        }
+    }
+
+    if (@($stoppedProcessIds).Count -gt 0) {
+        Write-Host ("docker-step-ok: cleared-noninteractive-frontends => {0}" -f ((@($stoppedProcessIds) | ForEach-Object { [string]$_ }) -join ', '))
+    }
 }
 
 function Test-DockerDesktopProcessRunning {
@@ -354,18 +750,30 @@ function Test-DockerDesktopProcessRunning {
 function Wait-DockerDaemonReady {
     param([string]$DockerDesktopExe)
 
+    $dockerExe = Resolve-DockerExePath
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $lastDesktopStatusExitCode = -1
     $lastInfoExitCode = -1
+    $desktopStartRequested = $false
     while ($stopwatch.Elapsed.TotalSeconds -lt [int]$taskConfig.DockerReadinessTimeoutSeconds) {
-        if (-not (Test-DockerDesktopProcessRunning -DockerDesktopExe $DockerDesktopExe)) {
-            $null = Start-DockerDesktopProcess -DockerDesktopExe $DockerDesktopExe
+        Ensure-DockerPrerequisiteServiceStarted -ServiceName 'vmcompute'
+        Ensure-DockerPrerequisiteServiceStarted -ServiceName 'hns'
+
+        if (-not (Test-DockerDesktopInteractiveProcessRunning -ExpectedUserName ([string]$taskConfig.ManagerUser))) {
+            Ensure-DockerDesktopInteractiveLaunch -DockerDesktopExe $DockerDesktopExe
             Start-Sleep -Seconds 2
+            $desktopStartRequested = $false
         }
 
-        $dockerDesktopStatusResult = Invoke-ProcessWithTimeout -Label "docker desktop status" -FilePath "docker" -Arguments @("desktop", "status") -TimeoutSeconds ([int]$taskConfig.DockerStatusTimeoutSeconds)
+        if (-not $desktopStartRequested) {
+            Ensure-DockerDesktopStarted -DockerExe $dockerExe
+            Start-Sleep -Seconds 5
+            $desktopStartRequested = $true
+        }
+
+        $dockerDesktopStatusResult = Invoke-ProcessWithTimeout -Label "docker desktop status" -FilePath $dockerExe -Arguments @("desktop", "status") -TimeoutSeconds ([int]$taskConfig.DockerStatusTimeoutSeconds)
         $lastDesktopStatusExitCode = [int]$dockerDesktopStatusResult.ExitCode
-        $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath "docker" -Arguments @("info") -TimeoutSeconds ([int]$taskConfig.DockerInfoTimeoutSeconds)
+        $dockerInfoResult = Invoke-ProcessWithTimeout -Label "docker info" -FilePath $dockerExe -Arguments @("info") -TimeoutSeconds ([int]$taskConfig.DockerInfoTimeoutSeconds)
         $lastInfoExitCode = [int]$dockerInfoResult.ExitCode
 
         if ($dockerDesktopStatusResult.Success -and $dockerDesktopStatusResult.ExitCode -eq 0 -and $dockerInfoResult.Success -and $dockerInfoResult.ExitCode -eq 0) {
@@ -376,6 +784,7 @@ function Wait-DockerDaemonReady {
             }
         }
 
+        $desktopStartRequested = $false
         Write-Host ("docker-step-wait: desktop-status-exit={0}; docker-info-exit={1}; elapsed={2:n0}s" -f $lastDesktopStatusExitCode, $lastInfoExitCode, $stopwatch.Elapsed.TotalSeconds)
         Start-Sleep -Seconds ([int]$taskConfig.DockerReadinessPollSeconds)
     }
@@ -393,18 +802,79 @@ function Remove-DockerDesktopDeferredStart {
         return $false
     }
 
-    $existingValue = [string](Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue).AzVmStartDockerDesktop
+    $runOnceEntry = Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue
+    $existingValue = ''
+    if ($null -ne $runOnceEntry -and $runOnceEntry.PSObject.Properties.Match('AzVmStartDockerDesktop').Count -gt 0) {
+        $existingValue = [string]$runOnceEntry.AzVmStartDockerDesktop
+    }
     if ([string]::IsNullOrWhiteSpace([string]$existingValue)) {
         return $false
     }
 
     Remove-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue
-    $remainingValue = [string](Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue).AzVmStartDockerDesktop
+    $remainingEntry = Get-ItemProperty -Path $runOncePath -Name 'AzVmStartDockerDesktop' -ErrorAction SilentlyContinue
+    $remainingValue = ''
+    if ($null -ne $remainingEntry -and $remainingEntry.PSObject.Properties.Match('AzVmStartDockerDesktop').Count -gt 0) {
+        $remainingValue = [string]$remainingEntry.AzVmStartDockerDesktop
+    }
     if (-not [string]::IsNullOrWhiteSpace([string]$remainingValue)) {
         throw 'Docker Desktop stale RunOnce entry cleanup failed.'
     }
 
     return $true
+}
+
+function Ensure-WingetSourcesReady {
+    param([string]$WingetExe)
+
+    $sourceListResult = Invoke-ProcessWithTimeout -Label 'winget source list' -FilePath $WingetExe -Arguments @('source', 'list') -TimeoutSeconds 30
+    if ($sourceListResult.Success) {
+        Write-Host 'docker-step-ok: winget-sources-ready'
+        return
+    }
+
+    Write-Host ("docker-step-repair: winget-source-list-exit={0}" -f [int]$sourceListResult.ExitCode)
+    $sourceUpdateResult = Invoke-ProcessWithTimeout -Label 'winget source update' -FilePath $WingetExe -Arguments @('source', 'update') -TimeoutSeconds 60
+    if (-not $sourceUpdateResult.Success) {
+        $sourceResetResult = Invoke-ProcessWithTimeout -Label 'winget source reset --force' -FilePath $WingetExe -Arguments @('source', 'reset', '--force') -TimeoutSeconds 60
+        if (-not $sourceResetResult.Success) {
+            throw ("winget source update failed with exit code {0}; winget source reset --force failed with exit code {1}." -f [int]$sourceUpdateResult.ExitCode, [int]$sourceResetResult.ExitCode)
+        }
+
+        $sourceUpdateResult = Invoke-ProcessWithTimeout -Label 'winget source update' -FilePath $WingetExe -Arguments @('source', 'update') -TimeoutSeconds 60
+        if (-not $sourceUpdateResult.Success) {
+            throw ("winget source update failed with exit code {0} after bounded reset." -f [int]$sourceUpdateResult.ExitCode)
+        }
+    }
+
+    $secondSourceListResult = Invoke-ProcessWithTimeout -Label 'winget source list' -FilePath $WingetExe -Arguments @('source', 'list') -TimeoutSeconds 30
+    if (-not $secondSourceListResult.Success) {
+        throw ("winget source list failed with exit code {0} after bounded repair." -f [int]$secondSourceListResult.ExitCode)
+    }
+
+    Write-Host 'docker-step-ok: winget-sources-ready'
+}
+
+function Test-DockerDesktopInstalled {
+    param([string]$DockerDesktopExe)
+
+    return ((Test-Path -LiteralPath $DockerDesktopExe) -or @((Resolve-DockerServices)).Count -gt 0)
+}
+
+function Wait-DockerDesktopInstalled {
+    param([string]$DockerDesktopExe)
+
+    $deadline = [DateTime]::UtcNow.AddSeconds(60)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        Refresh-SessionPath
+        if (Test-DockerDesktopInstalled -DockerDesktopExe $DockerDesktopExe) {
+            return $true
+        }
+
+        Start-Sleep -Seconds 5
+    }
+
+    return (Test-DockerDesktopInstalled -DockerDesktopExe $DockerDesktopExe)
 }
 
 Refresh-SessionPath
@@ -423,31 +893,47 @@ $dockerDesktopExe = [string]$taskConfig.DockerDesktopExecutablePath
 $dockerServiceExists = $null -ne (Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue)
 $dockerAlreadyInstalled = (Test-Path -LiteralPath $dockerDesktopExe) -or $dockerServiceExists
 
-Write-Host "Running: winget source list"
-& $wingetExe source list
-if ($LASTEXITCODE -ne 0) {
-    throw "winget source list failed with exit code $LASTEXITCODE."
-}
+Ensure-WingetSourcesReady -WingetExe $wingetExe
 
 if ($dockerAlreadyInstalled) {
     Write-Host "Docker Desktop is already installed. Winget install step is skipped."
 }
 else {
     Stop-StaleInstallerProcesses | Out-Null
-    Write-Host ("Running: winget install -e --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.DockerDesktopPackageId)
-    $dockerInstallResult = Invoke-ProcessWithTimeout `
-        -Label ("winget install {0}" -f [string]$taskConfig.DockerDesktopPackageId) `
-        -FilePath $wingetExe `
-        -Arguments @('install', '-e', '--id', ([string]$taskConfig.DockerDesktopPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
-        -TimeoutSeconds ([int]$taskConfig.DockerInstallTimeoutSeconds)
-    if (-not $dockerInstallResult.Success) {
+    $dockerInstallResult = $null
+    foreach ($attempt in 1..2) {
+        Write-Host ("Running: winget install -e --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.DockerDesktopPackageId)
+        $dockerInstallResult = Invoke-ProcessWithTimeout `
+            -Label ("winget install {0}" -f [string]$taskConfig.DockerDesktopPackageId) `
+            -FilePath $wingetExe `
+            -Arguments @('install', '-e', '--id', ([string]$taskConfig.DockerDesktopPackageId), '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
+            -TimeoutSeconds ([int]$taskConfig.DockerInstallTimeoutSeconds)
+
+        if ($dockerInstallResult.Success) {
+            break
+        }
+
         if ($dockerInstallResult.TimedOut) {
             throw ("winget install {0} timed out after stale-installer cleanup. Active installer processes: {1}" -f `
                 [string]$taskConfig.DockerDesktopPackageId, `
                 (Format-InstallerProcessSummary -Processes $dockerInstallResult.ActiveInstallerProcesses))
         }
 
-        throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.DockerDesktopPackageId, $dockerInstallResult.ExitCode)
+        if (Wait-DockerDesktopInstalled -DockerDesktopExe $dockerDesktopExe) {
+            Write-Host ("docker-step-ok: install-materialized-after-exit => {0}" -f [int]$dockerInstallResult.ExitCode)
+            break
+        }
+
+        if ($attempt -lt 2) {
+            Write-Host ("docker-step-retry: winget-install-exit={0}; attempt={1}" -f [int]$dockerInstallResult.ExitCode, $attempt)
+            Stop-StaleInstallerProcesses | Out-Null
+            Ensure-WingetSourcesReady -WingetExe $wingetExe
+            Start-Sleep -Seconds 5
+        }
+    }
+
+    if (-not (Wait-DockerDesktopInstalled -DockerDesktopExe $dockerDesktopExe)) {
+        throw ("winget install {0} failed with exit code {1}." -f [string]$taskConfig.DockerDesktopPackageId, [int]$dockerInstallResult.ExitCode)
     }
 
     Refresh-SessionPath
@@ -458,6 +944,7 @@ if ($machinePathChanged) {
     Refresh-SessionPath
 }
 
+Ensure-DockerPlatformPrerequisites
 Ensure-DockerServicesStarted
 
 if (Test-Path -LiteralPath $dockerDesktopExe) {
@@ -471,11 +958,14 @@ foreach ($localUser in @($taskConfig.DockerLocalUsers)) {
     Ensure-LocalGroupMembership -GroupName ([string]$taskConfig.DockerUsersGroupName) -MemberName $localUser
 }
 
+Ensure-DockerMasterProfileState
+
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
     throw "docker command is not available after installation."
 }
 
-$dockerVersionResult = Invoke-ProcessWithTimeout -Label "docker --version" -FilePath "docker" -Arguments @("--version") -TimeoutSeconds ([int]$taskConfig.DockerVersionTimeoutSeconds)
+$dockerExe = Resolve-DockerExePath
+$dockerVersionResult = Invoke-ProcessWithTimeout -Label "docker --version" -FilePath $dockerExe -Arguments @("--version") -TimeoutSeconds ([int]$taskConfig.DockerVersionTimeoutSeconds)
 if ($dockerVersionResult.Success) {
     Write-Host "docker-step-ok: docker-client-version"
 }
@@ -483,19 +973,17 @@ else {
     throw ("docker --version did not complete successfully (exit={0})." -f $dockerVersionResult.ExitCode)
 }
 
-$dockerDesktopLaunchState = Start-DockerDesktopProcess -DockerDesktopExe $dockerDesktopExe
-if ($null -ne $dockerDesktopLaunchState -and [bool]$dockerDesktopLaunchState.StartedNow) {
-    Write-Host "docker-step-ok: desktop-launch-requested"
-}
-
-Ensure-DockerServicesStarted
+Ensure-DockerDesktopInteractiveLaunch -DockerDesktopExe $dockerDesktopExe
+Write-Host "docker-step-ok: desktop-launch-requested"
+Ensure-DockerPrerequisiteServiceStarted -ServiceName 'vmcompute'
+Ensure-DockerPrerequisiteServiceStarted -ServiceName 'hns'
 
 Start-Sleep -Seconds 5
-if (Test-DockerDesktopProcessRunning -DockerDesktopExe $dockerDesktopExe) {
-    Write-Host "docker-step-ok: docker-desktop-process"
+if (Test-DockerDesktopInteractiveProcessRunning -ExpectedUserName ([string]$taskConfig.ManagerUser)) {
+    Write-Host "docker-step-ok: docker-desktop-interactive-process"
 }
 else {
-    throw "Docker Desktop process is not visible after the detached launch request."
+    throw "Docker Desktop interactive process is not visible after the interactive launch request."
 }
 
 $dockerReadiness = Wait-DockerDaemonReady -DockerDesktopExe $dockerDesktopExe

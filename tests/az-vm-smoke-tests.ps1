@@ -4746,34 +4746,34 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '104-install-onedrive-application' = 30
         '114-install-teams-application' = 75
         '105-install-rclone-tool' = 30
-        '106-install-7zip-tool' = 30
-        '107-install-gh-tool' = 30
+        '106-install-7zip-tool' = 90
+        '107-install-gh-tool' = 180
         '108-install-azd-tool' = 30
         '109-install-anydesk-application' = 45
-        '110-configure-unlocker-settings' = 45
-        '111-install-node-tool' = 45
+        '110-configure-unlocker-settings' = 120
+        '111-install-node-tool' = 120
         '112-install-windscribe-application' = 45
-        '113-install-ffmpeg-tool' = 45
+        '113-install-ffmpeg-tool' = 90
         '118-install-be-my-eyes-application' = 90
-        '119-install-whatsapp-application' = 90
+        '119-install-whatsapp-application' = 150
         '120-install-codex-application' = 90
-        '115-install-nvda-application' = 75
+        '115-install-nvda-application' = 120
         '116-install-vscode-application' = 75
         '117-install-itunes-application' = 75
         '121-install-wsl-feature' = 90
-        '122-install-icloud-application' = 90
-        '123-install-git-tool' = 90
+        '122-install-icloud-application' = 150
+        '123-install-git-tool' = 180
         '124-install-openai-codex-tool' = 120
         '125-install-github-copilot-tool' = 120
-        '126-install-google-gemini-tool' = 120
-        '127-install-powershell-tool' = 120
-        '128-install-python-tool' = 120
-        '129-install-google-drive-application' = 120
-        '130-install-azure-cli-tool' = 165
+        '126-install-google-gemini-tool' = 240
+        '127-install-powershell-tool' = 180
+        '128-install-python-tool' = 180
+        '129-install-google-drive-application' = 180
+        '130-install-azure-cli-tool' = 240
         '131-install-vlc-application' = 180
-        '132-install-vs2022community-application' = 225
-        '133-install-jaws-application' = 285
-        '134-install-docker-desktop-application' = 360
+        '132-install-vs2022community-application' = 420
+        '133-install-jaws-application' = 360
+        '134-install-docker-desktop-application' = 600
         '135-install-ollama-tool' = 480
         '136-configure-language-settings' = 1575
         '10001-configure-advanced-settings' = 30
@@ -5146,6 +5146,7 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     Assert-True -Condition ($taskScript -like '*timed out after*') -Message 'Ollama install task must fail clearly when winget install exceeds the timeout.'
     Assert-True -Condition ($taskScript -like '*Retrying after*') -Message 'Ollama install task must retry bounded serve readiness when the first cold-start probe misses.'
     Assert-True -Condition ($taskScript -like '*detail=*') -Message 'Ollama install task must include serve failure detail when readiness still fails.'
+    Assert-True -Condition (-not ($taskScript -like '*windscribe|whatsapp|anydesk|vscode*')) -Message 'Ollama stale-installer detection must not match generic installed app names.'
     Assert-True -Condition (($taskScript.IndexOf('[string]$Host =', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Ollama install task must not shadow the built-in $Host variable with a parameter named Host.'
     Assert-True -Condition (($taskScript.IndexOf('[string]$HostName', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Ollama install task must use a non-reserved host-name parameter for TCP probes.'
 }
@@ -5162,13 +5163,27 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Docker Desktop install*') -Message 'Docker Desktop task must clear stale installer locks before winget install.'
     Assert-True -Condition ($taskScript -like "*DockerDesktopPackageId = 'Docker.DockerDesktop'*") -Message 'Docker Desktop task must keep the Docker Desktop winget package id in its task-local config block.'
+    Assert-True -Condition ($taskScript -like '*Ensure-WingetSourcesReady*') -Message 'Docker Desktop task must bound winget source repair before install.'
+    Assert-True -Condition ($taskScript -like '*docker-step-repair: winget-source-list-exit=*') -Message 'Docker Desktop task must log the bounded source repair path.'
     Assert-True -Condition ($taskScript -match 'winget install \{0\}" -f \[string\]\$taskConfig\.DockerDesktopPackageId') -Message 'Docker Desktop task must label the install step as a winget Docker Desktop install.'
     Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
     Assert-True -Condition ($taskScript -like '*Active installer processes*') -Message 'Docker Desktop task must report active installer processes when install timing problems occur.'
     Assert-True -Condition ($taskScript -like '*docker-step-cleanup: removed-stale-run-once*') -Message 'Docker Desktop task must remove stale deferred RunOnce remnants before verifying the one-shot flow.'
     Assert-True -Condition (($taskScript.IndexOf('Register-DockerDesktopDeferredStart', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Docker Desktop task must not schedule deferred next-sign-in repair work.'
+    Assert-True -Condition ($taskScript -like '*net start {0}*') -Message 'Docker Desktop task must bring Docker services up through net start.'
+    Assert-True -Condition ($taskScript -like '*docker-step-ok: prerequisite-service-started =>*') -Message 'Docker Desktop task must confirm prerequisite service startup.'
+    Assert-True -Condition ($taskScript -like '*vmcompute*') -Message 'Docker Desktop task must explicitly satisfy the vmcompute prerequisite.'
+    Assert-True -Condition ($taskScript -like '*wslservice*') -Message 'Docker Desktop task must explicitly satisfy the WSL service prerequisite when present.'
+    Assert-True -Condition ($taskScript -like '*wsl --install --no-distribution*') -Message 'Docker Desktop task must bootstrap WSL prerequisites before daemon verification.'
+    Assert-True -Condition ($taskScript -like '*Wait-AzVmUserInteractiveDesktopReady*') -Message 'Docker Desktop task must wait for the manager interactive desktop before launching Docker Desktop.'
+    Assert-True -Condition ($taskScript -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message 'Docker Desktop task must launch Docker Desktop through interactive desktop automation.'
+    Assert-True -Condition ($taskScript -like '*master-profile-state*') -Message 'Docker Desktop task must seed the master Docker profile state before launch.'
+    Assert-True -Condition ($taskScript -like '*currentContext": "desktop-linux"*') -Message 'Docker Desktop task must enforce the desktop-linux Docker context in the seeded profile.'
+    Assert-True -Condition ($taskScript -like '*"LicenseTermsVersion": 2*') -Message 'Docker Desktop task must seed the accepted license terms version in the managed profile state.'
+    Assert-True -Condition (($taskScript.IndexOf('docker-step-warning', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Docker Desktop task must not keep soft warning-only service startup paths.'
     Assert-True -Condition ($taskScript -like '*Wait-DockerDaemonReady*') -Message 'Docker Desktop task must keep the bounded daemon readiness loop.'
+    Assert-True -Condition ($taskScript -like '*docker desktop start*') -Message 'Docker Desktop task must explicitly request Docker Desktop backend startup before probing readiness.'
     Assert-True -Condition ($taskScript -like '*docker desktop status*') -Message 'Docker Desktop task must include a bounded docker desktop status probe.'
     Assert-True -Condition ($taskScript -like '*docker info*') -Message 'Docker Desktop task must include a bounded docker info probe.'
     Assert-True -Condition ($taskScript -like '*Docker Desktop did not become daemon-ready in time*') -Message 'Docker Desktop task must fail when the daemon never becomes ready.'
@@ -6030,6 +6045,7 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
 
     foreach ($fragment in @(
         'Get-WindowsOptionalFeatureState',
+        'Test-WslBootstrapSatisfied',
         'Write-WslFeatureState',
         'wsl-feature-state => Microsoft-Windows-Subsystem-Linux =>',
         'wsl-feature-state => VirtualMachinePlatform =>',
@@ -6830,8 +6846,8 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         '126-install-google-gemini-tool.ps1' = @('@google/gemini-cli@latest', '@google/gemini-cli', 'gemini.cmd', 'install-google-gemini-tool-completed')
         '129-install-google-drive-application.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
         '131-install-vlc-application.ps1' = @('VideoLAN.VLC', 'vlc.exe')
-        '132-install-vs2022community-application.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-application-completed')
-        '133-install-jaws-application.ps1' = @('FreedomScientific.JAWS.2025', 'jfw.exe', '--exact', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity')
+        '132-install-vs2022community-application.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'Wait-DevenvReady', 'install-vs2022community-application-completed')
+        '133-install-jaws-application.ps1' = @('FreedomScientific.JAWS.2025', 'jfw.exe', '--exact', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity', 'Resolve-JawsRootFromRegistry', 'Ensure-WingetSourcesReady', 'jaws-step-retry')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {

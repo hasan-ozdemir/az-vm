@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.353] - 2026-03-18
+
+### Changed
+- Changed `134-install-docker-desktop-application` so its WSL2 readiness path now mirrors the working local Desktop pattern more closely: the task brings up `vmcompute`, `hns`, and `wslservice` when present, seeds the managed Docker profile with the accepted Desktop license/settings state, keeps `com.docker.service` in the manual/stopped WSL2-oriented mode, and then explicitly requests `docker desktop start` before the bounded `docker desktop status` / `docker info` probes.
+
+### Fixed
+- Fixed the live Windows Docker Desktop regression on the active managed VM where the interactive frontend was visible but the backend stayed in `starting` and `docker info` kept returning HTTP 500 against `dockerDesktopLinuxEngine`. The missing bootstrap step was the Desktop CLI start request after the interactive launch; once added, the task could materialize the `docker-desktop` WSL engine and pass `docker info` again.
+- Fixed the last remaining Docker Desktop isolated-task noise by removing the stale tracked task-local app-state plugin zip for `134-install-docker-desktop-application`. The task now relies on its in-script managed profile seeding instead of replaying a lockfile-heavy Desktop payload that produced a non-actionable app-state signal warning on every healthy rerun.
+
+### Tests
+- Revalidated the Docker Desktop smoke contract in `tests\az-vm-smoke-tests.ps1`; the Docker-specific assertions passed, while the suite still reports one pre-existing unrelated failure in `130-install-azure-cli-tool.ps1` about `--force`.
+- Revalidated live in isolation on `rg-bizyum-ate1-g1` / `bizyum` by checking `docker desktop status`, `docker info`, and `wsl -l -v`, then rerunning `task --run-vm-update 134 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` until the stage summary reached `warning=0`, `signal-warning=0`, `error=0`.
+
 ## [2026.3.18.352] - 2026-03-18
 
 ### Changed

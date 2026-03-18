@@ -1,7 +1,13 @@
 {
   "priority": 134,
   "enabled": true,
-  "timeout": 360,
+  "timeout": 600,
+  "assets": [
+    {
+      "local": "../../../tools/scripts/az-vm-interactive-session-helper.ps1",
+      "remote": "C:/Windows/Temp/az-vm-interactive-session-helper.ps1"
+    }
+  ],
   "appState": {
     "machineDirectories": [
       {
@@ -18,6 +24,7 @@
         "path": ".docker",
         "targetProfiles": [],
         "excludeNames": [
+          "lockfile",
           "Cache",
           "Code Cache",
           "GPUCache",
@@ -31,6 +38,7 @@
         ],
         "excludePathPatterns": [],
         "excludeFilePatterns": [
+          "lockfile",
           "*.lock",
           "*.tmp",
           "*.etl",
@@ -59,6 +67,7 @@
         ],
         "excludePathPatterns": [],
         "excludeFilePatterns": [
+          "lockfile",
           "*.lock",
           "*.tmp",
           "*.etl",
