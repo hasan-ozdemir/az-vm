@@ -1597,6 +1597,7 @@ $googleDriveExe = Resolve-ExistingOrFallbackPath -PreferredPath "C:\Program File
 $iCloudExe = Resolve-ICloudExecutablePath
 
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
+$teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @("C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe")
 $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
 $beMyEyesAppId = Resolve-StoreAppId -NameFragment "be my eyes" -PackageNameHints @("be my eyes", $beMyEyesStoreProductId)
 $codexAppId = Resolve-StoreAppId -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0", "9PLM9XGG6VKS")
@@ -1780,11 +1781,10 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "n1Notepad" -TargetP
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o1Outlook" -TargetPath $outlookExe -AllowMissingTargetPath $true -ValidationKind "office")
 if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-StoreAppShortcutSpec -Name "o2Teams" -AppId $teamsAppId)
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'o2Teams' -TaskName '105-install-teams-system' -AppId $teamsAppId -ExecutablePath $teamsExe
 }
 else {
-    $teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @("C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe")
-    Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o2Teams" -TargetPath $teamsExe -AllowMissingTargetPath $true -ValidationKind "app")
+    Add-StoreManagedShortcutSpec -List $shortcutSpecs -ShortcutName 'o2Teams' -TaskName '105-install-teams-system' -AppId '' -ExecutablePath $teamsExe
 }
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o3Word" -TargetPath $wordExe -AllowMissingTargetPath $true -ValidationKind "office")
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o4Excel" -TargetPath $excelExe -AllowMissingTargetPath $true -ValidationKind "office")

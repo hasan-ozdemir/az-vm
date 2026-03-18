@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.346] - 2026-03-18
+
+### Changed
+- Changed `105-install-teams-system` so the Microsoft Teams Store install now follows the same interactive-desktop and persisted Store-state contract already used by the other Windows `winget -s msstore` update tasks, including launch-target validation and legacy state-file alias recovery.
+- Changed isolated Windows Store-backed `task --run-vm-update` reruns so selecting `105`, `115`, `116`, `117`, or `122` now automatically appends `10003-create-shortcuts-public-desktop` in the same isolated execution plan instead of leaving Public Desktop shortcut refresh as a separate manual follow-up.
+- Changed `10003-create-shortcuts-public-desktop` so the Teams shortcut now uses the same Store-managed shortcut recovery path as the other Microsoft Store apps, which keeps all repo-managed Store app shortcuts aligned on `explorer.exe` plus `shell:AppsFolder\<AUMID>` when a live AppID is available.
+
+### Fixed
+- Fixed the shared Store install-state helper so the current Teams task can still read pre-renumber state files from the older Teams task names instead of losing existing Store state on upgraded VMs.
+- Fixed the active managed Windows VM shortcut surface so isolated reruns of the Store-backed tasks now leave `o2Teams`, `a2CodexApp`, `a3Be My Eyes`, `a4WhatsApp Business`, and `d4ICloud` present on the Public Desktop with `C:\Windows\explorer.exe` launch targets and `shell:AppsFolder\...` arguments.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
+- Revalidated live in isolation on the active managed Windows VM through reruns of Windows update tasks `105`, `115`, `116`, `117`, and `122`, confirming that each isolated Store-backed task also ran `10003-create-shortcuts-public-desktop`, finished with `final-restart=0`, and left the expected Store-backed Public Desktop shortcuts readable through remote `exec`.
+
 ## [2026.3.18.345] - 2026-03-18
 
 ### Changed

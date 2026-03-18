@@ -5190,6 +5190,20 @@ Invoke-Test -Name "Windows WhatsApp task keeps a one-shot Store state contract" 
     Assert-True -Condition ($taskScript -like '*install --id $packageId --source msstore --accept-source-agreements --accept-package-agreements*') -Message 'WhatsApp task must keep the Microsoft Store winget install contract.'
 }
 
+Invoke-Test -Name "Windows Teams task keeps the shared Microsoft Store state contract" -Action {
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '118-install-teams-system'
+    $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
+    Assert-True -Condition ($taskScript -like '*az-vm-store-install-state.psm1*') -Message 'Teams task must import the shared Store install state helper.'
+    Assert-True -Condition ($taskScript -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message 'Teams task must run Store installation through the interactive desktop automation helper.'
+    Assert-True -Condition ($taskScript -like '*Wait-AzVmUserInteractiveDesktopReady*') -Message 'Teams task must wait briefly for the manager desktop when autologon is already configured.'
+    Assert-True -Condition ($taskScript -like '*New-AzVmInteractiveDesktopBlockMessage*') -Message 'Teams task must classify blocked desktop states with the shared helper message builder.'
+    Assert-True -Condition ($taskScript -like '*Write-AzVmInteractiveDesktopStatusLine*') -Message 'Teams task must log the resolved interactive desktop status before warning.'
+    Assert-True -Condition ($taskScript -like '*RunAsMode ''interactiveToken''*') -Message 'Teams task must use the manager interactive desktop token.'
+    Assert-True -Condition ($taskScript -like '*Write-AzVmStoreInstallState*') -Message 'Teams task must persist explicit Store install state records.'
+    Assert-True -Condition ($taskScript -like '*cannot be deferred to a later boot*') -Message 'Teams task must fail explicitly instead of leaving deferred RunOnce work behind.'
+    Assert-True -Condition ($taskScript -like '*winget install "Microsoft Teams" -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity*') -Message 'Teams task must keep the unattended Microsoft Store winget install contract.'
+}
+
 Invoke-Test -Name "Interactive session helper distinguishes Store desktop readiness states" -Action {
     $helperPath = Join-Path $RepoRoot 'tools\scripts\az-vm-interactive-session-helper.ps1'
     $helperText = [string](Get-Content -LiteralPath $helperPath -Raw)
@@ -5201,10 +5215,118 @@ Invoke-Test -Name "Interactive session helper distinguishes Store desktop readin
         'autologon-disabled',
         'autologon-pending',
         'explorer-not-ready',
-        "PSObject.Properties.Match([string]`$PropertyName).Count -lt 1",
         'Run 102-autologon-manager-user and restart the VM before retrying the Microsoft Store task.'
     )) {
         Assert-True -Condition ($helperText -like ('*' + [string]$fragment + '*')) -Message ("Interactive session helper must include fragment '{0}'." -f [string]$fragment)
+    }
+    Assert-True -Condition (($helperText.IndexOf('PSObject.Properties.Match([string]$PropertyName).Count -lt 1', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Interactive session helper must tolerate missing Winlogon properties without strict-mode crashes.'
+}
+
+Invoke-Test -Name "Isolated Windows Store task runs append public desktop shortcut refresh" -Action {
+    try {
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+            }
+        }
+        function Get-AzVmTaskBlocksFromDirectory {
+            param([string]$DirectoryPath, [string]$Platform, [string]$Stage)
+            return [pscustomobject]@{
+                ActiveTasks = @(
+                    [pscustomobject]@{
+                        Name = '105-install-teams-system'
+                        TaskNumber = 105
+                        Script = 'Write-Host teams'
+                        TimeoutSeconds = 75
+                    },
+                    [pscustomobject]@{
+                        Name = '10003-create-shortcuts-public-desktop'
+                        TaskNumber = 10003
+                        Script = 'Write-Host shortcuts'
+                        TimeoutSeconds = 45
+                    }
+                )
+            }
+        }
+        function Resolve-AzVmRuntimeTaskBlocks {
+            param([object[]]$TemplateTaskBlocks, [hashtable]$Context)
+            return @($TemplateTaskBlocks)
+        }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'samplevm.austriaeast.cloudapp.azure.com'
+                PublicIP = '1.2.3.4'
+            }
+        }
+        function Invoke-AzVmSshTaskBlocks {
+            param(
+                [string]$Platform,
+                [string]$RepoRoot,
+                [string]$SshHost,
+                [string]$SshUser,
+                [string]$SshPassword,
+                [string]$SshPort,
+                [string]$ResourceGroup,
+                [string]$VmName,
+                [object[]]$TaskBlocks,
+                [string]$TaskOutcomeMode,
+                [string]$PerfTaskCategory,
+                [int]$SshMaxRetries,
+                [int]$SshTaskTimeoutSeconds,
+                [int]$SshConnectTimeoutSeconds,
+                [string]$ConfiguredPySshClientPath
+            )
+
+            $script:IsolatedStoreFollowUpInvocation = [pscustomobject]@{
+                TaskNames = @($TaskBlocks | ForEach-Object { [string]$_.Name })
+                TaskOutcomeMode = $TaskOutcomeMode
+                PerfTaskCategory = $PerfTaskCategory
+            }
+
+            return [pscustomobject]@{ SuccessCount = @($TaskBlocks).Count; FailedCount = 0; WarningCount = 0; ErrorCount = 0 }
+        }
+
+        $runtime = [pscustomobject]@{
+            Context = [ordered]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+                VmInitTaskDir = 'windows/init'
+                VmUpdateTaskDir = 'windows/update'
+                VmUser = 'manager'
+                VmPass = 'secret'
+                VmAssistantUser = 'assistant'
+                SshPort = '444'
+                AzLocation = 'austriaeast'
+            }
+            Platform = 'windows'
+            EffectiveConfigMap = @{}
+            TaskOutcomeMode = 'continue'
+            ConfiguredPySshClientPath = ''
+            SshTaskTimeoutSeconds = 180
+            SshConnectTimeoutSeconds = 30
+        }
+
+        $result = Invoke-AzVmTaskExecutionWithTarget -Runtime $runtime -Options @{ 'vm-name' = 'samplevm' } -Stage 'update' -Requested '105'
+
+        Assert-True -Condition ($null -ne $script:IsolatedStoreFollowUpInvocation) -Message 'Store-backed isolated update execution must invoke the SSH task runner.'
+        Assert-True -Condition ((@($script:IsolatedStoreFollowUpInvocation.TaskNames) -join ',') -eq '105-install-teams-system,10003-create-shortcuts-public-desktop') -Message 'Store-backed isolated update execution must append 10003-create-shortcuts-public-desktop.'
+        Assert-True -Condition ((@($result.TaskBlocks).Count) -eq 2) -Message 'Store-backed isolated update execution result must expose both the selected task and the shortcut refresh follow-up.'
+        Assert-True -Condition ([string]$result.Task.Name -eq '105-install-teams-system') -Message 'Store-backed isolated update execution must still report the selected task as the primary task.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmTaskBlocksFromDirectory',
+            'Resolve-AzVmRuntimeTaskBlocks',
+            'Get-AzVmVmDetails',
+            'Invoke-AzVmSshTaskBlocks'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name IsolatedStoreFollowUpInvocation -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
@@ -5837,6 +5959,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for Codex when a Store app id is available.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$whatsAppBusinessAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for WhatsApp when a Store app id is available.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for iCloud when a Store app id is available.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf("Add-StoreManagedShortcutSpec -List `$shortcutSpecs -ShortcutName 'o2Teams' -TaskName '105-install-teams-system'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must resolve Teams through the shared Store-managed shortcut helper.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}"', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must log non-launch-ready Store state skips as informational output.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}"', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not duplicate Store task warnings for non-installed Store state records.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('public-shortcut-recover: {0} => store state={1}; live launch target resolved, continuing with shortcut creation.', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must recover from stale Store state when a live AppsFolder or executable target is now resolvable.'
@@ -6617,6 +6740,7 @@ Invoke-Test -Name "Store install state reader supports legacy task aliases" -Act
 
     foreach ($fragment in @(
         'function Get-AzVmStoreInstallStateCandidateTaskNames',
+        "'118-install-teams-system'",
         "'125-install-be-my-eyes'",
         "'120-install-whatsapp-system'",
         "'116-install-codex-app'",
@@ -6650,6 +6774,7 @@ Invoke-Test -Name "Shortcut launcher threshold uses combined target and argument
 Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed packages" -Action {
     $installTaskMap = [ordered]@{
         '115-install-npm-packages-global.ps1' = @('@github/copilot@latest', '@openai/codex@latest', '@google/gemini-cli@latest')
+        '118-install-teams-system.ps1' = @('az-vm-store-install-state.psm1', 'Invoke-AzVmInteractiveDesktopAutomation', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot', 'winget install "Microsoft Teams" -s msstore')
         '124-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
         '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd')

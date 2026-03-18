@@ -66,6 +66,11 @@ function Get-AzVmStoreInstallStateCandidateTaskNames {
     }
 
     switch ([string]$TaskName) {
+        '105-install-teams-system' {
+            foreach ($legacyTaskName in @('117-install-teams-system', '118-install-teams-system')) {
+                [void]$candidateTaskNames.Add([string]$legacyTaskName)
+            }
+        }
         '115-install-be-my-eyes' {
             foreach ($legacyTaskName in @('125-install-be-my-eyes', '126-install-be-my-eyes')) {
                 [void]$candidateTaskNames.Add([string]$legacyTaskName)

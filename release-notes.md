@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.346 - 2026-03-18
+
+### Summary
+This release finishes the shared Microsoft Store repair path for all repo-managed Windows `winget -s msstore` apps. Microsoft Teams now uses the same interactive-desktop and persisted Store-state contract as the other Store-backed tasks, and isolated reruns of those Store tasks now refresh Public Desktop shortcuts automatically by appending `10003-create-shortcuts-public-desktop` in the same task execution.
+
+### Highlights
+- Changed `105-install-teams-system` so Teams now uses the shared interactive Store install flow, persisted Store-state records, launch-target validation, and legacy pre-renumber state-file fallback already used by the other Store-backed Windows update tasks.
+- Changed isolated Windows `task --run-vm-update` behavior so reruns of `105`, `115`, `116`, `117`, and `122` automatically append `10003-create-shortcuts-public-desktop`, which keeps Public Desktop shortcut refresh inside the same diagnostic or repair run without re-enabling the workflow-only final restart.
+- Fixed `10003-create-shortcuts-public-desktop` so Teams now follows the same Store-managed shortcut contract as Codex, Be My Eyes, WhatsApp Business, and iCloud, preferring `C:\Windows\explorer.exe` plus `shell:AppsFolder\<AUMID>` when the live VM resolves a valid AppsFolder AppID.
+- Revalidated live on the active managed Windows VM with isolated reruns of `105`, `115`, `116`, `117`, and `122`, then confirmed through `exec` that `o2Teams`, `a2CodexApp`, `a3Be My Eyes`, `a4WhatsApp Business`, and `d4ICloud` all exist on the Public Desktop and point to `explorer.exe` with `shell:AppsFolder\...` launch arguments.
+
 ## Release 2026.3.18.345 - 2026-03-18
 
 ### Summary

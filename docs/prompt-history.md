@@ -5322,3 +5322,17 @@ Test and fix the Windows Microsoft Store app flow on the target VM after I manua
 I reproduced both live scenarios on the active managed Windows VM. First I confirmed a clean no-autologon boot with `AutoAdminLogon=0`, no active interactive user, no `explorer.exe` desktop, and all four Store-backed apps removed. I then reran `115-install-be-my-eyes`, `116-install-whatsapp-system`, `117-install-codex-app`, and `122-install-icloud-system` in isolation and used those results to harden the shared interactive-session helper and the Store tasks.
 
 The fix separates blocked desktop states instead of treating every missing desktop the same. The helper now distinguishes autologon disabled, wrong-user autologon, pending post-boot desktop, and `explorer.exe`-not-ready cases, logs an explicit `interactive-desktop-state` line, and safely handles missing Winlogon registry values under strict mode. The four Store tasks now use that helper, persist clearer degraded Store state when autologon is missing, and perform one short bounded wait only when autologon is already configured for the manager user but the desktop is still coming up. After that, I reran `102-autologon-manager-user`, let its reboot complete, and reran `115`, `116`, `117`, and `122` again. All four installs succeeded, and a final `exec` readback confirmed launch-ready AppIDs for Be My Eyes, WhatsApp, Codex, and iCloud.
+
+### 2026-03-18 01:21 UTC
+
+**User Prompt**
+
+````text
+Enable the same mechanism for every Microsoft Store application that is installed through `winget`, and make sure task `10003` also runs so the Store-app shortcuts are guaranteed to be created.
+````
+
+**Assistant Summary**
+
+I completed the remaining Microsoft Store alignment by moving `105-install-teams-system` onto the same interactive-desktop and persisted Store-state workflow already used by the other Windows `winget -s msstore` tasks. The Teams task now validates launch readiness through the same shared helper path, preserves legacy pre-renumber Store state through alias lookup, and records launch-ready state that `10003-create-shortcuts-public-desktop` can consume consistently.
+
+I also changed isolated Windows `task --run-vm-update` behavior so reruns of the Store-backed tasks `105`, `115`, `116`, `117`, and `122` automatically append `10003-create-shortcuts-public-desktop` in the same isolated execution plan. After that change, I revalidated the repo non-live with the smoke, code-quality, documentation-contract, PowerShell compatibility, and release-doc checks, then reran the five Store-backed tasks live in isolation on the active managed Windows VM and confirmed through `exec` that `o2Teams`, `a2CodexApp`, `a3Be My Eyes`, `a4WhatsApp Business`, and `d4ICloud` all exist on the Public Desktop and resolve through `C:\Windows\explorer.exe` plus `shell:AppsFolder\...`.

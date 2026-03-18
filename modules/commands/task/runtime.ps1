@@ -457,6 +457,69 @@ function Resolve-AzVmTaskBlockForStage {
     return (Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $Requested -Stage 'update' -AutoMode:$AutoMode)
 }
 
+function Test-AzVmStoreBackedShortcutRefreshTask {
+    param(
+        [AllowNull()]
+        [psobject]$TaskBlock
+    )
+
+    if ($null -eq $TaskBlock) {
+        return $false
+    }
+
+    $taskName = ''
+    if ($TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) {
+        $taskName = [string]$TaskBlock.Name
+    }
+
+    return ($taskName -in @(
+        '105-install-teams-system',
+        '115-install-be-my-eyes',
+        '116-install-whatsapp-system',
+        '117-install-codex-app',
+        '122-install-icloud-system'
+    ))
+}
+
+function Resolve-AzVmTaskExecutionPlanForStage {
+    param(
+        [pscustomobject]$Runtime,
+        [string]$Stage,
+        [string]$Requested,
+        [switch]$AutoMode
+    )
+
+    if ([string]::Equals([string]$Stage, 'init', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $selectedTaskBlock = Resolve-AzVmTaskBlockForStage -Runtime $Runtime -Stage $Stage -Requested $Requested -AutoMode:$AutoMode
+        return [pscustomobject]@{
+            SelectedTaskBlock = $selectedTaskBlock
+            ExecutionTaskBlocks = @($selectedTaskBlock)
+        }
+    }
+
+    $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath ([string]$Runtime.Context.VmUpdateTaskDir) -Platform ([string]$Runtime.Platform) -Stage 'update'
+    $tasks = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @($catalog.ActiveTasks) -Context $Runtime.Context)
+    $selectedTaskBlock = Resolve-AzVmTaskSelection -TaskBlocks $tasks -TaskNumberOrName $Requested -Stage 'update' -AutoMode:$AutoMode
+    $executionTaskBlocks = New-Object 'System.Collections.Generic.List[object]'
+    $executionTaskBlocks.Add($selectedTaskBlock) | Out-Null
+
+    if ([string]::Equals([string]$Runtime.Platform, 'windows', [System.StringComparison]::OrdinalIgnoreCase) -and
+        (Test-AzVmStoreBackedShortcutRefreshTask -TaskBlock $selectedTaskBlock)) {
+        $shortcutRefreshTask = $tasks |
+            Where-Object { [string]::Equals([string]$_.Name, '10003-create-shortcuts-public-desktop', [System.StringComparison]::OrdinalIgnoreCase) } |
+            Select-Object -First 1
+        if ($null -ne $shortcutRefreshTask -and
+            -not [string]::Equals([string]$shortcutRefreshTask.Name, [string]$selectedTaskBlock.Name, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $executionTaskBlocks.Add($shortcutRefreshTask) | Out-Null
+        }
+    }
+
+    return [pscustomobject]@{
+        SelectedTaskBlock = $selectedTaskBlock
+        ExecutionTaskBlocks = @($executionTaskBlocks.ToArray())
+    }
+}
+
 function Invoke-AzVmTaskExecutionWithTarget {
     param(
         [pscustomobject]$Runtime,
@@ -477,7 +540,9 @@ function Invoke-AzVmTaskExecutionWithTarget {
     $target = Resolve-AzVmManagedVmTarget -Options $Options -ConfigMap $Runtime.EffectiveConfigMap -OperationName $OperationName
     $Runtime.Context.ResourceGroup = [string]$target.ResourceGroup
     $Runtime.Context.VmName = [string]$target.VmName
-    $taskBlock = Resolve-AzVmTaskBlockForStage -Runtime $Runtime -Stage $Stage -Requested $Requested -AutoMode:$AutoMode
+    $executionPlan = Resolve-AzVmTaskExecutionPlanForStage -Runtime $Runtime -Stage $Stage -Requested $Requested -AutoMode:$AutoMode
+    $taskBlock = $executionPlan.SelectedTaskBlock
+    $executionTaskBlocks = @($executionPlan.ExecutionTaskBlocks)
 
     if ([string]::Equals([string]$Stage, 'init', [System.StringComparison]::OrdinalIgnoreCase)) {
         $combinedShell = if ([string]::Equals([string]$Runtime.Platform, 'linux', [System.StringComparison]::OrdinalIgnoreCase)) { 'bash' } else { 'powershell' }
@@ -486,10 +551,11 @@ function Invoke-AzVmTaskExecutionWithTarget {
         if ([string]::IsNullOrWhiteSpace([string]$sshHost)) {
             $sshHost = [string]$vmRuntimeDetails.PublicIP
         }
-        $runCommandResult = Invoke-VmRunCommandBlocks -ResourceGroup ([string]$Runtime.Context.ResourceGroup) -VmName ([string]$Runtime.Context.VmName) -CommandId ([string]$Runtime.PlatformDefaults.RunCommandId) -TaskBlocks @($taskBlock) -CombinedShell $combinedShell -TaskOutcomeMode $effectiveTaskOutcomeMode -PerfTaskCategory "task-run" -Platform ([string]$Runtime.Platform) -RepoRoot (Get-AzVmRepoRoot) -ManagerUser ([string]$Runtime.Context.VmUser) -AssistantUser ([string]$Runtime.Context.VmAssistantUser) -SshHost $sshHost -SshUser ([string]$Runtime.Context.VmUser) -SshPassword ([string]$Runtime.Context.VmPass) -SshPort ([string]$Runtime.Context.SshPort) -SshConnectTimeoutSeconds ([int]$Runtime.SshConnectTimeoutSeconds) -ConfiguredPySshClientPath ([string]$Runtime.ConfiguredPySshClientPath)
+        $runCommandResult = Invoke-VmRunCommandBlocks -ResourceGroup ([string]$Runtime.Context.ResourceGroup) -VmName ([string]$Runtime.Context.VmName) -CommandId ([string]$Runtime.PlatformDefaults.RunCommandId) -TaskBlocks @($executionTaskBlocks) -CombinedShell $combinedShell -TaskOutcomeMode $effectiveTaskOutcomeMode -PerfTaskCategory "task-run" -Platform ([string]$Runtime.Platform) -RepoRoot (Get-AzVmRepoRoot) -ManagerUser ([string]$Runtime.Context.VmUser) -AssistantUser ([string]$Runtime.Context.VmAssistantUser) -SshHost $sshHost -SshUser ([string]$Runtime.Context.VmUser) -SshPassword ([string]$Runtime.Context.VmPass) -SshPort ([string]$Runtime.Context.SshPort) -SshConnectTimeoutSeconds ([int]$Runtime.SshConnectTimeoutSeconds) -ConfiguredPySshClientPath ([string]$Runtime.ConfiguredPySshClientPath)
         return [pscustomobject]@{
             Stage = 'init'
             Task = $taskBlock
+            TaskBlocks = @($executionTaskBlocks)
             TaskOutcomeMode = $effectiveTaskOutcomeMode
             Result = $runCommandResult
         }
@@ -514,7 +580,7 @@ function Invoke-AzVmTaskExecutionWithTarget {
         -AssistantUser ([string]$Runtime.Context.VmAssistantUser) `
         -ResourceGroup ([string]$Runtime.Context.ResourceGroup) `
         -VmName ([string]$Runtime.Context.VmName) `
-        -TaskBlocks @($taskBlock) `
+        -TaskBlocks @($executionTaskBlocks) `
         -TaskOutcomeMode $effectiveTaskOutcomeMode `
         -PerfTaskCategory 'task-run' `
         -SshMaxRetries 1 `
@@ -525,6 +591,7 @@ function Invoke-AzVmTaskExecutionWithTarget {
     return [pscustomobject]@{
         Stage = 'update'
         Task = $taskBlock
+        TaskBlocks = @($executionTaskBlocks)
         TaskOutcomeMode = $effectiveTaskOutcomeMode
         Result = $sshTaskResult
     }
