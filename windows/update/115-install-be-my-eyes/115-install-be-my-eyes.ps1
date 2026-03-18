@@ -170,7 +170,7 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 if (-not (Test-BeMyEyesInstalled)) {
-    $installOutput = @(& $wingetExe install --id $storeProductId --source msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity 2>&1)
+    $installOutput = @(& $wingetExe install --id $storeProductId --source msstore --accept-source-agreements --accept-package-agreements 2>&1)
     $installExit = [int]$LASTEXITCODE
     $installText = [string]($installOutput | Out-String)
     if ($installExit -ne 0 -and $installExit -ne -1978335189) {
@@ -196,12 +196,9 @@ $workerScript = $workerScript.Replace('__PORTABLE_WINGET_PATH__', [string]$taskC
 
 if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
     Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State skipped -Summary 'Be My Eyes install is deferred until the manager interactive desktop session is ready.' -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Be My Eyes install requires the manager interactive desktop session before the Microsoft Store package can be installed.' -PackageId $storeProductId -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
     Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    Write-Host 'Be My Eyes install is deferred because the manager interactive desktop session is not ready yet. Skipping without warning.'
-    Write-Host 'install-be-my-eyes-skipped'
-    Write-Host 'Update task completed: install-be-my-eyes'
-    return
+    throw 'Be My Eyes install requires the manager interactive desktop session and should stay a warning until that desktop is ready.'
 }
 
 try {

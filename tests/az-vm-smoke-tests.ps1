@@ -5177,11 +5177,15 @@ Invoke-Test -Name "Windows WhatsApp task keeps a one-shot Store state contract" 
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '121-install-whatsapp-system'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
     Assert-True -Condition ($taskScript -like '*az-vm-store-install-state.psm1*') -Message 'WhatsApp task must import the shared Store install state helper.'
-    Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'WhatsApp task must bound the winget install wait time.'
+    Assert-True -Condition ($taskScript -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message 'WhatsApp task must run Store installation through the interactive desktop automation helper.'
+    Assert-True -Condition ($taskScript -like '*Get-AzVmInteractivePaths*') -Message 'WhatsApp task must provision an interactive worker path.'
+    Assert-True -Condition ($taskScript -like '*RunAsMode ''interactiveToken''*') -Message 'WhatsApp task must use the manager interactive desktop token.'
     Assert-True -Condition ($taskScript -like '*no next-boot follow-up was scheduled*') -Message 'WhatsApp task must classify incomplete Store installs without scheduling a later boot follow-up.'
+    Assert-True -Condition ($taskScript -like '*requires the manager interactive desktop session*') -Message 'WhatsApp task must keep a warning-producing path when the manager interactive desktop is not ready.'
     Assert-True -Condition ($taskScript -like '*cannot be deferred to a later boot*') -Message 'WhatsApp task must fail explicitly instead of leaving deferred RunOnce work behind.'
     Assert-True -Condition ($taskScript -like '*Write-AzVmStoreInstallState*') -Message 'WhatsApp task must persist explicit store install state records.'
-    Assert-True -Condition ($taskScript -like '*winget install --id 9NKSQGP7F2NH --source msstore*') -Message 'WhatsApp task must keep the Store package install contract.'
+    Assert-True -Condition ($taskScript -like '*9NKSQGP7F2NH*') -Message 'WhatsApp task must keep the Store package id in the install contract.'
+    Assert-True -Condition ($taskScript -like '*install --id $packageId --source msstore --accept-source-agreements --accept-package-agreements*') -Message 'WhatsApp task must keep the Microsoft Store winget install contract.'
 }
 
 Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
@@ -5815,6 +5819,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     Assert-True -Condition (($shortcutTaskScript.IndexOf('if (-not [string]::IsNullOrWhiteSpace([string]$iCloudAppId))', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must prefer AppsFolder launch for iCloud when a Store app id is available.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}"', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must log non-launch-ready Store state skips as informational output.'
     Assert-True -Condition (($shortcutTaskScript.IndexOf('Write-Warning ("public-shortcut-skip: {0} => store state={1}; {2}"', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Shortcut task must not duplicate Store task warnings for non-installed Store state records.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('public-shortcut-recover: {0} => store state={1}; live launch target resolved, continuing with shortcut creation.', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must recover from stale Store state when a live AppsFolder or executable target is now resolvable.'
     Assert-True -Condition (($healthTaskScript.IndexOf("Write-DesktopState -Label 'assistant'", [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report assistant desktop state.'
     Assert-True -Condition (($healthTaskScript.IndexOf('Write-DesktopArtifactScan', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must scan desktop.ini and Thumbs.db artifacts.'
     Assert-True -Condition (($healthTaskScript.IndexOf('MS EDGE SHORTCUT CONTRACT:', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must report the dedicated MS Edge shortcut contract.'
@@ -6626,17 +6631,18 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
     $installTaskMap = [ordered]@{
         '115-install-npm-packages-global.ps1' = @('@github/copilot@latest', '@openai/codex@latest', '@google/gemini-cli@latest')
         '124-install-itunes-system.ps1' = @('Apple.iTunes', 'iTunes.exe')
-        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
+        '126-install-be-my-eyes.ps1' = @('9MSW46LTDWGF', '--source msstore', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '127-install-nvda-system.ps1' = @('NVAccess.NVDA', 'nvd')
         '131-install-jaws-screen-reader.ps1' = @('FreedomScientific.JAWS.2025', 'jfw.exe', '--exact', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity')
         '111-install-edge-browser.ps1' = @('Microsoft.Edge', 'msedge.exe')
         '123-install-vlc-system.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '128-install-rclone-system.ps1' = @('Rclone.Rclone', 'rclone.exe')
-        '129-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
+        '120-install-whatsapp-system.ps1' = @('9NKSQGP7F2NH', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'Write-AzVmStoreInstallState')
+        '129-install-icloud-system.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
         '130-install-vs2022community.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'install-vs2022community-completed')
         '118-install-onedrive-system.ps1' = @('Microsoft.OneDrive', 'OneDrive.exe')
         '119-install-google-drive.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
-        '116-install-codex-app.ps1' = @('winget install codex -s msstore', 'OpenAI.Codex', 'Codex.exe', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
+        '116-install-codex-app.ps1' = @('9PLM9XGG6VKS', 'OpenAI.Codex', 'Codex.exe', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'requires the manager interactive desktop session', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
     }
 
     foreach ($entry in $installTaskMap.GetEnumerator()) {

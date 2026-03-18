@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.344] - 2026-03-18
+
+### Changed
+- Changed the Windows Store-backed update tasks for Be My Eyes, WhatsApp, Codex App, and iCloud so they now run the Microsoft Store `winget install` step through the manager interactive desktop token when that desktop is available, instead of relying on the SSH/service session for the actual Store acquisition.
+- Changed the same Store-backed tasks so a missing manager interactive desktop is now recorded as a degraded install state and left as a warning-producing outcome instead of being silently suppressed as a clean skip.
+- Changed the Public Desktop shortcut task so stale non-installed Store state no longer blocks shortcut recovery when the live VM can already resolve a real AppsFolder AppID or a launch-ready executable.
+
+### Fixed
+- Fixed `116-install-whatsapp-system` and `117-install-codex-app` so they now follow the same interactive-desktop automation model already used by the other Store-backed tasks, while still persisting explicit Store install-state records.
+- Fixed `10003-create-shortcuts-public-desktop` so it can recover Store-backed shortcuts for Codex, Be My Eyes, WhatsApp, and iCloud from live AppsFolder targets even when an older degraded/skipped state record is still present.
+- Fixed the Store-backed shortcut surface on the active managed Windows VM so `a2CodexApp`, `a3Be My Eyes`, `a4WhatsApp Business`, and `d4ICloud` now resolve through `C:\Windows\explorer.exe` plus `shell:AppsFolder\<AUMID>`.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Revalidated live through `exec` readback plus isolated reruns of Windows update tasks `115`, `116`, `117`, `122`, and `10003` on the active managed Windows VM, confirming launch-ready Store state for all four apps and warning-free shortcut refresh with `final-restart=0`.
+
 ## [2026.3.17.343] - 2026-03-17
 
 ### Changed
@@ -16,7 +32,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Tests
 - Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\documentation-contract-check.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\pre-commit-release-doc-check.ps1`.
-- Revalidated live only through an isolated rerun of `task --run-vm-update 10003` on `rg-bizyum-ate1-g1` / `bizyum`, which completed with `warning=0`, `signal-warning=0`, and `final-restart=0`.
+- Revalidated live only through an isolated rerun of `task --run-vm-update 10003` on the active managed Windows VM, which completed with `warning=0`, `signal-warning=0`, and `final-restart=0`.
 
 ## [2026.3.17.342] - 2026-03-17
 

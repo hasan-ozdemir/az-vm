@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.344 - 2026-03-18
+
+### Summary
+This release finishes the current Windows Microsoft Store repair path. The touched Store-backed tasks now install Be My Eyes, WhatsApp, Codex App, and iCloud through the manager interactive desktop token when that desktop is available, keep warning-producing degraded outcomes when that desktop is missing, and let `10003-create-shortcuts-public-desktop` recover from stale Store state by trusting live AppsFolder launch targets when the VM already has the app installed.
+
+### Highlights
+- Changed `115-install-be-my-eyes`, `116-install-whatsapp-system`, `117-install-codex-app`, and `122-install-icloud-system` so the Microsoft Store install step now runs under the manager interactive desktop token instead of the SSH/service session whenever the manager desktop is available.
+- Changed the same tasks so a missing interactive manager desktop is no longer treated as a quiet informational skip; they now persist degraded Store state and remain warning-producing until an interactive desktop is ready.
+- Upgraded WhatsApp and Codex to the same interactive-desktop automation pattern already used by the other Store-backed tasks, while preserving explicit Store state persistence and no-deferred-boot failure semantics.
+- Changed Store detection to prefer AppsFolder AppIDs where available, which aligns the launch-ready state with the desired `explorer.exe shell:AppsFolder\<AUMID>` shortcut contract.
+- Fixed `10003-create-shortcuts-public-desktop` so stale `skipped` or `degraded` Store state no longer prevents shortcut recovery when the live VM can already resolve the real AppsFolder target or launch-ready executable.
+- Revalidated live with `exec` on the active managed Windows VM and confirmed launch-ready AppIDs for Be My Eyes, WhatsApp, Codex, and iCloud. After isolated reruns of tasks `115`, `116`, `117`, `122`, and `10003`, the Public Desktop shortcuts `a2CodexApp`, `a3Be My Eyes`, `a4WhatsApp Business`, and `d4ICloud` all resolved through `C:\Windows\explorer.exe` with `shell:AppsFolder\...`, and `10003` finished with `warning=0`, `signal-warning=0`, and `final-restart=0`.
+
 ## Release 2026.3.17.343 - 2026-03-17
 
 ### Summary

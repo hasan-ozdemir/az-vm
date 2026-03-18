@@ -195,16 +195,6 @@ function Resolve-ICloudExe {
 }
 
 function Get-ICloudInstallState {
-    $resolvedExe = Resolve-ICloudExe
-    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedExe)) {
-        return [pscustomobject]@{
-            Healthy = $true
-            LaunchKind = 'executable'
-            LaunchTarget = [string]$resolvedExe
-            DetectionSource = 'executable'
-        }
-    }
-
     $appId = Resolve-ICloudAppId
     if (Test-ICloudAppId -AppId ([string]$appId)) {
         return [pscustomobject]@{
@@ -212,6 +202,16 @@ function Get-ICloudInstallState {
             LaunchKind = 'app-id'
             LaunchTarget = [string]$appId
             DetectionSource = 'app-id'
+        }
+    }
+
+    $resolvedExe = Resolve-ICloudExe
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedExe)) {
+        return [pscustomobject]@{
+            Healthy = $true
+            LaunchKind = 'executable'
+            LaunchTarget = [string]$resolvedExe
+            DetectionSource = 'executable'
         }
     }
 
@@ -260,12 +260,9 @@ if (Test-AzVmRunOnceEntryPresent -Name ([string]$taskConfig.LegacyRunOnceName)) 
 
 if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
     Remove-AzVmRunOnceEntry -Name ([string]$taskConfig.LegacyRunOnceName)
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State skipped -Summary 'iCloud install is deferred until the manager interactive desktop session is ready.' -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'iCloud install requires the manager interactive desktop session before the Microsoft Store package can be installed.' -PackageId ([string]$taskConfig.PackageId) -RunOnceName ([string]$taskConfig.LegacyRunOnceName) -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
     Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    Write-Host 'iCloud install is deferred because the manager interactive desktop session is not ready yet. Skipping without warning.'
-    Write-Host 'install-icloud-system-skipped'
-    Write-Host 'Update task completed: install-icloud-system'
-    return
+    throw 'iCloud install requires the manager interactive desktop session and should stay a warning until that desktop is ready.'
 }
 
 $workerTaskName = "{0}-{1}" -f $taskName, ([string]$taskConfig.InteractiveTaskSuffix)
@@ -390,7 +387,7 @@ if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
 }
 
 if (-not (Test-ICloudInstalled)) {
-    $installOutput = @(& $wingetExe install --id $packageId --source $packageSource --accept-source-agreements --accept-package-agreements --silent --disable-interactivity 2>&1)
+    $installOutput = @(& $wingetExe install --id $packageId --source $packageSource --accept-source-agreements --accept-package-agreements 2>&1)
     $installExit = [int]$LASTEXITCODE
     $installText = [string]($installOutput | Out-String)
     if ($installExit -ne 0 -and $installExit -ne -1978335189) {

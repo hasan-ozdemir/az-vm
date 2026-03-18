@@ -5281,3 +5281,31 @@ I changed the shared SSH task runner so the final Windows `vm-update` restart is
 
 I updated README, CLI help, smoke coverage, documentation-contract checks, the changelog, and the release notes to match that contract. I then revalidated the repo non-live with the smoke, documentation-contract, code-quality, PowerShell compatibility, and release-doc checks, and reran isolated live task `10003` to confirm the new behavior with `warning=0`, `signal-warning=0`, and `final-restart=0`.
 
+### 2026-03-17 23:57 UTC
+
+**User Prompt**
+
+````text
+Fix and update the Windows Microsoft Store app flow based on a live target VM where I manually confirmed that Be My Eyes, iCloud, Codex, and WhatsApp all install successfully from an elevated Command Prompt over RDP. Verify that state yourself through `exec`, then update the related `vm-update` PowerShell tasks so they can perform the same installs automatically, and fix task `10003` so those apps are found through `explorer.exe shell:AppsFolder` and the overall process recovers cleanly.
+````
+
+**Assistant Summary**
+
+I first verified the live VM through `exec` and confirmed that Be My Eyes, WhatsApp, Codex, and iCloud were all present as AppX packages and had launchable AppsFolder targets. The readback showed the expected package families and AppIDs for all four apps, which confirmed that the machine already had valid `shell:AppsFolder\<AUMID>` targets available for shortcut creation.
+
+I then updated the touched Windows Store-backed tasks so they now use the manager interactive desktop token for the actual Microsoft Store `winget install` step when that desktop is available. WhatsApp and Codex were moved to the same interactive automation model already used by the other Store-backed tasks, and the store-state detection now prefers AppsFolder AppIDs where they exist. I also fixed `10003-create-shortcuts-public-desktop` so stale degraded/skipped Store state no longer blocks shortcut recovery when the live VM can already resolve a real AppsFolder or launch-ready executable target. After that change, isolated live reruns of tasks `115`, `116`, `117`, `122`, and `10003` all completed successfully, and the Public Desktop shortcuts for Codex, Be My Eyes, WhatsApp Business, and iCloud all resolved through `C:\Windows\explorer.exe` plus `shell:AppsFolder\...`.
+
+### 2026-03-17 23:57 UTC
+
+**User Prompt**
+
+````text
+Update: do not suppress the warnings produced when these Microsoft Store apps cannot be installed; those outcomes should remain warnings.
+````
+
+**Assistant Summary**
+
+I changed the touched Windows Store-backed tasks so a missing interactive manager desktop is no longer treated as a quiet informational skip. Be My Eyes, WhatsApp, Codex App, and iCloud now persist a degraded Store install state and remain warning-producing when the Microsoft Store install cannot proceed because the manager interactive desktop is not ready.
+
+I kept `10003-create-shortcuts-public-desktop` non-duplicative: it no longer re-raises a second warning when the Store task already warned, but it can now recover cleanly when the live VM already has a real AppsFolder launch target despite stale degraded/skipped state. I revalidated the update non-live with the smoke and code-quality gates and live through isolated reruns of the touched Windows update tasks plus a final remote shortcut readback.
+

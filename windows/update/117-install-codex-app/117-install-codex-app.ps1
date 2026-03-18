@@ -4,10 +4,15 @@ Write-Host "Update task started: install-codex-app"
 Import-Module 'C:\Windows\Temp\az-vm-store-install-state.psm1' -Force -DisableNameChecking
 
 $managerUser = '__VM_ADMIN_USER__'
+$managerPassword = '__VM_ADMIN_PASS__'
 $helperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
 $taskName = '117-install-codex-app'
-$packageId = 'codex'
+$packageId = '9PLM9XGG6VKS'
 $legacyRunOnceName = 'AzVmInstallCodexApp'
+$portableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+$interactiveTaskSuffix = 'interactive-install'
+$waitTimeoutSeconds = 240
+$storeSessionErrorRegex = '(?i)0x80070520|logon session|microsoft store|msstore'
 
 if (-not (Test-Path -LiteralPath $helperPath)) {
     throw ("Interactive session helper was not found: {0}" -f $helperPath)
@@ -97,16 +102,6 @@ function Resolve-CodexAppId {
 function Get-CodexInstallState {
     param([string]$WingetExe)
 
-    $codexExe = Resolve-CodexExecutable
-    if (-not [string]::IsNullOrWhiteSpace([string]$codexExe)) {
-        return [pscustomobject]@{
-            Healthy = $true
-            LaunchKind = 'executable'
-            LaunchTarget = [string]$codexExe
-            DetectionSource = 'executable'
-        }
-    }
-
     $codexAppId = Resolve-CodexAppId
     if (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) {
         return [pscustomobject]@{
@@ -114,6 +109,16 @@ function Get-CodexInstallState {
             LaunchKind = 'app-id'
             LaunchTarget = [string]$codexAppId
             DetectionSource = 'app-id'
+        }
+    }
+
+    $codexExe = Resolve-CodexExecutable
+    if (-not [string]::IsNullOrWhiteSpace([string]$codexExe)) {
+        return [pscustomobject]@{
+            Healthy = $true
+            LaunchKind = 'executable'
+            LaunchTarget = [string]$codexExe
+            DetectionSource = 'executable'
         }
     }
 
@@ -153,7 +158,7 @@ function Get-CodexInstallState {
 }
 
 Invoke-AzVmRefreshSessionPath
-$wingetExe = Resolve-AzVmWingetExe
+$wingetExe = Resolve-AzVmWingetExe -PortableCandidate $portableWingetPath
 if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
     throw 'winget command is not available.'
 }
@@ -177,47 +182,162 @@ if (Test-AzVmRunOnceEntryPresent -Name $legacyRunOnceName) {
 
 if (-not (Test-AzVmUserInteractiveDesktopReady -UserName $managerUser)) {
     Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State skipped -Summary 'Codex app install is deferred until the manager interactive desktop session is ready.' -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Codex app install requires the manager interactive desktop session before the Microsoft Store package can be installed.' -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$existingState.LaunchKind) -LaunchTarget ([string]$existingState.LaunchTarget)
     Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    Write-Host 'Codex app install is deferred because the manager interactive desktop session is not ready yet. Skipping without warning.'
-    Write-Host 'install-codex-app-skipped'
-    Write-Host 'Update task completed: install-codex-app'
-    return
+    throw 'Codex app install requires the manager interactive desktop session and should stay a warning until that desktop is ready.'
 }
 
-Write-Host 'Running: winget install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity'
-$installOutput = & $wingetExe install codex -s msstore --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
-$installExit = [int]$LASTEXITCODE
-$installText = [string]($installOutput | Out-String)
-if (-not [string]::IsNullOrWhiteSpace([string]$installText)) {
-    Write-Host $installText.TrimEnd()
+$workerTaskName = "{0}-{1}" -f $taskName, $interactiveTaskSuffix
+$paths = Get-AzVmInteractivePaths -TaskName $workerTaskName
+$workerScript = @'
+$ErrorActionPreference = "Stop"
+$helperPath = "__HELPER_PATH__"
+$storeHelperPath = "__STORE_HELPER_PATH__"
+$resultPath = "__RESULT_PATH__"
+$taskName = "__TASK_NAME__"
+$packageId = "__PACKAGE_ID__"
+
+. $helperPath
+Import-Module $storeHelperPath -Force -DisableNameChecking
+
+function Get-CodexPackages {
+    $allPackages = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+    if (@($allPackages).Count -eq 0) {
+        return @()
+    }
+
+    return @(
+        $allPackages | Where-Object {
+            $text = (([string]$_.Name) + ' ' + ([string]$_.PackageFamilyName)).ToLowerInvariant()
+            return ($text.Contains('openai.codex') -or $text.Contains('codex'))
+        }
+    )
+}
+
+function Resolve-CodexExecutable {
+    foreach ($package in @(Get-CodexPackages)) {
+        $installLocation = [string]$package.InstallLocation
+        if ([string]::IsNullOrWhiteSpace([string]$installLocation)) {
+            continue
+        }
+
+        foreach ($candidate in @(
+            (Join-Path $installLocation 'app\Codex.exe'),
+            (Join-Path $installLocation 'Codex.exe')
+        )) {
+            if (Test-Path -LiteralPath $candidate) {
+                return [string]$candidate
+            }
+        }
+    }
+
+    return ''
+}
+
+function Resolve-CodexAppId {
+    if (-not (Get-Command Get-StartApps -ErrorAction SilentlyContinue)) {
+        return ''
+    }
+
+    $startApps = @(Get-StartApps | Where-Object {
+        $text = (([string]$_.Name) + ' ' + ([string]$_.AppID)).ToLowerInvariant()
+        return ($text.Contains('openai.codex') -or $text.Contains('codex'))
+    })
+
+    foreach ($entry in @($startApps)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$entry.AppID)) {
+            return [string]$entry.AppID
+        }
+    }
+
+    return ''
+}
+
+function Test-CodexInstalled {
+    if (-not [string]::IsNullOrWhiteSpace([string](Resolve-CodexAppId))) {
+        return $true
+    }
+
+    return (-not [string]::IsNullOrWhiteSpace([string](Resolve-CodexExecutable)))
 }
 
 Invoke-AzVmRefreshSessionPath
-$postInstallState = Get-CodexInstallState -WingetExe $wingetExe
-if ([bool]$postInstallState.Healthy) {
-    Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State installed -Summary ('Codex app is launch-ready via {0}.' -f [string]$postInstallState.DetectionSource) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
-    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    Write-Host 'install-codex-app-completed'
-    Write-Host 'Update task completed: install-codex-app'
-    return
+$wingetExe = Resolve-AzVmWingetExe -PortableCandidate "__PORTABLE_WINGET_PATH__"
+if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'winget command is not available.'
+    exit 1
 }
 
-if (Test-AzVmStoreInstallNeedsInteractiveCompletion -MessageText $installText) {
-    Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Codex app install requires an interactive Store-capable session; no next-boot follow-up was scheduled.' -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
-    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    throw 'Codex app install requires an interactive Store-capable session and cannot be deferred to a later boot.'
+if (-not (Test-CodexInstalled)) {
+    $installOutput = @(& $wingetExe install --id $packageId --source msstore --accept-source-agreements --accept-package-agreements 2>&1)
+    $installExit = [int]$LASTEXITCODE
+    $installText = [string]($installOutput | Out-String)
+    if ($installExit -ne 0 -and $installExit -ne -1978335189) {
+        Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary ("winget install failed with exit code {0}." -f $installExit) -Details @($installText)
+        exit 1
+    }
 }
 
-if ($installExit -ne 0 -and $installExit -ne -1978335189) {
-    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ("Codex app install failed with exit code {0}." -f $installExit) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
-    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-    throw "winget install codex failed with exit code $installExit."
+if (-not (Test-CodexInstalled)) {
+    Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $false -Summary 'Codex app install could not be verified after interactive winget install.'
+    exit 1
 }
 
-$stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ('Codex app is present but not yet launch-ready via a stable executable or AppID ({0}).' -f [string]$postInstallState.DetectionSource) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$postInstallState.LaunchKind) -LaunchTarget ([string]$postInstallState.LaunchTarget)
+Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'Codex app is installed.'
+'@
+
+$workerScript = $workerScript.Replace('__HELPER_PATH__', $helperPath)
+$workerScript = $workerScript.Replace('__STORE_HELPER_PATH__', 'C:\Windows\Temp\az-vm-store-install-state.psm1')
+$workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
+$workerScript = $workerScript.Replace('__TASK_NAME__', $workerTaskName)
+$workerScript = $workerScript.Replace('__PACKAGE_ID__', $packageId)
+$workerScript = $workerScript.Replace('__PORTABLE_WINGET_PATH__', $portableWingetPath)
+
+try {
+    $null = Invoke-AzVmInteractiveDesktopAutomation `
+        -TaskName $workerTaskName `
+        -RunAsUser $managerUser `
+        -RunAsPassword $managerPassword `
+        -WorkerScriptText $workerScript `
+        -WaitTimeoutSeconds $waitTimeoutSeconds `
+        -RunAsMode 'interactiveToken'
+}
+catch {
+    Invoke-AzVmRefreshSessionPath
+    $catchState = Get-CodexInstallState -WingetExe $wingetExe
+    if ([bool]$catchState.Healthy) {
+        Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
+        $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State installed -Summary ('Codex app is launch-ready via {0}.' -f [string]$catchState.DetectionSource) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$catchState.LaunchKind) -LaunchTarget ([string]$catchState.LaunchTarget)
+        Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+        Write-Host 'install-codex-app-completed'
+        Write-Host 'Update task completed: install-codex-app'
+        return
+    }
+
+    $interactiveError = [string]$_.Exception.Message
+    if ($interactiveError -match $storeSessionErrorRegex) {
+        Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
+        $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary 'Codex app install requires an interactive Store-capable session and no next-boot follow-up was scheduled.' -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$catchState.LaunchKind) -LaunchTarget ([string]$catchState.LaunchTarget)
+        Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+        throw 'Codex app install requires an interactive Store-capable session and cannot be deferred to a later boot.'
+    }
+
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ('Codex app interactive install failed: {0}' -f $interactiveError) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$catchState.LaunchKind) -LaunchTarget ([string]$catchState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+    throw
+}
+
+Invoke-AzVmRefreshSessionPath
+$finalState = Get-CodexInstallState -WingetExe $wingetExe
+if (-not [bool]$finalState.Healthy) {
+    $stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State degraded -Summary ('Codex app is present but not yet launch-ready via a stable executable or AppID ({0}).' -f [string]$finalState.DetectionSource) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$finalState.LaunchKind) -LaunchTarget ([string]$finalState.LaunchTarget)
+    Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
+    throw 'Codex app install could not be verified.'
+}
+
+Remove-AzVmRunOnceEntry -Name $legacyRunOnceName
+$stateRecord = Write-AzVmStoreInstallState -TaskName $taskName -State installed -Summary ('Codex app is launch-ready via {0}.' -f [string]$finalState.DetectionSource) -PackageId $packageId -RunOnceName $legacyRunOnceName -LaunchKind ([string]$finalState.LaunchKind) -LaunchTarget ([string]$finalState.LaunchTarget)
 Write-AzVmStoreInstallStateStatusLine -TaskName $taskName -StateRecord $stateRecord
-throw 'Codex app install could not be verified.'
+Write-Host 'install-codex-app-completed'
+Write-Host 'Update task completed: install-codex-app'
 

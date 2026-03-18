@@ -1211,11 +1211,17 @@ function Add-StoreManagedShortcutSpec {
         [string[]]$CleanupAliases = @()
     )
 
+    $hasLiveAppId = (-not [string]::IsNullOrWhiteSpace([string]$AppId))
+    $hasLiveExecutable = (-not [string]::IsNullOrWhiteSpace([string]$ExecutablePath) -and (Test-Path -LiteralPath $ExecutablePath))
     $stateRecord = Read-StoreTaskStateRecord -TaskName $TaskName
-    if ($null -ne $stateRecord -and -not [string]::Equals([string]$stateRecord.state, 'installed', [System.StringComparison]::OrdinalIgnoreCase)) {
+    if ($null -ne $stateRecord -and -not [string]::Equals([string]$stateRecord.state, 'installed', [System.StringComparison]::OrdinalIgnoreCase) -and -not $hasLiveAppId -and -not $hasLiveExecutable) {
         $summary = if ($stateRecord.PSObject.Properties.Match('summary').Count -gt 0) { [string]$stateRecord.summary } else { 'state record indicates the app is not launch-ready.' }
         Write-Host ("public-shortcut-skip: {0} => store state={1}; {2}" -f [string]$ShortcutName, [string]$stateRecord.state, $summary)
         return
+    }
+
+    if ($null -ne $stateRecord -and -not [string]::Equals([string]$stateRecord.state, 'installed', [System.StringComparison]::OrdinalIgnoreCase) -and ($hasLiveAppId -or $hasLiveExecutable)) {
+        Write-Host ("public-shortcut-recover: {0} => store state={1}; live launch target resolved, continuing with shortcut creation." -f [string]$ShortcutName, [string]$stateRecord.state)
     }
 
     if ($null -ne $stateRecord) {
@@ -1593,8 +1599,8 @@ $iCloudExe = Resolve-ICloudExecutablePath
 $teamsAppId = Resolve-StoreAppId -NameFragment "teams" -PackageNameHints @("teams")
 $windscribeAppId = Resolve-StoreAppId -NameFragment "windscribe" -PackageNameHints @("windscribe")
 $beMyEyesAppId = Resolve-StoreAppId -NameFragment "be my eyes" -PackageNameHints @("be my eyes", $beMyEyesStoreProductId)
-$codexAppId = Resolve-StoreAppId -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0")
-$codexAppResolvedExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0") -ExecutableName "Codex.exe"
+$codexAppId = Resolve-StoreAppId -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0", "9PLM9XGG6VKS")
+$codexAppResolvedExe = Resolve-AppPackageExecutablePath -NameFragment "codex" -PackageNameHints @("OpenAI.Codex", "2p2nqsd0c76g0", "9PLM9XGG6VKS") -ExecutableName "Codex.exe"
 $whatsAppBusinessAppId = Resolve-StoreAppId -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop", "9NKSQGP7F2NH")
 $whatsAppRootExe = Resolve-AppPackageExecutablePath -NameFragment "whatsapp" -PackageNameHints @("whatsapp", "5319275A.WhatsAppDesktop") -ExecutableName "WhatsApp.Root.exe"
 $iCloudAppId = Resolve-ICloudAppId
