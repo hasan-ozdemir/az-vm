@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.18.350] - 2026-03-18
+
+### Changed
+- Changed the Azure Run Command execution path for `vm-init` so the Azure CLI timeout is no longer capped by the global `AZURE_COMMAND_TIMEOUT_SECONDS` value when a specific init task legitimately needs more time. `modules/tasks/run-command/runner.ps1` now raises the Azure CLI timeout to at least `task-timeout + 120s` for each isolated or workflow-driven Run Command task invocation and restores the previous global timeout immediately afterward.
+
+### Fixed
+- Fixed the fresh Windows publish retry path on 2026-03-18 where `03-install-openssh-service` still failed during the second clean `create` attempt even after the OpenSSH guest bootstrap fix, because Azure CLI terminated `az vm run-command invoke` after `300` seconds while the guest task itself was correctly budgeted for `360` seconds.
+- Fixed the follow-on Run Command conflict chain in `vm-init`: by keeping the Azure CLI transport alive through the whole guest task budget, `03-install-openssh-service` can now complete naturally instead of leaving `04-configure-sshd-service` and `05-configure-firewall-settings` to collide with an already-running Run Command extension instance.
+
+### Tests
+- Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
+- Added smoke and compatibility coverage for the temporary Azure CLI timeout override that protects long Windows Run Command init tasks.
+
 ## [2026.3.18.349] - 2026-03-18
 
 ### Changed
@@ -14,7 +27,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 
 ### Tests
 - Revalidated non-live with `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, and `tests\powershell-compatibility-check.ps1`.
-- Revalidated live in isolation on the active managed Windows VM through `task --run-vm-init 03`, `task --run-vm-init 04`, and `connect --ssh --test` against `rg-bizyum-ate1-g1/bizyum`, confirming that the repaired init chain leaves `sshd` registered and reachable on port `444`.
+- Revalidated live in isolation on the active managed Windows VM through `task --run-vm-init 03`, `task --run-vm-init 04`, and `connect --ssh --test` against the fresh managed target, confirming that the repaired init chain leaves `sshd` registered and reachable on port `444`.
 
 ## [2026.3.18.348] - 2026-03-18
 

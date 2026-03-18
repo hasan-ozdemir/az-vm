@@ -244,6 +244,38 @@ function Invoke-AzVmWithSuppressedAzCliStderr {
     }
 }
 
+# Handles Invoke-AzVmWithAzCliTimeoutSeconds.
+function Invoke-AzVmWithAzCliTimeoutSeconds {
+    param(
+        [int]$TimeoutSeconds,
+        [scriptblock]$Action
+    )
+
+    if ($null -eq $Action) {
+        throw 'Invoke-AzVmWithAzCliTimeoutSeconds requires an action.'
+    }
+
+    $previousTimeoutSeconds = [int]$script:AzCommandTimeoutSeconds
+    $effectiveTimeoutSeconds = [int]$TimeoutSeconds
+    if ($effectiveTimeoutSeconds -lt 30) {
+        $effectiveTimeoutSeconds = 30
+    }
+    if ($effectiveTimeoutSeconds -lt $previousTimeoutSeconds) {
+        $effectiveTimeoutSeconds = $previousTimeoutSeconds
+    }
+    if ($effectiveTimeoutSeconds -gt 7200) {
+        $effectiveTimeoutSeconds = 7200
+    }
+
+    $script:AzCommandTimeoutSeconds = $effectiveTimeoutSeconds
+    try {
+        return (& $Action)
+    }
+    finally {
+        $script:AzCommandTimeoutSeconds = $previousTimeoutSeconds
+    }
+}
+
 # Handles az.
 function az {
     $argList = @()

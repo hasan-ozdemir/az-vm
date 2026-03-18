@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.18.350 - 2026-03-18
+
+### Summary
+This release hardens the transport layer around long Windows `vm-init` Run Command tasks. The OpenSSH guest bootstrap had already been fixed, but the second clean publish retry still failed because Azure CLI itself stopped waiting after the repo-wide `AZURE_COMMAND_TIMEOUT_SECONDS=300` limit even though `03-install-openssh-service` had a legitimate `360` second task budget. The Run Command runner now temporarily lifts the Azure CLI timeout to match the task budget plus buffer.
+
+### Highlights
+- Added a temporary Azure CLI timeout override helper so long Run Command tasks can exceed the generic repo-wide Azure CLI timeout without weakening the default timeout for unrelated Azure operations.
+- Updated the Windows Run Command task runner to request at least `task-timeout + 120s` for each `az vm run-command invoke` call, then restore the previous CLI timeout after the invocation finishes.
+- Added smoke and compatibility coverage to keep the timeout-override contract pinned in the maintained test suite.
+
 ## Release 2026.3.18.349 - 2026-03-18
 
 ### Summary
@@ -11,7 +21,7 @@ This release is a targeted Windows OpenSSH hotfix for the live publish path. The
 - Raised the tracked timeout budget for `03-install-openssh-service` so a first-run Windows capability install can complete inside Azure Run Command instead of being cut off before `sshd` registration settles.
 - Fixed `03-install-openssh-service` so it now recovers missing `sshd` registration directly from the OpenSSH executable and can emit a reboot-required marker when the capability is still pending.
 - Fixed `04-configure-sshd-service` so it now shares the same direct `sshd.exe` recovery path and regenerates host keys through `ssh-keygen.exe` before the repo-managed `444` listener is started.
-- Revalidated the fix non-live and then live in isolation on `rg-bizyum-ate1-g1/bizyum` with successful reruns of `03`, `04`, and `connect --ssh --test`.
+- Revalidated the fix non-live and then live in isolation on the fresh managed Windows target with successful reruns of `03`, `04`, and `connect --ssh --test`.
 
 ## Release 2026.3.18.348 - 2026-03-18
 

@@ -6849,6 +6849,29 @@ Invoke-Test -Name "Windows PATH refresh is centralized and refreshenv is gone" -
     }
 }
 
+Invoke-Test -Name "Windows run-command tasks extend Azure CLI timeout to the task budget" -Action {
+    $runnerPath = Join-Path $RepoRoot 'modules\tasks\run-command\runner.ps1'
+    $azCliHelperPath = Join-Path $RepoRoot 'modules\core\system\azvm-az-cli.ps1'
+    $runnerText = [string](Get-Content -LiteralPath $runnerPath -Raw)
+    $azCliHelperText = [string](Get-Content -LiteralPath $azCliHelperPath -Raw)
+
+    foreach ($fragment in @(
+        'Invoke-AzVmWithAzCliTimeoutSeconds',
+        '$taskTimeoutSeconds + 120',
+        'Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds $azTimeoutSeconds'
+    )) {
+        Assert-True -Condition ($runnerText -like ('*' + [string]$fragment + '*')) -Message ("Run-command runner must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($fragment in @(
+        'function Invoke-AzVmWithAzCliTimeoutSeconds',
+        '$script:AzCommandTimeoutSeconds = $effectiveTimeoutSeconds',
+        '$script:AzCommandTimeoutSeconds = $previousTimeoutSeconds'
+    )) {
+        Assert-True -Condition ($azCliHelperText -like ('*' + [string]$fragment + '*')) -Message ("Azure CLI helper must include fragment '{0}'." -f [string]$fragment)
+    }
+}
+
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '102-configure-autologon-settings'
     $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows

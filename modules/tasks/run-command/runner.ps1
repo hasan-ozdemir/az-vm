@@ -172,12 +172,15 @@ function Invoke-AzVmSingleRunCommandTask {
     $azArgs += $scriptArgs
     $azArgs += @('-o', 'json')
     $invokeLabel = ("az vm run-command invoke ({0})" -f [string]$taskName)
+    $azTimeoutSeconds = [Math]::Max([int]$taskTimeoutSeconds + 120, [int]$script:AzCommandTimeoutSeconds)
     Write-Host ("Task started: {0} (max {1}s)" -f [string]$taskName, [int]$taskTimeoutSeconds)
     $taskWatch = [System.Diagnostics.Stopwatch]::StartNew()
-    $rawJson = Invoke-TrackedAction -Label $invokeLabel -Action {
-        $invokeResult = az @azArgs
-        Assert-LastExitCode $invokeLabel
-        $invokeResult
+    $rawJson = Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds $azTimeoutSeconds -Action {
+        Invoke-TrackedAction -Label $invokeLabel -Action {
+            $invokeResult = az @azArgs
+            Assert-LastExitCode $invokeLabel
+            $invokeResult
+        }
     }
 
     $parsedResult = Get-AzVmRunCommandResultEnvelope -TaskName $taskName -RawJson $rawJson -ModeLabel 'task-run'
