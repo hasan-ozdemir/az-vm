@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.374 - 2026-03-19
+
+### Summary
+This release repairs the fresh Windows live path that had just started failing at the first SSH asset copy during `vm-update`. The root cause was local host-key fingerprint discovery, not guest SSH reachability: the local `ssh-keyscan.exe` build could not negotiate the newer KEX set offered by the fresh Windows OpenSSH server, so the Windows SCP transport now falls back cleanly to the existing pyssh copy/fetch path when trusted fingerprint discovery cannot be resolved locally.
+
+### Highlights
+- Kept `pscp.exe` with trusted host-key discovery as the primary Windows asset-copy transport.
+- Added a bounded fallback from Windows SCP to pyssh copy/fetch when local host-key fingerprint discovery cannot be resolved for a Windows path.
+- Fixed the fallback cleanup path so pyssh-only transfers no longer try to remove an empty SCP password-file path.
+- Revalidated `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, and a live isolated `task --run-vm-update 01` run; all passed, and the live task completed successfully through the new fallback path.
+
 ## Release 2026.3.19.373 - 2026-03-19
 
 ### Summary

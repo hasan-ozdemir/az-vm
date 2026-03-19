@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.374] - 2026-03-19
+
+### Fixed
+- Fixed the Windows SSH asset-copy path for fresh managed Windows VMs whose OpenSSH host-key scan cannot negotiate the newest server-first KEX set with the local `ssh-keyscan.exe` build. The Windows asset transport now keeps `pscp.exe` plus trusted host-key discovery as the primary path, but falls back to the existing pyssh copy/fetch transport for Windows paths when host-key fingerprint discovery cannot be resolved locally.
+- Fixed the Windows asset-copy cleanup path so fallback executions no longer attempt to delete an empty SCP password-file path after a pyssh-only transfer.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite still passed with `Passed: 157, Failed: 0`.
+- Revalidated `tests\code-quality-check.ps1`; the maintained Windows static audit still passed locally.
+- Revalidated a live isolated `task --run-vm-update 01` against the active managed Windows target and confirmed the Windows asset-copy path falls back cleanly to pyssh, after which the task completed successfully.
+
 ## [2026.3.19.373] - 2026-03-19
 
 ### Fixed

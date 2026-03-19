@@ -164,6 +164,30 @@ function Get-AzVmWindowsScpHostKeyArguments {
     return @($cachedArgs)
 }
 
+function Test-AzVmWindowsScpFallbackCandidate {
+    param(
+        [AllowNull()]
+        [string]$Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Message)) {
+        return $false
+    }
+
+    foreach ($fragment in @(
+            'Windows SCP transport could not resolve an SSH host key',
+            'Windows SCP transport could not build a trusted host key fingerprint',
+            'Windows SCP transport requires pscp.exe',
+            'Windows SCP transport requires ssh-keyscan.exe and ssh-keygen.exe'
+        )) {
+        if ([string]$Message -like ('*' + [string]$fragment + '*')) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
 function New-AzVmWindowsScpPasswordFilePath {
     param(
         [string]$Password
@@ -378,25 +402,47 @@ function Copy-AzVmAssetToWindowsViaExec {
         }
     }
 
-    $pscpPath = Get-AzVmPscpExecutablePath
     $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $stagingRemotePath
-    $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
-    $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
     Write-Host ("Task asset copy started: {0} -> {1} (mode=windows-scp, bytes={2})" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length)
     $transferWatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $passwordFilePath = ''
     try {
-        $copyArgs = @(
-            '-batch',
-            '-scp',
-            '-P', [string]$Port,
-            '-l', [string]$UserName,
-            '-pwfile', [string]$passwordFilePath
-        ) + @($hostKeyArgs) + @(
-            [string]$resolvedLocalPath,
-            [string]$remoteSpec
-        )
+        try {
+            $pscpPath = Get-AzVmPscpExecutablePath
+            $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+            $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
+            $copyArgs = @(
+                '-batch',
+                '-scp',
+                '-P', [string]$Port,
+                '-l', [string]$UserName,
+                '-pwfile', [string]$passwordFilePath
+            ) + @($hostKeyArgs) + @(
+                [string]$resolvedLocalPath,
+                [string]$remoteSpec
+            )
 
-        Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $copyArgs -Label ("pscp copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
+            Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $copyArgs -Label ("pscp copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
+        }
+        catch {
+            if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $_.Exception.Message)) {
+                throw
+            }
+
+            Write-Host ("Task asset copy fallback: pyssh windows copy -> {0} ({1})" -f [string]$RemotePath, [string]$_.Exception.Message)
+            $copyArgs = @(
+                [string]$PySshClientPath,
+                "copy",
+                "--host", [string]$HostName,
+                "--port", [string]$Port,
+                "--user", [string]$UserName,
+                "--password", [string]$Password,
+                "--timeout", [string]$ConnectTimeoutSeconds,
+                "--local", [string]$resolvedLocalPath,
+                "--remote", [string]$stagingRemotePath
+            )
+            Invoke-AzVmProcessWithRetry -FilePath $PySshPythonPath -Arguments $copyArgs -Label ("pyssh copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 2 | Out-Null
+        }
 
         $finalizeScript = @(
             '$s=''' + $escapedStagingRemotePath + ''''
@@ -421,7 +467,9 @@ function Copy-AzVmAssetToWindowsViaExec {
             -SuppressTrackedLogging | Out-Null
     }
     finally {
-        Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
+        if (-not [string]::IsNullOrWhiteSpace([string]$passwordFilePath)) {
+            Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
+        }
         if ($transferWatch.IsRunning) {
             $transferWatch.Stop()
         }
@@ -443,7 +491,7 @@ function Copy-AzVmAssetToWindowsViaExec {
         throw ("Windows SCP asset verification failed for {0}." -f [string]$RemotePath)
     }
 
-    Write-Host ("Task asset copy completed: {0} -> {1} (mode=windows-scp, bytes={2}, chunks={3}, elapsed={4:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length, 1, $transferWatch.Elapsed.TotalSeconds)
+    Write-Host ("Task asset copy completed: {0} -> {1} (mode=windows-copy, bytes={2}, chunks={3}, elapsed={4:N1}s)" -f [System.IO.Path]::GetFileName($resolvedLocalPath), [string]$RemotePath, [int64]$fileInfo.Length, 1, $transferWatch.Elapsed.TotalSeconds)
 
     return [pscustomobject]@{
         RemotePath = [string]$RemotePath
@@ -534,32 +582,42 @@ function Copy-AzVmAssetFromVm {
     }
 
     if (Test-AzVmWindowsRemotePath -RemotePath $RemotePath) {
-        $pscpPath = Get-AzVmPscpExecutablePath
-        $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $RemotePath
-        $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
-        $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
         try {
-            $fetchArgs = @(
-                '-batch',
-                '-scp',
-                '-P', [string]$Port,
-                '-l', [string]$UserName,
-                '-pwfile', [string]$passwordFilePath
-            ) + @($hostKeyArgs) + @(
-                [string]$remoteSpec,
-                [string]$LocalPath
-            )
+            $pscpPath = Get-AzVmPscpExecutablePath
+            $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $RemotePath
+            $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+            $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
+            try {
+                $fetchArgs = @(
+                    '-batch',
+                    '-scp',
+                    '-P', [string]$Port,
+                    '-l', [string]$UserName,
+                    '-pwfile', [string]$passwordFilePath
+                ) + @($hostKeyArgs) + @(
+                    [string]$remoteSpec,
+                    [string]$LocalPath
+                )
 
-            Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $fetchArgs -Label ("pscp fetch asset <- {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
+                Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $fetchArgs -Label ("pscp fetch asset <- {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
+            }
+            finally {
+                if (-not [string]::IsNullOrWhiteSpace([string]$passwordFilePath)) {
+                    Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
+                }
+            }
         }
-        finally {
-            Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
+        catch {
+            if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $_.Exception.Message)) {
+                throw
+            }
+
+            Write-Host ("Task asset fetch fallback: pyssh windows fetch <- {0} ({1})" -f [string]$RemotePath, [string]$_.Exception.Message)
         }
 
-        if (-not (Test-Path -LiteralPath $LocalPath)) {
-            throw ("Fetched Windows asset was not written locally: {0}" -f [string]$LocalPath)
+        if (Test-Path -LiteralPath $LocalPath) {
+            return
         }
-        return
     }
 
     $fetchArgs = @(
