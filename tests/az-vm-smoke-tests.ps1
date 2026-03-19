@@ -36,6 +36,16 @@ function Assert-True {
     }
 }
 
+function ConvertFrom-JsonObjectArrayCompat {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InputObject
+    )
+
+    $parsed = ConvertFrom-Json -InputObject $InputObject -ErrorAction Stop
+    return @($parsed | ForEach-Object { $_ })
+}
+
 function ConvertFrom-UnicodeCodePoints {
     param([int[]]$CodePoints)
 
@@ -4965,7 +4975,7 @@ Invoke-Test -Name "Startup profile task overrides the generic host startup token
         Assert-True -Condition ($resolvedToken -ne $genericHostProfileToken) -Message 'Startup-profile task must use the approved task-local profile instead of the generic host mirror token.'
 
         $decodedJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resolvedToken))
-        $decodedEntries = @(ConvertFrom-Json -InputObject $decodedJson -ErrorAction Stop)
+        $decodedEntries = @(ConvertFrom-JsonObjectArrayCompat -InputObject $decodedJson)
         $decodedKeys = @($decodedEntries | ForEach-Object { [string]$_.Key })
         foreach ($requiredKey in @('docker-desktop','microsoft-lists','onedrive','teams','ollama','send-to-onenote','itunes-helper','jaws','security-health','anydesk','whatsapp','icloud','google-drive','m365-copilot')) {
             Assert-True -Condition ($decodedKeys -contains $requiredKey) -Message ("Approved startup profile must include '{0}'." -f [string]$requiredKey)
@@ -7340,7 +7350,7 @@ Invoke-Test -Name "Windows auto-start task applies the approved startup profile 
     Assert-True -Condition ($null -ne $taskBlock) -Message 'Auto-start task must be discoverable from the Windows vm-update catalog.'
     Assert-True -Condition (Test-AzVmTaskStartupProfileEnabled -TaskBlock $taskBlock) -Message 'Auto-start task must carry the startup-profile extension through task discovery.'
     $approvedProfileJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((Get-AzVmTaskStartupProfileJsonBase64 -TaskBlock $taskBlock)))
-    $approvedProfileEntries = @(ConvertFrom-Json -InputObject $approvedProfileJson -ErrorAction Stop)
+    $approvedProfileEntries = @(ConvertFrom-JsonObjectArrayCompat -InputObject $approvedProfileJson)
     $approvedProfileKeys = @($approvedProfileEntries | ForEach-Object { [string]$_.Key })
 
     foreach ($fragment in @(

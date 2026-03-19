@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.373] - 2026-03-19
+
+### Fixed
+- Fixed the Windows startup-profile JSON decode path so PowerShell 5.1 now enumerates approved startup-profile arrays the same way as PowerShell 7+ in `10002-configure-startup-settings`, the Windows summary readback, and the maintained smoke coverage.
+- Fixed the maintained non-live quality gate on `main` by aligning the startup-profile smoke assertions with the shared PowerShell 5.1-safe JSON-array handling instead of relying on host-version-specific `ConvertFrom-Json` behavior.
+- Fixed the tracked release/documentation surface so the sensitive-content audit no longer trips on concrete managed-target identifiers in release notes, changelog entries, or prompt-history summaries.
+
+### Tests
+- Revalidated `tests\sensitive-content-check.ps1`; the tracked sensitive-content audit now passes again.
+- Revalidated `tests\az-vm-smoke-tests.ps1` in Windows PowerShell 5.1; the maintained smoke suite passed with `Passed: 157, Failed: 0`.
+- Revalidated `tests\powershell-compatibility-check.ps1`; the compatibility matrix now passes on both Windows PowerShell 5.1 and PowerShell 7+.
+- Revalidated `tests\code-quality-check.ps1`; the full Windows static audit now passes locally.
+
 ## [2026.3.19.372] - 2026-03-19
 
 ### Changed
@@ -18,7 +31,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Tests
 - Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 157, Failed: 0`.
 - Revalidated `task --save-app-state --source=lm --user=.current. --vm-update-task=10002 --windows` and confirmed the generated task-local plugin zip includes the startup-profile payload.
-- Revalidated `task --run-vm-update 10002 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation; the final rerun completed with `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated `task --run-vm-update 10002` live in isolation on the active managed Windows target; the final rerun completed with `warning=0`, `signal-warning=0`, and `error=0`.
 - Revalidated the managed Windows VM after an explicit restart and confirmed the machine startup entries, the `manager` startup artifacts, and the `assistant` startup artifacts all persisted; post-reboot process evidence remained partial for some apps and is reported as informational follow-up rather than task failure.
 
 ## [2026.3.19.371] - 2026-03-19
@@ -50,7 +63,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Tests
 - Revalidated `tests\az-vm-smoke-tests.ps1` and confirmed the new `.env` shortcut URL contract, task token materialization, and `10003` shortcut surface pass; the remaining red assertions are the pre-existing unrelated `exec --file` parse contract and the tracked timeout drift for `102-configure-autologon-settings`.
 - Revalidated `tests\documentation-contract-check.ps1`.
-- Revalidated `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation and confirmed `warning=0`, `signal-warning=0`, and `error=0` after the env-backed shortcut URL changes.
+- Revalidated `task --run-vm-update 10003` live in isolation on the active managed Windows target and confirmed `warning=0`, `signal-warning=0`, and `error=0` after the env-backed shortcut URL changes.
 
 ## [2026.3.19.363] - 2026-03-19
 
@@ -67,7 +80,7 @@ Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository com
 ### Tests
 - Revalidated `tests\code-quality-check.ps1`.
 - Revalidated `tests\az-vm-smoke-tests.ps1`; the Turkish shortcut changes passed and only the pre-existing unrelated `exec --file` parse assertion plus one tracked timeout-contract drift remained red.
-- Revalidated `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation and confirmed zero warnings plus corrected `q1EkşiSözlük` and `ÇiçekSepeti` shortcut readback on the managed Windows VM.
+- Revalidated `task --run-vm-update 10003` live in isolation and confirmed zero warnings plus corrected `q1EkşiSözlük` and `ÇiçekSepeti` shortcut readback on the managed Windows VM.
 
 ## [2026.3.18.362] - 2026-03-18
 

@@ -304,7 +304,7 @@ function Convert-Base64JsonToObjectArray {
         }
 
         $parsed = ConvertFrom-Json -InputObject $json -ErrorAction Stop
-        return @($parsed)
+        return @($parsed | ForEach-Object { $_ })
     }
     catch {
         Write-Warning ("Host startup profile could not be decoded: {0}" -f $_.Exception.Message)

@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.373 - 2026-03-19
+
+### Summary
+This release repairs the failing `quality-gate` run on `main` without changing the public command surface. The Windows startup-profile JSON path now behaves consistently in Windows PowerShell 5.1 and PowerShell 7+, the maintained smoke suite no longer depends on version-specific JSON-array behavior, and the tracked release docs no longer trip the sensitive-content audit with concrete managed-target identifiers.
+
+### Highlights
+- Fixed the startup-profile decode path used by `10002-configure-startup-settings` and the Windows summary readback so approved startup-profile arrays enumerate correctly in Windows PowerShell 5.1.
+- Fixed the startup-profile smoke assertions so the maintained non-live contract now matches the shared PowerShell 5.1-safe JSON-array handling.
+- Sanitized the tracked release/changelog/history wording so the sensitive-content audit passes again while preserving the operator-visible validation record.
+- Revalidated `tests\sensitive-content-check.ps1`, `tests\az-vm-smoke-tests.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\code-quality-check.ps1` locally; all now pass cleanly.
+
 ## Release 2026.3.19.372 - 2026-03-19
 
 ### Summary
@@ -11,7 +22,7 @@ This release turns Windows `10002-configure-startup-settings` into an app-state-
 - Added a task-local startup-profile contract for `10002-configure-startup-settings`, carried through task discovery, runtime materialization, and local `task --save-app-state --source=lm` generation.
 - Refactored `10002` so it no longer hardcodes the approved app list in the script body and instead applies the managed startup set from `extensions/startup-profile.json` inside the task-local plugin zip.
 - Hardened the assistant-profile path by seeding/materializing the profile hive when necessary and by preferring a portable current-user Startup folder surface for assistant-side managed current-user apps.
-- Revalidated the change live in isolation on `rg-bizyum-ate1-g1` / `bizyum`: the final `10002` rerun completed with `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated the change live in isolation on the active managed Windows target: the final `10002` rerun completed with `warning=0`, `signal-warning=0`, and `error=0`.
 - Rebooted the managed Windows VM after the isolated task run and confirmed that the machine entries, the `manager` startup artifacts, and the `assistant` startup artifacts all persisted across reboot. Post-reboot process evidence remained partial for some apps, and those residual gaps are reported as informational follow-up only.
 
 ## Release 2026.3.19.371 - 2026-03-19

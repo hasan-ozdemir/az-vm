@@ -751,7 +751,7 @@ function Convert-Base64JsonToObjectArray {
         }
 
         $parsed = ConvertFrom-Json -InputObject $json -ErrorAction Stop
-        return @($parsed)
+        return @($parsed | ForEach-Object { $_ })
     }
     catch {
         Write-Warning ("startup-profile-decode-failed => {0}" -f $_.Exception.Message)

@@ -53,18 +53,12 @@ function ConvertFrom-JsonArrayCompat {
     )
 
     $parsed = ConvertFrom-JsonCompat -InputObject $InputObject
-    $result = @()
     if ($null -eq $parsed) {
-        $result = @()
-    }
-    elseif ($parsed -is [System.Array]) {
-        $result = @($parsed)
-    }
-    else {
-        $result = @($parsed)
+        return @()
     }
 
-    return $result
+    # PowerShell 5.1 can return one array object for JSON arrays; re-enumerate it explicitly.
+    return @($parsed | ForEach-Object { $_ })
 }
 
 # Handles ConvertTo-ObjectArrayCompat.
