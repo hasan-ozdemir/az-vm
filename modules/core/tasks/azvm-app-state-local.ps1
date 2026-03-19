@@ -1697,6 +1697,17 @@ function Save-AzVmTaskAppStateFromLocalMachine {
         [string[]]$RequestedUsers = @()
     )
 
+    if (Test-AzVmTaskStartupProfileEnabled -TaskBlock $TaskBlock) {
+        $pluginInfo = Write-AzVmTaskStartupProfilePluginZip -TaskBlock $TaskBlock
+        return [pscustomobject]@{
+            Status = 'saved'
+            Message = 'saved'
+            Warning = $false
+            ZipPath = if ($null -ne $pluginInfo -and $pluginInfo.PSObject.Properties.Match('ZipPath').Count -gt 0) { [string]$pluginInfo.ZipPath } else { [string](Get-AzVmTaskAppStateZipPath -TaskBlock $TaskBlock) }
+            SelectedUsers = @()
+        }
+    }
+
     $capturePlan = Get-AzVmTaskAppStateCapturePlan -TaskBlock $TaskBlock
     $taskName = if ($null -ne $TaskBlock -and $TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) { [string]$TaskBlock.Name } else { '' }
     if ($null -eq $capturePlan) {

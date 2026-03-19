@@ -427,6 +427,539 @@ function Get-AzVmHostStartupMirrorProfileJsonBase64 {
     return [Convert]::ToBase64String($bytes)
 }
 
+function Get-AzVmApprovedStartupProfileCatalog {
+    return @(
+        [pscustomobject][ordered]@{
+            Key = 'docker-desktop'
+            Name = 'Docker Desktop'
+            OwnedNames = @('Docker Desktop')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'Docker Desktop.exe'
+                FallbackCandidates = @('C:\Program Files\Docker\Docker\Docker Desktop.exe')
+                Arguments = '--minimized'
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'microsoft-lists'
+            Name = 'Microsoft.Lists'
+            OwnedNames = @('Microsoft.Lists')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                SearchRootPaths = @('C:\Program Files\Microsoft OneDrive')
+                SearchExecutableName = 'OneDrive.Sync.Service.exe'
+                Arguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'onedrive'
+            Name = 'OneDrive'
+            OwnedNames = @('OneDrive')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'OneDrive.exe'
+                FallbackCandidates = @(
+                    'C:\Program Files\Microsoft OneDrive\OneDrive.exe',
+                    '%LOCALAPPDATA%\Microsoft\OneDrive\OneDrive.exe'
+                )
+                Arguments = '/background'
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'teams'
+            Name = 'Teams'
+            OwnedNames = @('Teams')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'store-app'
+                AppNameFragment = 'teams'
+                PackageNameHints = @('MSTeams', 'MicrosoftTeams', 'teams')
+                FallbackAppId = 'MSTeams_8wekyb3d8bbwe!MSTeams'
+                ExecutableCommandName = 'ms-teams.exe'
+                ExecutableFallbackCandidates = @(
+                    'C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe',
+                    '%LOCALAPPDATA%\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe'
+                )
+                ExecutableArguments = 'msteams:system-initiated'
+                UnresolvedWrapperCommandName = 'cmd.exe'
+                UnresolvedWrapperFallbackCandidates = @('C:\Windows\System32\cmd.exe')
+                UnresolvedWrapperArguments = '/c start "" ms-teams.exe msteams:system-initiated'
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'ollama'
+            Name = 'Ollama'
+            OwnedNames = @('Ollama')
+            Scope = 'CurrentUser'
+            EntryType = 'StartupFolder'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'command-wrapper'
+                WrapperCommandName = 'cmd.exe'
+                WrapperFallbackCandidates = @('C:\Windows\System32\cmd.exe')
+                WrapperArguments = '/c if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"'
+                IconFallbackCandidates = @('%LOCALAPPDATA%\Programs\Ollama\ollama app.exe')
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'send-to-onenote'
+            Name = 'Send to OneNote'
+            OwnedNames = @('Send to OneNote')
+            Scope = 'CurrentUser'
+            EntryType = 'StartupFolder'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'ONENOTEM.EXE'
+                FallbackCandidates = @(
+                    'C:\Program Files\Microsoft Office\root\Office16\ONENOTEM.EXE',
+                    'C:\Program Files (x86)\Microsoft Office\root\Office16\ONENOTEM.EXE'
+                )
+                Arguments = '/tsr'
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'itunes-helper'
+            Name = 'iTunesHelper'
+            OwnedNames = @('iTunesHelper')
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+            TargetUsers = @()
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'iTunesHelper.exe'
+                FallbackCandidates = @(
+                    'C:\Program Files\iTunes\iTunesHelper.exe',
+                    'C:\Program Files (x86)\iTunes\iTunesHelper.exe'
+                )
+                Arguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'jaws'
+            Name = 'JAWS'
+            OwnedNames = @('JAWS')
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+            TargetUsers = @()
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'jfw.exe'
+                FallbackCandidates = @(
+                    'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe',
+                    'C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe'
+                )
+                Arguments = '/run'
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'security-health'
+            Name = 'SecurityHealth'
+            OwnedNames = @('SecurityHealth')
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+            TargetUsers = @()
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                FallbackCandidates = @('C:\WINDOWS\system32\SecurityHealthSystray.exe')
+                Arguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'anydesk'
+            Name = 'AnyDesk'
+            OwnedNames = @('AnyDesk')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'AnyDesk.exe'
+                FallbackCandidates = @(
+                    'C:\Program Files\AnyDesk\AnyDesk.exe',
+                    'C:\Program Files (x86)\AnyDesk\AnyDesk.exe'
+                )
+                Arguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'whatsapp'
+            Name = 'WhatsApp'
+            OwnedNames = @('WhatsApp')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'store-app'
+                AppNameFragment = 'whatsapp'
+                PackageNameHints = @('whatsapp', '5319275A.WhatsAppDesktop', '9NKSQGP7F2NH')
+                FallbackAppId = '5319275A.WhatsAppDesktop_cv1g1gvanyjgm!App'
+                ExecutablePackageNameHints = @('whatsapp', '5319275A.WhatsAppDesktop')
+                ExecutablePackageExecutableName = 'WhatsApp.Root.exe'
+                ExecutableArguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'icloud'
+            Name = 'iCloud'
+            OwnedNames = @('iCloud')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'store-app'
+                AppNameFragment = 'icloud'
+                PackageNameHints = @('AppleInc.iCloud', '9PKTQ5699M62', 'icloud')
+                FallbackAppId = 'AppleInc.iCloud_nzyj5cx40ttqa!iCloud'
+                ExecutableFallbackCandidates = @(
+                    'C:\Program Files\iCloud\iCloudHome.exe',
+                    'C:\Program Files (x86)\iCloud\iCloudHome.exe'
+                )
+                ExecutablePackageNameHints = @('AppleInc.iCloud', '9PKTQ5699M62', 'icloud')
+                ExecutablePackageExecutableName = 'iCloudHome.exe'
+                ExecutableArguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'google-drive'
+            Name = 'Google Drive'
+            OwnedNames = @('Google Drive')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'executable'
+                CommandName = 'GoogleDriveFS.exe'
+                FallbackCandidates = @('C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe')
+                SearchRootPaths = @('C:\Program Files\Google\Drive File Stream')
+                SearchExecutableName = 'GoogleDriveFS.exe'
+                Arguments = ''
+            }
+        }
+        [pscustomobject][ordered]@{
+            Key = 'm365-copilot'
+            Name = 'Microsoft 365 Copilot'
+            OwnedNames = @('Microsoft 365 Copilot')
+            Scope = 'CurrentUser'
+            EntryType = 'Run'
+            TargetUsers = @('manager', 'assistant')
+            EnableLocalMachineCompat = $false
+            Launch = [pscustomobject][ordered]@{
+                Kind = 'store-app'
+                AppNameFragment = 'copilot'
+                PackageNameHints = @('MicrosoftOfficeHub', 'Microsoft.MicrosoftOfficeHub', 'copilot')
+                FallbackAppId = 'Microsoft.MicrosoftOfficeHub_8wekyb3d8bbwe!Microsoft.MicrosoftOfficeHub'
+            }
+        }
+    )
+}
+
+function Get-AzVmApprovedStartupProfileEntries {
+    return @(
+        Get-AzVmApprovedStartupProfileCatalog |
+            ForEach-Object {
+                ConvertFrom-JsonCompat -InputObject (ConvertTo-JsonCompat -InputObject $_ -Depth 12)
+            }
+    )
+}
+
+function Get-AzVmApprovedStartupProfileDocument {
+    return [ordered]@{
+        schemaVersion = 1
+        mergeMode = 'additive'
+        entries = @(Get-AzVmApprovedStartupProfileEntries)
+    }
+}
+
+function Get-AzVmApprovedStartupProfileJsonBase64 {
+    $entries = @(Get-AzVmApprovedStartupProfileEntries)
+    $json = [string](ConvertTo-JsonCompat -InputObject @($entries) -Depth 12)
+    if ([string]::IsNullOrWhiteSpace([string]$json)) {
+        $json = '[]'
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    return [Convert]::ToBase64String($bytes)
+}
+
+function Get-AzVmTaskStartupProfileExtension {
+    param([psobject]$TaskBlock)
+
+    if ($null -eq $TaskBlock -or $TaskBlock.PSObject.Properties.Match('Extensions').Count -lt 1 -or $null -eq $TaskBlock.Extensions) {
+        return $null
+    }
+
+    $extensions = $TaskBlock.Extensions
+    if ($extensions -is [System.Collections.IDictionary]) {
+        if ($extensions.Contains('startupProfile')) {
+            return $extensions['startupProfile']
+        }
+        return $null
+    }
+
+    if ($extensions.PSObject.Properties.Match('startupProfile').Count -gt 0) {
+        return $extensions.startupProfile
+    }
+
+    return $null
+}
+
+function Test-AzVmTaskStartupProfileEnabled {
+    param([psobject]$TaskBlock)
+
+    return ($null -ne (Get-AzVmTaskStartupProfileExtension -TaskBlock $TaskBlock))
+}
+
+function Get-AzVmTaskStartupProfileSourcePath {
+    param([psobject]$TaskBlock)
+
+    $extension = Get-AzVmTaskStartupProfileExtension -TaskBlock $TaskBlock
+    if ($null -eq $extension) {
+        return ''
+    }
+
+    if ($extension -is [System.Collections.IDictionary]) {
+        if ($extension.Contains('sourcePath')) {
+            return [string]$extension['sourcePath']
+        }
+        return ''
+    }
+
+    if ($extension.PSObject.Properties.Match('sourcePath').Count -gt 0) {
+        return [string]$extension.sourcePath
+    }
+
+    return ''
+}
+
+function Get-AzVmTaskAppStateZipJsonEntryObject {
+    param(
+        [string]$ZipPath,
+        [string]$EntryName
+    )
+
+    Initialize-AzVmAppStateZipSupport
+
+    if ([string]::IsNullOrWhiteSpace([string]$ZipPath) -or
+        [string]::IsNullOrWhiteSpace([string]$EntryName) -or
+        -not (Test-Path -LiteralPath $ZipPath)) {
+        return $null
+    }
+
+    $archive = $null
+    try {
+        $archive = [System.IO.Compression.ZipFile]::OpenRead($ZipPath)
+        $entry = Get-AzVmZipArchiveEntryByName -Archive $archive -EntryName $EntryName
+        if ($null -eq $entry) {
+            return $null
+        }
+
+        $reader = New-Object System.IO.StreamReader($entry.Open())
+        try {
+            $content = [string]$reader.ReadToEnd()
+        }
+        finally {
+            $reader.Dispose()
+        }
+
+        if ([string]::IsNullOrWhiteSpace([string]$content)) {
+            return $null
+        }
+
+        return (ConvertFrom-JsonCompat -InputObject $content)
+    }
+    finally {
+        if ($null -ne $archive) {
+            $archive.Dispose()
+        }
+    }
+}
+
+function New-AzVmTaskStartupProfilePluginManifest {
+    param(
+        [string]$TaskName,
+        [string]$SourcePath
+    )
+
+    return [ordered]@{
+        version = 1
+        taskName = [string]$TaskName
+        machineDirectories = @()
+        machineFiles = @()
+        profileDirectories = @()
+        profileFiles = @()
+        registryImports = @()
+        extensions = [ordered]@{
+            startupProfile = [ordered]@{
+                schemaVersion = 1
+                sourcePath = [string]$SourcePath
+            }
+        }
+    }
+}
+
+function Write-AzVmTaskStartupProfilePluginZip {
+    param([psobject]$TaskBlock)
+
+    if ($null -eq $TaskBlock) {
+        return $null
+    }
+
+    $taskName = if ($TaskBlock.PSObject.Properties.Match('Name').Count -gt 0) { [string]$TaskBlock.Name } else { '' }
+    $sourcePath = Get-AzVmTaskStartupProfileSourcePath -TaskBlock $TaskBlock
+    if ([string]::IsNullOrWhiteSpace([string]$taskName) -or [string]::IsNullOrWhiteSpace([string]$sourcePath)) {
+        return $null
+    }
+
+    $pluginDirectory = Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $TaskBlock
+    $zipPath = Get-AzVmTaskAppStateZipPath -TaskBlock $TaskBlock
+    if ([string]::IsNullOrWhiteSpace([string]$pluginDirectory) -or [string]::IsNullOrWhiteSpace([string]$zipPath)) {
+        return $null
+    }
+
+    Ensure-AzVmAppStatePluginDirectory -Path $pluginDirectory
+    $scratchRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-startup-profile-plugin-{0}' -f ([guid]::NewGuid().ToString('N')))
+    Ensure-AzVmAppStatePluginDirectory -Path $scratchRoot
+    try {
+        $manifest = New-AzVmTaskStartupProfilePluginManifest -TaskName $taskName -SourcePath $sourcePath
+        $profileDocument = Get-AzVmApprovedStartupProfileDocument
+        $sourceRelativePath = ([string]$sourcePath).Replace('/', '\')
+        $sourceFilePath = Join-Path $scratchRoot $sourceRelativePath
+        $sourceParentPath = Split-Path -Path $sourceFilePath -Parent
+        Ensure-AzVmAppStatePluginDirectory -Path $sourceParentPath
+        Set-Content -LiteralPath $sourceFilePath -Value (ConvertTo-JsonCompat -InputObject $profileDocument -Depth 12) -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value (ConvertTo-JsonCompat -InputObject $manifest -Depth 12) -Encoding UTF8
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        $previousProgressPreference = $global:ProgressPreference
+        try {
+            $global:ProgressPreference = 'SilentlyContinue'
+            Compress-Archive -LiteralPath @(Get-ChildItem -LiteralPath $scratchRoot -Force | Select-Object -ExpandProperty FullName) -DestinationPath $zipPath -Force
+        }
+        finally {
+            $global:ProgressPreference = $previousProgressPreference
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $scratchRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    return [pscustomobject]@{
+        TaskName = [string]$taskName
+        ZipPath = [string]$zipPath
+        SourcePath = [string]$sourcePath
+    }
+}
+
+function Ensure-AzVmTaskStartupProfilePlugin {
+    param([psobject]$TaskBlock)
+
+    if (-not (Test-AzVmTaskStartupProfileEnabled -TaskBlock $TaskBlock)) {
+        return $null
+    }
+
+    $sourcePath = Get-AzVmTaskStartupProfileSourcePath -TaskBlock $TaskBlock
+    if ([string]::IsNullOrWhiteSpace([string]$sourcePath)) {
+        return $null
+    }
+
+    $pluginInfo = Get-AzVmTaskAppStatePluginInfo -TaskBlock $TaskBlock
+    $requiresRefresh = $true
+    if ($pluginInfo.Status -eq 'ready' -and $null -ne $pluginInfo.Manifest) {
+        $manifest = $pluginInfo.Manifest
+        $extension = $null
+        if ($manifest.PSObject.Properties.Match('extensions').Count -gt 0 -and $null -ne $manifest.extensions) {
+            if ($manifest.extensions -is [System.Collections.IDictionary]) {
+                if ($manifest.extensions.Contains('startupProfile')) {
+                    $extension = $manifest.extensions['startupProfile']
+                }
+            }
+            elseif ($manifest.extensions.PSObject.Properties.Match('startupProfile').Count -gt 0) {
+                $extension = $manifest.extensions.startupProfile
+            }
+        }
+
+        if ($null -ne $extension) {
+            $manifestSourcePath = ''
+            if ($extension -is [System.Collections.IDictionary]) {
+                if ($extension.Contains('sourcePath')) {
+                    $manifestSourcePath = [string]$extension['sourcePath']
+                }
+            }
+            elseif ($extension.PSObject.Properties.Match('sourcePath').Count -gt 0) {
+                $manifestSourcePath = [string]$extension.sourcePath
+            }
+
+            $profileDocument = Get-AzVmTaskAppStateZipJsonEntryObject -ZipPath ([string]$pluginInfo.ZipPath) -EntryName $manifestSourcePath
+            if (-not [string]::IsNullOrWhiteSpace([string]$manifestSourcePath) -and
+                [string]::Equals([string]$manifestSourcePath, [string]$sourcePath, [System.StringComparison]::OrdinalIgnoreCase) -and
+                $null -ne $profileDocument -and
+                $profileDocument.PSObject.Properties.Match('entries').Count -gt 0) {
+                $requiresRefresh = $false
+            }
+        }
+    }
+
+    if ($requiresRefresh) {
+        [void](Write-AzVmTaskStartupProfilePluginZip -TaskBlock $TaskBlock)
+    }
+
+    return (Get-AzVmTaskAppStatePluginInfo -TaskBlock $TaskBlock)
+}
+
+function Get-AzVmTaskStartupProfileEntries {
+    param([psobject]$TaskBlock)
+
+    $pluginInfo = Ensure-AzVmTaskStartupProfilePlugin -TaskBlock $TaskBlock
+    if ($null -eq $pluginInfo -or $pluginInfo.Status -ne 'ready') {
+        return @(Get-AzVmApprovedStartupProfileEntries)
+    }
+
+    $sourcePath = Get-AzVmTaskStartupProfileSourcePath -TaskBlock $TaskBlock
+    $profileDocument = Get-AzVmTaskAppStateZipJsonEntryObject -ZipPath ([string]$pluginInfo.ZipPath) -EntryName $sourcePath
+    if ($null -eq $profileDocument -or $profileDocument.PSObject.Properties.Match('entries').Count -lt 1) {
+        return @(Get-AzVmApprovedStartupProfileEntries)
+    }
+
+    return @($profileDocument.entries)
+}
+
+function Get-AzVmTaskStartupProfileJsonBase64 {
+    param([psobject]$TaskBlock)
+
+    $entries = @(Get-AzVmTaskStartupProfileEntries -TaskBlock $TaskBlock)
+    $json = [string](ConvertTo-JsonCompat -InputObject @($entries) -Depth 12)
+    if ([string]::IsNullOrWhiteSpace([string]$json)) {
+        $json = '[]'
+    }
+
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    return [Convert]::ToBase64String($bytes)
+}
+
 # Handles Get-AzVmHostAutostartDiscoveryJsonBase64.
 function Get-AzVmHostAutostartDiscoveryJsonBase64 {
     $discovery = Get-AzVmHostAutostartDiscovery

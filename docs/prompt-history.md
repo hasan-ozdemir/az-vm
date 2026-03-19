@@ -5500,3 +5500,17 @@ Update: the updates for vm-update tasks #134, #136, #10005 are also ours and wer
 I split the safe pending work into selective commits instead of one large snapshot. First I committed the approved Windows init/update task manifest budget changes together with the smoke timeout expectations. Then I committed the `exec --file` feature as its own topic, including the new `--file` parameter module, runtime resolution logic, and help/README coverage. After that I committed the Docker Desktop recovery refinements as a dedicated topic, and I committed the language plus user-settings task refinements as another dedicated topic.
 
 I re-ran `tests\az-vm-smoke-tests.ps1` against the updated worktree and confirmed the maintained smoke suite now passes cleanly with `Passed: 156, Failed: 0`. I also recorded the selective-commit batch in the changelog and release notes so the tracked documentation reflects the now-committed runtime and task-surface changes.
+
+### 2026-03-19 04:34 UTC
+
+**User Prompt**
+
+````text
+Plan and implement the Windows `10002-configure-startup-settings` auto-start profile so it is app-state driven instead of hardcoded. Read the approved startup list from the task-local `app-state.zip`, exclude only 1Password, include SecurityHealth and Microsoft Lists, and make the same managed startup surface available for both manager and assistant. After implementation, run `10002` live in isolation on the managed Windows VM, test it, measure it, reboot the VM, and report the results.
+````
+
+**Assistant Summary**
+
+I implemented an app-state-driven startup-profile contract for `10002-configure-startup-settings` instead of keeping the approved startup set hardcoded in the task script. The task catalog now preserves task `extensions`, task materialization injects the task-local startup profile from `app-state/app-state.zip`, and local `task --save-app-state --source=lm --vm-update-task=10002 --windows` now generates the startup-profile plugin zip with `extensions/startup-profile.json`. The `10002` task itself was refactored into a generic startup-profile applicator: it decodes the startup profile from the task-local plugin, applies the managed entries additively, seeds and materializes the `assistant` profile when needed, keeps missing-target handling as info-only, and uses a portable Startup folder surface for assistant-side current-user apps so the artifacts remain durable across reboots.
+
+I revalidated the tracked surface with `tests\az-vm-smoke-tests.ps1`, which passed with `Passed: 157, Failed: 0`. Then I regenerated the task-local startup-profile plugin with `task --save-app-state --source=lm --user=.current. --vm-update-task=10002 --windows`, reran `task --run-vm-update 10002 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation, and brought the task to `warning=0`, `signal-warning=0`, and `error=0`. I verified the machine startup entries plus the `manager` and `assistant` startup artifacts before reboot, restarted the managed VM, rechecked SSH reachability, and verified the same startup artifacts still persisted after reboot. Post-reboot process evidence improved after a short settle window: `OneDrive`, `AnyDesk`, `GoogleDriveFS`, and `ms-teams` were running, while `JAWS` and `ollama` were still absent as running processes and were reported as informational follow-up rather than task failure.

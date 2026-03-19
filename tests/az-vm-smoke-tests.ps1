@@ -4916,6 +4916,72 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*e30=*") -Message "Host autostart discovery token was not replaced."
 }
 
+Invoke-Test -Name "Startup profile task overrides the generic host startup token" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-startup-profile-override-test-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+    try {
+        New-SmokeTaskFolder -RootPath $tempRoot -RelativeFolderPath '10002-configure-startup-settings' -Platform windows -ScriptText 'Write-Host "__HOST_STARTUP_PROFILE_JSON_B64__"' -TaskJson @{
+            priority = 10002
+            enabled = $true
+            timeout = 120
+            extensions = @{
+                startupProfile = @{
+                    schemaVersion = 1
+                    sourcePath = 'extensions/startup-profile.json'
+                }
+            }
+        }
+
+        $catalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath $tempRoot -Platform windows -Stage update
+        $taskBlock = @($catalog.ActiveTasks | Where-Object { [string]$_.Name -eq '10002-configure-startup-settings' } | Select-Object -First 1)[0]
+        Assert-True -Condition ($null -ne $taskBlock) -Message 'Startup profile test task must be discoverable.'
+        Assert-True -Condition (Test-AzVmTaskStartupProfileEnabled -TaskBlock $taskBlock) -Message 'Startup profile extension must be enabled for the task.'
+
+        $genericHostProfileToken = [string](Get-AzVmHostStartupMirrorProfileJsonBase64)
+        $resolvedTask = @(Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks @($taskBlock) -Context ([ordered]@{
+            VmUser = 'manager'
+            VmPass = 'secret'
+            VmAssistantUser = 'assistant'
+            VmAssistantPass = 'secret2'
+            SshPort = '444'
+            RdpPort = '3389'
+            TcpPorts = @('444','3389','11434')
+            ResourceGroup = 'rg-samplevm'
+            VmName = 'samplevm'
+            CompanyName = 'orgprofile'
+            AzLocation = 'austriaeast'
+            VmSize = 'Standard_B2as_v2'
+            VmImage = 'example:image:urn'
+            VmDiskName = 'disk-samplevm'
+            VmDiskSize = '128'
+            VmStorageSku = 'StandardSSD_LRS'
+            HostStartupProfileJsonBase64 = 'W10='
+            HostAutostartDiscoveryJsonBase64 = 'e30='
+        }))[0]
+
+        $resolvedToken = [string]$resolvedTask.Script.Trim().Replace('Write-Host "', '').Replace('"', '')
+        Assert-True -Condition (-not [string]::IsNullOrWhiteSpace([string]$resolvedToken)) -Message 'Resolved startup-profile token must not be blank.'
+        Assert-True -Condition ($resolvedToken -ne 'W10=') -Message 'Startup-profile task must override the generic host startup token.'
+        Assert-True -Condition ($resolvedToken -ne $genericHostProfileToken) -Message 'Startup-profile task must use the approved task-local profile instead of the generic host mirror token.'
+
+        $decodedJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resolvedToken))
+        $decodedEntries = @(ConvertFrom-Json -InputObject $decodedJson -ErrorAction Stop)
+        $decodedKeys = @($decodedEntries | ForEach-Object { [string]$_.Key })
+        foreach ($requiredKey in @('docker-desktop','microsoft-lists','onedrive','teams','ollama','send-to-onenote','itunes-helper','jaws','security-health','anydesk','whatsapp','icloud','google-drive','m365-copilot')) {
+            Assert-True -Condition ($decodedKeys -contains $requiredKey) -Message ("Approved startup profile must include '{0}'." -f [string]$requiredKey)
+        }
+        Assert-True -Condition (-not ($decodedKeys -contains '1password')) -Message 'Approved startup profile must exclude 1Password.'
+
+        $pluginZipPath = Join-Path $tempRoot '10002-configure-startup-settings\app-state\app-state.zip'
+        Assert-True -Condition (Test-Path -LiteralPath $pluginZipPath) -Message 'Startup profile task must materialize a task-local app-state zip.'
+    }
+    finally {
+        if (Test-Path -LiteralPath $tempRoot) {
+            Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 Invoke-Test -Name "Startup mirror profile resolution" -Action {
     $entries = @(
         [pscustomobject]@{ Name = 'Docker Desktop'; Command = 'C:\Program Files\Docker\Docker\Docker Desktop.exe'; EntryType = 'Run'; Scope = 'CurrentUser'; Enabled = $true },
@@ -5009,7 +5075,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '135-install-ollama-tool' = 480
         '136-configure-language-settings' = 1635
         '10001-configure-advanced-settings' = 30
-        '10002-configure-startup-settings' = 60
+        '10002-configure-startup-settings' = 120
         '10003-create-public-desktop-shortcuts' = 120
         '10004-configure-windows-experience' = 180
         '10005-copy-user-settings' = 240
@@ -7261,58 +7327,64 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
     }
 }
 
-Invoke-Test -Name "Windows auto-start task mirrors the host startup profile and keeps the managed JAWS exception" -Action {
-    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10001-configure-startup-settings'
+Invoke-Test -Name "Windows auto-start task applies the approved startup profile additively for manager and assistant" -Action {
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10002-configure-startup-settings'
+    $taskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10002-configure-startup-settings'
     Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message "Expected auto-start task file was not found."
     $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+    $taskJsonText = [string](Get-Content -LiteralPath $taskJsonPath -Raw)
     $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
     $healthTaskText = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+    $taskCatalog = Get-AzVmTaskBlocksFromDirectory -DirectoryPath (Join-Path $RepoRoot 'windows\update') -Platform windows -Stage update
+    $taskBlock = @($taskCatalog.ActiveTasks | Where-Object { [string]$_.Name -eq '10002-configure-startup-settings' } | Select-Object -First 1)[0]
+    Assert-True -Condition ($null -ne $taskBlock) -Message 'Auto-start task must be discoverable from the Windows vm-update catalog.'
+    Assert-True -Condition (Test-AzVmTaskStartupProfileEnabled -TaskBlock $taskBlock) -Message 'Auto-start task must carry the startup-profile extension through task discovery.'
+    $approvedProfileJson = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String((Get-AzVmTaskStartupProfileJsonBase64 -TaskBlock $taskBlock)))
+    $approvedProfileEntries = @(ConvertFrom-Json -InputObject $approvedProfileJson -ErrorAction Stop)
+    $approvedProfileKeys = @($approvedProfileEntries | ForEach-Object { [string]$_.Key })
 
     foreach ($fragment in @(
         '__HOST_STARTUP_PROFILE_JSON_B64__',
         'host-startup-profile =>',
         'managed-startup-profile =>',
         'Get-ManagerContext',
+        'Get-StartupUserContexts',
         'Get-StartupLocationDefinitions',
+        'Get-MachineStartupLocationDefinitions',
         'Resolve-RequestedStartupLocation',
+        'Resolve-StartupProfileEntrySpec',
+        'Resolve-StartupProfileEntryTargetUsers',
+        'Ensure-UserProfileMaterialized',
         'Clear-OwnedStartupArtifacts',
-        'autostart-cleared:',
+        'autostart-info-skip:',
+        'autostart-profile-materialized:',
         'autostart-managed =>',
         'autostart-method =>',
-        'Register-ScheduledTask',
-        'ScheduledTask/AtLogOn',
         'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
         'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run32',
         'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp',
-        'docker-desktop',
-        'ollama',
-        'onedrive',
-        'teams',
-        'itunes-helper',
-        'google-drive',
-        'windscribe',
-        'anydesk',
-        'codex-app',
-        'Docker Desktop',
-        'Ollama',
-        'OneDrive',
-        'Teams',
-        'iTunesHelper',
-        'Google Drive',
-        'Windscribe',
-        'AnyDesk',
-        'Codex App',
-        'jaws',
-        'JAWS',
-        'jfw.exe',
-        '/run',
-        'msteams:system-initiated',
-        '%LOCALAPPDATA%\Programs\Ollama\ollama app.exe',
+        'Resolve-StartupProfileExecutablePath',
+        'Resolve-StartupProfileStoreAppId',
+        'shell:AppsFolder\',
+        '$assistantUser = "__ASSISTANT_USER__"',
+        '$assistantPassword = "__ASSISTANT_PASS__"',
         'configure-startup-settings-completed'
     )) {
         Assert-True -Condition ($taskText -like ('*' + $fragment + '*')) -Message ("Auto-start task must include fragment '{0}'." -f $fragment)
     }
     Assert-True -Condition (($taskText.IndexOf('static-startup-snapshot =>', [System.StringComparison]::Ordinal)) -lt 0) -Message "Auto-start task must not keep the static startup snapshot contract."
+    Assert-True -Condition (($taskText.IndexOf('autostart-cleared: host-disabled-or-absent', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Auto-start task must stay additive and must not clear managed startup entries when the host profile omits them.'
+    Assert-True -Condition (($taskText.IndexOf('unsupported host app key', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Auto-start task must not warn about unsupported host app keys.'
+    Assert-True -Condition (($taskText.IndexOf('windscribe', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Auto-start task must no longer manage Windscribe.'
+    Assert-True -Condition (($taskText.IndexOf('codex-app', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Auto-start task must no longer manage the Codex app.'
+    Assert-True -Condition ($taskJsonText -like '*"timeout": 120*') -Message 'Auto-start task must keep the expanded timeout 120.'
+    Assert-True -Condition ($taskJsonText -like '*az-vm-interactive-session-helper.ps1*') -Message 'Auto-start task must publish the interactive helper asset for assistant profile materialization.'
+    Assert-True -Condition ($taskJsonText -like '*"startupProfile"*') -Message 'Auto-start task must declare the startup-profile extension in task.json.'
+    Assert-True -Condition ($taskJsonText -like '*"sourcePath": "extensions/startup-profile.json"*') -Message 'Auto-start task must point the startup-profile extension to extensions/startup-profile.json.'
+    foreach ($requiredKey in @('docker-desktop','microsoft-lists','onedrive','teams','ollama','send-to-onenote','itunes-helper','jaws','security-health','anydesk','whatsapp','icloud','google-drive','m365-copilot')) {
+        Assert-True -Condition ($approvedProfileKeys -contains $requiredKey) -Message ("Auto-start startup profile must include '{0}'." -f [string]$requiredKey)
+    }
+    Assert-True -Condition (-not ($approvedProfileKeys -contains '1password')) -Message 'Auto-start startup profile must exclude 1Password.'
 
     foreach ($fragment in @(
         'AUTO-START APP STATUS:',

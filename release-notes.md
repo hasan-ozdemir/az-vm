@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.372 - 2026-03-19
+
+### Summary
+This release turns Windows `10002-configure-startup-settings` into an app-state-driven startup-profile task and validates the new behavior live on the managed Windows VM. The approved startup set now applies additively to both `manager` and `assistant`, task-local startup intent lives in `app-state/app-state.zip`, and the final isolated rerun completed warning-free before and after an explicit VM restart.
+
+### Highlights
+- Added a task-local startup-profile contract for `10002-configure-startup-settings`, carried through task discovery, runtime materialization, and local `task --save-app-state --source=lm` generation.
+- Refactored `10002` so it no longer hardcodes the approved app list in the script body and instead applies the managed startup set from `extensions/startup-profile.json` inside the task-local plugin zip.
+- Hardened the assistant-profile path by seeding/materializing the profile hive when necessary and by preferring a portable current-user Startup folder surface for assistant-side managed current-user apps.
+- Revalidated the change live in isolation on `rg-bizyum-ate1-g1` / `bizyum`: the final `10002` rerun completed with `warning=0`, `signal-warning=0`, and `error=0`.
+- Rebooted the managed Windows VM after the isolated task run and confirmed that the machine entries, the `manager` startup artifacts, and the `assistant` startup artifacts all persisted across reboot. Post-reboot process evidence remained partial for some apps, and those residual gaps are reported as informational follow-up only.
+
 ## Release 2026.3.19.371 - 2026-03-19
 
 ### Summary

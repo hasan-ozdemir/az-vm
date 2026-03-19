@@ -71,6 +71,27 @@ function Get-AzVmTaskTokenReplacements {
     }
 }
 
+function Get-AzVmTaskBlockTokenOverrides {
+    param(
+        [psobject]$TaskBlock,
+        [hashtable]$Context
+    )
+
+    $overrides = @{}
+    if ($null -eq $TaskBlock) {
+        return $overrides
+    }
+
+    if (Test-AzVmTaskStartupProfileEnabled -TaskBlock $TaskBlock) {
+        $startupProfileJsonBase64 = Get-AzVmTaskStartupProfileJsonBase64 -TaskBlock $TaskBlock
+        if (-not [string]::IsNullOrWhiteSpace([string]$startupProfileJsonBase64)) {
+            $overrides['HOST_STARTUP_PROFILE_JSON_B64'] = [string]$startupProfileJsonBase64
+        }
+    }
+
+    return $overrides
+}
+
 # Handles Resolve-AzVmRuntimeTaskBlocks.
 function Resolve-AzVmRuntimeTaskBlocks {
     param(
@@ -83,7 +104,7 @@ function Resolve-AzVmRuntimeTaskBlocks {
     }
 
     $replacements = Get-AzVmTaskTokenReplacements -Context $Context
-    return @(Apply-AzVmTaskBlockReplacements -TaskBlocks $TemplateTaskBlocks -Replacements $replacements)
+    return @(Apply-AzVmTaskBlockReplacements -TaskBlocks $TemplateTaskBlocks -Replacements $replacements -Context $Context)
 }
 
 

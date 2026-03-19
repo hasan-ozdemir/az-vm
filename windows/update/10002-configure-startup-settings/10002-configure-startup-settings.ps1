@@ -1,7 +1,10 @@
 $ErrorActionPreference = "Stop"
 Write-Host "Update task started: configure-startup-settings"
 
+$taskName = '10002-configure-startup-settings'
 $managerUser = "__VM_ADMIN_USER__"
+$assistantUser = "__ASSISTANT_USER__"
+$assistantPassword = "__ASSISTANT_PASS__"
 $hostStartupProfileJsonBase64 = "__HOST_STARTUP_PROFILE_JSON_B64__"
 $machineStartupFolder = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp'
 $machineStartupApprovedFolderPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\StartupFolder'
@@ -9,8 +12,12 @@ $machineRunPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
 $machineRunApprovalPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run'
 $machineRun32Path = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run32'
 $machineRun32ApprovalPath = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32'
+$interactiveHelperPath = 'C:\Windows\Temp\az-vm-interactive-session-helper.ps1'
 
 Import-Module 'C:\Windows\Temp\az-vm-session-environment.psm1' -Force -DisableNameChecking
+if (Test-Path -LiteralPath $interactiveHelperPath) {
+    . $interactiveHelperPath
+}
 
 function Refresh-SessionPath {
     Refresh-AzVmSessionPath | Out-Null
@@ -305,6 +312,246 @@ function Convert-Base64JsonToObjectArray {
     }
 }
 
+function Get-StartupProfilePropertyValue {
+    param(
+        [AllowNull()]$Object,
+        [string]$PropertyName,
+        [AllowNull()]$DefaultValue = $null
+    )
+
+    if ($null -eq $Object -or [string]::IsNullOrWhiteSpace([string]$PropertyName)) {
+        return $DefaultValue
+    }
+
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($PropertyName)) {
+            return $Object[$PropertyName]
+        }
+
+        return $DefaultValue
+    }
+
+    if ($Object.PSObject.Properties.Match($PropertyName).Count -gt 0) {
+        return $Object.$PropertyName
+    }
+
+    return $DefaultValue
+}
+
+function Convert-StartupProfileStringArray {
+    param([AllowNull()]$InputObject)
+
+    return @(
+        @($InputObject) |
+            ForEach-Object { [string]$_ } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+}
+
+function Expand-StartupProfileTemplateValue {
+    param(
+        [string]$Value,
+        [AllowNull()]$UserContext = $null
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) {
+        return ''
+    }
+
+    $expandedValue = [string]$Value
+    if ($null -ne $UserContext) {
+        $profilePath = [string](Get-StartupProfilePropertyValue -Object $UserContext -PropertyName 'ProfilePath' -DefaultValue '')
+        $userName = [string](Get-StartupProfilePropertyValue -Object $UserContext -PropertyName 'UserName' -DefaultValue '')
+        if (-not [string]::IsNullOrWhiteSpace([string]$profilePath)) {
+            $expandedValue = $expandedValue.Replace('%PROFILEPATH%', [string]$profilePath)
+            $expandedValue = $expandedValue.Replace('%USERPROFILE%', [string]$profilePath)
+            $expandedValue = $expandedValue.Replace('%LOCALAPPDATA%', (Join-Path $profilePath 'AppData\Local'))
+            $expandedValue = $expandedValue.Replace('%APPDATA%', (Join-Path $profilePath 'AppData\Roaming'))
+        }
+        if (-not [string]::IsNullOrWhiteSpace([string]$userName)) {
+            $expandedValue = $expandedValue.Replace('%USERNAME%', [string]$userName)
+        }
+    }
+
+    return [Environment]::ExpandEnvironmentVariables($expandedValue)
+}
+
+function Expand-StartupProfileTemplateValues {
+    param(
+        [AllowNull()]$InputObject,
+        [AllowNull()]$UserContext = $null
+    )
+
+    return @(
+        Convert-StartupProfileStringArray -InputObject $InputObject |
+            ForEach-Object { Expand-StartupProfileTemplateValue -Value ([string]$_) -UserContext $UserContext } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+    )
+}
+
+function Resolve-StartupProfileExecutablePath {
+    param(
+        [AllowNull()]$Launch,
+        [AllowNull()]$UserContext = $null
+    )
+
+    if ($null -eq $Launch) {
+        return ''
+    }
+
+    $commandName = [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'CommandName' -DefaultValue '')
+    $fallbackCandidates = @(Expand-StartupProfileTemplateValues -InputObject (Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'FallbackCandidates' -DefaultValue @()) -UserContext $UserContext)
+    $resolvedPath = Resolve-CommandPath -CommandName $commandName -FallbackCandidates $fallbackCandidates
+    if (-not [string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+        return [string]$resolvedPath
+    }
+
+    $searchRootPaths = @(Expand-StartupProfileTemplateValues -InputObject (Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'SearchRootPaths' -DefaultValue @()) -UserContext $UserContext)
+    $searchExecutableName = [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'SearchExecutableName' -DefaultValue '')
+    if (@($searchRootPaths).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$searchExecutableName)) {
+        $resolvedPath = Resolve-ExecutableUnderDirectory -RootPaths $searchRootPaths -ExecutableName $searchExecutableName
+        if (-not [string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+            return [string]$resolvedPath
+        }
+    }
+
+    $packageHints = @(Convert-StartupProfileStringArray -InputObject (Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'ExecutablePackageNameHints' -DefaultValue @()))
+    $packageExecutableName = [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'ExecutablePackageExecutableName' -DefaultValue '')
+    if (@($packageHints).Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$packageExecutableName)) {
+        $nameFragment = [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'ExecutableAppNameFragment' -DefaultValue '')
+        if ([string]::IsNullOrWhiteSpace([string]$nameFragment)) {
+            $nameFragment = [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'AppNameFragment' -DefaultValue '')
+        }
+
+        $resolvedPath = Resolve-AppPackageExecutablePath -NameFragment $nameFragment -PackageNameHints $packageHints -ExecutableName $packageExecutableName
+        if (-not [string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+            return [string]$resolvedPath
+        }
+    }
+
+    return ''
+}
+
+function Resolve-StartupProfileStoreAppId {
+    param([AllowNull()]$Launch)
+
+    if ($null -eq $Launch) {
+        return ''
+    }
+
+    $nameFragment = [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'AppNameFragment' -DefaultValue '')
+    $packageHints = @(Convert-StartupProfileStringArray -InputObject (Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'PackageNameHints' -DefaultValue @()))
+    $appId = Resolve-StoreAppId -NameFragment $nameFragment -PackageNameHints $packageHints
+    if (-not [string]::IsNullOrWhiteSpace([string]$appId)) {
+        return [string]$appId
+    }
+
+    return [string](Get-StartupProfilePropertyValue -Object $Launch -PropertyName 'FallbackAppId' -DefaultValue '')
+}
+
+function Resolve-StartupProfileEntryTargetUsers {
+    param([AllowNull()]$Entry)
+
+    $targetUsers = @(Convert-StartupProfileStringArray -InputObject (Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'TargetUsers' -DefaultValue @()))
+    if (@($targetUsers).Count -lt 1) {
+        return @('manager', 'assistant')
+    }
+
+    return @(
+        $targetUsers |
+            ForEach-Object { $_.Trim().ToLowerInvariant() } |
+            Where-Object { @('manager', 'assistant') -contains $_ } |
+            Select-Object -Unique
+    )
+}
+
+function Resolve-StartupProfileEntrySpec {
+    param(
+        [AllowNull()]$Entry,
+        [AllowNull()]$UserContext = $null,
+        [string]$CmdExe = '',
+        [string]$ExplorerExe = ''
+    )
+
+    if ($null -eq $Entry) {
+        return $null
+    }
+
+    $name = [string](Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'Name' -DefaultValue '')
+    if ([string]::IsNullOrWhiteSpace([string]$name)) {
+        return $null
+    }
+
+    $launch = Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'Launch' -DefaultValue $null
+    $launchKind = [string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'Kind' -DefaultValue '')
+    $targetPath = ''
+    $arguments = ''
+    $workingDirectory = ''
+    $iconLocation = ''
+
+    switch ($launchKind) {
+        'executable' {
+            $targetPath = Resolve-StartupProfileExecutablePath -Launch $launch -UserContext $UserContext
+            $arguments = [string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'Arguments' -DefaultValue '')
+            if (-not [string]::IsNullOrWhiteSpace([string]$targetPath)) {
+                $workingDirectory = Split-Path -Path $targetPath -Parent
+                $iconLocation = ("{0},0" -f [string]$targetPath)
+            }
+        }
+        'command-wrapper' {
+            $targetPath = Resolve-CommandPath -CommandName ([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'WrapperCommandName' -DefaultValue '')) -FallbackCandidates @(Expand-StartupProfileTemplateValues -InputObject (Get-StartupProfilePropertyValue -Object $launch -PropertyName 'WrapperFallbackCandidates' -DefaultValue @()) -UserContext $UserContext)
+            $arguments = Expand-StartupProfileTemplateValue -Value ([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'WrapperArguments' -DefaultValue '')) -UserContext $UserContext
+            $workingDirectory = Expand-StartupProfileTemplateValue -Value '%PROFILEPATH%' -UserContext $UserContext
+            $iconTarget = Resolve-CommandPath -CommandName ([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'IconCommandName' -DefaultValue '')) -FallbackCandidates @(Expand-StartupProfileTemplateValues -InputObject (Get-StartupProfilePropertyValue -Object $launch -PropertyName 'IconFallbackCandidates' -DefaultValue @()) -UserContext $UserContext)
+            if (-not [string]::IsNullOrWhiteSpace([string]$iconTarget)) {
+                $iconLocation = ("{0},0" -f [string]$iconTarget)
+            }
+        }
+        'store-app' {
+            $appId = Resolve-StartupProfileStoreAppId -Launch $launch
+            if (-not [string]::IsNullOrWhiteSpace([string]$appId)) {
+                $targetPath = [string]$ExplorerExe
+                $arguments = ("shell:AppsFolder\" + [string]$appId)
+                $workingDirectory = 'C:\Windows'
+                $iconLocation = if (-not [string]::IsNullOrWhiteSpace([string]$ExplorerExe)) { ("{0},0" -f [string]$ExplorerExe) } else { '' }
+            }
+            else {
+                $targetPath = Resolve-StartupProfileExecutablePath -Launch $launch -UserContext $UserContext
+                $arguments = Expand-StartupProfileTemplateValue -Value ([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'ExecutableArguments' -DefaultValue '')) -UserContext $UserContext
+                if (-not [string]::IsNullOrWhiteSpace([string]$targetPath)) {
+                    $workingDirectory = Split-Path -Path $targetPath -Parent
+                    $iconLocation = ("{0},0" -f [string]$targetPath)
+                }
+                elseif (-not [string]::IsNullOrWhiteSpace([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'UnresolvedWrapperCommandName' -DefaultValue ''))) {
+                    $targetPath = Resolve-CommandPath -CommandName ([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'UnresolvedWrapperCommandName' -DefaultValue '')) -FallbackCandidates @(Expand-StartupProfileTemplateValues -InputObject (Get-StartupProfilePropertyValue -Object $launch -PropertyName 'UnresolvedWrapperFallbackCandidates' -DefaultValue @()) -UserContext $UserContext)
+                    $arguments = Expand-StartupProfileTemplateValue -Value ([string](Get-StartupProfilePropertyValue -Object $launch -PropertyName 'UnresolvedWrapperArguments' -DefaultValue '')) -UserContext $UserContext
+                    $workingDirectory = Expand-StartupProfileTemplateValue -Value '%PROFILEPATH%' -UserContext $UserContext
+                    if (-not [string]::IsNullOrWhiteSpace([string]$ExplorerExe)) {
+                        $iconLocation = ("{0},0" -f [string]$ExplorerExe)
+                    }
+                }
+            }
+        }
+        default {
+            return $null
+        }
+    }
+
+    return [pscustomobject]@{
+        Name = [string]$name
+        OwnedNames = @(Convert-StartupProfileStringArray -InputObject (Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'OwnedNames' -DefaultValue @($name)))
+        TargetPath = [string]$targetPath
+        Arguments = [string]$arguments
+        WorkingDirectory = [string]$workingDirectory
+        IconLocation = [string]$iconLocation
+        ForcedLocation = [pscustomobject]@{
+            Scope = [string](Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'Scope' -DefaultValue '')
+            EntryType = [string](Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'EntryType' -DefaultValue '')
+        }
+        EnableLocalMachineCompat = [bool](Get-StartupProfilePropertyValue -Object $Entry -PropertyName 'EnableLocalMachineCompat' -DefaultValue $false)
+    }
+}
+
 function Get-LocalUserProfileInfo {
     param([string]$UserName)
 
@@ -323,9 +570,158 @@ function Get-LocalUserProfileInfo {
 
     return [pscustomobject]@{
         UserName = [string]$UserName
-        Sid = [string]$profile.PSChildName
+        ProfileListKeyName = [string]$profile.PSChildName
+        Sid = ([string]$profile.PSChildName -replace '\.bak$', '')
         ProfilePath = [string]$profile.ProfileImagePath
     }
+}
+
+function Ensure-LocalUserExists {
+    param([string]$UserName)
+
+    if ([string]::IsNullOrWhiteSpace([string]$UserName)) {
+        throw "User name is empty."
+    }
+
+    $user = Get-LocalUser -Name $UserName -ErrorAction SilentlyContinue
+    if ($null -eq $user) {
+        throw ("Local user was not found: {0}" -f $UserName)
+    }
+}
+
+function Get-LocalUserProfilePath {
+    param([string]$UserName)
+
+    try {
+        return [string](Get-LocalUserProfileInfo -UserName $UserName).ProfilePath
+    }
+    catch {
+        return ''
+    }
+}
+
+function Test-PortableProfileHiveReady {
+    param([string]$ProfilePath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ProfilePath) -or -not (Test-Path -LiteralPath $ProfilePath)) {
+        return $false
+    }
+
+    return (Test-Path -LiteralPath (Join-Path $ProfilePath 'NTUSER.DAT'))
+}
+
+function Initialize-MissingUserProfileHive {
+    param([string]$ProfilePath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ProfilePath) -or -not (Test-Path -LiteralPath $ProfilePath)) {
+        return $false
+    }
+
+    $ntUserPath = Join-Path $ProfilePath 'NTUSER.DAT'
+    if (Test-Path -LiteralPath $ntUserPath) {
+        return $true
+    }
+
+    $defaultProfileHive = 'C:\Users\Default\NTUSER.DAT'
+    if (-not (Test-Path -LiteralPath $defaultProfileHive)) {
+        return $false
+    }
+
+    Copy-Item -LiteralPath $defaultProfileHive -Destination $ntUserPath -Force
+    attrib +h $ntUserPath 2>$null | Out-Null
+    Write-Host ("autostart-profile-hive-seeded: {0}" -f [string]$ntUserPath)
+    return (Test-Path -LiteralPath $ntUserPath)
+}
+
+function Wait-AzVmCondition {
+    param(
+        [scriptblock]$Condition,
+        [int]$TimeoutSeconds = 30,
+        [int]$PollMilliseconds = 250
+    )
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        if (& $Condition) {
+            return $true
+        }
+
+        Start-Sleep -Milliseconds $PollMilliseconds
+    }
+
+    return $false
+}
+
+function Ensure-UserProfileMaterialized {
+    param(
+        [string]$UserName,
+        [string]$UserPassword
+    )
+
+    Ensure-LocalUserExists -UserName $UserName
+
+    $existingProfilePath = Get-LocalUserProfilePath -UserName $UserName
+    if (-not [string]::IsNullOrWhiteSpace([string]$existingProfilePath) -and (Test-PortableProfileHiveReady -ProfilePath $existingProfilePath)) {
+        Write-Host ("autostart-profile-ready: {0} => {1}" -f [string]$UserName, [string]$existingProfilePath)
+        return [string]$existingProfilePath
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$existingProfilePath) -and (Initialize-MissingUserProfileHive -ProfilePath $existingProfilePath)) {
+        Write-Host ("autostart-profile-ready: {0} => {1}" -f [string]$UserName, [string]$existingProfilePath)
+        return [string]$existingProfilePath
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$UserPassword)) {
+        throw ("Profile materialization requires a password for user '{0}'." -f [string]$UserName)
+    }
+    if (-not (Test-Path -LiteralPath $interactiveHelperPath)) {
+        throw ("Interactive session helper was not found: {0}" -f [string]$interactiveHelperPath)
+    }
+
+    $materializeTaskName = "{0}-materialize-{1}" -f $taskName, $UserName
+    $paths = Get-AzVmInteractivePaths -TaskName $materializeTaskName
+    $workerScript = @'
+$ErrorActionPreference = "Stop"
+$helperPath = "__HELPER_PATH__"
+$resultPath = "__RESULT_PATH__"
+$taskName = "__TASK_NAME__"
+
+. $helperPath
+
+$profilePath = [Environment]::GetFolderPath('UserProfile')
+Ensure-AzVmDirectory -Path $profilePath
+Ensure-AzVmDirectory -Path (Join-Path $profilePath 'Desktop')
+Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success $true -Summary 'User profile materialized.' -Details @($profilePath)
+'@
+
+    $workerScript = $workerScript.Replace('__HELPER_PATH__', $interactiveHelperPath)
+    $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
+    $workerScript = $workerScript.Replace('__TASK_NAME__', $materializeTaskName)
+
+    $null = Invoke-AzVmInteractiveDesktopAutomation `
+        -TaskName $materializeTaskName `
+        -RunAsUser $UserName `
+        -RunAsPassword $UserPassword `
+        -WorkerScriptText $workerScript `
+        -WaitTimeoutSeconds 180
+
+    if (-not (Wait-AzVmCondition -Condition {
+        $profilePath = Get-LocalUserProfilePath -UserName $UserName
+        if ([string]::IsNullOrWhiteSpace([string]$profilePath)) {
+            return $false
+        }
+
+        if (Test-PortableProfileHiveReady -ProfilePath $profilePath) {
+            return $true
+        }
+
+        return (Initialize-MissingUserProfileHive -ProfilePath $profilePath)
+    } -TimeoutSeconds 30)) {
+        throw ("User profile could not be materialized: {0}" -f [string]$UserName)
+    }
+
+    $profilePath = Get-LocalUserProfilePath -UserName $UserName
+    Write-Host ("autostart-profile-materialized: {0} => {1}" -f [string]$UserName, [string]$profilePath)
+    return [string]$profilePath
 }
 
 function Remove-RegistryMountIfPresent {
@@ -406,6 +802,153 @@ function Ensure-DirectoryPath {
     }
 }
 
+function Resolve-RegistryPathInfo {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Path)) {
+        throw "Registry path is empty."
+    }
+
+    $trimmedPath = [string]$Path.Trim()
+    if ($trimmedPath.StartsWith('Registry::', [System.StringComparison]::OrdinalIgnoreCase)) {
+        $trimmedPath = $trimmedPath.Substring(10)
+    }
+
+    if ($trimmedPath.StartsWith('HKEY_LOCAL_MACHINE\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Root = 'HKEY_LOCAL_MACHINE'
+            SubKeyPath = [string]$trimmedPath.Substring(19)
+        }
+    }
+    if ($trimmedPath.StartsWith('HKEY_CURRENT_USER\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Root = 'HKEY_CURRENT_USER'
+            SubKeyPath = [string]$trimmedPath.Substring(18)
+        }
+    }
+    if ($trimmedPath.StartsWith('HKEY_USERS\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Root = 'HKEY_USERS'
+            SubKeyPath = [string]$trimmedPath.Substring(11)
+        }
+    }
+    if ($trimmedPath.StartsWith('HKLM:\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Root = 'HKEY_LOCAL_MACHINE'
+            SubKeyPath = [string]$trimmedPath.Substring(6)
+        }
+    }
+    if ($trimmedPath.StartsWith('HKCU:\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Root = 'HKEY_CURRENT_USER'
+            SubKeyPath = [string]$trimmedPath.Substring(6)
+        }
+    }
+    if ($trimmedPath.StartsWith('HKU:\', [System.StringComparison]::OrdinalIgnoreCase)) {
+        return [pscustomobject]@{
+            Root = 'HKEY_USERS'
+            SubKeyPath = [string]$trimmedPath.Substring(5)
+        }
+    }
+
+    throw ("Unsupported registry path root: {0}" -f $Path)
+}
+
+function Get-RegistryBaseKey {
+    param([string]$Root)
+
+    switch -Exact ([string]$Root) {
+        'HKEY_LOCAL_MACHINE' {
+            return [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Default)
+        }
+        'HKEY_CURRENT_USER' {
+            return [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::CurrentUser, [Microsoft.Win32.RegistryView]::Default)
+        }
+        'HKEY_USERS' {
+            return [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::Users, [Microsoft.Win32.RegistryView]::Default)
+        }
+        default {
+            throw ("Unsupported registry root: {0}" -f $Root)
+        }
+    }
+}
+
+function Open-WritableRegistryKey {
+    param(
+        [string]$Path,
+        [bool]$CreateIfMissing = $false
+    )
+
+    $pathInfo = Resolve-RegistryPathInfo -Path $Path
+    $baseKey = Get-RegistryBaseKey -Root ([string]$pathInfo.Root)
+    try {
+        $subKeyPath = [string]$pathInfo.SubKeyPath
+        if ([string]::IsNullOrWhiteSpace([string]$subKeyPath)) {
+            return $baseKey
+        }
+
+        $registryKey = $baseKey.OpenSubKey($subKeyPath, $true)
+        if (($null -eq $registryKey) -and $CreateIfMissing) {
+            $registryKey = $baseKey.CreateSubKey($subKeyPath)
+        }
+
+        return $registryKey
+    }
+    finally {
+        if (($null -ne $baseKey) -and ($null -eq $registryKey -or -not [object]::ReferenceEquals($registryKey, $baseKey))) {
+            $baseKey.Dispose()
+        }
+    }
+}
+
+function Set-RegistryStringValue {
+    param(
+        [string]$Path,
+        [string]$ValueName,
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ValueName)) {
+        throw "Registry value name is empty."
+    }
+
+    $registryKey = Open-WritableRegistryKey -Path $Path -CreateIfMissing $true
+    if ($null -eq $registryKey) {
+        throw ("Registry key could not be opened for write: {0}" -f $Path)
+    }
+
+    try {
+        $registryKey.SetValue($ValueName, [string]$Value, [Microsoft.Win32.RegistryValueKind]::String)
+    }
+    finally {
+        $registryKey.Dispose()
+    }
+}
+
+function Set-RegistryBinaryValue {
+    param(
+        [string]$Path,
+        [string]$ValueName,
+        [byte[]]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ValueName)) {
+        throw "Registry value name is empty."
+    }
+
+    $registryKey = Open-WritableRegistryKey -Path $Path -CreateIfMissing $true
+    if ($null -eq $registryKey) {
+        throw ("Registry key could not be opened for write: {0}" -f $Path)
+    }
+
+    try {
+        $registryKey.SetValue($ValueName, [byte[]]@($Value), [Microsoft.Win32.RegistryValueKind]::Binary)
+    }
+    finally {
+        $registryKey.Dispose()
+    }
+}
+
 function Ensure-RegistryPath {
     param([string]$Path)
 
@@ -414,7 +957,11 @@ function Ensure-RegistryPath {
     }
 
     if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -Path $Path -Force | Out-Null
+        $registryKey = Open-WritableRegistryKey -Path $Path -CreateIfMissing $true
+        if ($null -eq $registryKey) {
+            throw ("Registry key could not be created: {0}" -f $Path)
+        }
+        $registryKey.Dispose()
     }
 }
 
@@ -437,7 +984,17 @@ function Remove-RegistryValueIfPresent {
         return
     }
 
-    Remove-ItemProperty -Path $Path -Name $ValueName -ErrorAction Stop
+    $registryKey = Open-WritableRegistryKey -Path $Path -CreateIfMissing $false
+    if ($null -eq $registryKey) {
+        return
+    }
+
+    try {
+        $registryKey.DeleteValue($ValueName, $false)
+    }
+    finally {
+        $registryKey.Dispose()
+    }
 }
 
 function Get-StartupApprovedStateCode {
@@ -483,7 +1040,7 @@ function Ensure-StartupApprovedEnabled {
 
     Ensure-RegistryPath -Path $Path
     $enabledValue = [byte[]](2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    New-ItemProperty -Path $Path -Name $ValueName -PropertyType Binary -Value $enabledValue -Force | Out-Null
+    Set-RegistryBinaryValue -Path $Path -ValueName $ValueName -Value $enabledValue
 }
 
 function Get-ShortcutContract {
@@ -533,7 +1090,8 @@ function New-StartupShortcut {
         [string]$TargetPath,
         [string]$Arguments = "",
         [string]$WorkingDirectory = "",
-        [string]$IconLocation = ""
+        [string]$IconLocation = "",
+        [bool]$IgnoreApprovalWriteFailure = $false
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$Name)) {
@@ -578,7 +1136,18 @@ function New-StartupShortcut {
 
     $shortcut.Save()
     Move-Item -LiteralPath $tempShortcutPath -Destination $shortcutPath -Force
-    Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName ($Name + '.lnk')
+    $approvalWriteSucceeded = $false
+    try {
+        Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName ($Name + '.lnk')
+        $approvalWriteSucceeded = $true
+    }
+    catch {
+        if (-not $IgnoreApprovalWriteFailure) {
+            throw
+        }
+
+        Write-Host ("autostart-info-skip: {0} => StartupApproved could not be written; shortcut artifact was kept." -f [string]$Name)
+    }
 
     if (-not (Test-Path -LiteralPath $shortcutPath)) {
         throw ("Startup shortcut was not created: {0}" -f $shortcutPath)
@@ -588,9 +1157,11 @@ function New-StartupShortcut {
         throw ("Startup shortcut validation failed for '{0}'." -f $Name)
     }
 
-    $approvalCode = Get-StartupApprovedStateCode -Path $ApprovalPath -ValueName ($Name + '.lnk')
-    if ($approvalCode -ne 2) {
-        throw ("StartupApproved validation failed for shortcut '{0}'." -f $Name)
+    if ($approvalWriteSucceeded) {
+        $approvalCode = Get-StartupApprovedStateCode -Path $ApprovalPath -ValueName ($Name + '.lnk')
+        if ($approvalCode -ne 2) {
+            throw ("StartupApproved validation failed for shortcut '{0}'." -f $Name)
+        }
     }
 }
 
@@ -602,17 +1173,27 @@ function Ensure-StartupShortcut {
         [string]$TargetPath,
         [string]$Arguments = "",
         [string]$WorkingDirectory = "",
-        [string]$IconLocation = ""
+        [string]$IconLocation = "",
+        [bool]$IgnoreApprovalWriteFailure = $false
     )
 
     $shortcutPath = Join-Path $DirectoryPath ($Name + '.lnk')
     if (Test-ShortcutMatches -ShortcutPath $shortcutPath -TargetPath $TargetPath -Arguments $Arguments -WorkingDirectory $WorkingDirectory -IconLocation $IconLocation) {
-        Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName ($Name + '.lnk')
+        try {
+            Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName ($Name + '.lnk')
+        }
+        catch {
+            if (-not $IgnoreApprovalWriteFailure) {
+                throw
+            }
+
+            Write-Host ("autostart-info-skip: {0} => StartupApproved could not be refreshed; existing shortcut artifact was kept." -f [string]$Name)
+        }
         Write-Host ("autostart-ok: {0} => already-configured shortcut" -f $Name)
         return
     }
 
-    New-StartupShortcut -DirectoryPath $DirectoryPath -ApprovalPath $ApprovalPath -Name $Name -TargetPath $TargetPath -Arguments $Arguments -WorkingDirectory $WorkingDirectory -IconLocation $IconLocation
+    New-StartupShortcut -DirectoryPath $DirectoryPath -ApprovalPath $ApprovalPath -Name $Name -TargetPath $TargetPath -Arguments $Arguments -WorkingDirectory $WorkingDirectory -IconLocation $IconLocation -IgnoreApprovalWriteFailure:$IgnoreApprovalWriteFailure
     Write-Host ("autostart-ok: {0} => shortcut" -f $Name)
 }
 
@@ -788,7 +1369,7 @@ function Ensure-RunEntry {
     Ensure-RegistryPath -Path $ApprovalPath
 
     $commandLine = Get-QuotedCommandLine -TargetPath $TargetPath -Arguments $Arguments
-    New-ItemProperty -Path $RunPath -Name $Name -PropertyType String -Value $commandLine -Force | Out-Null
+    Set-RegistryStringValue -Path $RunPath -ValueName $Name -Value $commandLine
     Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName $Name
 
     $actualValue = [string](Get-ItemProperty -Path $RunPath -Name $Name -ErrorAction Stop).$Name
@@ -828,7 +1409,12 @@ function Get-ManagerContext {
     $mountName = ''
     $mainRoot = ("Registry::HKEY_USERS\{0}" -f [string]$profileInfo.Sid)
     if (-not (Test-Path -LiteralPath $mainRoot)) {
-        $mountName = 'AzVm10001Manager'
+        $safeUserName = ([string]$profileInfo.UserName -replace '[^A-Za-z0-9]', '')
+        if ([string]::IsNullOrWhiteSpace([string]$safeUserName)) {
+            $safeUserName = 'User'
+        }
+
+        $mountName = ('AzVm10002{0}' -f $safeUserName)
         $mainRoot = Mount-RegistryHive -MountName $mountName -HiveFilePath (Join-Path ([string]$profileInfo.ProfilePath) 'NTUSER.DAT')
     }
 
@@ -844,6 +1430,37 @@ function Get-ManagerContext {
         Run32Path = ("{0}\Software\Microsoft\Windows\CurrentVersion\Run32" -f [string]$mainRoot)
         Run32ApprovalPath = ("{0}\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run32" -f [string]$mainRoot)
     }
+}
+
+function Get-StartupUserContexts {
+    param([string[]]$UserNames = @())
+
+    $contexts = New-Object 'System.Collections.Generic.List[object]'
+    $seenLabels = @{}
+    foreach ($userNameRaw in @($UserNames)) {
+        $userName = if ($null -eq $userNameRaw) { '' } else { [string]$userNameRaw.Trim() }
+        if ([string]::IsNullOrWhiteSpace([string]$userName)) {
+            continue
+        }
+
+        $label = $userName.ToLowerInvariant()
+        if ($seenLabels.ContainsKey($label)) {
+            continue
+        }
+
+        try {
+            $context = Get-ManagerContext -UserName $userName
+            $context | Add-Member -NotePropertyName 'Label' -NotePropertyValue ([string]$label) -Force
+            $context | Add-Member -NotePropertyName 'UserName' -NotePropertyValue ([string]$userName) -Force
+            $contexts.Add($context) | Out-Null
+            $seenLabels[$label] = $true
+        }
+        catch {
+            Write-Host ("autostart-info-skip: {0} => profile context could not be opened: {1}" -f [string]$userName, $_.Exception.Message)
+        }
+    }
+
+    return @($contexts.ToArray())
 }
 
 function Get-StartupLocationDefinitions {
@@ -895,6 +1512,32 @@ function Get-StartupLocationDefinitions {
     )
 }
 
+function Get-MachineStartupLocationDefinitions {
+    return @(
+        [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'Run'
+            Kind = 'Run'
+            RunPath = [string]$machineRunPath
+            ApprovalPath = [string]$machineRunApprovalPath
+        }
+        [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'Run32'
+            Kind = 'Run'
+            RunPath = [string]$machineRun32Path
+            ApprovalPath = [string]$machineRun32ApprovalPath
+        }
+        [pscustomobject]@{
+            Scope = 'LocalMachine'
+            EntryType = 'StartupFolder'
+            Kind = 'StartupFolder'
+            DirectoryPath = [string]$machineStartupFolder
+            ApprovalPath = [string]$machineStartupApprovedFolderPath
+        }
+    )
+}
+
 function Resolve-RequestedStartupLocation {
     param(
         [psobject]$ProfileEntry,
@@ -916,6 +1559,26 @@ function Resolve-RequestedStartupLocation {
             } |
             Select-Object -First 1
     )[0]
+}
+
+function Test-StartupRegistryFallbackException {
+    param([System.Exception]$Exception)
+
+    if ($null -eq $Exception) {
+        return $false
+    }
+
+    $message = [string]$Exception.Message
+    if ([string]::IsNullOrWhiteSpace([string]$message)) {
+        return $false
+    }
+
+    $normalized = $message.ToLowerInvariant()
+    return (
+        $normalized.Contains('access to the registry key') -or
+        $normalized.Contains('requested registry access is not allowed') -or
+        $normalized.Contains('is denied')
+    )
 }
 
 function Get-CompatStartupEntryName {
@@ -1028,19 +1691,35 @@ function Ensure-AppStartupLocation {
         [psobject]$Spec,
         [psobject]$ProfileEntry,
         [object[]]$LocationDefinitions,
-        [pscustomobject]$ManagerContext
+        [pscustomobject]$ManagerContext,
+        [string]$LogLabel = ""
     )
 
     $targetPath = [string]$Spec.TargetPath
     if (-not (Test-StartupSpecEligible -Spec ([pscustomobject]$Spec))) {
-        Write-Warning ("autostart-skip: {0} => target or embedded startup command could not be resolved." -f [string]$Spec.Name)
-        return
+        $label = if ([string]::IsNullOrWhiteSpace([string]$LogLabel)) { [string]$Spec.Name } else { [string]$LogLabel }
+        Write-Host ("autostart-info-skip: {0} => target or embedded startup command could not be resolved." -f [string]$label)
+        return $false
     }
 
     $requestedLocation = Resolve-RequestedStartupLocation -ProfileEntry $ProfileEntry -LocationDefinitions $LocationDefinitions
     if ($null -eq $requestedLocation) {
-        Write-Warning ("autostart-skip: {0} => unsupported host startup method '{1}/{2}'." -f [string]$Spec.Name, [string]$ProfileEntry.Scope, [string]$ProfileEntry.EntryType)
-        return
+        $label = if ([string]::IsNullOrWhiteSpace([string]$LogLabel)) { [string]$Spec.Name } else { [string]$LogLabel }
+        Write-Host ("autostart-info-skip: {0} => unsupported startup method '{1}/{2}'." -f [string]$label, [string]$ProfileEntry.Scope, [string]$ProfileEntry.EntryType)
+        return $false
+    }
+
+    if (
+        [string]::Equals([string]$requestedLocation.Scope, 'CurrentUser', [System.StringComparison]::OrdinalIgnoreCase) -and
+        [string]::Equals([string]$requestedLocation.EntryType, 'Run', [System.StringComparison]::OrdinalIgnoreCase) -and
+        $null -ne $ManagerContext -and
+        -not [string]::IsNullOrWhiteSpace([string]$ManagerContext.Label) -and
+        -not [string]::Equals([string]$ManagerContext.Label, 'manager', [System.StringComparison]::OrdinalIgnoreCase)
+    ) {
+        $portableCurrentUserLocation = Resolve-StartupLocationDefinition -LocationDefinitions $LocationDefinitions -Scope 'CurrentUser' -EntryType 'StartupFolder'
+        if ($null -ne $portableCurrentUserLocation) {
+            $requestedLocation = $portableCurrentUserLocation
+        }
     }
 
     $enableLocalMachineCompat = $true
@@ -1049,7 +1728,28 @@ function Ensure-AppStartupLocation {
     }
 
     if ([string]::Equals([string]$requestedLocation.Kind, 'Run', [System.StringComparison]::OrdinalIgnoreCase)) {
-        Ensure-RunEntry -RunPath ([string]$requestedLocation.RunPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments)
+        try {
+            Ensure-RunEntry -RunPath ([string]$requestedLocation.RunPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments)
+        }
+        catch {
+            $fallbackLocation = $null
+            if (
+                [string]::Equals([string]$requestedLocation.Scope, 'CurrentUser', [System.StringComparison]::OrdinalIgnoreCase) -and
+                (Test-StartupRegistryFallbackException -Exception $_.Exception)
+            ) {
+                $fallbackLocation = Resolve-StartupLocationDefinition -LocationDefinitions $LocationDefinitions -Scope 'CurrentUser' -EntryType 'StartupFolder'
+            }
+
+            if ($null -eq $fallbackLocation) {
+                throw
+            }
+
+            Write-Host ("autostart-fallback: {0} => CurrentUser/Run denied; using CurrentUser/StartupFolder" -f [string]$Spec.Name)
+            Ensure-StartupShortcut -DirectoryPath ([string]$fallbackLocation.DirectoryPath) -ApprovalPath ([string]$fallbackLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments) -WorkingDirectory ([string]$Spec.WorkingDirectory) -IconLocation ([string]$Spec.IconLocation) -IgnoreApprovalWriteFailure:$true
+            Write-Host ("autostart-method => {0} => CurrentUser/StartupFolder" -f [string]$Spec.Name)
+            return $true
+        }
+
         if (
             [string]::Equals([string]$requestedLocation.Scope, 'LocalMachine', [System.StringComparison]::OrdinalIgnoreCase) -and
             $enableLocalMachineCompat
@@ -1059,54 +1759,18 @@ function Ensure-AppStartupLocation {
             Write-Host ("autostart-compat => {0} => ScheduledTask/AtLogOn" -f [string]$Spec.Name)
         }
         Write-Host ("autostart-method => {0} => {1}/{2}" -f [string]$Spec.Name, [string]$requestedLocation.Scope, [string]$requestedLocation.EntryType)
-        return
+        return $true
     }
 
     Ensure-StartupShortcut -DirectoryPath ([string]$requestedLocation.DirectoryPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments) -WorkingDirectory ([string]$Spec.WorkingDirectory) -IconLocation ([string]$Spec.IconLocation)
     Write-Host ("autostart-method => {0} => {1}/{2}" -f [string]$Spec.Name, [string]$requestedLocation.Scope, [string]$requestedLocation.EntryType)
+    return $true
 }
 
 Refresh-SessionPath
 
 $cmdExe = Resolve-CommandPath -CommandName "cmd.exe" -FallbackCandidates @("C:\Windows\System32\cmd.exe")
 $explorerExe = Resolve-CommandPath -CommandName "explorer.exe" -FallbackCandidates @("C:\Windows\explorer.exe")
-$dockerDesktopExe = Resolve-CommandPath -CommandName "Docker Desktop.exe" -FallbackCandidates @("C:\Program Files\Docker\Docker\Docker Desktop.exe")
-$iTunesHelperExe = Resolve-CommandPath -CommandName "iTunesHelper.exe" -FallbackCandidates @(
-    'C:\Program Files\iTunes\iTunesHelper.exe',
-    'C:\Program Files (x86)\iTunes\iTunesHelper.exe'
-)
-$oneDriveExe = Resolve-CommandPath -CommandName "OneDrive.exe" -FallbackCandidates @(
-    'C:\Program Files\Microsoft OneDrive\OneDrive.exe',
-    ("C:\Users\{0}\AppData\Local\Microsoft\OneDrive\OneDrive.exe" -f $managerUser)
-)
-$teamsExe = Resolve-CommandPath -CommandName "ms-teams.exe" -FallbackCandidates @(
-    'C:\Program Files\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe',
-    ("C:\Users\{0}\AppData\Local\Microsoft\WindowsApps\MSTeams_8wekyb3d8bbwe\ms-teams.exe" -f $managerUser)
-)
-$ollamaAppExe = Resolve-CommandPath -CommandName "ollama app.exe" -FallbackCandidates @(
-    ("C:\Users\{0}\AppData\Local\Programs\Ollama\ollama app.exe" -f $managerUser),
-    (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama app.exe')
-)
-$googleDriveExe = Resolve-CommandPath -CommandName "GoogleDriveFS.exe" -FallbackCandidates @('C:\Program Files\Google\Drive File Stream\GoogleDriveFS.exe')
-if ([string]::IsNullOrWhiteSpace([string]$googleDriveExe)) {
-    $googleDriveExe = Resolve-ExecutableUnderDirectory -RootPaths @('C:\Program Files\Google\Drive File Stream') -ExecutableName 'GoogleDriveFS.exe'
-}
-$windscribeExe = Resolve-CommandPath -CommandName "Windscribe.exe" -FallbackCandidates @(
-    'C:\Program Files\Windscribe\Windscribe.exe',
-    'C:\Program Files (x86)\Windscribe\Windscribe.exe'
-)
-$anyDeskExe = Resolve-CommandPath -CommandName "AnyDesk.exe" -FallbackCandidates @(
-    'C:\Program Files\AnyDesk\AnyDesk.exe',
-    'C:\Program Files (x86)\AnyDesk\AnyDesk.exe'
-)
-$jawsExe = Resolve-CommandPath -CommandName "jfw.exe" -FallbackCandidates @(
-    'C:\Program Files\Freedom Scientific\JAWS\2025\jfw.exe',
-    'C:\Program Files (x86)\Freedom Scientific\JAWS\2025\jfw.exe'
-)
-$codexAppExe = Resolve-AppPackageExecutablePath -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0') -ExecutableName 'Codex.exe'
-$teamsAppId = Resolve-StoreAppId -NameFragment 'teams' -PackageNameHints @('MSTeams', 'MicrosoftTeams', 'teams')
-$codexAppId = Resolve-StoreAppId -NameFragment 'codex' -PackageNameHints @('OpenAI.Codex', '2p2nqsd0c76g0')
-
 $hostStartupProfile = @(Convert-Base64JsonToObjectArray -Base64Text $hostStartupProfileJsonBase64)
 $hostStartupProfileByKey = @{}
 foreach ($entry in @($hostStartupProfile)) {
@@ -1136,101 +1800,17 @@ else {
     Write-Host ("host-startup-profile => {0}" -f ($hostStartupSummary -join ', '))
 }
 
-$supportedSpecs = [ordered]@{
-    'docker-desktop' = [pscustomobject]@{
-        Name = 'Docker Desktop'
-        OwnedNames = @('Docker Desktop')
-        TargetPath = $dockerDesktopExe
-        Arguments = '--minimized'
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$dockerDesktopExe)) { '' } else { Split-Path -Path $dockerDesktopExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$dockerDesktopExe)) { '' } else { "$dockerDesktopExe,0" }
-    }
-    'ollama' = [pscustomobject]@{
-        Name = 'Ollama'
-        OwnedNames = @('Ollama')
-        TargetPath = $cmdExe
-        Arguments = '/c if exist "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe" start "" "%LOCALAPPDATA%\Programs\Ollama\ollama app.exe"'
-        WorkingDirectory = 'C:\Users'
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$ollamaAppExe)) { '' } else { "$ollamaAppExe,0" }
-    }
-    'onedrive' = [pscustomobject]@{
-        Name = 'OneDrive'
-        OwnedNames = @('OneDrive')
-        TargetPath = $oneDriveExe
-        Arguments = '/background'
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$oneDriveExe)) { '' } else { Split-Path -Path $oneDriveExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$oneDriveExe)) { '' } else { "$oneDriveExe,0" }
-    }
-    'teams' = [pscustomobject]@{
-        Name = 'Teams'
-        OwnedNames = @('Teams')
-        TargetPath = if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) { $explorerExe } elseif (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { $teamsExe } else { $cmdExe }
-        Arguments = if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) { ("shell:AppsFolder\" + $teamsAppId) } elseif (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { 'msteams:system-initiated' } else { '/c start "" ms-teams.exe msteams:system-initiated' }
-        WorkingDirectory = if (-not [string]::IsNullOrWhiteSpace([string]$teamsAppId)) { 'C:\Windows' } elseif (-not [string]::IsNullOrWhiteSpace([string]$teamsExe) -and -not $teamsExe.ToLowerInvariant().Contains('\users\')) { Split-Path -Path $teamsExe -Parent } else { 'C:\Users' }
-        IconLocation = if (-not [string]::IsNullOrWhiteSpace([string]$teamsExe)) { "$teamsExe,0" } else { "$explorerExe,0" }
-    }
-    'itunes-helper' = [pscustomobject]@{
-        Name = 'iTunesHelper'
-        OwnedNames = @('iTunesHelper')
-        TargetPath = $iTunesHelperExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$iTunesHelperExe)) { '' } else { Split-Path -Path $iTunesHelperExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$iTunesHelperExe)) { '' } else { "$iTunesHelperExe,0" }
-    }
-    'google-drive' = [pscustomobject]@{
-        Name = 'Google Drive'
-        OwnedNames = @('Google Drive')
-        TargetPath = $googleDriveExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$googleDriveExe)) { '' } else { Split-Path -Path $googleDriveExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$googleDriveExe)) { '' } else { "$googleDriveExe,0" }
-    }
-    'windscribe' = [pscustomobject]@{
-        Name = 'Windscribe'
-        OwnedNames = @('Windscribe')
-        TargetPath = $windscribeExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$windscribeExe)) { '' } else { Split-Path -Path $windscribeExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$windscribeExe)) { '' } else { "$windscribeExe,0" }
-    }
-    'anydesk' = [pscustomobject]@{
-        Name = 'AnyDesk'
-        OwnedNames = @('AnyDesk')
-        TargetPath = $anyDeskExe
-        Arguments = ''
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$anyDeskExe)) { '' } else { Split-Path -Path $anyDeskExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$anyDeskExe)) { '' } else { "$anyDeskExe,0" }
-    }
-    'codex-app' = [pscustomobject]@{
-        Name = 'Codex App'
-        OwnedNames = @('Codex App')
-        TargetPath = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { $codexAppExe } else { $explorerExe }
-        Arguments = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { '' } elseif (-not [string]::IsNullOrWhiteSpace([string]$codexAppId)) { ("shell:AppsFolder\" + $codexAppId) } else { '' }
-        WorkingDirectory = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { Split-Path -Path $codexAppExe -Parent } else { 'C:\Windows' }
-        IconLocation = if (-not [string]::IsNullOrWhiteSpace([string]$codexAppExe)) { "$codexAppExe,0" } else { "$explorerExe,0" }
-    }
-    'jaws' = [pscustomobject]@{
-        Name = 'JAWS'
-        OwnedNames = @('JAWS')
-        TargetPath = $jawsExe
-        Arguments = '/run'
-        WorkingDirectory = if ([string]::IsNullOrWhiteSpace([string]$jawsExe)) { '' } else { Split-Path -Path $jawsExe -Parent }
-        IconLocation = if ([string]::IsNullOrWhiteSpace([string]$jawsExe)) { '' } else { "$jawsExe,0" }
-        ForcedLocation = [pscustomobject]@{
-            Scope = 'LocalMachine'
-            EntryType = 'Run'
-        }
-        EnableLocalMachineCompat = $false
-    }
-}
-
 $managedStartupSummary = @(
-    @($supportedSpecs.Keys) |
+    @($hostStartupProfile) |
         ForEach-Object {
-            $spec = $supportedSpecs[[string]$_]
-            if ($spec.PSObject.Properties.Match('ForcedLocation').Count -ge 1 -and $null -ne $spec.ForcedLocation) {
-                ("{0}:{1}:{2}" -f [string]$_, [string]$spec.ForcedLocation.EntryType, [string]$spec.ForcedLocation.Scope)
+            $key = [string](Get-StartupProfilePropertyValue -Object $_ -PropertyName 'Key' -DefaultValue '')
+            $entryType = [string](Get-StartupProfilePropertyValue -Object $_ -PropertyName 'EntryType' -DefaultValue '')
+            $scope = [string](Get-StartupProfilePropertyValue -Object $_ -PropertyName 'Scope' -DefaultValue '')
+            if ([string]::IsNullOrWhiteSpace([string]$key)) {
+                return
             }
+
+            ("{0}:{1}:{2}" -f [string]$key, [string]$entryType, [string]$scope)
         } |
         Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
 )
@@ -1241,42 +1821,77 @@ else {
     Write-Host ("managed-startup-profile => {0}" -f ($managedStartupSummary -join ', '))
 }
 
-$managerContext = $null
+$userContexts = @()
 try {
-    $managerContext = Get-ManagerContext -UserName $managerUser
-    $locationDefinitions = @(Get-StartupLocationDefinitions -ManagerContext $managerContext)
+    [void](Ensure-UserProfileMaterialized -UserName $assistantUser -UserPassword $assistantPassword)
+    $userContexts = @(Get-StartupUserContexts -UserNames @($managerUser, $assistantUser))
+    $machineLocationDefinitions = @(Get-MachineStartupLocationDefinitions)
+    $userContextMap = @{}
+    foreach ($context in @($userContexts)) {
+        if ($null -eq $context) {
+            continue
+        }
 
-    foreach ($profileKey in @($hostStartupProfileByKey.Keys | Sort-Object)) {
-        if (-not $supportedSpecs.Contains($profileKey)) {
-            Write-Warning ("autostart-skip: unsupported host app key '{0}'." -f $profileKey)
+        $label = [string](Get-StartupProfilePropertyValue -Object $context -PropertyName 'Label' -DefaultValue '')
+        if (-not [string]::IsNullOrWhiteSpace([string]$label)) {
+            $userContextMap[$label] = $context
         }
     }
 
-    foreach ($startupKey in @($supportedSpecs.Keys)) {
-        $spec = $supportedSpecs[$startupKey]
-        Clear-OwnedStartupArtifacts -Spec $spec -LocationDefinitions $locationDefinitions
-
-        $forcedLocation = $null
-        if ($spec.PSObject.Properties.Match('ForcedLocation').Count -gt 0) {
-            $forcedLocation = $spec.ForcedLocation
-        }
-        if ($null -ne $forcedLocation) {
-            Write-Host ("autostart-managed => {0} => {1}/{2}" -f [string]$spec.Name, [string]$forcedLocation.Scope, [string]$forcedLocation.EntryType)
-            Ensure-AppStartupLocation -Spec $spec -ProfileEntry $forcedLocation -LocationDefinitions $locationDefinitions -ManagerContext $managerContext
+    foreach ($profileEntry in @($hostStartupProfile)) {
+        if ($null -eq $profileEntry) {
             continue
         }
 
-        if (-not $hostStartupProfileByKey.ContainsKey($startupKey)) {
-            Write-Host ("autostart-cleared: {0} => host-disabled-or-absent" -f [string]$spec.Name)
+        $specName = [string](Get-StartupProfilePropertyValue -Object $profileEntry -PropertyName 'Name' -DefaultValue '')
+        $entryScope = [string](Get-StartupProfilePropertyValue -Object $profileEntry -PropertyName 'Scope' -DefaultValue '')
+        $entryType = [string](Get-StartupProfilePropertyValue -Object $profileEntry -PropertyName 'EntryType' -DefaultValue '')
+        if ([string]::IsNullOrWhiteSpace([string]$specName) -or [string]::IsNullOrWhiteSpace([string]$entryScope) -or [string]::IsNullOrWhiteSpace([string]$entryType)) {
             continue
         }
 
-        Ensure-AppStartupLocation -Spec $spec -ProfileEntry $hostStartupProfileByKey[$startupKey] -LocationDefinitions $locationDefinitions -ManagerContext $managerContext
+        if ([string]::Equals([string]$entryScope, 'LocalMachine', [System.StringComparison]::OrdinalIgnoreCase)) {
+            $resolvedSpec = Resolve-StartupProfileEntrySpec -Entry $profileEntry -UserContext $null -CmdExe $cmdExe -ExplorerExe $explorerExe
+            if ($null -eq $resolvedSpec -or -not (Test-StartupSpecEligible -Spec $resolvedSpec)) {
+                Write-Host ("autostart-info-skip: {0} => target could not be resolved on the VM." -f [string]$specName)
+                continue
+            }
+
+            Clear-OwnedStartupArtifacts -Spec $resolvedSpec -LocationDefinitions $machineLocationDefinitions
+            Write-Host ("autostart-managed => {0} => {1}/{2}" -f [string]$resolvedSpec.Name, [string]$entryScope, [string]$entryType)
+            [void](Ensure-AppStartupLocation -Spec $resolvedSpec -ProfileEntry ([pscustomobject]@{ Scope = $entryScope; EntryType = $entryType }) -LocationDefinitions $machineLocationDefinitions -ManagerContext $null -LogLabel ([string]$resolvedSpec.Name))
+            continue
+        }
+
+        foreach ($targetUserLabel in @(Resolve-StartupProfileEntryTargetUsers -Entry $profileEntry)) {
+            if (-not $userContextMap.ContainsKey([string]$targetUserLabel)) {
+                Write-Host ("autostart-info-skip: {0} => startup user context '{1}' is unavailable." -f [string]$specName, [string]$targetUserLabel)
+                continue
+            }
+
+            $userContext = $userContextMap[[string]$targetUserLabel]
+            $locationDefinitions = @(Get-StartupLocationDefinitions -ManagerContext $userContext)
+            $resolvedSpec = Resolve-StartupProfileEntrySpec -Entry $profileEntry -UserContext $userContext.ProfileInfo -CmdExe $cmdExe -ExplorerExe $explorerExe
+            if ($null -eq $resolvedSpec -or -not (Test-StartupSpecEligible -Spec $resolvedSpec)) {
+                Write-Host ("autostart-info-skip: {0}/{1} => target could not be resolved on the VM." -f [string]$specName, [string]$targetUserLabel)
+                continue
+            }
+
+            Clear-OwnedStartupArtifacts -Spec $resolvedSpec -LocationDefinitions $locationDefinitions
+            Write-Host ("autostart-managed => {0}/{1} => {2}/{3}" -f [string]$resolvedSpec.Name, [string]$targetUserLabel, [string]$entryScope, [string]$entryType)
+            [void](Ensure-AppStartupLocation -Spec $resolvedSpec -ProfileEntry ([pscustomobject]@{ Scope = $entryScope; EntryType = $entryType }) -LocationDefinitions $locationDefinitions -ManagerContext $userContext -LogLabel ("{0}/{1}" -f [string]$resolvedSpec.Name, [string]$targetUserLabel))
+        }
     }
 }
 finally {
-    if ($null -ne $managerContext -and -not [string]::IsNullOrWhiteSpace([string]$managerContext.MountName)) {
-        Dismount-RegistryHive -MountName ([string]$managerContext.MountName)
+    foreach ($context in @($userContexts)) {
+        if ($null -eq $context) {
+            continue
+        }
+
+        if (-not [string]::IsNullOrWhiteSpace([string](Get-StartupProfilePropertyValue -Object $context -PropertyName 'MountName' -DefaultValue ''))) {
+            Dismount-RegistryHive -MountName ([string]$context.MountName)
+        }
     }
 }
 

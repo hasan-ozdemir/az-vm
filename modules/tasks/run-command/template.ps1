@@ -32,7 +32,8 @@ function Resolve-AzVmTaskRepoRootFromPath {
 function Apply-AzVmTaskBlockReplacements {
     param(
         [object[]]$TaskBlocks,
-        [hashtable]$Replacements
+        [hashtable]$Replacements,
+        [hashtable]$Context
     )
 
     if (-not $TaskBlocks) {
@@ -72,10 +73,24 @@ function Apply-AzVmTaskBlockReplacements {
             $assetSpecs = @(ConvertTo-ObjectArrayCompat -InputObject $taskBlock.AssetSpecs)
         }
 
+        $effectiveReplacements = @{}
         if ($Replacements) {
             foreach ($key in $Replacements.Keys) {
+                $effectiveReplacements[[string]$key] = [string]$Replacements[$key]
+            }
+        }
+
+        $taskOverrides = Get-AzVmTaskBlockTokenOverrides -TaskBlock $taskBlock -Context $Context
+        if ($taskOverrides) {
+            foreach ($key in $taskOverrides.Keys) {
+                $effectiveReplacements[[string]$key] = [string]$taskOverrides[$key]
+            }
+        }
+
+        if ($effectiveReplacements.Count -gt 0) {
+            foreach ($key in $effectiveReplacements.Keys) {
                 $token = "__{0}__" -f [string]$key
-                $value = [string]$Replacements[$key]
+                $value = [string]$effectiveReplacements[$key]
                 $taskScript = $taskScript.Replace($token, $value)
             }
         }
@@ -117,10 +132,10 @@ function Apply-AzVmTaskBlockReplacements {
             foreach ($assetSpec in @($assetSpecs)) {
                 $assetLocalPath = [string]$assetSpec.LocalPath
                 $assetRemotePath = [string]$assetSpec.RemotePath
-                if ($Replacements) {
-                    foreach ($key in $Replacements.Keys) {
+                if ($effectiveReplacements.Count -gt 0) {
+                    foreach ($key in $effectiveReplacements.Keys) {
                         $token = "__{0}__" -f [string]$key
-                        $value = [string]$Replacements[$key]
+                        $value = [string]$effectiveReplacements[$key]
                         $assetLocalPath = $assetLocalPath.Replace($token, $value)
                         $assetRemotePath = $assetRemotePath.Replace($token, $value)
                     }
@@ -160,6 +175,7 @@ function Apply-AzVmTaskBlockReplacements {
             Source = if ($taskBlock.PSObject.Properties.Match('Source').Count -gt 0) { [string]$taskBlock.Source } else { '' }
             TaskNumber = if ($taskBlock.PSObject.Properties.Match('TaskNumber').Count -gt 0) { [int]$taskBlock.TaskNumber } else { 0 }
             AppStateSpec = if ($taskBlock.PSObject.Properties.Match('AppStateSpec').Count -gt 0) { $taskBlock.AppStateSpec } else { $null }
+            Extensions = if ($taskBlock.PSObject.Properties.Match('Extensions').Count -gt 0) { $taskBlock.Extensions } else { $null }
             DependsOn = if ($taskBlock.PSObject.Properties.Match('DependsOn').Count -gt 0) { @($taskBlock.DependsOn) } else { @() }
             ObservedDurationSeconds = if ($taskBlock.PSObject.Properties.Match('ObservedDurationSeconds').Count -gt 0) { [double]$taskBlock.ObservedDurationSeconds } else { [double]::PositiveInfinity }
         }

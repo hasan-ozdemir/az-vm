@@ -605,6 +605,11 @@ function Get-AzVmTaskFolderMetadata {
         $dependsOn = @(ConvertTo-AzVmTaskFolderDependsOn -InputObject $metadata.dependsOn -TaskLabel $taskLabel)
     }
 
+    $extensions = $null
+    if ($null -ne $metadata -and $metadata.PSObject.Properties.Match('extensions').Count -gt 0 -and $null -ne $metadata.extensions) {
+        $extensions = ConvertFrom-JsonCompat -InputObject (ConvertTo-JsonCompat -InputObject $metadata.extensions -Depth 20)
+    }
+
     return [pscustomobject]@{
         Priority = [int]$priority
         Enabled = [bool]$enabled
@@ -612,6 +617,7 @@ function Get-AzVmTaskFolderMetadata {
         AssetSpecs = @($assets)
         AppStateSpec = $appStateSpec
         DependsOn = @($dependsOn)
+        Extensions = $extensions
     }
 }
 
@@ -781,6 +787,7 @@ function Read-AzVmTaskFolderRow {
         Priority = [int]$priority
         AssetSpecs = @($metadata.AssetSpecs)
         AppStateSpec = $metadata.AppStateSpec
+        Extensions = $metadata.Extensions
         TaskType = [string]$taskType
         Source = [string]$Candidate.Source
         TaskNumber = [int]$taskNumber
@@ -868,6 +875,7 @@ function Get-AzVmTaskBlocksFromDirectory {
                 RelativePath = [string]$task.RelativePath
                 Priority = [int]$task.Priority
                 TimeoutSeconds = [int]$task.TimeoutSeconds
+                Extensions = $task.Extensions
                 TaskType = [string]$task.TaskType
                 Source = [string]$task.Source
                 DisabledReason = [string]$task.DisabledReason
@@ -892,6 +900,7 @@ function Get-AzVmTaskBlocksFromDirectory {
             Priority = [int]$task.Priority
             AssetSpecs = @($task.AssetSpecs)
             AppStateSpec = $task.AppStateSpec
+            Extensions = $task.Extensions
             TaskType = [string]$task.TaskType
             Source = [string]$task.Source
             TaskNumber = [int]$task.TaskNumber

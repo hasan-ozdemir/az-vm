@@ -3,6 +3,24 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.372] - 2026-03-19
+
+### Changed
+- Changed the Windows `10002-configure-startup-settings` task so its managed auto-start contract is now driven by a task-local startup profile inside `app-state/app-state.zip` instead of a hardcoded app list inside the task script.
+- Changed the Windows startup runtime so task metadata now carries task extensions through catalog discovery and materialization, which lets isolated task runs inject task-specific startup-profile payloads cleanly.
+- Changed the Windows auto-start application model so `manager` keeps native current-user `Run` entries where practical, while `assistant` now uses a portable current-user Startup folder path for the same managed current-user apps to avoid profile-hive drift and keep the artifacts durable across reboots.
+
+### Fixed
+- Fixed the Windows `10002` task so it now seeds and materializes the `assistant` profile hive when needed, applies the approved managed startup set to both `manager` and `assistant`, and keeps missing-target handling as info-only instead of warning or failure.
+- Fixed the Windows task materialization path so startup-profile tasks can generate and deploy their own task-local plugin zip through `task --save-app-state --source=lm`, with the correct `extensions/startup-profile.json` payload and manifest.
+- Fixed the Windows startup write path so mounted profile hives no longer degrade isolated `10002` runs into false warning exits; assistant-side current-user artifacts are now written through the profile filesystem path when registry-backed persistence is not the right portable surface.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 157, Failed: 0`.
+- Revalidated `task --save-app-state --source=lm --user=.current. --vm-update-task=10002 --windows` and confirmed the generated task-local plugin zip includes the startup-profile payload.
+- Revalidated `task --run-vm-update 10002 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation; the final rerun completed with `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated the managed Windows VM after an explicit restart and confirmed the machine startup entries, the `manager` startup artifacts, and the `assistant` startup artifacts all persisted; post-reboot process evidence remained partial for some apps and is reported as informational follow-up rather than task failure.
+
 ## [2026.3.19.371] - 2026-03-19
 
 ### Changed
