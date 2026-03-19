@@ -516,10 +516,11 @@ catch {
         -RunAsPassword '' `
         -WorkerScriptText $workerScript `
         -LanguageTag $LanguageTag `
-        -WaitTimeoutSeconds 180
+        -WaitTimeoutSeconds 120
 
     $rebootRequired = $false
     $capabilitySummary = ''
+    $interactiveWorkerQueued = $false
     if ($null -ne $interactiveResult -and $interactiveResult.PSObject.Properties.Match('Details').Count -gt 0 -and $null -ne $interactiveResult.Details) {
         foreach ($detail in @($interactiveResult.Details)) {
             $detailText = [string]$detail
@@ -529,6 +530,10 @@ catch {
             }
             if ($detailText -match '^language-capabilities=(?<value>.+)$') {
                 $capabilitySummary = [string]$Matches['value']
+                continue
+            }
+            if ($detailText -match '^interactive-worker-queued=(?<value>true|false)$') {
+                $interactiveWorkerQueued = [bool]::Parse([string]$Matches['value'])
             }
         }
     }
@@ -539,7 +544,16 @@ catch {
     }
 
     $installedRows = @(Get-InstalledLanguageSafe -LanguageTag $LanguageTag)
-    if (@($installedRows).Count -lt 1 -and -not (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState)) {
+    $capabilityStateSatisfied = Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState
+    $queuedInstallAccepted = (
+        [bool]$interactiveWorkerQueued -or
+        (
+            [bool]$rebootRequired -and
+            ([string]$capabilitySummary -match '(?i)InstallPending')
+        )
+    )
+
+    if (@($installedRows).Count -lt 1 -and -not $capabilityStateSatisfied -and -not $queuedInstallAccepted) {
         throw ("Unable to verify installed language components for '{0}'." -f [string]$LanguageTag)
     }
 
@@ -550,7 +564,7 @@ catch {
         Write-Host ("language-capabilities => {0} => {1}" -f [string]$LanguageTag, [string]$capabilitySummary)
     }
 
-    if ([string]$capabilitySummary -match '(?i)InstallPending') {
+    if ([bool]$queuedInstallAccepted) {
         $rebootRequired = $true
         Write-StateSuccess ("Language components for {0} were queued successfully and will finish after restart." -f [string]$DisplayName)
     }
@@ -611,6 +625,36 @@ function Invoke-UserLanguageConfiguration {
         return ($primaryMatches -and $secondaryMatches -and $overrideMatches)
     }
 
+    function Test-CurrentUserLanguageConfigurationProvisionallySatisfied {
+        $state = Get-CurrentUserLanguageState
+        $languageTags = @($state.LanguageTags)
+        if (@($languageTags).Count -lt 1) {
+            return $false
+        }
+
+        $primaryMatches = [string]::Equals([string]$languageTags[0], $primaryLanguage, [System.StringComparison]::OrdinalIgnoreCase)
+        $secondaryMatches = (@($languageTags) | Where-Object { [string]::Equals([string]$_, $secondaryLanguage, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object).Count -ge 1
+        return ($primaryMatches -and $secondaryMatches)
+    }
+
+    function Wait-CurrentUserLanguageConfigurationState {
+        param([int]$TimeoutSeconds = 10)
+
+        $deadline = [DateTime]::UtcNow.AddSeconds([Math]::Max(2, [int]$TimeoutSeconds))
+        while ([DateTime]::UtcNow -lt $deadline) {
+            if (Test-CurrentUserLanguageConfigurationSatisfied) {
+                return 'verified'
+            }
+            if (Test-CurrentUserLanguageConfigurationProvisionallySatisfied) {
+                return 'provisional'
+            }
+
+            Start-Sleep -Seconds 1
+        }
+
+        return 'pending'
+    }
+
     function Set-CurrentUserLanguageConfigurationDirect {
         $languageList = New-WinUserLanguageList $primaryLanguage
         $secondaryEntries = New-WinUserLanguageList $secondaryLanguage
@@ -621,9 +665,16 @@ function Invoke-UserLanguageConfiguration {
         Set-WinUserLanguageList -LanguageList $languageList -Force -WarningAction SilentlyContinue
         Set-WinUILanguageOverride -Language $primaryLanguage -WarningAction SilentlyContinue
         Write-Host 'language-user-info: language changes will take effect after the next restart or sign-in.'
-        Start-Sleep -Seconds 2
+        $directApplyState = Wait-CurrentUserLanguageConfigurationState -TimeoutSeconds 10
+        if ([string]::Equals([string]$directApplyState, 'verified', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+        if ([string]::Equals([string]$directApplyState, 'provisional', [System.StringComparison]::OrdinalIgnoreCase)) {
+            Write-Host ("language-user-info: direct apply for '{0}' is queued and will finish after the next restart or sign-in." -f [string]$UserName) -ForegroundColor DarkCyan
+            return $true
+        }
 
-        return (Test-CurrentUserLanguageConfigurationSatisfied)
+        return $false
     }
 
     Write-StateIntent ("Language settings for user '{0}' will be configured." -f [string]$UserName)

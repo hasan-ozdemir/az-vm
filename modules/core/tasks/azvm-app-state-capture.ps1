@@ -298,12 +298,11 @@ function Merge-AzVmTaskAppStateCaptureSpec {
     $merged = New-AzVmAppStateCaptureSpec -TaskName $TaskName
     foreach ($collectionName in @('machineDirectories','machineFiles','profileDirectories','profileFiles','machineRegistryKeys','userRegistryKeys')) {
         $collector = New-Object 'System.Collections.Generic.Dictionary[string, object]' ([System.StringComparer]::OrdinalIgnoreCase)
-        $specsToMerge = @($PrimarySpec, $LegacySpec)
-        if (@('machineRegistryKeys','userRegistryKeys') -contains [string]$collectionName) {
-            $primaryRules = @(Get-AzVmTaskAppStateSpecCollectionValue -Spec $PrimarySpec -CollectionName $collectionName)
-            if (@($primaryRules).Count -gt 0) {
-                $specsToMerge = @($PrimarySpec)
-            }
+        $specsToMerge = if ($null -ne $PrimarySpec) {
+            @($PrimarySpec)
+        }
+        else {
+            @($LegacySpec)
         }
 
         foreach ($spec in @($specsToMerge)) {
@@ -484,6 +483,7 @@ function Save-AzVmTaskAppStateFromVm {
     $pluginDirectory = Get-AzVmTaskAppStatePluginDirectoryPath -TaskBlock $TaskBlock
     $zipPath = Get-AzVmTaskAppStateZipPath -TaskBlock $TaskBlock
     Ensure-AzVmAppStatePluginDirectory -Path $pluginDirectory
+    Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
 
     $planJson = ConvertTo-AzVmTaskAppStateCapturePlanJson -CapturePlan $capturePlan
     if ([string]::IsNullOrWhiteSpace([string]$planJson)) {
@@ -806,6 +806,7 @@ PY
         }
 
         if ($result.PSObject.Properties.Match('Output').Count -gt 0 -and [string]$result.Output -match 'app-state-save-skipped') {
+            Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
             Write-Host ("App-state skipped: {0} => no discoverable live payload" -f [string]$taskName)
             return [pscustomobject]@{ Status = 'skipped'; Message = 'no discoverable live payload'; Warning = $false }
         }

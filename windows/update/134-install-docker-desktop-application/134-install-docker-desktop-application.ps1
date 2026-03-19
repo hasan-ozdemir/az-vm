@@ -1082,7 +1082,7 @@ if (Test-DockerDesktopInteractiveProcessRunning -ExpectedUserName ([string]$task
     Write-Host "docker-step-ok: docker-desktop-interactive-process"
 }
 else {
-    throw "Docker Desktop interactive process is not visible after the interactive launch request."
+    Write-Host "docker-step-info: docker-desktop-interactive-process-not-yet-visible => continuing-with-daemon-readiness-check"
 }
 
 $dockerReadiness = Wait-DockerDaemonReady -DockerDesktopExe $dockerDesktopExe

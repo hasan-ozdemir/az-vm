@@ -4881,7 +4881,7 @@ Invoke-Test -Name "Task token replacement" -Action {
         VmAssistantPass = "secret2"
         SshPort = "444"
         RdpPort = "3389"
-        TcpPorts = @("444","3389","11434")
+        TcpPorts = @("444","3389","5985","11434")
         ResourceGroup = "rg-samplevm"
         VmName = "samplevm"
         CompanyName = "orgprofile"
@@ -4955,7 +4955,7 @@ Invoke-Test -Name "Startup profile task overrides the generic host startup token
             VmAssistantPass = 'secret2'
             SshPort = '444'
             RdpPort = '3389'
-            TcpPorts = @('444','3389','11434')
+            TcpPorts = @('444','3389','5985','11434')
             ResourceGroup = 'rg-samplevm'
             VmName = 'samplevm'
             CompanyName = 'orgprofile'
@@ -5082,7 +5082,7 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
         '132-install-vs2022community-application' = 1800
         '133-install-jaws-application' = 360
         '134-install-docker-desktop-application' = 600
-        '135-install-ollama-tool' = 480
+        '135-install-ollama-tool' = 540
         '136-configure-language-settings' = 1635
         '10001-configure-advanced-settings' = 30
         '10002-configure-startup-settings' = 120
@@ -5147,6 +5147,8 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $autologonTask = @($initActive | Where-Object { [string]$_.Name -eq '102-configure-autologon-settings' } | Select-Object -First 1)
     Assert-True -Condition (@($sysinternalsTask).Count -eq 0) -Message 'Windows init catalog must no longer include 101-install-sysinternals-tool.'
     Assert-True -Condition (@($autologonTask).Count -eq 0) -Message 'Windows init catalog must no longer include 102-configure-autologon-settings.'
+    Assert-True -Condition ($initActive.Count -ge 6) -Message 'Windows init catalog must include the WinRM init task.'
+    Assert-True -Condition ([string]$initActive[5].Name -eq '06-configure-powershell-remoting') -Message 'Windows init catalog must keep configure-powershell-remoting after firewall configuration.'
 }
 
 Invoke-Test -Name "Exec quiet mode suppresses operator chatter for one-shot commands" -Action {
@@ -5355,7 +5357,7 @@ Invoke-Test -Name "Generic task metadata assets resolve into asset copies" -Acti
             VmAssistantPass = 'secret2'
             SshPort = '444'
             RdpPort = '3389'
-            TcpPorts = @('444','3389','11434')
+            TcpPorts = @('444','3389','5985','11434')
             ResourceGroup = 'rg-samplevm'
             VmName = 'samplevm'
             CompanyName = 'orgprofile'
@@ -5693,7 +5695,7 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
         VmAssistantPass = "secret2"
         SshPort = "444"
         RdpPort = "3389"
-        TcpPorts = @("444","3389","11434")
+        TcpPorts = @("444","3389","5985","11434")
         ResourceGroup = "rg-samplevm"
         VmName = "samplevm"
         AzLocation = "austriaeast"
@@ -6440,6 +6442,9 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($guestHelperText -like '*Invoke-AzVmTaskAppStateReplayPreflight*') -Message 'Windows app-state guest helpers must preflight replay before restoring browser payloads.'
     Assert-True -Condition ($guestHelperText -like '*chrome*') -Message 'Windows app-state guest helpers must include Chrome process preflight handling.'
     Assert-True -Condition ($guestHelperText -like '*msedge*') -Message 'Windows app-state guest helpers must include Edge process preflight handling.'
+    Assert-True -Condition ($guestHelperText -like '*app-state-machine-registry-import-skip*') -Message 'Windows app-state guest helpers must downgrade non-fatal machine registry import failures to info skips.'
+    Assert-True -Condition ($guestHelperText -like '*app-state-user-registry-import-skip*') -Message 'Windows app-state guest helpers must downgrade non-fatal user registry import failures to info skips.'
+    Assert-True -Condition ($guestHelperText -like '*SkippedCount*') -Message 'Windows app-state guest helpers must report skipped replay/rollback items explicitly.'
     Assert-True -Condition ($guestHelperText -like '*app-state done => task=*') -Message 'Windows app-state guest helpers must log restore verification completion in the compact success format.'
     Assert-True -Condition ($guestHelperText -like '*app-state rollback => task=*') -Message 'Windows app-state guest helpers must log rollback completion in the compact failure format.'
     Assert-True -Condition ($captureHelperText -like '*Copy-AzVmAssetToVm*') -Message 'Shared app-state capture must upload capture plans over SSH.'
@@ -6487,7 +6492,9 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition ($jawsTaskJsonText -like '*HKCU\\Software\\Freedom Scientific*') -Message 'JAWS task-local app-state must capture the user Freedom Scientific subtree.'
     Assert-True -Condition (-not ($jawsTaskJsonText -like '*Crashpad*')) -Message 'JAWS task-local app-state must not keep the old trimmed Settings exclusions.'
     Assert-True -Condition (-not ($jawsTaskJsonText -like '*GPUCache*')) -Message 'JAWS task-local app-state must now allow the full Settings subtree.'
-    Assert-True -Condition (-not ($jawsTaskJsonText -like '*.log*')) -Message 'JAWS task-local app-state must not keep the old log-file exclusions.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*transient-focus*') -Message 'JAWS task-local app-state must exclude transient focus state.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*MessageCenter*') -Message 'JAWS task-local app-state must exclude MessageCenter runtime payloads.'
+    Assert-True -Condition ($jawsTaskJsonText -like '*.log*') -Message 'JAWS task-local app-state must exclude log-file payloads.'
     Assert-True -Condition ($localAppStateText -like '*Convert-AzVmTaskAppStateZipToPortableProfilePayload*') -Message 'Local app-state save must support portable profile payload normalization for task-owned zips.'
     Assert-True -Condition ($localAppStateText -like '*Convert-AzVmTaskCapturePlanToPortableProfileSourcePlan*') -Message 'Local app-state save must relax profile-target filtering when capturing portable payloads from the operator machine.'
     Assert-True -Condition ($localAppStateText -like '*$effectiveCapturePlan = Convert-AzVmTaskCapturePlanToPortableProfileSourcePlan*') -Message 'Local app-state save must apply the portable capture-plan rewrite before local capture.'
@@ -7027,6 +7034,122 @@ Invoke-Test -Name "Local-machine app-state helpers resolve task users and preser
     }
 }
 
+Invoke-Test -Name "Task app-state save uses current task.json rules ahead of legacy zip coverage" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-plan-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
+    $stageRoot = Join-Path $tempRoot 'windows\update'
+    $taskRoot = Join-Path $stageRoot '109-test-application'
+    $pluginRoot = Join-Path $taskRoot 'app-state'
+    try {
+        New-Item -Path $pluginRoot -ItemType Directory -Force | Out-Null
+        $taskBlock = [pscustomobject]@{
+            Name = '109-test-application'
+            TaskRootPath = [string]$taskRoot
+            DirectoryPath = [string]$taskRoot
+            StageRootDirectoryPath = [string]$stageRoot
+            RelativePath = '109-test-application\109-test-application.ps1'
+            AppStateSpec = ConvertTo-AzVmTaskFolderAppStateSpec -TaskName '109-test-application' -TaskLabel '109-test-application' -AppState ([ordered]@{
+                machineDirectories = @()
+                machineFiles = @()
+                profileDirectories = @(
+                    @{
+                        path = 'AppData\Roaming\TestApp'
+                        targetProfiles = @()
+                        excludeNames = @('Cache')
+                    }
+                )
+                profileFiles = @()
+                machineRegistryKeys = @()
+                userRegistryKeys = @(
+                    @{
+                        path = 'HKCU\Software\TestApp'
+                        targetProfiles = @()
+                    }
+                )
+            })
+        }
+
+        $scratchRoot = Join-Path $tempRoot 'legacy-payload'
+        New-Item -Path (Join-Path $scratchRoot 'payload\profile-directories\manager\LegacyApp') -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'payload\profile-directories\manager\LegacyApp\settings.json') -Value '{}' -Encoding UTF8
+        New-Item -Path (Join-Path $scratchRoot 'payload\registry\user\manager') -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'payload\registry\user\manager\HKCU_Software_LegacyApp.reg') -Value 'Windows Registry Editor Version 5.00' -Encoding Unicode
+        $legacyManifest = [ordered]@{
+            version = 3
+            taskName = '109-test-application'
+            machineDirectories = @()
+            machineFiles = @()
+            profileDirectories = @(
+                [ordered]@{
+                    sourcePath = 'payload/profile-directories/manager/LegacyApp'
+                    relativeDestinationPath = 'AppData\Roaming\LegacyApp'
+                    targetProfiles = @('manager')
+                }
+            )
+            profileFiles = @()
+            registryImports = @(
+                [ordered]@{
+                    sourcePath = 'payload/registry/user/manager/HKCU_Software_LegacyApp.reg'
+                    scope = 'user'
+                    registryPath = 'HKEY_CURRENT_USER\Software\LegacyApp'
+                    targetProfiles = @('manager')
+                }
+            )
+        }
+        Set-Content -LiteralPath (Join-Path $scratchRoot 'app-state.manifest.json') -Value ($legacyManifest | ConvertTo-Json -Depth 10) -Encoding UTF8
+        Compress-Archive -LiteralPath @(
+            (Join-Path $scratchRoot 'app-state.manifest.json'),
+            (Join-Path $scratchRoot 'payload')
+        ) -DestinationPath (Join-Path $pluginRoot 'app-state.zip') -Force
+
+        $capturePlan = Get-AzVmTaskAppStateCapturePlan -TaskBlock $taskBlock
+        $profilePaths = @($capturePlan.profileDirectories | ForEach-Object { [string]$_.path })
+        $profileFiles = @($capturePlan.profileFiles | ForEach-Object { [string]$_.path })
+        $userRegistryPaths = @($capturePlan.userRegistryKeys | ForEach-Object { [string]$_.path })
+
+        Assert-True -Condition (@($profilePaths).Count -eq 1) -Message 'Task app-state capture must prefer the current task.json profile directories when they exist.'
+        Assert-True -Condition (@($profileFiles).Count -eq 0) -Message 'Task app-state capture must not backfill legacy profile files when the current task.json does not define them.'
+        Assert-True -Condition (@($userRegistryPaths).Count -eq 1) -Message 'Task app-state capture must prefer the current task.json user-registry rules when they exist.'
+        Assert-True -Condition (@($profilePaths) -contains 'AppData\Roaming\TestApp') -Message 'Task app-state capture must keep the current task.json profile directory path.'
+        Assert-True -Condition (-not (@($profilePaths) -contains 'AppData\Roaming\LegacyApp')) -Message 'Task app-state capture must not merge stale legacy zip profile directories back into the save plan when task.json already defines them.'
+        Assert-True -Condition (@($userRegistryPaths) -contains 'HKCU\Software\TestApp') -Message 'Task app-state capture must keep the current task.json user-registry path.'
+        Assert-True -Condition (-not (@($userRegistryPaths) -contains 'HKEY_CURRENT_USER\Software\LegacyApp') -and -not (@($userRegistryPaths) -contains 'HKCU\Software\LegacyApp')) -Message 'Task app-state capture must not merge stale legacy zip registry paths back into the save plan when task.json already defines them.'
+    }
+    finally {
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+Invoke-Test -Name "App-state wildcard capture path matching resolves matched items instead of enumerating child content" -Action {
+    $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-app-state-match-' + [Guid]::NewGuid().ToString('N'))
+    $profileRoot = Join-Path $tempRoot 'Users\manager'
+    $localStatePath = Join-Path $profileRoot 'AppData\Local\Packages\TestApp_123\LocalState'
+    $settingsPath = Join-Path $profileRoot 'AppData\Local\Packages\TestApp_123\Settings'
+    $modulePath = Join-Path $RepoRoot 'modules\core\tasks\azvm-app-state-guest.psm1'
+    $module = $null
+    try {
+        New-Item -Path $localStatePath -ItemType Directory -Force | Out-Null
+        New-Item -Path $settingsPath -ItemType Directory -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $localStatePath 'settings.json') -Value '{}' -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $settingsPath 'other.json') -Value '{}' -Encoding UTF8
+
+        $module = Import-Module -Name $modulePath -Force -PassThru
+        $matches = @(& $module {
+            param($BasePath, $RelativeOrAbsolutePath)
+            Resolve-AzVmAppStateCapturePathMatches -BasePath $BasePath -RelativeOrAbsolutePath $RelativeOrAbsolutePath
+        } $profileRoot 'AppData\Local\Packages\TestApp_*\LocalState')
+
+        Assert-True -Condition (@($matches).Count -eq 1) -Message 'Wildcard app-state capture matching must resolve the matched path itself.'
+        Assert-True -Condition ([string]$matches[0] -eq (Resolve-Path -LiteralPath $localStatePath).Path) -Message 'Wildcard app-state capture matching must return the matched LocalState directory path.'
+    }
+    finally {
+        if ($null -ne $module) {
+            Remove-Module -ModuleInfo $module -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Local-machine app-state restore rolls back when verification fails" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-local-app-state-rollback-' + [Guid]::NewGuid().ToString('N'))
     New-Item -Path $tempRoot -ItemType Directory -Force | Out-Null
@@ -7337,6 +7460,67 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
     }
 }
 
+Invoke-Test -Name "Windows PowerShell remoting init and summary contract" -Action {
+    $remotingTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage init -TaskName '06-configure-powershell-remoting'
+    $remotingTaskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage init -TaskName '06-configure-powershell-remoting'
+    $advancedTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10001-configure-advanced-settings'
+    $guestRuntimePath = Join-Path $RepoRoot 'modules\platform\azvm-guest-runtime.ps1'
+    $mainCommandPath = Join-Path $RepoRoot 'modules\commands\pipeline\azvm-main-command.ps1'
+    $platformDefaultsPath = Join-Path $RepoRoot 'modules\core\platform\azvm-platform-defaults.ps1'
+    $envExamplePath = Join-Path $RepoRoot '.env.example'
+
+    Assert-True -Condition (Test-Path -LiteralPath $remotingTaskPath) -Message 'PowerShell remoting init task file was not found.'
+    Assert-True -Condition (Test-Path -LiteralPath $remotingTaskJsonPath) -Message 'PowerShell remoting init task json was not found.'
+    Assert-True -Condition (Test-Path -LiteralPath $advancedTaskPath) -Message 'Advanced settings task file was not found.'
+
+    $remotingTaskText = [string](Get-Content -LiteralPath $remotingTaskPath -Raw)
+    $remotingTaskJsonText = [string](Get-Content -LiteralPath $remotingTaskJsonPath -Raw)
+    $advancedTaskText = [string](Get-Content -LiteralPath $advancedTaskPath -Raw)
+    $guestRuntimeText = [string](Get-Content -LiteralPath $guestRuntimePath -Raw)
+    $mainCommandText = [string](Get-Content -LiteralPath $mainCommandPath -Raw)
+    $platformDefaultsText = [string](Get-Content -LiteralPath $platformDefaultsPath -Raw)
+    $envExampleText = [string](Get-Content -LiteralPath $envExamplePath -Raw)
+
+    foreach ($fragment in @(
+        'Enable-PSRemoting -SkipNetworkProfileCheck -Force',
+        'Set-Service -Name WinRM -StartupType Automatic',
+        'Start-Service -Name WinRM',
+        'Remote Management Users',
+        'LocalAccountTokenFilterPolicy',
+        'WSMan:\localhost\Service\Auth\Basic',
+        'WSMan:\localhost\Service\AllowUnencrypted',
+        'Test-WSMan -ComputerName localhost',
+        'powershell-remoting-group-ready:',
+        'powershell-remoting-ready:'
+    )) {
+        Assert-True -Condition ($remotingTaskText -like ('*' + [string]$fragment + '*')) -Message ("PowerShell remoting init task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    Assert-True -Condition ($remotingTaskJsonText -like '*"priority": 6*') -Message 'PowerShell remoting init task priority must stay 6.'
+    Assert-True -Condition ($remotingTaskJsonText -like '*05-configure-firewall-settings*') -Message 'PowerShell remoting init task must depend on firewall configuration.'
+    Assert-True -Condition ($platformDefaultsText -like '*5985*') -Message 'Default TCP ports must include 5985 for WinRM.'
+    Assert-True -Condition ($envExampleText -like '*5985*') -Message '.env.example TCP port defaults must include 5985 for WinRM.'
+
+    foreach ($fragment in @(
+        'PowerShell remoting commands:',
+        'TrustedHostsCommand',
+        'EnterPSSessionCommand',
+        'InvokeCommand',
+        '5985'
+    )) {
+        Assert-True -Condition (($guestRuntimeText + "`n" + $mainCommandText) -like ('*' + [string]$fragment + '*')) -Message ("Connection summary must include PowerShell remoting fragment '{0}'." -f [string]$fragment)
+    }
+
+    foreach ($fragment in @(
+        'EnableLUA',
+        'ConsentPromptBehaviorAdmin',
+        'PromptOnSecureDesktop',
+        'uac-silent-store-safe'
+    )) {
+        Assert-True -Condition ($advancedTaskText -like ('*' + [string]$fragment + '*')) -Message ("Advanced settings task must include fragment '{0}'." -f [string]$fragment)
+    }
+}
+
 Invoke-Test -Name "Windows auto-start task applies the approved startup profile additively for manager and assistant" -Action {
     $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '10002-configure-startup-settings'
     $taskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '10002-configure-startup-settings'
@@ -7368,6 +7552,7 @@ Invoke-Test -Name "Windows auto-start task applies the approved startup profile 
         'Clear-OwnedStartupArtifacts',
         'autostart-info-skip:',
         'autostart-profile-materialized:',
+        'profile materialization did not complete within the bounded wait',
         'autostart-managed =>',
         'autostart-method =>',
         'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run',
@@ -7452,7 +7637,8 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Applying system preferred UI language',
         'Collecting final language verification output',
         'language-capabilities-final => {0} => {1}',
-        'Assert-LanguageStateReadyForRestart'
+        'Assert-LanguageStateReadyForRestart',
+        'direct apply for ''{0}'' is queued and will finish after the next restart or sign-in.'
     )) {
         Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Language settings task must include fragment '{0}'." -f [string]$fragment)
     }
@@ -7470,8 +7656,10 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
     }
 
     Assert-True -Condition ($taskJsonText -like '*"timeout": 1635*') -Message 'Language settings task must keep the normalized timeout 1635.'
+    Assert-True -Condition ($taskText -like '*-WaitTimeoutSeconds 120*') -Message 'Language settings task must short-circuit the SYSTEM language worker after the reduced bounded wait.'
     Assert-True -Condition ($taskText -like '*interactive-worker-timeout-recovered=true*') -Message 'Language settings task must recover timeout cases when capability state is already satisfied.'
     Assert-True -Condition ($taskText -like '*interactive-worker-queued=true*') -Message 'Language settings task must accept the queued background install state when the SYSTEM worker is still running at timeout.'
+    Assert-True -Condition ($taskText -like '*$queuedInstallAccepted = (*') -Message 'Language settings task must explicitly preserve the queued-install verification path after the interactive worker returns.'
     Assert-True -Condition (-not ($taskJsonText -like '*"appState"*')) -Message 'Language settings task must stay out of task-local app-state snapshot and restore.'
 
     foreach ($fragment in @(
@@ -7512,7 +7700,9 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'TASK_REBOOT_REQUIRED:configure-windows-experience',
         'regional-current-user-begin',
         'regional-assistant-start:',
-        'regional-culture-effective:'
+        'regional-culture-effective:',
+        'registry-preload-skip:',
+        'registry-time-format-skip:'
     )) {
         Assert-True -Condition ($uxTaskText -like ('*' + [string]$fragment + '*')) -Message ("UX task must now own regional fragment '{0}'." -f [string]$fragment)
     }

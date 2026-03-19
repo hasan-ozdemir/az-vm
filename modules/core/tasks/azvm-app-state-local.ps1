@@ -1822,7 +1822,19 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             -AssistantUser '' `
             -ProfileTargets @($profileTargets)
 
-        $verifyReport = Test-AzVmTaskAppStateLocalRestoreOperations -Operations @($operations)
+        if ($null -ne $replayResult -and $replayResult.PSObject.Properties.Match('VerifyItems').Count -gt 0) {
+            $verifyItems = @($replayResult.VerifyItems)
+            $verifyReport = [pscustomobject]@{
+                CheckedCount = @($verifyItems).Count
+                MismatchCount = @(@($verifyItems | Where-Object { [string]$_.Status -eq 'mismatch' })).Count
+                SkippedCount = @(@($verifyItems | Where-Object { [string]$_.Status -eq 'skipped' })).Count
+                Succeeded = (@(@($verifyItems | Where-Object { [string]$_.Status -eq 'mismatch' })).Count -eq 0)
+                Items = $verifyItems
+            }
+        }
+        else {
+            $verifyReport = Test-AzVmTaskAppStateLocalRestoreOperations -Operations @($operations)
+        }
         $verifyReportDocument = [ordered]@{
             taskName = [string]$taskName
             checkedAtUtc = [string][DateTime]::UtcNow.ToString('yyyy-MM-dd HH:mm:ss')
@@ -1830,6 +1842,7 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             succeeded = [bool]$verifyReport.Succeeded
             checkedCount = [int]$verifyReport.CheckedCount
             mismatchCount = [int]$verifyReport.MismatchCount
+            skippedCount = [int]$(if ($verifyReport.PSObject.Properties.Match('SkippedCount').Count -gt 0) { $verifyReport.SkippedCount } else { 0 })
             items = @($verifyReport.Items)
         }
         Set-Content -LiteralPath $verifyReportPath -Value (ConvertTo-JsonCompat -InputObject $verifyReportDocument -Depth 10) -Encoding UTF8
@@ -1843,6 +1856,7 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             succeeded = $true
             checkedCount = [int]$verifyReport.CheckedCount
             mismatchCount = [int]$verifyReport.MismatchCount
+            skippedCount = [int]$(if ($verifyReport.PSObject.Properties.Match('SkippedCount').Count -gt 0) { $verifyReport.SkippedCount } else { 0 })
         }
         Set-Content -LiteralPath $journalPath -Value (ConvertTo-JsonCompat -InputObject $journal -Depth 10) -Encoding UTF8
 
@@ -1866,11 +1880,13 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             succeeded = $(if ($null -ne $verifyReport) { [bool]$verifyReport.Succeeded } else { $false })
             checkedCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.CheckedCount } else { 0 })
             mismatchCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.MismatchCount } else { 0 })
+            skippedCount = $(if ($null -ne $verifyReport -and $verifyReport.PSObject.Properties.Match('SkippedCount').Count -gt 0) { [int]$verifyReport.SkippedCount } else { 0 })
             error = [string]$_.Exception.Message
             rollbackAttempted = $true
             rollbackSucceeded = [bool]$rollbackResult.Succeeded
             rollbackCheckedCount = [int]$rollbackResult.CheckedCount
             rollbackMismatchCount = [int]$rollbackResult.MismatchCount
+            rollbackSkippedCount = [int]$(if ($rollbackResult.PSObject.Properties.Match('SkippedCount').Count -gt 0) { $rollbackResult.SkippedCount } else { 0 })
             items = $(if ($null -ne $verifyReport) { @($verifyReport.Items) } else { @() })
             rollbackItems = @($rollbackResult.Items)
         }
@@ -1883,11 +1899,13 @@ function Restore-AzVmTaskAppStateToLocalMachine {
             succeeded = $(if ($null -ne $verifyReport) { [bool]$verifyReport.Succeeded } else { $false })
             checkedCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.CheckedCount } else { 0 })
             mismatchCount = $(if ($null -ne $verifyReport) { [int]$verifyReport.MismatchCount } else { 0 })
+            skippedCount = $(if ($null -ne $verifyReport -and $verifyReport.PSObject.Properties.Match('SkippedCount').Count -gt 0) { [int]$verifyReport.SkippedCount } else { 0 })
         }
         $journal.rollback = [ordered]@{
             succeeded = [bool]$rollbackResult.Succeeded
             checkedCount = [int]$rollbackResult.CheckedCount
             mismatchCount = [int]$rollbackResult.MismatchCount
+            skippedCount = [int]$(if ($rollbackResult.PSObject.Properties.Match('SkippedCount').Count -gt 0) { $rollbackResult.SkippedCount } else { 0 })
         }
         Set-Content -LiteralPath $journalPath -Value (ConvertTo-JsonCompat -InputObject $journal -Depth 10) -Encoding UTF8
         if (-not [bool]$rollbackResult.Succeeded) {

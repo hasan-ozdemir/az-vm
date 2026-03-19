@@ -90,18 +90,52 @@ function Get-OllamaApiVersion {
         [int]$TimeoutSeconds = 5
     )
 
-    foreach ($uri in @([string[]]$taskConfig.OllamaApiVersionUris)) {
-        if ([string]::IsNullOrWhiteSpace([string]$uri)) {
+    $timeoutMilliseconds = [Math]::Max(1000, ([int]$TimeoutSeconds * 1000))
+    foreach ($uriText in @([string[]]$taskConfig.OllamaApiVersionUris)) {
+        if ([string]::IsNullOrWhiteSpace([string]$uriText)) {
             continue
         }
 
         try {
-            $response = Invoke-RestMethod -Method Get -Uri ([string]$uri) -TimeoutSec $TimeoutSeconds -ErrorAction Stop
-            if ($null -ne $response -and -not [string]::IsNullOrWhiteSpace([string]$response.version)) {
-                return [string]$response.version
+            $uri = [Uri][string]$uriText
+        }
+        catch {
+            continue
+        }
+
+        $port = if ([int]$uri.Port -gt 0) { [int]$uri.Port } elseif ([string]::Equals([string]$uri.Scheme, 'https', [System.StringComparison]::OrdinalIgnoreCase)) { 443 } else { 80 }
+        if (-not (Test-TcpPortReachable -HostName ([string]$uri.Host) -Port $port -TimeoutMilliseconds ([Math]::Min(1000, $timeoutMilliseconds)))) {
+            continue
+        }
+
+        $request = $null
+        $response = $null
+        $stream = $null
+        $reader = $null
+        try {
+            $request = [System.Net.HttpWebRequest]::Create($uri)
+            $request.Method = 'GET'
+            $request.Proxy = $null
+            $request.Timeout = $timeoutMilliseconds
+            $request.ReadWriteTimeout = $timeoutMilliseconds
+            $request.AutomaticDecompression = [System.Net.DecompressionMethods]::GZip -bor [System.Net.DecompressionMethods]::Deflate
+            $response = $request.GetResponse()
+            $stream = $response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream)
+            $body = [string]$reader.ReadToEnd()
+            if (-not [string]::IsNullOrWhiteSpace([string]$body)) {
+                $parsedResponse = $body | ConvertFrom-Json -ErrorAction SilentlyContinue
+                if ($null -ne $parsedResponse -and -not [string]::IsNullOrWhiteSpace([string]$parsedResponse.version)) {
+                    return [string]$parsedResponse.version
+                }
             }
         }
         catch {
+        }
+        finally {
+            if ($null -ne $reader) { try { $reader.Dispose() } catch { } }
+            if ($null -ne $stream) { try { $stream.Dispose() } catch { } }
+            if ($null -ne $response) { try { $response.Dispose() } catch { } }
         }
     }
 

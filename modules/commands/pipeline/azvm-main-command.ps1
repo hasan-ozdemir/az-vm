@@ -45,7 +45,7 @@ function Write-AzVmWorkflowSummary {
         -SshConnectTimeoutSeconds $SshConnectTimeoutSeconds
 
     $connectionModel = if ([bool]$PlatformDefaults.IncludeRdp) {
-        Get-AzVmConnectionDisplayModel -Context $Context -ManagerUser ([string]$Context.VmUser) -AssistantUser ([string]$Context.VmAssistantUser) -SshPort ([string]$Context.SshPort) -RdpPort ([string]$Context.RdpPort) -IncludeRdp
+        Get-AzVmConnectionDisplayModel -Context $Context -ManagerUser ([string]$Context.VmUser) -AssistantUser ([string]$Context.VmAssistantUser) -SshPort ([string]$Context.SshPort) -RdpPort ([string]$Context.RdpPort) -PowerShellPort '5985' -IncludeRdp -IncludePowerShellRemoting
     }
     else {
         Get-AzVmConnectionDisplayModel -Context $Context -ManagerUser ([string]$Context.VmUser) -AssistantUser ([string]$Context.VmAssistantUser) -SshPort ([string]$Context.SshPort)
@@ -63,6 +63,16 @@ function Write-AzVmWorkflowSummary {
         foreach ($rdpConnection in @($connectionModel.RdpConnections)) {
             Write-Host ("- {0}: {1}" -f ([string]$rdpConnection.User), ([string]$rdpConnection.Command))
             Write-Host ("  username: {0}" -f ([string]$rdpConnection.Username))
+        }
+    }
+
+    if ($connectionModel.Contains('PowerShellConnections')) {
+        Write-Host "PowerShell remoting commands:"
+        foreach ($psConnection in @($connectionModel.PowerShellConnections)) {
+            Write-Host ("- {0}: {1}" -f ([string]$psConnection.User), ([string]$psConnection.EnterPSSessionCommand))
+            Write-Host ("  username: {0}" -f ([string]$psConnection.Username))
+            Write-Host ("  trusted-hosts: {0}" -f ([string]$psConnection.TrustedHostsCommand))
+            Write-Host ("  invoke-command: {0}" -f ([string]$psConnection.InvokeCommand))
         }
     }
 }

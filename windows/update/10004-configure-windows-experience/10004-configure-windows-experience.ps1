@@ -226,6 +226,16 @@ function Set-RegistryValueString {
     Set-AzVmRegistryValue -Path $Path -Name $Name -Value ([string]$Value) -Kind String
 }
 
+function Test-OptionalMountedRegistryRoot {
+    param([string]$RootPath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$RootPath)) {
+        return $false
+    }
+
+    return ($RootPath -match '(?i)^Registry::HKEY_USERS\\AzVm')
+}
+
 function Get-SystemLocaleNameSafe {
     if (Get-Command Get-WinSystemLocale -ErrorAction SilentlyContinue) {
         try {
@@ -296,22 +306,32 @@ function Set-RegistryPreloadKeyboardState {
         return
     }
 
-    $preloadPath = Join-Path $RootPath 'Keyboard Layout\Preload'
-    $substitutesPath = Join-Path $RootPath 'Keyboard Layout\Substitutes'
-    if (-not (Test-Path -LiteralPath $preloadPath)) {
-        New-Item -Path $preloadPath -Force | Out-Null
-    }
+    try {
+        $preloadPath = Join-Path $RootPath 'Keyboard Layout\Preload'
+        $substitutesPath = Join-Path $RootPath 'Keyboard Layout\Substitutes'
+        if (-not (Test-Path -LiteralPath $preloadPath)) {
+            New-Item -Path $preloadPath -Force | Out-Null
+        }
 
-    $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction Stop
-    foreach ($property in @($preloadItem.Property)) {
-        if ([string]$property -ne '1') {
-            Remove-ItemProperty -Path $preloadPath -Name ([string]$property) -ErrorAction SilentlyContinue
+        $preloadItem = Get-Item -LiteralPath $preloadPath -ErrorAction Stop
+        foreach ($property in @($preloadItem.Property)) {
+            if ([string]$property -ne '1') {
+                Remove-ItemProperty -Path $preloadPath -Name ([string]$property) -ErrorAction SilentlyContinue
+            }
+        }
+
+        Set-RegistryValueString -Path $preloadPath -Name '1' -Value $turkishKeyboardLayout
+        if (Test-Path -LiteralPath $substitutesPath) {
+            Remove-Item -LiteralPath $substitutesPath -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
+    catch {
+        if ((Test-OptionalMountedRegistryRoot -RootPath $RootPath) -and $_.Exception.Message -match '(?i)requested registry access is not allowed|access is denied') {
+            Add-Detail ("registry-preload-skip:{0}:{1}" -f [string]$RootPath, $_.Exception.Message)
+            return
+        }
 
-    Set-RegistryValueString -Path $preloadPath -Name '1' -Value $turkishKeyboardLayout
-    if (Test-Path -LiteralPath $substitutesPath) {
-        Remove-Item -LiteralPath $substitutesPath -Recurse -Force -ErrorAction SilentlyContinue
+        throw
     }
 }
 
@@ -322,12 +342,22 @@ function Set-Registry24HourTimeState {
         return
     }
 
-    $internationalPath = Join-Path $RootPath 'Control Panel\International'
-    Set-RegistryValueString -Path $internationalPath -Name 'LocaleName' -Value $turkishCulture
-    Set-RegistryValueString -Path $internationalPath -Name 'sShortTime' -Value $shortTimePattern
-    Set-RegistryValueString -Path $internationalPath -Name 'sTimeFormat' -Value $longTimePattern
-    Set-RegistryValueString -Path $internationalPath -Name 'iTime' -Value '1'
-    Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
+    try {
+        $internationalPath = Join-Path $RootPath 'Control Panel\International'
+        Set-RegistryValueString -Path $internationalPath -Name 'LocaleName' -Value $turkishCulture
+        Set-RegistryValueString -Path $internationalPath -Name 'sShortTime' -Value $shortTimePattern
+        Set-RegistryValueString -Path $internationalPath -Name 'sTimeFormat' -Value $longTimePattern
+        Set-RegistryValueString -Path $internationalPath -Name 'iTime' -Value '1'
+        Set-RegistryValueString -Path $internationalPath -Name 'iTLZero' -Value '1'
+    }
+    catch {
+        if ((Test-OptionalMountedRegistryRoot -RootPath $RootPath) -and $_.Exception.Message -match '(?i)requested registry access is not allowed|access is denied') {
+            Add-Detail ("registry-time-format-skip:{0}:{1}" -f [string]$RootPath, $_.Exception.Message)
+            return
+        }
+
+        throw
+    }
 }
 
 function Set-WelcomeScreenAndDefaultUserRegionalState {

@@ -2,6 +2,19 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.375 - 2026-03-19
+
+### Summary
+This release closes the Windows app-state replay warning cleanup and adds operator-visible WinRM support to the managed Windows contract. The replay engine now treats optional locked and unavailable state as info-only skips, the warning-producing Windows task-local plugins were refreshed to the current portable model, the Windows init catalog now includes `06-configure-powershell-remoting`, `vm-summary` now prints PowerShell remoting commands beside SSH and RDP, and the latest full live `vm-update -> vm-summary` run completed with zero warnings and zero signal warnings.
+
+### Highlights
+- Hardened Windows app-state replay, verification, and rollback so in-use files, unavailable user hives, and optional access-denied targets no longer degrade the maintained update stage into false warnings.
+- Refreshed the maintained task-local app-state payload handling for OneDrive, AnyDesk, Teams, WhatsApp, Google Drive, and JAWS, and fixed stale zip replacement during live `task --save-app-state` refreshes.
+- Added `06-configure-powershell-remoting` to Windows `vm-init`, enabled WinRM on TCP `5985`, and rendered ready-to-run `Enter-PSSession` and `Invoke-Command` examples in the Windows summary output.
+- Switched the Windows advanced-settings task to a Store-safe silent UAC model that keeps `EnableLUA=1` while suppressing admin prompts.
+- Tuned the current Docker Desktop, Ollama, and language follow-up paths so Docker keeps checking daemon readiness when the interactive process is still materializing, Ollama probes read the API more reliably, and language servicing accepts queued success sooner instead of waiting at the old upper bound.
+- Revalidated the full live closure path: the final `update --auto --windows --perf --step-from=vm-update --step-to=vm-summary` run reached `warning=0`, `signal-warning=0`, and `error=0`, and WinRM remoting succeeded immediately afterward with a real `Invoke-Command`.
+
 ## Release 2026.3.19.374 - 2026-03-19
 
 ### Summary

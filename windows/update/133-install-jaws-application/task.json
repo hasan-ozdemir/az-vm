@@ -12,9 +12,19 @@
         "targetProfiles": [
           "manager"
         ],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
+        "excludeNames": [
+          "transient-focus",
+          "transient-session",
+          "MessageCenter"
+        ],
+        "excludePathPatterns": [
+          "*\\MessageCenter\\*"
+        ],
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp",
+          "*.log"
+        ]
       }
     ],
     "profileFiles": [],

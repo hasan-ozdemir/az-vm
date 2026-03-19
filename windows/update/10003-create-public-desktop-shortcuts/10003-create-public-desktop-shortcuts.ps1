@@ -877,16 +877,36 @@ function Ensure-ManagedUserStoreAppRegistration {
 
         $registrationTaskName = ("{0}-{1}-appid-repair" -f [string]$RepairTaskName, [string]$registrationTarget.Label)
         try {
-            $result = Invoke-AzVmUserAppxRegistrationRepair `
-                -TaskName $registrationTaskName `
-                -RunAsUser ([string]$registrationTarget.UserName) `
-                -RunAsPassword ([string]$registrationTarget.Password) `
-                -HelperPath $interactiveHelperPath `
-                -PackageManifestPath $manifestPath `
-                -AppIdPatterns $appIdPatterns `
-                -WaitTimeoutSeconds 45 `
-                -HeartbeatSeconds 10 `
-                -RunAsMode 'password'
+            $result = $null
+            foreach ($attempt in @(
+                [pscustomobject]@{ WaitTimeoutSeconds = 45; HeartbeatSeconds = 10 },
+                [pscustomobject]@{ WaitTimeoutSeconds = 90; HeartbeatSeconds = 15 }
+            )) {
+                try {
+                    $result = Invoke-AzVmUserAppxRegistrationRepair `
+                        -TaskName $registrationTaskName `
+                        -RunAsUser ([string]$registrationTarget.UserName) `
+                        -RunAsPassword ([string]$registrationTarget.Password) `
+                        -HelperPath $interactiveHelperPath `
+                        -PackageManifestPath $manifestPath `
+                        -AppIdPatterns $appIdPatterns `
+                        -WaitTimeoutSeconds ([int]$attempt.WaitTimeoutSeconds) `
+                        -HeartbeatSeconds ([int]$attempt.HeartbeatSeconds) `
+                        -RunAsMode 'password'
+                    break
+                }
+                catch {
+                    $repairAttemptError = [string]$_.Exception.Message
+                    $isLastAttempt = ([int]$attempt.WaitTimeoutSeconds -eq 90)
+                    if ($repairAttemptError -match '(?i)Interactive worker timed out without a result file' -and -not $isLastAttempt) {
+                        Write-Host ("public-shortcut-user-appid-retry: {0} => {1} => retrying after interactive timeout" -f [string]$DisplayName, [string]$registrationTarget.Label) -ForegroundColor DarkCyan
+                        continue
+                    }
+
+                    throw
+                }
+            }
+
             $summary = if ($result.PSObject.Properties.Match('Summary').Count -gt 0) { [string]$result.Summary } else { 'completed' }
             Write-Host ("public-shortcut-user-appid-repair: {0} => {1} => {2}" -f [string]$DisplayName, [string]$registrationTarget.Label, $summary)
         }
@@ -1065,6 +1085,33 @@ function Get-ShortcutRunAsAdministratorFlag {
 
     $linkFlags = [System.BitConverter]::ToUInt32($bytes, 0x14)
     return (($linkFlags -band [uint32]$shortcutRunAsAdminFlag) -ne 0)
+}
+
+function Resolve-WrittenShortcutPath {
+    param(
+        [string]$ExpectedShortcutPath,
+        [string]$OutputDirectory,
+        [string]$ShortcutName
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$ExpectedShortcutPath) -and (Test-Path -LiteralPath $ExpectedShortcutPath)) {
+        return [string]$ExpectedShortcutPath
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$OutputDirectory) -or -not (Test-Path -LiteralPath $OutputDirectory)) {
+        return [string]$ExpectedShortcutPath
+    }
+
+    $shortcutNameKey = Get-NormalizedShortcutNameKey -Value $ShortcutName
+    foreach ($candidate in @(Get-ChildItem -LiteralPath $OutputDirectory -Filter '*.lnk' -File -ErrorAction SilentlyContinue)) {
+        $candidateBaseName = [System.IO.Path]::GetFileNameWithoutExtension([string]$candidate.Name)
+        $candidateKey = Get-NormalizedShortcutNameKey -Value $candidateBaseName
+        if ([string]::Equals([string]$candidateKey, [string]$shortcutNameKey, [System.StringComparison]::Ordinal)) {
+            return [string]$candidate.FullName
+        }
+    }
+
+    return [string]$ExpectedShortcutPath
 }
 
 function Test-ShortcutValueMatch {
@@ -1311,11 +1358,16 @@ function New-ShortcutFromSpec {
     $shortcut.WindowStyle = [int]$Spec.ShowCmd
     $shortcut.Save()
 
-    if ([bool]$Spec.RunAsAdmin) {
-        Set-ShortcutRunAsAdministratorFlag -ShortcutPath $shortcutPath -Enabled $true
+    $writtenShortcutPath = Resolve-WrittenShortcutPath -ExpectedShortcutPath $shortcutPath -OutputDirectory $OutputDirectory -ShortcutName $name
+    if (-not [string]::Equals([string]$writtenShortcutPath, [string]$shortcutPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host ("shortcut-path-reconciled: {0} => {1}" -f [string]$name, [string]$writtenShortcutPath)
     }
 
-    $writtenDetails = Get-ShortcutDetails -ShortcutPath $shortcutPath
+    if ([bool]$Spec.RunAsAdmin) {
+        Set-ShortcutRunAsAdministratorFlag -ShortcutPath $writtenShortcutPath -Enabled $true
+    }
+
+    $writtenDetails = Get-ShortcutDetails -ShortcutPath $writtenShortcutPath
     if (-not (Test-ShortcutValueMatch -ExpectedValue $targetPath -ActualValue ([string]$writtenDetails.TargetPath))) {
         throw ("Shortcut target validation failed for '{0}'." -f $name)
     }
@@ -1331,7 +1383,7 @@ function New-ShortcutFromSpec {
     if ([int]$writtenDetails.WindowStyle -ne [int]$Spec.ShowCmd) {
         throw ("Shortcut window style validation failed for '{0}'." -f $name)
     }
-    if ([bool]$Spec.RunAsAdmin -ne (Get-ShortcutRunAsAdministratorFlag -ShortcutPath $shortcutPath)) {
+    if ([bool]$Spec.RunAsAdmin -ne (Get-ShortcutRunAsAdministratorFlag -ShortcutPath $writtenShortcutPath)) {
         throw ("Shortcut admin flag validation failed for '{0}'." -f $name)
     }
 

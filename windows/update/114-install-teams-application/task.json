@@ -21,7 +21,10 @@
         "targetProfiles": [],
         "excludeNames": [],
         "excludePathPatterns": [],
-        "excludeFilePatterns": []
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp"
+        ]
       },
       {
         "path": "AppData\\Local\\Packages\\MSTeams_*\\LocalState",

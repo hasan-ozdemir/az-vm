@@ -3,6 +3,27 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.375] - 2026-03-19
+
+### Changed
+- Changed the Windows app-state replay contract so optional locked, in-use, access-denied, missing-parent, and unavailable-hive surfaces are now treated as info-only skips instead of warning-producing failures, with skip-aware verification and rollback behavior.
+- Changed the default Windows TCP port contract and summary rendering so managed Windows flows now include WinRM over `5985` and print ready-to-run PowerShell remoting commands beside the existing SSH and RDP commands.
+- Changed the Windows advanced-settings contract so UAC notifications are silenced through a Store-safe policy model instead of disabling `EnableLUA`, which preserves Microsoft Store and AppX compatibility.
+
+### Fixed
+- Fixed stale task-local app-state replay drift across the warning-producing Windows update tasks by refreshing capture precedence, removing stale fetched zips before live saves, and normalizing the maintained plugin manifests for OneDrive, AnyDesk, Teams, WhatsApp, Google Drive, and JAWS to the current portable replay model.
+- Fixed the Windows `10004-configure-windows-experience` and Windows summary readback paths so optional mounted-hive and missing-assistant-hive cases now degrade to explicit info output instead of false warning noise.
+- Fixed the Windows `10002-configure-startup-settings` registry-unload cleanup path so isolated and full runs no longer emit the stray `The parameter is incorrect` warning while processing mounted profile hives.
+- Fixed the Windows `10003-create-public-desktop-shortcuts` Store AppID repair path with a bounded retry so the assistant-side Teams registration no longer causes a signal-warning during a full natural-order `vm-update` run.
+- Fixed the Windows init catalog by adding `06-configure-powershell-remoting`, which enables WinRM over HTTP `5985`, keeps local-account remoting usable for `manager`, and verifies listener and service readiness inside `vm-init`.
+- Fixed the Windows Docker Desktop, Ollama, and language-maintenance follow-up paths so Docker no longer fails only because the interactive process is not yet visible, Ollama version probes use a more reliable TCP-gated HTTP read path, and the language task accepts queued background install state sooner after a shorter bounded wait.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 160, Failed: 0`.
+- Revalidated `tests\powershell-compatibility-check.ps1`, `tests\code-quality-check.ps1`, and `tests\documentation-contract-check.ps1`; all passed locally after the replay, WinRM, and UAC contract changes.
+- Revalidated live isolated runs for `vm-init` tasks `05` and `06`, plus `vm-update` tasks `10001`, `10002`, `10003`, `10004`, `104`, `109`, `114`, `119`, `129`, and `133`; each completed with `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated a full live `update --auto --windows --perf --step-from=vm-update --step-to=vm-summary` run on the active managed Windows target and confirmed `VM update stage summary: success=45, failed=0, warning=0, signal-warning=0, error=0, reboot=2, final-restart=1`, with WinRM remoting verified afterward through a successful `Invoke-Command`.
+
 ## [2026.3.19.374] - 2026-03-19
 
 ### Fixed

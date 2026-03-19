@@ -580,6 +580,9 @@ function Copy-AzVmAssetFromVm {
     if (-not [string]::IsNullOrWhiteSpace([string]$localParent) -and -not (Test-Path -LiteralPath $localParent)) {
         New-Item -Path $localParent -ItemType Directory -Force | Out-Null
     }
+    if (Test-Path -LiteralPath $LocalPath) {
+        Remove-Item -LiteralPath $LocalPath -Force -ErrorAction SilentlyContinue
+    }
 
     if (Test-AzVmWindowsRemotePath -RemotePath $RemotePath) {
         try {

@@ -87,6 +87,18 @@ function Ensure-BcdDepAlwaysOff {
     Write-Host 'advanced-step-ok: dep-always-off'
 }
 
+function Ensure-StoreSafeSilentUac {
+    $uacPolicyPath = 'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+    Set-RegistryValue -Path $uacPolicyPath -Name 'EnableLUA' -Value 1 -Kind DWord
+    Set-RegistryValue -Path $uacPolicyPath -Name 'ConsentPromptBehaviorAdmin' -Value 0 -Kind DWord
+    Set-RegistryValue -Path $uacPolicyPath -Name 'PromptOnSecureDesktop' -Value 0 -Kind DWord
+
+    Assert-RegistryValue -Path $uacPolicyPath -Name 'EnableLUA' -ExpectedValue 1
+    Assert-RegistryValue -Path $uacPolicyPath -Name 'ConsentPromptBehaviorAdmin' -ExpectedValue 0
+    Assert-RegistryValue -Path $uacPolicyPath -Name 'PromptOnSecureDesktop' -ExpectedValue 0
+    Write-Host 'advanced-step-ok: uac-silent-store-safe'
+}
+
 $visualEffectsPath = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
 Set-RegistryValue -Path $visualEffectsPath -Name "VisualFXSetting" -Value 2 -Kind DWord
 Write-Host "advanced-step-ok: visual-effects-best-performance"
@@ -110,6 +122,7 @@ Write-Host "advanced-step-ok: crash-dumps-disabled"
 
 Ensure-BcdTimeoutZero
 Ensure-BcdDepAlwaysOff
+Ensure-StoreSafeSilentUac
 
 Assert-RegistryValue -Path $visualEffectsPath -Name "VisualFXSetting" -ExpectedValue 2
 Assert-RegistryValue -Path $priorityControlPath -Name "Win32PrioritySeparation" -ExpectedValue 24

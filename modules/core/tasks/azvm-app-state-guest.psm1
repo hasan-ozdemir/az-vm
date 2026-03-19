@@ -475,11 +475,19 @@ function Copy-AzVmAppStateFile {
     Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $DestinationPath -Parent)
     try {
         Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force -ErrorAction Stop
-        return $true
+        return [pscustomobject]@{
+            Copied = $true
+            Skipped = $false
+            Reason = ''
+        }
     }
     catch {
         Write-Host ("app-state-file-copy-skip => source={0}; destination={1}; reason={2}" -f [string]$SourcePath, [string]$DestinationPath, $_.Exception.Message)
-        return $false
+        return [pscustomobject]@{
+            Copied = $false
+            Skipped = $true
+            Reason = [string]$_.Exception.Message
+        }
     }
 }
 
@@ -490,18 +498,122 @@ function Copy-AzVmAppStateDirectoryContents {
     )
 
     Ensure-AzVmAppStateDirectory -Path $DestinationPath
-    $copiedAny = $false
+    $copiedCount = 0
+    $skippedCount = 0
+    $firstSkipReason = ''
     foreach ($item in @(Get-ChildItem -LiteralPath $SourcePath -Force -ErrorAction SilentlyContinue)) {
         try {
             Copy-Item -LiteralPath $item.FullName -Destination $DestinationPath -Recurse -Force -ErrorAction Stop
-            $copiedAny = $true
+            $copiedCount++
         }
         catch {
             Write-Host ("app-state-directory-copy-skip => source={0}; destination={1}; reason={2}" -f [string]$item.FullName, [string]$DestinationPath, $_.Exception.Message)
+            $skippedCount++
+            if ([string]::IsNullOrWhiteSpace([string]$firstSkipReason)) {
+                $firstSkipReason = [string]$_.Exception.Message
+            }
         }
     }
 
-    return $copiedAny
+    return [pscustomobject]@{
+        CopiedAny = ($copiedCount -gt 0)
+        CopiedCount = [int]$copiedCount
+        SkippedAny = ($skippedCount -gt 0)
+        SkippedCount = [int]$skippedCount
+        Reason = [string]$firstSkipReason
+    }
+}
+
+function Set-AzVmAppStateOperationReplayStatus {
+    param(
+        [AllowNull()]$Operation,
+        [string]$Status,
+        [string]$Reason = ''
+    )
+
+    if ($null -eq $Operation) {
+        return
+    }
+
+    if ($Operation.PSObject.Properties.Match('ReplayStatus').Count -lt 1) {
+        $Operation | Add-Member -NotePropertyName 'ReplayStatus' -NotePropertyValue ([string]$Status)
+    }
+    else {
+        $Operation.ReplayStatus = [string]$Status
+    }
+
+    if ($Operation.PSObject.Properties.Match('ReplayReason').Count -lt 1) {
+        $Operation | Add-Member -NotePropertyName 'ReplayReason' -NotePropertyValue ([string]$Reason)
+    }
+    else {
+        $Operation.ReplayReason = [string]$Reason
+    }
+}
+
+function Get-AzVmAppStateOperationReplayStatus {
+    param([AllowNull()]$Operation)
+
+    $status = 'applied'
+    $reason = ''
+    if ($null -ne $Operation) {
+        if ($Operation.PSObject.Properties.Match('ReplayStatus').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$Operation.ReplayStatus)) {
+            $status = [string]$Operation.ReplayStatus
+        }
+        if ($Operation.PSObject.Properties.Match('ReplayReason').Count -gt 0) {
+            $reason = [string]$Operation.ReplayReason
+        }
+    }
+
+    return [pscustomobject]@{
+        Status = [string]$status
+        Reason = [string]$reason
+    }
+}
+
+function Set-AzVmAppStateBackupRecordStatus {
+    param(
+        [AllowNull()]$Record,
+        [string]$Status,
+        [string]$Reason = ''
+    )
+
+    if ($null -eq $Record) {
+        return
+    }
+
+    if ($Record.PSObject.Properties.Match('BackupStatus').Count -lt 1) {
+        $Record | Add-Member -NotePropertyName 'BackupStatus' -NotePropertyValue ([string]$Status)
+    }
+    else {
+        $Record.BackupStatus = [string]$Status
+    }
+
+    if ($Record.PSObject.Properties.Match('BackupReason').Count -lt 1) {
+        $Record | Add-Member -NotePropertyName 'BackupReason' -NotePropertyValue ([string]$Reason)
+    }
+    else {
+        $Record.BackupReason = [string]$Reason
+    }
+}
+
+function Get-AzVmAppStateBackupRecordStatus {
+    param([AllowNull()]$Record)
+
+    $status = 'captured'
+    $reason = ''
+    if ($null -ne $Record) {
+        if ($Record.PSObject.Properties.Match('BackupStatus').Count -gt 0 -and -not [string]::IsNullOrWhiteSpace([string]$Record.BackupStatus)) {
+            $status = [string]$Record.BackupStatus
+        }
+        if ($Record.PSObject.Properties.Match('BackupReason').Count -gt 0) {
+            $reason = [string]$Record.BackupReason
+        }
+    }
+
+    return [pscustomobject]@{
+        Status = [string]$status
+        Reason = [string]$reason
+    }
 }
 
 function Invoke-AzVmRegExport {
@@ -1067,14 +1179,22 @@ function Invoke-AzVmTaskAppStateReplayOperations {
             continue
         }
 
+        Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'applied' -Reason ''
         switch ([string]$operation.Kind) {
             'directory' {
                 if (-not (Test-Path -LiteralPath ([string]$operation.SourcePath) -PathType Container)) {
-                    Write-Warning ("app-state-directory-skip => {0}" -f [string]$operation.SourcePath)
+                    Write-Host ("app-state-directory-skip => {0}" -f [string]$operation.SourcePath)
+                    Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'source-missing'
                     continue
                 }
 
-                if (Copy-AzVmAppStateDirectoryContents -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)) {
+                $copyResult = Copy-AzVmAppStateDirectoryContents -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)
+                if ([bool]$copyResult.SkippedAny) {
+                    Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason $(if ([string]::IsNullOrWhiteSpace([string]$copyResult.Reason)) { 'directory-copy-skipped' } else { [string]$copyResult.Reason })
+                    continue
+                }
+
+                if ([bool]$copyResult.CopiedAny -or -not (Get-ChildItem -LiteralPath ([string]$operation.SourcePath) -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
                     if ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
                         $machineDirectoryCopies++
                     }
@@ -1085,11 +1205,18 @@ function Invoke-AzVmTaskAppStateReplayOperations {
             }
             'file' {
                 if (-not (Test-Path -LiteralPath ([string]$operation.SourcePath) -PathType Leaf)) {
-                    Write-Warning ("app-state-file-skip => {0}" -f [string]$operation.SourcePath)
+                    Write-Host ("app-state-file-skip => {0}" -f [string]$operation.SourcePath)
+                    Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'source-missing'
                     continue
                 }
 
-                if (Copy-AzVmAppStateFile -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)) {
+                $copyResult = Copy-AzVmAppStateFile -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)
+                if (-not [bool]$copyResult.Copied) {
+                    Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason $(if ([string]::IsNullOrWhiteSpace([string]$copyResult.Reason)) { 'file-copy-skipped' } else { [string]$copyResult.Reason })
+                    continue
+                }
+
+                if ([bool]$copyResult.Copied) {
                     if ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
                         $machineFileCopies++
                     }
@@ -1100,7 +1227,8 @@ function Invoke-AzVmTaskAppStateReplayOperations {
             }
             'registry' {
                 if (-not (Test-Path -LiteralPath ([string]$operation.SourcePath) -PathType Leaf)) {
-                    Write-Warning ("app-state-registry-skip => {0}" -f [string]$operation.SourcePath)
+                    Write-Host ("app-state-registry-skip => {0}" -f [string]$operation.SourcePath)
+                    Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'source-missing'
                     continue
                 }
 
@@ -1109,7 +1237,8 @@ function Invoke-AzVmTaskAppStateReplayOperations {
                         $machineRegistryImports++
                     }
                     else {
-                        Write-Warning ("app-state-machine-registry-import-failed => {0}" -f [string]$operation.SourcePath)
+                        Write-Host ("app-state-machine-registry-import-skip => {0}" -f [string]$operation.SourcePath)
+                        Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'registry-import-failed'
                     }
                     continue
                 }
@@ -1121,7 +1250,8 @@ function Invoke-AzVmTaskAppStateReplayOperations {
                 }
                 $mountInfo = Get-AzVmMountedUserHive -ProfilePath ([string]$profileTarget.ProfilePath) -PreferredLabel ([string]$profileTarget.UserName)
                 if ($null -eq $mountInfo) {
-                    Write-Warning ("app-state-user-registry-skip => {0} => hive-unavailable" -f [string]$profileTarget.Label)
+                    Write-Host ("app-state-user-registry-skip => {0} => hive-unavailable" -f [string]$profileTarget.Label)
+                    Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'hive-unavailable'
                     continue
                 }
 
@@ -1131,7 +1261,8 @@ function Invoke-AzVmTaskAppStateReplayOperations {
                         Invoke-AzVmAppStateWslRegistryPurge -MountedUserRegistryRoot ([string]$mountInfo.Root) -RegistryPath 'HKCU\Software\Microsoft\Windows\CurrentVersion\Lxss' -DistributionAllowList @($operation.DistributionAllowList)
                     }
                     if (-not (Convert-AzVmAppStateRegRoot -SourcePath ([string]$operation.SourcePath) -SourceRoot 'HKEY_CURRENT_USER' -DestinationRoot ([string]$mountInfo.Root) -DestinationPath $rewrittenPath)) {
-                        Write-Warning ("app-state-user-registry-skip => {0} => rewrite-failed" -f [string]$profileTarget.Label)
+                        Write-Host ("app-state-user-registry-skip => {0} => rewrite-failed" -f [string]$profileTarget.Label)
+                        Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'rewrite-failed'
                         continue
                     }
 
@@ -1139,7 +1270,8 @@ function Invoke-AzVmTaskAppStateReplayOperations {
                         $userRegistryImports++
                     }
                     else {
-                        Write-Warning ("app-state-user-registry-import-failed => {0} => {1}" -f [string]$profileTarget.Label, [string]$operation.SourcePath)
+                        Write-Host ("app-state-user-registry-import-skip => {0} => {1}" -f [string]$profileTarget.Label, [string]$operation.SourcePath)
+                        Set-AzVmAppStateOperationReplayStatus -Operation $operation -Status 'skipped' -Reason 'registry-import-failed'
                     }
                 }
                 finally {
@@ -1150,6 +1282,13 @@ function Invoke-AzVmTaskAppStateReplayOperations {
         }
     }
 
+    $skippedCount = @(
+        @($Operations) | Where-Object {
+            $status = Get-AzVmAppStateOperationReplayStatus -Operation $_
+            [string]$status.Status -eq 'skipped'
+        }
+    ).Count
+
     return [pscustomobject]@{
         MachineRegistryImports = [int]$machineRegistryImports
         UserRegistryImports = [int]$userRegistryImports
@@ -1157,6 +1296,7 @@ function Invoke-AzVmTaskAppStateReplayOperations {
         MachineFileCopies = [int]$machineFileCopies
         ProfileDirectoryCopies = [int]$profileDirectoryCopies
         ProfileFileCopies = [int]$profileFileCopies
+        SkippedCount = [int]$skippedCount
     }
 }
 
@@ -1186,6 +1326,8 @@ function Backup-AzVmTaskAppStateOperations {
             ProfilePath = [string]$operation.ProfilePath
             BackupPath = ''
             Existed = $false
+            BackupStatus = 'captured'
+            BackupReason = ''
         }
 
         switch ([string]$operation.Kind) {
@@ -1194,9 +1336,19 @@ function Backup-AzVmTaskAppStateOperations {
                 if (Test-Path -LiteralPath $destinationPath -PathType Leaf) {
                     $backupPath = Join-Path (Join-Path $BackupRoot 'files') ((ConvertTo-AzVmAppStateCaptureSafeName -Value $backupBaseName) + [System.IO.Path]::GetExtension($destinationPath))
                     Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $backupPath -Parent)
-                    Copy-Item -LiteralPath $destinationPath -Destination $backupPath -Force -ErrorAction Stop
-                    $record.BackupPath = [string]$backupPath
+                    $copyResult = Copy-AzVmAppStateFile -SourcePath $destinationPath -DestinationPath $backupPath
                     $record.Existed = $true
+                    if ([bool]$copyResult.Copied) {
+                        $record.BackupPath = [string]$backupPath
+                    }
+                    else {
+                        $record.BackupStatus = 'skipped'
+                        $record.BackupReason = $(if ([string]::IsNullOrWhiteSpace([string]$copyResult.Reason)) { 'backup-copy-skipped' } else { [string]$copyResult.Reason })
+                    }
+                }
+                else {
+                    $record.BackupStatus = 'not-required'
+                    $record.BackupReason = 'destination-missing'
                 }
             }
             'directory' {
@@ -1204,9 +1356,19 @@ function Backup-AzVmTaskAppStateOperations {
                 if (Test-Path -LiteralPath $destinationPath -PathType Container) {
                     $backupPath = Join-Path (Join-Path $BackupRoot 'directories') (ConvertTo-AzVmAppStateCaptureSafeName -Value $backupBaseName)
                     Ensure-AzVmAppStateDirectory -Path (Split-Path -Path $backupPath -Parent)
-                    Copy-Item -LiteralPath $destinationPath -Destination $backupPath -Recurse -Force -ErrorAction Stop
-                    $record.BackupPath = [string]$backupPath
+                    $copyResult = Copy-AzVmAppStateDirectoryContents -SourcePath $destinationPath -DestinationPath $backupPath
                     $record.Existed = $true
+                    if (-not [bool]$copyResult.SkippedAny) {
+                        $record.BackupPath = [string]$backupPath
+                    }
+                    else {
+                        $record.BackupStatus = 'skipped'
+                        $record.BackupReason = $(if ([string]::IsNullOrWhiteSpace([string]$copyResult.Reason)) { 'backup-copy-skipped' } else { [string]$copyResult.Reason })
+                    }
+                }
+                else {
+                    $record.BackupStatus = 'not-required'
+                    $record.BackupReason = 'destination-missing'
                 }
             }
             'registry' {
@@ -1231,6 +1393,19 @@ function Backup-AzVmTaskAppStateOperations {
                 if ($exported) {
                     $record.BackupPath = [string]$backupPath
                     $record.Existed = $true
+                }
+                elseif ([string]::Equals([string]$operation.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                    $record.BackupStatus = 'not-required'
+                    $record.BackupReason = 'registry-missing'
+                }
+                else {
+                    $record.Existed = [bool](Test-AzVmAppStateProfileRegistryReplayAvailable -ProfileTarget ([pscustomobject]@{
+                        Label = [string]$operation.ProfileLabel
+                        UserName = [string]$operation.UserName
+                        ProfilePath = [string]$operation.ProfilePath
+                    }))
+                    $record.BackupStatus = $(if ([bool]$record.Existed) { 'skipped' } else { 'not-required' })
+                    $record.BackupReason = $(if ([bool]$record.Existed) { 'backup-export-skipped' } else { 'hive-unavailable' })
                 }
             }
         }
@@ -1355,38 +1530,45 @@ function Test-AzVmTaskAppStateOperations {
 
         $status = 'verified'
         $reason = ''
-        switch ([string]$operation.Kind) {
-            'file' {
-                if (-not (Test-Path -LiteralPath ([string]$operation.DestinationPath) -PathType Leaf)) {
-                    $status = 'mismatch'
-                    $reason = 'destination-missing'
-                }
-                else {
-                    $sourceHash = Get-AzVmAppStateFileHashValue -Path ([string]$operation.SourcePath)
-                    $destinationHash = Get-AzVmAppStateFileHashValue -Path ([string]$operation.DestinationPath)
-                    if ([string]::IsNullOrWhiteSpace([string]$sourceHash) -or -not [string]::Equals([string]$sourceHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $replayStatus = Get-AzVmAppStateOperationReplayStatus -Operation $operation
+        if ([string]$replayStatus.Status -eq 'skipped') {
+            $status = 'skipped'
+            $reason = [string]$replayStatus.Reason
+        }
+        else {
+            switch ([string]$operation.Kind) {
+                'file' {
+                    if (-not (Test-Path -LiteralPath ([string]$operation.DestinationPath) -PathType Leaf)) {
                         $status = 'mismatch'
-                        $reason = 'hash-mismatch'
+                        $reason = 'destination-missing'
+                    }
+                    else {
+                        $sourceHash = Get-AzVmAppStateFileHashValue -Path ([string]$operation.SourcePath)
+                        $destinationHash = Get-AzVmAppStateFileHashValue -Path ([string]$operation.DestinationPath)
+                        if ([string]::IsNullOrWhiteSpace([string]$sourceHash) -or -not [string]::Equals([string]$sourceHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            $status = 'mismatch'
+                            $reason = 'hash-mismatch'
+                        }
                     }
                 }
-            }
-            'directory' {
-                $directoryMatch = Test-AzVmTaskAppStateDirectoryMatches -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)
-                if (-not [bool]$directoryMatch.Success) {
-                    $status = 'mismatch'
-                    $reason = [string]$directoryMatch.Reason
+                'directory' {
+                    $directoryMatch = Test-AzVmTaskAppStateDirectoryMatches -SourcePath ([string]$operation.SourcePath) -DestinationPath ([string]$operation.DestinationPath)
+                    if (-not [bool]$directoryMatch.Success) {
+                        $status = 'mismatch'
+                        $reason = [string]$directoryMatch.Reason
+                    }
                 }
-            }
-            'registry' {
-                $profileTarget = [pscustomobject]@{
-                    Label = [string]$operation.ProfileLabel
-                    UserName = [string]$operation.UserName
-                    ProfilePath = [string]$operation.ProfilePath
-                }
-                $registryMatch = Test-AzVmTaskAppStateRegistryMatches -SourcePath ([string]$operation.SourcePath) -RegistryPath ([string]$operation.RegistryPath) -Scope ([string]$operation.Scope) -ProfileTarget $profileTarget
-                if (-not [bool]$registryMatch.Success) {
-                    $status = 'mismatch'
-                    $reason = [string]$registryMatch.Reason
+                'registry' {
+                    $profileTarget = [pscustomobject]@{
+                        Label = [string]$operation.ProfileLabel
+                        UserName = [string]$operation.UserName
+                        ProfilePath = [string]$operation.ProfilePath
+                    }
+                    $registryMatch = Test-AzVmTaskAppStateRegistryMatches -SourcePath ([string]$operation.SourcePath) -RegistryPath ([string]$operation.RegistryPath) -Scope ([string]$operation.Scope) -ProfileTarget $profileTarget
+                    if (-not [bool]$registryMatch.Success) {
+                        $status = 'mismatch'
+                        $reason = [string]$registryMatch.Reason
+                    }
                 }
             }
         }
@@ -1405,9 +1587,11 @@ function Test-AzVmTaskAppStateOperations {
 
     $rows = @($items.ToArray())
     $mismatches = @($rows | Where-Object { [string]$_.Status -eq 'mismatch' })
+    $skipped = @($rows | Where-Object { [string]$_.Status -eq 'skipped' })
     return [pscustomobject]@{
         CheckedCount = @($rows).Count
         MismatchCount = @($mismatches).Count
+        SkippedCount = @($skipped).Count
         Succeeded = (@($mismatches).Count -eq 0)
         Items = $rows
     }
@@ -1424,75 +1608,82 @@ function Test-AzVmTaskAppStateRollbackState {
 
         $status = 'verified'
         $reason = ''
-        switch ([string]$record.Kind) {
-            'file' {
-                if ([bool]$record.Existed) {
-                    if (-not (Test-Path -LiteralPath ([string]$record.DestinationPath) -PathType Leaf)) {
-                        $status = 'mismatch'
-                        $reason = 'destination-missing'
-                    }
-                    else {
-                        $backupHash = Get-AzVmAppStateFileHashValue -Path ([string]$record.BackupPath)
-                        $destinationHash = Get-AzVmAppStateFileHashValue -Path ([string]$record.DestinationPath)
-                        if ([string]::IsNullOrWhiteSpace([string]$backupHash) -or -not [string]::Equals([string]$backupHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+        $backupStatus = Get-AzVmAppStateBackupRecordStatus -Record $record
+        if ([string]$backupStatus.Status -eq 'skipped') {
+            $status = 'skipped'
+            $reason = [string]$backupStatus.Reason
+        }
+        else {
+            switch ([string]$record.Kind) {
+                'file' {
+                    if ([bool]$record.Existed) {
+                        if (-not (Test-Path -LiteralPath ([string]$record.DestinationPath) -PathType Leaf)) {
                             $status = 'mismatch'
-                            $reason = 'hash-mismatch'
-                        }
-                    }
-                }
-                elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
-                    $status = 'mismatch'
-                    $reason = 'path-still-present'
-                }
-            }
-            'directory' {
-                if ([bool]$record.Existed) {
-                    $directoryMatch = Test-AzVmTaskAppStateDirectoryMatches -SourcePath ([string]$record.BackupPath) -DestinationPath ([string]$record.DestinationPath)
-                    if (-not [bool]$directoryMatch.Success) {
-                        $status = 'mismatch'
-                        $reason = [string]$directoryMatch.Reason
-                    }
-                }
-                elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
-                    $status = 'mismatch'
-                    $reason = 'path-still-present'
-                }
-            }
-            'registry' {
-                $profileTarget = [pscustomobject]@{
-                    Label = [string]$record.ProfileLabel
-                    UserName = [string]$record.UserName
-                    ProfilePath = [string]$record.ProfilePath
-                }
-                if ([bool]$record.Existed) {
-                    $registryMatch = Test-AzVmTaskAppStateRegistryMatches -SourcePath ([string]$record.BackupPath) -RegistryPath ([string]$record.RegistryPath) -Scope ([string]$record.Scope) -ProfileTarget $profileTarget
-                    if (-not [bool]$registryMatch.Success) {
-                        $status = 'mismatch'
-                        $reason = [string]$registryMatch.Reason
-                    }
-                }
-                else {
-                    $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-reg-rollback-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
-                    $exported = $false
-                    try {
-                        if ([string]::Equals([string]$record.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
-                            $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath ([string]$record.RegistryPath)
-                            $providerPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath $canonicalRegistryPath
-                            if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
-                                $exported = Invoke-AzVmRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $tempExportPath
-                            }
+                            $reason = 'destination-missing'
                         }
                         else {
-                            $exported = Backup-AzVmTaskUserRegistry -RegistryPath ([string]$record.RegistryPath) -ProfileTarget $profileTarget -BackupPath $tempExportPath
+                            $backupHash = Get-AzVmAppStateFileHashValue -Path ([string]$record.BackupPath)
+                            $destinationHash = Get-AzVmAppStateFileHashValue -Path ([string]$record.DestinationPath)
+                            if ([string]::IsNullOrWhiteSpace([string]$backupHash) -or -not [string]::Equals([string]$backupHash, [string]$destinationHash, [System.StringComparison]::OrdinalIgnoreCase)) {
+                                $status = 'mismatch'
+                                $reason = 'hash-mismatch'
+                            }
                         }
                     }
-                    finally {
-                        Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
-                    }
-
-                    if ($exported) {
+                    elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
                         $status = 'mismatch'
-                        $reason = 'registry-still-present'
+                        $reason = 'path-still-present'
+                    }
+                }
+                'directory' {
+                    if ([bool]$record.Existed) {
+                        $directoryMatch = Test-AzVmTaskAppStateDirectoryMatches -SourcePath ([string]$record.BackupPath) -DestinationPath ([string]$record.DestinationPath)
+                        if (-not [bool]$directoryMatch.Success) {
+                            $status = 'mismatch'
+                            $reason = [string]$directoryMatch.Reason
+                        }
+                    }
+                    elseif (Test-Path -LiteralPath ([string]$record.DestinationPath)) {
+                        $status = 'mismatch'
+                        $reason = 'path-still-present'
+                    }
+                }
+                'registry' {
+                    $profileTarget = [pscustomobject]@{
+                        Label = [string]$record.ProfileLabel
+                        UserName = [string]$record.UserName
+                        ProfilePath = [string]$record.ProfilePath
+                    }
+                    if ([bool]$record.Existed) {
+                        $registryMatch = Test-AzVmTaskAppStateRegistryMatches -SourcePath ([string]$record.BackupPath) -RegistryPath ([string]$record.RegistryPath) -Scope ([string]$record.Scope) -ProfileTarget $profileTarget
+                        if (-not [bool]$registryMatch.Success) {
+                            $status = 'mismatch'
+                            $reason = [string]$registryMatch.Reason
+                        }
+                    }
+                    else {
+                        $tempExportPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-reg-rollback-{0}.reg' -f ([guid]::NewGuid().ToString('N')))
+                        $exported = $false
+                        try {
+                            if ([string]::Equals([string]$record.Scope, 'machine', [System.StringComparison]::OrdinalIgnoreCase)) {
+                                $canonicalRegistryPath = Convert-AzVmAppStateRegistryPathToCanonicalRoot -RegistryPath ([string]$record.RegistryPath)
+                                $providerPath = Convert-AzVmAppStateRegistryPathToProviderPath -RegistryPath $canonicalRegistryPath
+                                if (-not [string]::IsNullOrWhiteSpace([string]$providerPath) -and (Test-Path -LiteralPath $providerPath)) {
+                                    $exported = Invoke-AzVmRegExport -RegistryPath $canonicalRegistryPath -DestinationPath $tempExportPath
+                                }
+                            }
+                            else {
+                                $exported = Backup-AzVmTaskUserRegistry -RegistryPath ([string]$record.RegistryPath) -ProfileTarget $profileTarget -BackupPath $tempExportPath
+                            }
+                        }
+                        finally {
+                            Remove-Item -LiteralPath $tempExportPath -Force -ErrorAction SilentlyContinue
+                        }
+
+                        if ($exported) {
+                            $status = 'mismatch'
+                            $reason = 'registry-still-present'
+                        }
                     }
                 }
             }
@@ -1512,9 +1703,11 @@ function Test-AzVmTaskAppStateRollbackState {
 
     $rows = @($items.ToArray())
     $mismatches = @($rows | Where-Object { [string]$_.Status -eq 'mismatch' })
+    $skipped = @($rows | Where-Object { [string]$_.Status -eq 'skipped' })
     return [pscustomobject]@{
         CheckedCount = @($rows).Count
         MismatchCount = @($mismatches).Count
+        SkippedCount = @($skipped).Count
         Succeeded = (@($mismatches).Count -eq 0)
         Items = $rows
     }
@@ -1527,6 +1720,11 @@ function Invoke-AzVmTaskAppStateRollback {
     [array]::Reverse($records)
     foreach ($record in @($records)) {
         if ($null -eq $record) {
+            continue
+        }
+
+        $backupStatus = Get-AzVmAppStateBackupRecordStatus -Record $record
+        if ([string]$backupStatus.Status -eq 'skipped') {
             continue
         }
 
@@ -1687,9 +1885,9 @@ function Resolve-AzVmAppStateCapturePathMatches {
     $hasWildcard = ($candidatePath.IndexOf('*', [System.StringComparison]::Ordinal) -ge 0 -or $candidatePath.IndexOf('?', [System.StringComparison]::Ordinal) -ge 0)
     if ($hasWildcard) {
         return @(
-            Get-ChildItem -Path $candidatePath -Force -ErrorAction SilentlyContinue |
-                Sort-Object FullName |
-                Select-Object -ExpandProperty FullName
+            Resolve-Path -Path $candidatePath -ErrorAction SilentlyContinue |
+                Sort-Object Path |
+                Select-Object -ExpandProperty Path
         )
     }
 
@@ -2151,7 +2349,7 @@ function Invoke-AzVmTaskAppStateReplay {
                 throw ("Task app-state restore verification failed for '{0}'." -f [string]$TaskName)
             }
 
-            Write-Host ("app-state done => task={0}; mode=replay; bytes={1}; profiles={2}; checked={3}; mismatches={4}; elapsed={5:N1}s" -f [string]$TaskName, [int64]$zipLength, @($profileTargets).Count, [int]$verifyResult.CheckedCount, [int]$verifyResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
+            Write-Host ("app-state done => task={0}; mode=replay; bytes={1}; profiles={2}; checked={3}; mismatches={4}; skipped={5}; elapsed={6:N1}s" -f [string]$TaskName, [int64]$zipLength, @($profileTargets).Count, [int]$verifyResult.CheckedCount, [int]$verifyResult.MismatchCount, [int]$verifyResult.SkippedCount, $replayWatch.Elapsed.TotalSeconds)
 
             return [pscustomobject]@{
                 MachineRegistryImports = [int]$replayResult.MachineRegistryImports
@@ -2160,16 +2358,19 @@ function Invoke-AzVmTaskAppStateReplay {
                 MachineFileCopies = [int]$replayResult.MachineFileCopies
                 ProfileDirectoryCopies = [int]$replayResult.ProfileDirectoryCopies
                 ProfileFileCopies = [int]$replayResult.ProfileFileCopies
+                SkippedCount = [int]$replayResult.SkippedCount
                 Verified = $true
                 VerifyCheckedCount = [int]$verifyResult.CheckedCount
                 VerifyMismatchCount = [int]$verifyResult.MismatchCount
+                VerifySkippedCount = [int]$verifyResult.SkippedCount
+                VerifyItems = @($verifyResult.Items)
                 RollbackPerformed = $false
                 RollbackSucceeded = $false
             }
         }
         catch {
             $rollbackResult = Invoke-AzVmTaskAppStateRollback -BackupRecords @($backupRecords)
-            Write-Host ("app-state rollback => task={0}; checked={1}; mismatches={2}; elapsed={3:N1}s" -f [string]$TaskName, [int]$rollbackResult.CheckedCount, [int]$rollbackResult.MismatchCount, $replayWatch.Elapsed.TotalSeconds)
+            Write-Host ("app-state rollback => task={0}; checked={1}; mismatches={2}; skipped={3}; elapsed={4:N1}s" -f [string]$TaskName, [int]$rollbackResult.CheckedCount, [int]$rollbackResult.MismatchCount, [int]$rollbackResult.SkippedCount, $replayWatch.Elapsed.TotalSeconds)
             if (-not [bool]$rollbackResult.Succeeded) {
                 throw ("{0} Rollback verification also failed for '{1}'." -f [string]$_.Exception.Message, [string]$TaskName)
             }

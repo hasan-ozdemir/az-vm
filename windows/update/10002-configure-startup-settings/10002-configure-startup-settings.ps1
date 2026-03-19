@@ -671,10 +671,12 @@ function Ensure-UserProfileMaterialized {
     }
 
     if ([string]::IsNullOrWhiteSpace([string]$UserPassword)) {
-        throw ("Profile materialization requires a password for user '{0}'." -f [string]$UserName)
+        Write-Host ("autostart-info-skip: {0} => profile materialization skipped because no password is available." -f [string]$UserName)
+        return ''
     }
     if (-not (Test-Path -LiteralPath $interactiveHelperPath)) {
-        throw ("Interactive session helper was not found: {0}" -f [string]$interactiveHelperPath)
+        Write-Host ("autostart-info-skip: {0} => profile materialization skipped because the interactive helper is unavailable." -f [string]$UserName)
+        return ''
     }
 
     $materializeTaskName = "{0}-materialize-{1}" -f $taskName, $UserName
@@ -697,12 +699,18 @@ Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success
     $workerScript = $workerScript.Replace('__RESULT_PATH__', [string]$paths.ResultPath)
     $workerScript = $workerScript.Replace('__TASK_NAME__', $materializeTaskName)
 
-    $null = Invoke-AzVmInteractiveDesktopAutomation `
-        -TaskName $materializeTaskName `
-        -RunAsUser $UserName `
-        -RunAsPassword $UserPassword `
-        -WorkerScriptText $workerScript `
-        -WaitTimeoutSeconds 180
+    $materializationIssue = ''
+    try {
+        $null = Invoke-AzVmInteractiveDesktopAutomation `
+            -TaskName $materializeTaskName `
+            -RunAsUser $UserName `
+            -RunAsPassword $UserPassword `
+            -WorkerScriptText $workerScript `
+            -WaitTimeoutSeconds 45
+    }
+    catch {
+        $materializationIssue = [string]$_.Exception.Message
+    }
 
     if (-not (Wait-AzVmCondition -Condition {
         $profilePath = Get-LocalUserProfilePath -UserName $UserName
@@ -716,7 +724,13 @@ Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success
 
         return (Initialize-MissingUserProfileHive -ProfilePath $profilePath)
     } -TimeoutSeconds 30)) {
-        throw ("User profile could not be materialized: {0}" -f [string]$UserName)
+        if ([string]::IsNullOrWhiteSpace([string]$materializationIssue)) {
+            Write-Host ("autostart-info-skip: {0} => profile materialization did not complete within the bounded wait; startup entries for this user will be skipped until a real sign-in occurs." -f [string]$UserName)
+        }
+        else {
+            Write-Host ("autostart-info-skip: {0} => profile materialization did not complete within the bounded wait; startup entries for this user will be skipped until a real sign-in occurs. {1}" -f [string]$UserName, [string]$materializationIssue)
+        }
+        return ''
     }
 
     $profilePath = Get-LocalUserProfilePath -UserName $UserName
@@ -731,7 +745,12 @@ function Remove-RegistryMountIfPresent {
         return
     }
 
-    & reg.exe unload ("HKU\{0}" -f $MountName) | Out-Null
+    $mountRoot = ("Registry::HKEY_USERS\{0}" -f [string]$MountName)
+    if (-not (Test-Path -LiteralPath $mountRoot)) {
+        return
+    }
+
+    $null = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
 }
 
 function Mount-RegistryHive {
@@ -1355,7 +1374,8 @@ function Ensure-RunEntry {
         [string]$ApprovalPath,
         [string]$Name,
         [string]$TargetPath,
-        [string]$Arguments = ""
+        [string]$Arguments = "",
+        [bool]$IgnoreApprovalWriteFailure = $false
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$RunPath) -or [string]::IsNullOrWhiteSpace([string]$ApprovalPath)) {
@@ -1370,16 +1390,29 @@ function Ensure-RunEntry {
 
     $commandLine = Get-QuotedCommandLine -TargetPath $TargetPath -Arguments $Arguments
     Set-RegistryStringValue -Path $RunPath -ValueName $Name -Value $commandLine
-    Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName $Name
+    $approvalWriteSucceeded = $false
+    try {
+        Ensure-StartupApprovedEnabled -Path $ApprovalPath -ValueName $Name
+        $approvalWriteSucceeded = $true
+    }
+    catch {
+        if (-not $IgnoreApprovalWriteFailure) {
+            throw
+        }
+
+        Write-Host ("autostart-info-skip: {0} => StartupApproved could not be written; run entry was kept." -f [string]$Name)
+    }
 
     $actualValue = [string](Get-ItemProperty -Path $RunPath -Name $Name -ErrorAction Stop).$Name
     if (-not [string]::Equals($actualValue, $commandLine, [System.StringComparison]::Ordinal)) {
         throw ("Run entry validation failed for '{0}'." -f $Name)
     }
 
-    $approvalCode = Get-StartupApprovedStateCode -Path $ApprovalPath -ValueName $Name
-    if ($approvalCode -ne 2) {
-        throw ("StartupApproved validation failed for run entry '{0}'." -f $Name)
+    if ($approvalWriteSucceeded) {
+        $approvalCode = Get-StartupApprovedStateCode -Path $ApprovalPath -ValueName $Name
+        if ($approvalCode -ne 2) {
+            throw ("StartupApproved validation failed for run entry '{0}'." -f $Name)
+        }
     }
 
     Write-Host ("autostart-ok: {0} => run-entry" -f $Name)
@@ -1726,10 +1759,11 @@ function Ensure-AppStartupLocation {
     if ($Spec.PSObject.Properties.Match('EnableLocalMachineCompat').Count -gt 0) {
         $enableLocalMachineCompat = [bool]$Spec.EnableLocalMachineCompat
     }
+    $ignoreApprovalWriteFailure = ($null -ne $ManagerContext -and -not [string]::IsNullOrWhiteSpace([string]$ManagerContext.MountName))
 
     if ([string]::Equals([string]$requestedLocation.Kind, 'Run', [System.StringComparison]::OrdinalIgnoreCase)) {
         try {
-            Ensure-RunEntry -RunPath ([string]$requestedLocation.RunPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments)
+            Ensure-RunEntry -RunPath ([string]$requestedLocation.RunPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments) -IgnoreApprovalWriteFailure:$ignoreApprovalWriteFailure
         }
         catch {
             $fallbackLocation = $null
@@ -1762,7 +1796,7 @@ function Ensure-AppStartupLocation {
         return $true
     }
 
-    Ensure-StartupShortcut -DirectoryPath ([string]$requestedLocation.DirectoryPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments) -WorkingDirectory ([string]$Spec.WorkingDirectory) -IconLocation ([string]$Spec.IconLocation)
+    Ensure-StartupShortcut -DirectoryPath ([string]$requestedLocation.DirectoryPath) -ApprovalPath ([string]$requestedLocation.ApprovalPath) -Name ([string]$Spec.Name) -TargetPath $targetPath -Arguments ([string]$Spec.Arguments) -WorkingDirectory ([string]$Spec.WorkingDirectory) -IconLocation ([string]$Spec.IconLocation) -IgnoreApprovalWriteFailure:$ignoreApprovalWriteFailure
     Write-Host ("autostart-method => {0} => {1}/{2}" -f [string]$Spec.Name, [string]$requestedLocation.Scope, [string]$requestedLocation.EntryType)
     return $true
 }

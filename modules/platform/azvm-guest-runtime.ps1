@@ -24,7 +24,9 @@ function Get-AzVmConnectionDisplayModel {
         [string]$AssistantUser,
         [string]$SshPort,
         [string]$RdpPort = '3389',
-        [switch]$IncludeRdp
+        [string]$PowerShellPort = '5985',
+        [switch]$IncludeRdp,
+        [switch]$IncludePowerShellRemoting
     )
 
     $vmConnectionInfo = Get-AzVmVmDetails -Context $Context
@@ -64,6 +66,22 @@ function Get-AzVmConnectionDisplayModel {
             }
         )
         $model["RdpConnections"] = $rdpConnections
+    }
+
+    if ($IncludePowerShellRemoting) {
+        $trustedHostCommand = ('Set-Item WSMan:\localhost\Client\TrustedHosts -Value "{0}" -Force' -f $resolvedHost)
+        $enterSessionCommand = ('$credential = Get-Credential ''.\{0}''; Enter-PSSession -ComputerName {1} -Port {2} -Credential $credential -Authentication Negotiate' -f $ManagerUser, $resolvedHost, $PowerShellPort)
+        $invokeCommand = ('$credential = Get-Credential ''.\{0}''; Invoke-Command -ComputerName {1} -Port {2} -Credential $credential -Authentication Negotiate -ScriptBlock {{ hostname; whoami }}' -f $ManagerUser, $resolvedHost, $PowerShellPort)
+        $model["PowerShellConnections"] = @(
+            [pscustomobject]@{
+                User = $ManagerUser
+                Username = (".\{0}" -f $ManagerUser)
+                Port = [string]$PowerShellPort
+                TrustedHostsCommand = [string]$trustedHostCommand
+                EnterPSSessionCommand = [string]$enterSessionCommand
+                InvokeCommand = [string]$invokeCommand
+            }
+        )
     }
 
     return $model

@@ -1549,7 +1549,13 @@ function Write-JawsUserRegistryStatus {
         Write-Host ("jaws-user-registry => {0} => exists={1}; path={2}" -f [string]$UserName, [bool](Test-Path -LiteralPath $registryPath), [string]$registryPath)
     }
     catch {
-        Write-Warning ("jaws-user-registry-readback-failed => {0} => {1}" -f [string]$UserName, $_.Exception.Message)
+        $message = [string]$_.Exception.Message
+        if ($message -match '(?i)registry hive file was not found|ntuser\.dat|requested registry access is not allowed|access is denied') {
+            Write-Host ("jaws-user-registry => {0} => unavailable; reason={1}" -f [string]$UserName, $message)
+        }
+        else {
+            Write-Warning ("jaws-user-registry-readback-failed => {0} => {1}" -f [string]$UserName, $message)
+        }
     }
     finally {
         if ($null -ne $userContext -and -not [string]::IsNullOrWhiteSpace([string]$userContext.MountName)) {

@@ -21,7 +21,10 @@
         "targetProfiles": [],
         "excludeNames": [],
         "excludePathPatterns": [],
-        "excludeFilePatterns": []
+        "excludeFilePatterns": [
+          "*.lock",
+          "*.tmp"
+        ]
       },
       {
         "path": "AppData\\Local\\Packages\\5319275A.WhatsAppDesktop_*\\LocalState",
@@ -41,16 +44,20 @@
           "Logs"
         ],
         "excludePathPatterns": [
+          "*\\sessions\\*",
           "*\\transfers\\*",
           "*\\Microsoft\\AppCenter\\*"
         ],
         "excludeFilePatterns": [
+          "*.db",
           "*.lock",
           "*.tmp",
           "*.db-shm",
           "*.db-wal",
           "*.etl",
-          "*.log"
+          "*.log",
+          "applog.txt",
+          "wa_voip_history.json"
         ]
       },
       {
@@ -68,16 +75,20 @@
           "Logs"
         ],
         "excludePathPatterns": [
+          "*\\sessions\\*",
           "*\\transfers\\*",
           "*\\Microsoft\\AppCenter\\*"
         ],
         "excludeFilePatterns": [
+          "*.db",
           "*.lock",
           "*.tmp",
           "*.db-shm",
           "*.db-wal",
           "*.etl",
-          "*.log"
+          "*.log",
+          "applog.txt",
+          "wa_voip_history.json"
         ]
       }
     ],

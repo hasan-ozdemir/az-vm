@@ -10,6 +10,7 @@
         "path": "AppData\\Local\\Google\\DriveFS",
         "targetProfiles": [],
         "excludeNames": [
+          "webview2_user_data",
           "Cache",
           "Code Cache",
           "GPUCache",
@@ -22,16 +23,24 @@
         ],
         "excludePathPatterns": [],
         "excludeFilePatterns": [
+          "*.db",
+          "*.db-shm",
+          "*.db-wal",
+          "*.sqlite",
+          "*.sqlite-shm",
+          "*.sqlite-wal",
           "*.lock",
           "*.tmp",
           "*.etl",
-          "*.log"
+          "*.log",
+          "pid.txt"
         ]
       },
       {
         "path": "AppData\\Roaming\\Google\\DriveFS",
         "targetProfiles": [],
         "excludeNames": [
+          "webview2_user_data",
           "Cache",
           "Code Cache",
           "GPUCache",
@@ -44,10 +53,17 @@
         ],
         "excludePathPatterns": [],
         "excludeFilePatterns": [
+          "*.db",
+          "*.db-shm",
+          "*.db-wal",
+          "*.sqlite",
+          "*.sqlite-shm",
+          "*.sqlite-wal",
           "*.lock",
           "*.tmp",
           "*.etl",
-          "*.log"
+          "*.log",
+          "pid.txt"
         ]
       }
     ],
