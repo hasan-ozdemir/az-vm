@@ -317,10 +317,32 @@ function Ensure-DockerPrerequisiteServiceStarted {
         return
     }
 
+    try {
+        Start-Service -Name ([string]$service.Name) -ErrorAction Stop
+        Start-Sleep -Seconds 2
+        $service = Get-Service -Name ([string]$service.Name) -ErrorAction SilentlyContinue
+        if ($null -ne $service -and [string]$service.Status -eq 'Running') {
+            Write-Host ("docker-step-ok: prerequisite-service-started => {0}" -f [string]$service.Name)
+            return
+        }
+    }
+    catch {
+        Write-Host ("docker-step-info: prerequisite-service-start-via-start-service-skip => {0} => {1}" -f [string]$service.Name, $_.Exception.Message)
+    }
+
     $netStartResult = Invoke-ProcessWithTimeout -Label ("net start {0}" -f [string]$service.Name) -FilePath 'cmd.exe' -Arguments @('/d', '/c', ("net start ""{0}""" -f [string]$service.Name)) -TimeoutSeconds 30
     if (-not $netStartResult.Success) {
         $service = Get-Service -Name ([string]$service.Name) -ErrorAction SilentlyContinue
         if ($null -eq $service -or [string]$service.Status -ne 'Running') {
+            $netStartOutputText = ((@([string]$netStartResult.StdOut, [string]$netStartResult.StdErr) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join "`n")
+            $netStartLooksUnsupported = (
+                [int]$netStartResult.ExitCode -eq 2 -and
+                [string]::Equals([string]$service.Name, 'vmcompute', [System.StringComparison]::OrdinalIgnoreCase)
+            ) -or ($netStartOutputText -match '(?i)NET HELPMSG 2185')
+            if ($netStartLooksUnsupported) {
+                Write-Host ("docker-step-info: prerequisite-service-net-start-skip => {0} => unsupported-by-net-start" -f [string]$service.Name)
+                return
+            }
             throw ("docker prerequisite service failed to start: {0} (exit={1})" -f [string]$ServiceName, [int]$netStartResult.ExitCode)
         }
     }
@@ -877,6 +899,60 @@ function Wait-DockerDesktopInstalled {
     return (Test-DockerDesktopInstalled -DockerDesktopExe $DockerDesktopExe)
 }
 
+function Get-DockerDesktopUninstallRegistryKeyPaths {
+    $paths = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($rootPath in @(
+        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+        'Registry::HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+    )) {
+        if (-not (Test-Path -LiteralPath $rootPath)) {
+            continue
+        }
+
+        foreach ($child in @(Get-ChildItem -LiteralPath $rootPath -ErrorAction SilentlyContinue)) {
+            try {
+                $item = Get-ItemProperty -LiteralPath ([string]$child.PSPath) -ErrorAction Stop
+                $displayName = [string]$item.DisplayName
+                if ($displayName -like '*Docker Desktop*') {
+                    [void]$paths.Add([string]$child.PSPath)
+                }
+            }
+            catch {
+            }
+        }
+    }
+
+    return @($paths | Select-Object -Unique)
+}
+
+function Remove-DockerDesktopStaleRegistration {
+    param(
+        [string]$DockerDesktopExe,
+        [switch]$AllowWhenExecutablePresent
+    )
+
+    if ((Test-DockerDesktopInstalled -DockerDesktopExe $DockerDesktopExe) -and -not $AllowWhenExecutablePresent) {
+        return $false
+    }
+
+    $registryKeyPaths = @(Get-DockerDesktopUninstallRegistryKeyPaths)
+    if (@($registryKeyPaths).Count -eq 0) {
+        return $false
+    }
+
+    foreach ($registryKeyPath in @($registryKeyPaths)) {
+        Remove-Item -LiteralPath $registryKeyPath -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host ("docker-step-repair: removed-stale-registration => {0}" -f [string]$registryKeyPath)
+    }
+
+    $remainingKeyPaths = @(Get-DockerDesktopUninstallRegistryKeyPaths)
+    if (@($remainingKeyPaths).Count -gt 0) {
+        throw ("Docker Desktop stale registration cleanup failed: {0}" -f ((@($remainingKeyPaths) | ForEach-Object { [string]$_ }) -join ', '))
+    }
+
+    return $true
+}
+
 Refresh-SessionPath
 
 if (Remove-DockerDesktopDeferredStart) {
@@ -891,9 +967,18 @@ Write-Host "Resolved winget executable: $wingetExe"
 
 $dockerDesktopExe = [string]$taskConfig.DockerDesktopExecutablePath
 $dockerServiceExists = $null -ne (Get-Service -Name ([string]$taskConfig.DockerServiceName) -ErrorAction SilentlyContinue)
-$dockerAlreadyInstalled = (Test-Path -LiteralPath $dockerDesktopExe) -or $dockerServiceExists
+$dockerDesktopExeExists = Test-Path -LiteralPath $dockerDesktopExe
+$dockerAlreadyInstalled = ($dockerDesktopExeExists -and $dockerServiceExists)
 
 Ensure-WingetSourcesReady -WingetExe $wingetExe
+
+if ($dockerDesktopExeExists -and -not $dockerServiceExists) {
+    Write-Host 'docker-step-repair: incomplete-install-detected => missing-service'
+    if (Remove-DockerDesktopStaleRegistration -DockerDesktopExe $dockerDesktopExe -AllowWhenExecutablePresent) {
+        Write-Host 'docker-step-repair: stale-registration-cleared'
+    }
+    $dockerAlreadyInstalled = $false
+}
 
 if ($dockerAlreadyInstalled) {
     Write-Host "Docker Desktop is already installed. Winget install step is skipped."
@@ -901,6 +986,7 @@ if ($dockerAlreadyInstalled) {
 else {
     Stop-StaleInstallerProcesses | Out-Null
     $dockerInstallResult = $null
+    $staleRegistrationRepaired = $false
     foreach ($attempt in 1..2) {
         Write-Host ("Running: winget install -e --id {0} --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.DockerDesktopPackageId)
         $dockerInstallResult = Invoke-ProcessWithTimeout `
@@ -922,6 +1008,19 @@ else {
         if (Wait-DockerDesktopInstalled -DockerDesktopExe $dockerDesktopExe) {
             Write-Host ("docker-step-ok: install-materialized-after-exit => {0}" -f [int]$dockerInstallResult.ExitCode)
             break
+        }
+
+        $installOutputText = ((@([string]$dockerInstallResult.StdOut, [string]$dockerInstallResult.StdErr) | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join "`n")
+        $looksLikeStaleRegistration = (
+            [int]$dockerInstallResult.ExitCode -eq -1978335189 -or
+            $installOutputText -match '(?i)existing package already installed' -or
+            $installOutputText -match '(?i)no available upgrade found'
+        )
+        if ($looksLikeStaleRegistration -and -not $staleRegistrationRepaired -and (Remove-DockerDesktopStaleRegistration -DockerDesktopExe $dockerDesktopExe)) {
+            $staleRegistrationRepaired = $true
+            Write-Host 'docker-step-repair: stale-registration-cleared'
+            Start-Sleep -Seconds 3
+            continue
         }
 
         if ($attempt -lt 2) {

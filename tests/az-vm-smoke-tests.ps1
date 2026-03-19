@@ -5397,6 +5397,8 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message 'Docker Desktop task must launch Docker Desktop through interactive desktop automation.'
     Assert-True -Condition ($taskScript -like '*master-profile-state*') -Message 'Docker Desktop task must seed the master Docker profile state before launch.'
     Assert-True -Condition ($taskScript -like '*currentContext": "desktop-linux"*') -Message 'Docker Desktop task must enforce the desktop-linux Docker context in the seeded profile.'
+    Assert-True -Condition ($taskScript -like '*docker-step-repair: stale-registration-cleared*') -Message 'Docker Desktop task must clear stale uninstall registration when winget reports Docker Desktop as installed without install evidence.'
+    Assert-True -Condition ($taskScript -like '*removed-stale-registration =>*') -Message 'Docker Desktop task must log which stale Docker Desktop uninstall registration key was removed.'
     Assert-True -Condition ($taskScript -like '*"LicenseTermsVersion": 2*') -Message 'Docker Desktop task must seed the accepted license terms version in the managed profile state.'
     Assert-True -Condition (($taskScript.IndexOf('docker-step-warning', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Docker Desktop task must not keep soft warning-only service startup paths.'
     Assert-True -Condition ($taskScript -like '*Wait-DockerDaemonReady*') -Message 'Docker Desktop task must keep the bounded daemon readiness loop.'
@@ -5404,7 +5406,9 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like '*docker desktop status*') -Message 'Docker Desktop task must include a bounded docker desktop status probe.'
     Assert-True -Condition ($taskScript -like '*docker info*') -Message 'Docker Desktop task must include a bounded docker info probe.'
     Assert-True -Condition ($taskScript -like '*Docker Desktop did not become daemon-ready in time*') -Message 'Docker Desktop task must fail when the daemon never becomes ready.'
+    Assert-True -Condition ($taskScript -like '*Start-Service -Name*') -Message 'Docker Desktop task must first try native Start-Service before falling back to net start.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
+    Assert-True -Condition ($taskScript -like '*docker-step-info: prerequisite-service-net-start-skip =>*') -Message 'Docker Desktop task must tolerate services such as vmcompute when net start is unsupported on the guest image.'
 }
 
 Invoke-Test -Name "Windows AnyDesk task verifies the executable after non-fatal winget exits" -Action {
