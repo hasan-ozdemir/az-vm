@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.371 - 2026-03-19
+
+### Summary
+This release captures the latest selective Windows maintenance commits that were already validated as safe: updated task timeout budgets, `exec --file` one-shot SSH support, a more resilient Docker Desktop recovery path, and faster Windows language/user-settings completion behavior. The tracked smoke contract is now aligned with those approved changes and passes cleanly again.
+
+### Highlights
+- Raised the approved Windows init and update task timeout budgets and kept the tracked manifest contract in sync with the live-tuned values.
+- Added `az-vm exec --file <script-file>` so operators can run one local script remotely through the same SSH one-shot path without quoting multi-line command text manually.
+- Hardened the Docker Desktop task to clear stale uninstall registration and to tolerate guest images where native `Start-Service` succeeds but `net start` is not the right follow-up signal for every prerequisite service.
+- Refined `136-configure-language-settings` and `10005-copy-user-settings` so already-satisfied queued language installs recover faster and non-portable profile artifacts are skipped explicitly during user-settings copy.
+- Revalidated the maintained non-live gate with `tests\az-vm-smoke-tests.ps1`; the suite passed with `Passed: 156, Failed: 0`.
+
 ## Release 2026.3.19.364 - 2026-03-19
 
 ### Summary

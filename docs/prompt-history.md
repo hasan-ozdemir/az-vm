@@ -5480,3 +5480,23 @@ Update: please also write the available personal and business social-account val
 I added a tracked `.env` contract for optional Windows Public Desktop social and business-web shortcut URL overrides, carried those values through the runtime context and task materialization pipeline, and updated `10003-create-public-desktop-shortcuts` so the managed `s1-s18` shortcuts use the local override values when present but still fall back to generic non-broken URLs when the local values are blank. I also extended the interactive `configure` editor so every new shortcut URL key is exposed and validated as an optional HTTP/HTTPS field instead of leaving the supported-key contract out of sync.
 
 On the local machine only, I populated the `.env` file with the business and personal shortcut URLs that were safely recoverable from the available git history plus the current local company identity settings. I did not reintroduce those account-specific values into tracked code or tracked documentation because the repository contract forbids committing personal identifiers. I revalidated the tracked surface with `tests\az-vm-smoke-tests.ps1` and `tests\documentation-contract-check.ps1`; the new shortcut URL contract passed, and only the two pre-existing unrelated smoke failures remained (`exec --file` parsing and the tracked timeout drift for `102-configure-autologon-settings`). I also reran `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation and confirmed `warning=0`, `signal-warning=0`, and `error=0`, then verified that representative social/web shortcuts on `C:\Users\Public\Desktop` now resolve from the local override URLs.
+
+### 2026-03-19 02:34 UTC
+
+**User Prompt**
+
+````text
+Fix and update and commit: please selectively commit only the changes you are sure are commit-ready, and the ones that are only simple diffs such as CRLF-style drift. Do not make one one-shot git commit, because then we cannot roll back selectively.
+
+Update: the task.json changes are safe; I changed them myself.
+
+Update: the exec-related changes are safe too; I worked on them together with you, just make the smoke tests appropriate for exec.
+
+Update: the updates for vm-update tasks #134, #136, #10005 are also ours and were validated directly on the live VM; #10003 is safe too, and #133 is safe too.
+````
+
+**Assistant Summary**
+
+I split the safe pending work into selective commits instead of one large snapshot. First I committed the approved Windows init/update task manifest budget changes together with the smoke timeout expectations. Then I committed the `exec --file` feature as its own topic, including the new `--file` parameter module, runtime resolution logic, and help/README coverage. After that I committed the Docker Desktop recovery refinements as a dedicated topic, and I committed the language plus user-settings task refinements as another dedicated topic.
+
+I re-ran `tests\az-vm-smoke-tests.ps1` against the updated worktree and confirmed the maintained smoke suite now passes cleanly with `Passed: 156, Failed: 0`. I also recorded the selective-commit batch in the changelog and release notes so the tracked documentation reflects the now-committed runtime and task-surface changes.

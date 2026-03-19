@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.371] - 2026-03-19
+
+### Changed
+- Changed the tracked Windows init and update task manifests so the current timeout budgets and the Ollama task priority match the operator-approved live-tuned values.
+- Changed the `exec` command surface so one-shot SSH execution can now read the remote command body from a local script file through `--file` / `-f`, with help and README examples aligned to the new contract.
+- Changed the Windows language and user-settings maintenance tasks so the language worker can recover already-satisfied queued states faster and the user-settings copy path skips more non-portable profile content instead of spending time inside avoidable lag loops.
+
+### Fixed
+- Fixed the `exec` parser and runtime contract drift by wiring `--file` through the runtime manifest, option contract, help surface, and one-shot remote command wrapper.
+- Fixed the Windows Docker Desktop recovery flow so the task now repairs stale uninstall registration, tolerates `net start` gaps such as `vmcompute` on guest images where native `Start-Service` already succeeded, and keeps the daemon bring-up contract aligned with the live-tested path.
+- Fixed the Windows `10005-copy-user-settings` flow so ACL-protected, reparse-point, packaged-app, and other non-portable profile artifacts are skipped explicitly instead of degrading the run into long avoidable waits.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1` after the selective manifest, exec, Docker, language, and copy-settings commits; the suite passed with `Passed: 156, Failed: 0`.
+- Added smoke coverage for `exec --file`, the current Windows timeout contract, the Docker stale-registration repair path, and the language/copy-settings refinements that were already validated live in isolation.
+
 ## [2026.3.19.364] - 2026-03-19
 
 ### Changed
