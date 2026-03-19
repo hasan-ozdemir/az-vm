@@ -6,6 +6,21 @@ function ConvertTo-AzVmShortcutLauncherBase64 {
     return [Convert]::ToBase64String($bytes)
 }
 
+function ConvertFrom-AzVmShortcutCodePoints {
+    param([int[]]$CodePoints)
+
+    if ($null -eq $CodePoints -or @($CodePoints).Count -eq 0) {
+        return ''
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($codePoint in @($CodePoints)) {
+        [void]$builder.Append([char][int]$codePoint)
+    }
+
+    return $builder.ToString()
+}
+
 function ConvertFrom-AzVmShortcutLauncherBase64 {
     param([string]$Value)
 
@@ -33,16 +48,126 @@ function Get-AzVmShortcutLauncherRoot {
     return (Join-Path $root $Subdirectory)
 }
 
+function Repair-AzVmShortcutTextEncoding {
+    param([string]$Value)
+
+    $text = if ($null -eq $Value) { '' } else { [string]$Value }
+    if ([string]::IsNullOrWhiteSpace([string]$text)) {
+        return ''
+    }
+
+    $mojibakeMarkers = @(
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3)),
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C4)),
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C5))
+    )
+    if ((@($mojibakeMarkers | Where-Object { $text.IndexOf([string]$_) -ge 0 }).Count) -eq 0) {
+        return $text
+    }
+
+    $replacementMap = [ordered]@{
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3, 0x2021)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C7))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3, 0x00A7)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00E7))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C4, 0x00B0)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x0130))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C4, 0x00B1)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x0131))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C5, 0x017E)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x015E))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C5, 0x00B8)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x015F))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C4, 0x017E)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x011E))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C4, 0x00B8)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x011F))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3, 0x2013)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00D6))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3, 0x00B6)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00F6))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3, 0x0153)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00DC))
+        (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00C3, 0x00BC)) = (ConvertFrom-AzVmShortcutCodePoints -CodePoints @(0x00FC))
+    }
+
+    $repairedText = [string]$text
+    foreach ($entry in $replacementMap.GetEnumerator()) {
+        $repairedText = $repairedText.Replace([string]$entry.Key, [string]$entry.Value)
+    }
+    if (-not [string]::Equals($repairedText, $text, [System.StringComparison]::Ordinal)) {
+        return $repairedText
+    }
+
+    try {
+        $windows1252 = [System.Text.Encoding]::GetEncoding(1252)
+        $decoded = [System.Text.Encoding]::UTF8.GetString($windows1252.GetBytes($text))
+        if (-not [string]::IsNullOrWhiteSpace([string]$decoded) -and ($decoded.IndexOf([char]0xFFFD) -lt 0)) {
+            return [string]$decoded
+        }
+    }
+    catch {
+    }
+
+    return $text
+}
+
+function ConvertTo-AzVmShortcutSafeSlug {
+    param(
+        [string]$Value,
+        [string]$Fallback = 'shortcut'
+    )
+
+    $text = Repair-AzVmShortcutTextEncoding -Value $Value
+    if ([string]::IsNullOrWhiteSpace([string]$text)) {
+        return [string]$Fallback
+    }
+
+    $normalized = $text.Normalize([System.Text.NormalizationForm]::FormD)
+    $builder = New-Object System.Text.StringBuilder
+        $pendingSeparator = $false
+    foreach ($character in $normalized.ToCharArray()) {
+        $mapped = switch ([int][char]$character) {
+            0x0131 { 'i'; break }
+            0x0130 { 'i'; break }
+            default { [string]$character; break }
+        }
+
+        foreach ($mappedCharacter in $mapped.ToCharArray()) {
+            $unicodeCategory = [Globalization.CharUnicodeInfo]::GetUnicodeCategory($mappedCharacter)
+            if ($unicodeCategory -eq [Globalization.UnicodeCategory]::NonSpacingMark) {
+                continue
+            }
+
+            if ([char]::IsLetterOrDigit($mappedCharacter)) {
+                if ($pendingSeparator -and $builder.Length -gt 0 -and $builder[$builder.Length - 1] -ne '-') {
+                    [void]$builder.Append('-')
+                }
+
+                [void]$builder.Append(([string]$mappedCharacter).ToLowerInvariant())
+                $pendingSeparator = $false
+                continue
+            }
+
+            $pendingSeparator = $true
+        }
+    }
+
+    $safeName = [regex]::Replace($builder.ToString().Trim('-'), '-{2,}', '-')
+    if ([string]::IsNullOrWhiteSpace([string]$safeName)) {
+        return [string]$Fallback
+    }
+
+    return [string]$safeName
+}
+
+function Get-AzVmShortcutNormalizedKey {
+    param([string]$Value)
+
+    $safeSlug = ConvertTo-AzVmShortcutSafeSlug -Value $Value -Fallback ''
+    if ([string]::IsNullOrWhiteSpace([string]$safeSlug)) {
+        return ''
+    }
+
+    return ([string]$safeSlug).Replace('-', '')
+}
+
 function Get-AzVmShortcutLauncherFilePath {
     param(
         [string]$ShortcutName,
         [string]$Subdirectory = 'public-desktop'
     )
 
-    $safeName = ([regex]::Replace(([string]$ShortcutName).ToLowerInvariant(), '[^a-z0-9]+', '-')).Trim('-')
-    if ([string]::IsNullOrWhiteSpace([string]$safeName)) {
-        $safeName = 'shortcut'
-    }
+    $safeName = ConvertTo-AzVmShortcutSafeSlug -Value $ShortcutName -Fallback 'shortcut'
 
     return (Join-Path (Get-AzVmShortcutLauncherRoot -Subdirectory $Subdirectory) ($safeName + '.cmd'))
 }
@@ -302,4 +427,4 @@ function Get-AzVmShortcutResolvedInvocation {
     }
 }
 
-Export-ModuleMember -Function ConvertTo-AzVmShortcutLauncherBase64, ConvertFrom-AzVmShortcutLauncherBase64, Get-AzVmShortcutLauncherRoot, Get-AzVmShortcutLauncherFilePath, Get-AzVmShortcutEffectiveCommandText, Get-AzVmShortcutManagedInvocationLength, Test-AzVmShortcutNeedsManagedLauncher, Get-AzVmShortcutLauncherInvocationArguments, Write-AzVmShortcutLauncherFile, Test-AzVmShortcutLauncherFile, Get-AzVmShortcutLauncherMetadata, Get-AzVmShortcutLauncherPathFromInvocation, Get-AzVmShortcutResolvedInvocation
+Export-ModuleMember -Function ConvertTo-AzVmShortcutLauncherBase64, ConvertFrom-AzVmShortcutLauncherBase64, Repair-AzVmShortcutTextEncoding, ConvertTo-AzVmShortcutSafeSlug, Get-AzVmShortcutNormalizedKey, Get-AzVmShortcutLauncherRoot, Get-AzVmShortcutLauncherFilePath, Get-AzVmShortcutEffectiveCommandText, Get-AzVmShortcutManagedInvocationLength, Test-AzVmShortcutNeedsManagedLauncher, Get-AzVmShortcutLauncherInvocationArguments, Write-AzVmShortcutLauncherFile, Test-AzVmShortcutLauncherFile, Get-AzVmShortcutLauncherMetadata, Get-AzVmShortcutLauncherPathFromInvocation, Get-AzVmShortcutResolvedInvocation

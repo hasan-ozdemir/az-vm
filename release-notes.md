@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.363 - 2026-03-19
+
+### Summary
+This release fixes the remaining Turkish naming drift in the Windows Public Desktop shortcut flow. The visible managed shortcut labels now stay correctly Turkish on Windows PowerShell 5.1 as well as PowerShell 7+, the old `q1SourTimes` shortcut is replaced by `q1EkşiSözlük`, and stale mojibake desktop entries such as `r13Ã‡iÃ§ekSepeti Business` are normalized back to their intended `ÇiçekSepeti` names during the managed cleanup pass.
+
+### Highlights
+- Reworked the shared shortcut launcher helper so Turkish shortcut names are normalized and transliterated from PowerShell-safe Unicode code points instead of fragile raw source literals.
+- Renamed the managed quick-access shortcut from `q1SourTimes` to `q1EkşiSözlük` while keeping cleanup aliases for the previous English and ASCII spellings.
+- Updated the Windows summary readback contract so the live shortcut inventory now validates `q1EkşiSözlük`, `r13ÇiçekSepeti Business`, and `r14ÇiçekSepeti Personal` consistently.
+- Revalidated the change live in isolation on the active managed Windows VM: `10003-create-public-desktop-shortcuts` completed with `warning=0`, `signal-warning=0`, and `error=0`, and direct `exec` readback confirmed the corrected Turkish shortcut names and targets on `C:\Users\Public\Desktop`.
+
 ## Release 2026.3.18.362 - 2026-03-18
 
 ### Summary

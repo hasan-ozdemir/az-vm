@@ -1584,6 +1584,22 @@ $companyWebRootUrl = Normalize-ShortcutUrl -Value $resolvedCompanyWebAddress
 $expectedChromeBusinessArgs = ((Get-ChromeArgsPrefix -ProfileKind 'business' -Variant 'remote') + ' "' + [string]$companyWebRootUrl + '"')
 $expectedChromeSetupArgs = ((Get-ChromeArgsPrefix -ProfileKind 'business' -Variant 'setup') + ' "chrome://settings/syncSetup"')
 $expectedEdgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind 'business' -Variant 'remote'
+function ConvertFrom-UnicodeCodePoints {
+    param([int[]]$CodePoints)
+
+    if ($null -eq $CodePoints -or @($CodePoints).Count -eq 0) {
+        return ''
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($codePoint in @($CodePoints)) {
+        [void]$builder.Append([char][int]$codePoint)
+    }
+
+    return $builder.ToString()
+}
+$cicekSepetiLabel = ConvertFrom-UnicodeCodePoints -CodePoints @(0x00C7, 0x0069, 0x00E7, 0x0065, 0x006B, 0x0053, 0x0065, 0x0070, 0x0065, 0x0074, 0x0069)
+$eksiSozlukLabel = ConvertFrom-UnicodeCodePoints -CodePoints @(0x0045, 0x006B, 0x015F, 0x0069, 0x0053, 0x00F6, 0x007A, 0x006C, 0x00FC, 0x006B)
 $publicShortcutNames = @(
     "a1ChatGPT Web",
     "a2CodexApp",
@@ -1629,7 +1645,7 @@ $publicShortcutNames = @(
     "o4Excel",
     "o5Power Point",
     "o6OneNote",
-    "q1SourTimes",
+    ("q1{0}" -f $eksiSozlukLabel),
     "q2Spotify",
     "q3Netflix",
     "q4eGovernment",
@@ -1649,8 +1665,8 @@ $publicShortcutNames = @(
     "r10HepsiBurada Personal",
     "r11N11 Business",
     "r12N11 Personal",
-    "r13ÇiçekSepeti Business",
-    "r14ÇiçekSepeti Personal",
+    ("r13{0} Business" -f $cicekSepetiLabel),
+    ("r14{0} Personal" -f $cicekSepetiLabel),
     "r15Pazarama Business",
     "r16Pazarama Personal",
     "r17PTTAVM Business",

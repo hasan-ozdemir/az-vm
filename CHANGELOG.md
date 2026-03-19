@@ -3,6 +3,23 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.363] - 2026-03-19
+
+### Changed
+- Changed the Windows Public Desktop shortcut contract so Turkish managed shortcut labels are now built from PowerShell-safe Unicode code points instead of raw non-ASCII source literals, which keeps Windows PowerShell 5.1 and PowerShell 7+ aligned on the same visible shortcut names.
+- Changed the tracked quick-access shortcut label from `q1SourTimes` to `q1EkşiSözlük` while keeping cleanup aliases for the older English and ASCII spellings.
+- Changed the shared shortcut launcher helper and the Windows summary readback script to use the same Unicode-safe normalization and ASCII-safe launcher-slug generation for Turkish shortcut names.
+
+### Fixed
+- Fixed the Windows Public Desktop shortcut normalization drift where mojibake names such as `r13Ã‡iÃ§ekSepeti Business` could survive cleanup instead of being reconciled back to `r13ÇiçekSepeti Business`.
+- Fixed the managed launcher-path generation contract so Turkish shortcut names now resolve to stable ASCII-safe launcher filenames like `q1eksisozluk.cmd` without losing the visible UTF-8 desktop label.
+- Fixed the Windows summary readback inventory so the shipped Public Desktop validation surface now tracks the corrected `q1EkşiSözlük`, `r13ÇiçekSepeti Business`, and `r14ÇiçekSepeti Personal` names consistently.
+
+### Tests
+- Revalidated `tests\code-quality-check.ps1`.
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the Turkish shortcut changes passed and only the pre-existing unrelated `exec --file` parse assertion plus one tracked timeout-contract drift remained red.
+- Revalidated `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation and confirmed zero warnings plus corrected `q1EkşiSözlük` and `ÇiçekSepeti` shortcut readback on the managed Windows VM.
+
 ## [2026.3.18.362] - 2026-03-18
 
 ### Changed

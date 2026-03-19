@@ -41,6 +41,21 @@ if (Test-Path -LiteralPath $interactiveHelperPath) {
     . $interactiveHelperPath
 }
 
+function ConvertFrom-UnicodeCodePoints {
+    param([int[]]$CodePoints)
+
+    if ($null -eq $CodePoints -or @($CodePoints).Count -eq 0) {
+        return ''
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($codePoint in @($CodePoints)) {
+        [void]$builder.Append([char][int]$codePoint)
+    }
+
+    return $builder.ToString()
+}
+
 function Test-InvalidCompanyName {
     param([string]$Value)
 
@@ -1501,6 +1516,10 @@ function Get-NormalizedShortcutNameKey {
         return ""
     }
 
+    if (Get-Command Get-AzVmShortcutNormalizedKey -ErrorAction SilentlyContinue) {
+        return (Get-AzVmShortcutNormalizedKey -Value $Value)
+    }
+
     return ([regex]::Replace($Value.Trim().ToLowerInvariant(), '[^a-z0-9]+', ''))
 }
 
@@ -1883,6 +1902,11 @@ $edgeBusinessArgs = Get-EdgeArgsPrefix -ProfileKind 'business' -Variant 'remote'
 $sevenZipCliPath = Resolve-ExistingOrFallbackPath -PreferredPath "C:\ProgramData\chocolatey\bin\7z.exe" -ResolvedPath $sevenZipExe -FallbackPath "C:\ProgramData\chocolatey\bin\7z.exe"
 
 $shortcutSpecs = New-Object 'System.Collections.Generic.List[object]'
+$cicekSepetiLabel = ConvertFrom-UnicodeCodePoints -CodePoints @(0x00C7, 0x0069, 0x00E7, 0x0065, 0x006B, 0x0053, 0x0065, 0x0070, 0x0065, 0x0074, 0x0069)
+$eksiSozlukLabel = ConvertFrom-UnicodeCodePoints -CodePoints @(0x0045, 0x006B, 0x015F, 0x0069, 0x0053, 0x00F6, 0x007A, 0x006C, 0x00FC, 0x006B)
+$r13CicekSepetiBusinessName = ('r13{0} Business' -f $cicekSepetiLabel)
+$r14CicekSepetiPersonalName = ('r14{0} Personal' -f $cicekSepetiLabel)
+$q1EksiSozlukName = ('q1{0}' -f $eksiSozlukLabel)
 
 $socialWebShortcuts = @(
     @{ Name = "s1LinkedIn Business"; Url = "https://www.linkedin.com/company/"; ProfileKind = "business" },
@@ -1934,8 +1958,8 @@ $marketplaceWebShortcuts = @(
     @{ Name = "r10HepsiBurada Personal"; Url = "https://giris.hepsiburada.com"; ProfileKind = "personal" },
     @{ Name = "r11N11 Business"; Url = "https://so.n11.com"; ProfileKind = "business" },
     @{ Name = "r12N11 Personal"; Url = "https://www.n11.com/giris-yap"; ProfileKind = "personal" },
-    @{ Name = "r13ÇiçekSepeti Business"; Url = "https://seller.ciceksepeti.com/giris"; ProfileKind = "business" },
-    @{ Name = "r14ÇiçekSepeti Personal"; Url = "https://www.ciceksepeti.com/uye-girisi"; ProfileKind = "personal" },
+    @{ Name = $r13CicekSepetiBusinessName; Url = "https://seller.ciceksepeti.com/giris"; ProfileKind = "business"; CleanupAliases = @("r13CicekSepeti Business") },
+    @{ Name = $r14CicekSepetiPersonalName; Url = "https://www.ciceksepeti.com/uye-girisi"; ProfileKind = "personal"; CleanupAliases = @("r14CicekSepeti Personal") },
     @{ Name = "r15Pazarama Business"; Url = "https://isortagim.pazarama.com"; ProfileKind = "business" },
     @{ Name = "r16Pazarama Personal"; Url = "https://account.pazarama.com/giris"; ProfileKind = "personal" },
     @{ Name = "r17PTTAVM Business"; Url = "https://merchant.pttavm.com/magaza-giris"; ProfileKind = "business" },
@@ -1946,7 +1970,7 @@ $marketplaceWebShortcuts = @(
     @{ Name = "r22Getir Personal"; Url = "https://getir.com"; ProfileKind = "personal" }
 )
 $quickAccessWebShortcuts = @(
-    @{ Name = "q1SourTimes"; Url = "https://www.eksisozluk.com"; ProfileKind = "business" },
+    @{ Name = $q1EksiSozlukName; Url = "https://www.eksisozluk.com"; ProfileKind = "business"; CleanupAliases = @("q1SourTimes", "q1Eksisozluk") },
     @{ Name = "q2Spotify"; Url = "https://accounts.spotify.com/en/login?continue=https%3A%2F%2Fopen.spotify.com" },
     @{ Name = "q3Netflix"; Url = "https://www.netflix.com/tr-en/login" },
     @{ Name = "q4eGovernment"; Url = "https://www.turkiye.gov.tr" },
@@ -2034,7 +2058,8 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k2Gemini CLI" -Targ
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "k3Github Copilot CLI" -TargetPath $cmdExe -Arguments '/c cd /d %UserProfile% & %UserProfile%\AppData\Roaming\npm\copilot.cmd --screen-reader --yolo --no-ask-user --model claude-haiku-4.5' -WorkingDirectory "%UserProfile%" -IconLocation ($cmdExe + ",0") -AllowMissingTargetPath $true -ValidationKind "console")
 
 foreach ($spec in @($marketplaceWebShortcuts)) {
-    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind ([string]$spec.ProfileKind) -Variant 'remote')
+    $cleanupAliases = if ($spec.ContainsKey('CleanupAliases')) { @($spec.CleanupAliases) } else { @() }
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind ([string]$spec.ProfileKind) -Variant 'remote' -CleanupAliases $cleanupAliases)
 }
 
 Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "n1Notepad" -TargetPath "C:\Windows\System32\notepad.exe" -ValidationKind "app")
@@ -2053,7 +2078,8 @@ Add-Spec -List $shortcutSpecs -Spec (New-ShortcutSpec -Name "o6OneNote" -TargetP
 
 foreach ($spec in @($quickAccessWebShortcuts)) {
     $profileKind = if ($spec.ContainsKey('ProfileKind')) { [string]$spec.ProfileKind } else { 'business' }
-    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind $profileKind -Variant 'remote')
+    $cleanupAliases = if ($spec.ContainsKey('CleanupAliases')) { @($spec.CleanupAliases) } else { @() }
+    Add-Spec -List $shortcutSpecs -Spec (New-ChromeShortcutSpec -Name ([string]$spec.Name) -Url ([string]$spec.Url) -ProfileKind $profileKind -Variant 'remote' -CleanupAliases $cleanupAliases)
 }
 
 foreach ($spec in @($socialWebShortcuts)) {
@@ -2132,7 +2158,7 @@ $ownedManagedShortcutNames = @(
     "o4Excel",
     "o5Power Point",
     "o6OneNote",
-    "q1SourTimes",
+    $q1EksiSozlukName,
     "q2Spotify",
     "q3Netflix",
     "q4eGovernment",
@@ -2152,8 +2178,8 @@ $ownedManagedShortcutNames = @(
     "r10HepsiBurada Personal",
     "r11N11 Business",
     "r12N11 Personal",
-    "r13ÇiçekSepeti Business",
-    "r14ÇiçekSepeti Personal",
+    $r13CicekSepetiBusinessName,
+    $r14CicekSepetiPersonalName,
     "r15Pazarama Business",
     "r16Pazarama Personal",
     "r17PTTAVM Business",
