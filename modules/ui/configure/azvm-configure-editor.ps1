@@ -76,6 +76,24 @@ function Get-AzVmConfigureFieldSchema {
         (New-AzVmConfigureFieldSpec -Key 'SELECTED_COMPANY_EMAIL_ADDRESS' -Section 'Identity & Secrets' -Label 'Company email address' -EditorKind 'email')
         (New-AzVmConfigureFieldSpec -Key 'SELECTED_EMPLOYEE_EMAIL_ADDRESS' -Section 'Identity & Secrets' -Label 'Employee email address' -EditorKind 'email')
         (New-AzVmConfigureFieldSpec -Key 'SELECTED_EMPLOYEE_FULL_NAME' -Section 'Identity & Secrets' -Label 'Employee full name' -EditorKind 'text')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL' -Section 'Identity & Secrets' -Label 'Business LinkedIn shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_YOUTUBE_URL' -Section 'Identity & Secrets' -Label 'Business YouTube shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_GITHUB_URL' -Section 'Identity & Secrets' -Label 'Business GitHub shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_TIKTOK_URL' -Section 'Identity & Secrets' -Label 'Business TikTok shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_INSTAGRAM_URL' -Section 'Identity & Secrets' -Label 'Business Instagram shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_FACEBOOK_URL' -Section 'Identity & Secrets' -Label 'Business Facebook shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_X_URL' -Section 'Identity & Secrets' -Label 'Business X shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_SNAPCHAT_URL' -Section 'Identity & Secrets' -Label 'Business Snapchat shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_NEXTSOSYAL_URL' -Section 'Identity & Secrets' -Label 'Business NextSosyal shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_LINKEDIN_URL' -Section 'Identity & Secrets' -Label 'Personal LinkedIn shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_YOUTUBE_URL' -Section 'Identity & Secrets' -Label 'Personal YouTube shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_GITHUB_URL' -Section 'Identity & Secrets' -Label 'Personal GitHub shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_TIKTOK_URL' -Section 'Identity & Secrets' -Label 'Personal TikTok shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_INSTAGRAM_URL' -Section 'Identity & Secrets' -Label 'Personal Instagram shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_FACEBOOK_URL' -Section 'Identity & Secrets' -Label 'Personal Facebook shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL' -Section 'Identity & Secrets' -Label 'Personal X shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL' -Section 'Identity & Secrets' -Label 'Business home shortcut URL' -EditorKind 'url')
+        (New-AzVmConfigureFieldSpec -Key 'WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_BLOG_URL' -Section 'Identity & Secrets' -Label 'Business blog shortcut URL' -EditorKind 'url')
         (New-AzVmConfigureFieldSpec -Key 'VM_ADMIN_USER' -Section 'Identity & Secrets' -Label 'Admin user name' -EditorKind 'text')
         (New-AzVmConfigureFieldSpec -Key 'VM_ADMIN_PASS' -Section 'Identity & Secrets' -Label 'Admin password' -EditorKind 'secret' -Secret)
         (New-AzVmConfigureFieldSpec -Key 'VM_ASSISTANT_USER' -Section 'Identity & Secrets' -Label 'Assistant user name' -EditorKind 'text')
@@ -774,6 +792,18 @@ function Assert-AzVmConfigureEmailValue {
     return $Value.Trim()
 }
 
+function Assert-AzVmConfigureOptionalUrlValue {
+    param([string]$Key,[string]$Value)
+    if ([string]::IsNullOrWhiteSpace([string]$Value)) { return '' }
+    if (Test-AzVmConfigPlaceholderValue -Value $Value) {
+        Throw-FriendlyError -Detail ("Value '{0}' is still a placeholder for {1}." -f $Value, $Key) -Code 2 -Summary 'URL value is invalid.' -Hint 'Enter a real http:// or https:// address, or leave the field empty.'
+    }
+    if (-not ($Value -match '^https?://')) {
+        Throw-FriendlyError -Detail ("URL '{0}' is invalid for {1}." -f $Value, $Key) -Code 2 -Summary 'URL value is invalid.' -Hint 'Use an http:// or https:// address.'
+    }
+    return $Value.Trim()
+}
+
 function Assert-AzVmConfigureSecretValue {
     param([string]$Key,[string]$Value)
     if ([string]::IsNullOrWhiteSpace([string]$Value)) {
@@ -839,18 +869,27 @@ function Assert-AzVmConfigureFieldValue {
             if ([string]::IsNullOrWhiteSpace([string]$text)) { return '' }
             return [string](Assert-AzVmSubscriptionIdFormat -SubscriptionId $text -OptionSource 'configure editor')
         }
-        'SELECTED_COMPANY_WEB_ADDRESS' {
-            if ([string]::IsNullOrWhiteSpace([string]$text)) { return '' }
-            if (Test-AzVmConfigPlaceholderValue -Value $text) {
-                Throw-FriendlyError -Detail ("Value '{0}' is still a placeholder." -f $text) -Code 2 -Summary 'Web address value is invalid.' -Hint 'Enter a real https:// address or leave the field empty.'
-            }
-            if (-not ($text -match '^https?://')) {
-                Throw-FriendlyError -Detail ("Web address '{0}' is invalid." -f $text) -Code 2 -Summary 'Web address value is invalid.' -Hint 'Use an http:// or https:// address.'
-            }
-            return $text.Trim()
-        }
+        'SELECTED_COMPANY_WEB_ADDRESS' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
         'SELECTED_COMPANY_EMAIL_ADDRESS' { return (Assert-AzVmConfigureEmailValue -Key $Key -Value $text) }
         'SELECTED_EMPLOYEE_EMAIL_ADDRESS' { return (Assert-AzVmConfigureEmailValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_YOUTUBE_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_GITHUB_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_TIKTOK_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_INSTAGRAM_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_FACEBOOK_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_X_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_SNAPCHAT_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_NEXTSOSYAL_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_LINKEDIN_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_YOUTUBE_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_GITHUB_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_TIKTOK_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_INSTAGRAM_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_FACEBOOK_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
+        'WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_BLOG_URL' { return (Assert-AzVmConfigureOptionalUrlValue -Key $Key -Value $text) }
         'VM_ADMIN_USER' { return (Assert-AzVmConfigureRequiredTextValue -Key $Key -Value $text -Label 'Admin user name') }
         'VM_ADMIN_PASS' { return (Assert-AzVmConfigureSecretValue -Key $Key -Value $text) }
         'VM_ASSISTANT_USER' { return (Assert-AzVmConfigureRequiredTextValue -Key $Key -Value $text -Label 'Assistant user name') }

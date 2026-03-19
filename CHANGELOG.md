@@ -3,6 +3,21 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.19.364] - 2026-03-19
+
+### Changed
+- Changed the Windows Public Desktop social and business-web shortcut contract so `10003-create-public-desktop-shortcuts` can read optional local `.env` override URLs for the managed `s1-s18` web shortcut set instead of relying only on tracked generic fallback URLs.
+- Changed the runtime context, task materialization, and interactive `configure` surface so the new Windows shortcut URL override keys are carried consistently from `.env` into isolated task runs and normal create/update flows.
+
+### Fixed
+- Fixed the Windows Public Desktop shortcut flow so missing social override values now fall back cleanly to generic non-broken URLs instead of depending on account-specific tracked code.
+- Fixed the `configure` schema drift introduced by the new shortcut override keys by exposing and validating every supported social and business-web URL field in the interactive editor.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1` and confirmed the new `.env` shortcut URL contract, task token materialization, and `10003` shortcut surface pass; the remaining red assertions are the pre-existing unrelated `exec --file` parse contract and the tracked timeout drift for `102-configure-autologon-settings`.
+- Revalidated `tests\documentation-contract-check.ps1`.
+- Revalidated `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation and confirmed `warning=0`, `signal-warning=0`, and `error=0` after the env-backed shortcut URL changes.
+
 ## [2026.3.19.363] - 2026-03-19
 
 ### Changed

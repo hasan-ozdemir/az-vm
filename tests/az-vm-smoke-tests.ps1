@@ -443,6 +443,9 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     $envExampleKeys = @(Get-Content $envExamplePath | Where-Object { $_ -match '^[A-Za-z0-9_]+=' } | ForEach-Object { ($_ -split '=', 2)[0] })
     $requiredKeys = @(
         'SELECTED_VM_OS','SELECTED_VM_NAME','SELECTED_RESOURCE_GROUP','SELECTED_COMPANY_NAME','SELECTED_COMPANY_WEB_ADDRESS','SELECTED_COMPANY_EMAIL_ADDRESS','SELECTED_EMPLOYEE_EMAIL_ADDRESS','SELECTED_EMPLOYEE_FULL_NAME','SELECTED_AZURE_SUBSCRIPTION_ID','SELECTED_AZURE_REGION',
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_YOUTUBE_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_GITHUB_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_TIKTOK_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_INSTAGRAM_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_FACEBOOK_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_X_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_SNAPCHAT_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_NEXTSOSYAL_URL',
+        'WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_LINKEDIN_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_YOUTUBE_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_GITHUB_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_TIKTOK_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_INSTAGRAM_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_FACEBOOK_URL','WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL',
+        'WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL','WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_BLOG_URL',
         'RESOURCE_GROUP_TEMPLATE','VNET_NAME_TEMPLATE','SUBNET_NAME_TEMPLATE','NSG_NAME_TEMPLATE','NSG_RULE_NAME_TEMPLATE','PUBLIC_IP_NAME_TEMPLATE','NIC_NAME_TEMPLATE','VM_DISK_NAME_TEMPLATE',
         'VM_STORAGE_SKU','VM_SECURITY_TYPE','VM_ENABLE_HIBERNATION','VM_ENABLE_NESTED_VIRTUALIZATION','VM_ENABLE_SECURE_BOOT','VM_ENABLE_VTPM','VM_PRICE_COUNT_HOURS','VM_ADMIN_USER','VM_ADMIN_PASS','VM_ASSISTANT_USER','VM_ASSISTANT_PASS','VM_SSH_PORT','VM_RDP_PORT',
         'AZURE_COMMAND_TIMEOUT_SECONDS','SSH_CONNECT_TIMEOUT_SECONDS','SSH_TASK_TIMEOUT_SECONDS',
@@ -473,6 +476,10 @@ Invoke-Test -Name ".env.example runtime contract" -Action {
     Assert-True -Condition ($envExampleText -match [regex]::Escape('PYSSH_CLIENT_PATH=tools/pyssh/ssh_client.py')) -Message '.env.example must keep a non-empty repo-relative PYSSH client default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_NAME controls the default Google Chrome profile directory for repo-managed Windows business web shortcuts.')) -Message '.env.example must document SELECTED_COMPANY_NAME for the Windows business public desktop shortcut flow.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('Repo-managed Chrome profile-directory values are normalized to lowercase.')) -Message '.env.example must document lowercase Chrome profile-directory normalization.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('# Optional Windows Public Desktop social/web URL overrides.')) -Message '.env.example must document the optional Windows social/web override block.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL=')) -Message '.env.example must expose the business LinkedIn shortcut override key.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL=')) -Message '.env.example must expose the personal X shortcut override key.'
+    Assert-True -Condition ($envExampleText -match [regex]::Escape('WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL=')) -Message '.env.example must expose the business home shortcut override key.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_WEB_ADDRESS=<https-url>')) -Message '.env.example must keep the committed SELECTED_COMPANY_WEB_ADDRESS default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_COMPANY_EMAIL_ADDRESS=<email>')) -Message '.env.example must keep the committed SELECTED_COMPANY_EMAIL_ADDRESS default.'
     Assert-True -Condition ($envExampleText -match [regex]::Escape('SELECTED_EMPLOYEE_EMAIL_ADDRESS=<email>')) -Message '.env.example must keep the committed SELECTED_EMPLOYEE_EMAIL_ADDRESS default.'
@@ -4779,6 +4786,9 @@ Invoke-Test -Name "Task token replacement" -Action {
         CompanyEmailAddress = "<email>"
         EmployeeEmailAddress = "<email>"
         EmployeeFullName = "<person-name>"
+        ShortcutSocialBusinessLinkedInUrl = "https://www.linkedin.com/company/orgprofile"
+        ShortcutSocialPersonalXUrl = "https://x.com/exampleperson"
+        ShortcutWebBusinessHomeUrl = "https://www.example.test/home"
         AzLocation = "austriaeast"
         VmSize = "Standard_B2as_v2"
         VmImage = "example:image:urn"
@@ -4790,7 +4800,7 @@ Invoke-Test -Name "Task token replacement" -Action {
     }
 
     $templates = @(
-        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __SELECTED_RESOURCE_GROUP__ __SELECTED_VM_NAME__ __SELECTED_AZURE_REGION__ __SELECTED_COMPANY_NAME__ __SELECTED_COMPANY_WEB_ADDRESS__ __SELECTED_COMPANY_EMAIL_ADDRESS__ __SELECTED_EMPLOYEE_EMAIL_ADDRESS__ __SELECTED_EMPLOYEE_FULL_NAME__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
+        [pscustomobject]@{ Name = "01-test"; Script = "echo __VM_ADMIN_USER__ __SSH_PORT__ __RDP_PORT__ __SELECTED_RESOURCE_GROUP__ __SELECTED_VM_NAME__ __SELECTED_AZURE_REGION__ __SELECTED_COMPANY_NAME__ __SELECTED_COMPANY_WEB_ADDRESS__ __SELECTED_COMPANY_EMAIL_ADDRESS__ __SELECTED_EMPLOYEE_EMAIL_ADDRESS__ __SELECTED_EMPLOYEE_FULL_NAME__ __WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL__ __WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL__ __WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL__ __TCP_PORTS_BASH__ __HOST_STARTUP_PROFILE_JSON_B64__ __HOST_AUTOSTART_DISCOVERY_JSON_B64__" }
     )
 
     $resolved = Resolve-AzVmRuntimeTaskBlocks -TemplateTaskBlocks $templates -Context $context
@@ -4806,6 +4816,9 @@ Invoke-Test -Name "Task token replacement" -Action {
     Assert-True -Condition ($scriptBody -like "*<email>*") -Message "Company email-address token was not replaced."
     Assert-True -Condition ($scriptBody -like "*<email>*") -Message "Employee email token was not replaced."
     Assert-True -Condition ($scriptBody -like "*<person-name>*") -Message "Employee full name token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*linkedin.com/company/orgprofile*") -Message "Business LinkedIn shortcut token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*x.com/exampleperson*") -Message "Personal X shortcut token was not replaced."
+    Assert-True -Condition ($scriptBody -like "*example.test/home*") -Message "Business home shortcut token was not replaced."
     Assert-True -Condition ($scriptBody -like "*W10=*") -Message "Host startup profile token was not replaced."
     Assert-True -Condition ($scriptBody -like "*e30=*") -Message "Host autostart discovery token was not replaced."
 }
@@ -5749,6 +5762,13 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
     $shortcutTaskJsonText = [string](Get-Content -LiteralPath $shortcutTaskJsonPath -Raw)
     $healthTaskPath = Get-RepoSummaryReadbackScriptPath -Platform windows
     $healthTaskScript = [string](Get-Content -LiteralPath $healthTaskPath -Raw)
+    $cicekSepetiLabel = ConvertFrom-UnicodeCodePoints -CodePoints @(0x00C7, 0x0069, 0x00E7, 0x0065, 0x006B, 0x0053, 0x0065, 0x0070, 0x0065, 0x0074, 0x0069)
+    $eksiSozlukLabel = ConvertFrom-UnicodeCodePoints -CodePoints @(0x0045, 0x006B, 0x015F, 0x0069, 0x0053, 0x00F6, 0x007A, 0x006C, 0x00FC, 0x006B)
+    $generatedShortcutNames = @(
+        ('q1{0}' -f $eksiSozlukLabel),
+        ('r13{0} Business' -f $cicekSepetiLabel),
+        ('r14{0} Personal' -f $cicekSepetiLabel)
+    )
 
     $expectedShortcutNames = @(
         'a1ChatGPT Web',
@@ -5795,7 +5815,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'o4Excel',
         'o5Power Point',
         'o6OneNote',
-        'q1SourTimes',
+        ('q1{0}' -f $eksiSozlukLabel),
         'q2Spotify',
         'q3Netflix',
         'q4eGovernment',
@@ -5815,8 +5835,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'r10HepsiBurada Personal',
         'r11N11 Business',
         'r12N11 Personal',
-        'r13ÇiçekSepeti Business',
-        'r14ÇiçekSepeti Personal',
+        ('r13{0} Business' -f $cicekSepetiLabel),
+        ('r14{0} Personal' -f $cicekSepetiLabel),
         'r15Pazarama Business',
         'r16Pazarama Personal',
         'r17PTTAVM Business',
@@ -5936,6 +5956,7 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'ConvertTo-TitleCaseShortcutText',
         '$companyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $companyName',
         '$employeeEmailBaseName = ConvertTo-LowerInvariantText -Value $employeeEmailBaseName',
+        'Resolve-OptionalShortcutUrl',
         'Get-ChromeArgsPrefix',
         'Get-EdgeArgsPrefix',
         'Get-ChromeProfileDirectoryForShortcut -ProfileKind $ProfileKind',
@@ -5967,11 +5988,14 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://www.facebook.com/',
         'https://x.com/',
         'https://x.com/',
-        '$companyWebRootUrl = Normalize-ShortcutUrl -Value $companyWebAddress',
-        '$companyBlogUrl = if ([string]::IsNullOrWhiteSpace([string]$companyWebRootUrl)) { '''' } else { ($companyWebRootUrl + ''/blog'') }',
+        '$defaultBusinessWebRootUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $companyWebAddress -FallbackUrl ''https://www.example.com''',
+        '$companyWebRootUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutWebBusinessHomeUrl -FallbackUrl $defaultBusinessWebRootUrl',
+        '$companyBlogUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutWebBusinessBlogUrl -FallbackUrl ($companyWebRootUrl + ''/blog'')',
         '__SELECTED_COMPANY_WEB_ADDRESS__',
         '__SELECTED_COMPANY_EMAIL_ADDRESS__',
-        'SELECTED_COMPANY_WEB_ADDRESS is required for the Windows business public desktop shortcut flow',
+        '__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL__',
+        '__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL__',
+        '__WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL__',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr',
         'https://sube.garantibbva.com.tr/isube/login/login/passwordentrypersonal-tr',
         'https://internetsubesi.qnb.com.tr/Login/LoginPage.aspx?FromDK=true',
@@ -5980,8 +6004,8 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         'https://online.aktifbank.com.tr/default.aspx?lang=tr-TR',
         'https://kurumsal.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx?customertype=crp',
         'https://bireysel.ziraatbank.com.tr/Transactions/Login/FirstLogin.aspx',
-        'https://www.snapchat.com/@exampleorg',
-        'https://sosyal.teknofest.app/@exampleorg',
+        '$socialBusinessSnapchatUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessSnapchatUrl -FallbackUrl ''https://www.snapchat.com/''',
+        '$socialBusinessNextSosyalUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessNextSosyalUrl -FallbackUrl ''https://sosyal.teknofest.app/''',
         'https://dijital.gib.gov.tr/portal/login',
         'https://www.eksisozluk.com',
         'https://secure.sahibinden.com/giris',
@@ -6083,10 +6107,16 @@ Invoke-Test -Name "Windows public desktop shortcut contract includes refreshed p
         '%LocalAppData%\Microsoft\OneDrive\OneDrive.exe'
     )
 
-    foreach ($shortcutName in @($expectedShortcutNames)) {
+    foreach ($shortcutName in @($expectedShortcutNames | Where-Object { @($generatedShortcutNames) -notcontains [string]$_ })) {
         Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$shortcutName, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Shortcut task must create '{0}'." -f $shortcutName)
         Assert-True -Condition (($healthTaskScript.IndexOf([string]$shortcutName, [System.StringComparison]::Ordinal)) -ge 0) -Message ("Health snapshot must inventory '{0}'." -f $shortcutName)
     }
+
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('$q1EksiSozlukName =', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must build the Turkish EkşiSözlük label from Unicode code points.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('$r13CicekSepetiBusinessName =', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must build the Turkish ÇiçekSepeti business label from Unicode code points.'
+    Assert-True -Condition (($shortcutTaskScript.IndexOf('$r14CicekSepetiPersonalName =', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Shortcut task must build the Turkish ÇiçekSepeti personal label from Unicode code points.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('$cicekSepetiLabel =', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must derive the Turkish ÇiçekSepeti label from Unicode code points.'
+    Assert-True -Condition (($healthTaskScript.IndexOf('$eksiSozlukLabel =', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Health snapshot must derive the Turkish EkşiSözlük label from Unicode code points.'
 
     foreach ($legacyShortcutName in @($legacyShortcutNames)) {
         Assert-True -Condition (($shortcutTaskScript.IndexOf([string]$legacyShortcutName, [System.StringComparison]::Ordinal)) -lt 0) -Message ("Shortcut task must not keep legacy shortcut name '{0}'." -f $legacyShortcutName)

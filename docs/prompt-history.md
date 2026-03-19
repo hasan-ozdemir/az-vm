@@ -5464,3 +5464,19 @@ I fixed the tracked Windows Public Desktop shortcut flow so Turkish labels now s
 I revalidated the change with `tests\code-quality-check.ps1`, reran `tests\az-vm-smoke-tests.ps1`, and isolated the remaining smoke failures to two pre-existing unrelated issues: the `exec --file` parse assertion and one timeout-contract drift for `102-configure-autologon-settings`. Then I reran `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation; it completed with `warning=0`, `signal-warning=0`, and `error=0`. A direct `exec` readback from `C:\Users\Public\Desktop` confirmed that `q1EkşiSözlük`, `r13ÇiçekSepeti Business`, and `r14ÇiçekSepeti Personal` now exist with the expected Chrome targets and arguments, and the task also removed the stale `q1SourTimes` and mojibake `ÇiçekSepeti` aliases on the managed VM.
 
 I also audited the available git history for the social-media shortcut URLs. The current local history still shows only the sanitized/genericized tracked variants, so I did not recommit any account-specific social handles into the tracked repo because the repository contract forbids introducing personal identifiers back into committed code or docs. If you want, the next safe step is to move those social URLs into local `.env`-backed overrides so your exact handles can be restored for runtime use without breaking the tracked sensitive-content contract.
+
+### 2026-03-19 01:59 UTC
+
+**User Prompt**
+
+````text
+Task: yes, move all of our business and personal social-media account URLs into the local .env settings file with clear grouped prefixes, and let the public-desktop-shortcuts vm-update task read them from there. If those values are absent in .env, all URLs should still fall back to generic targets without regressions or dangling/broken URLs.
+
+Update: please also write the available personal and business social-account values you can recover from git history into the local .env file in an acceptable format, so the public-desktop-shortcuts task uses those personal and business addresses as the shortcut targets.
+````
+
+**Assistant Summary**
+
+I added a tracked `.env` contract for optional Windows Public Desktop social and business-web shortcut URL overrides, carried those values through the runtime context and task materialization pipeline, and updated `10003-create-public-desktop-shortcuts` so the managed `s1-s18` shortcuts use the local override values when present but still fall back to generic non-broken URLs when the local values are blank. I also extended the interactive `configure` editor so every new shortcut URL key is exposed and validated as an optional HTTP/HTTPS field instead of leaving the supported-key contract out of sync.
+
+On the local machine only, I populated the `.env` file with the business and personal shortcut URLs that were safely recoverable from the available git history plus the current local company identity settings. I did not reintroduce those account-specific values into tracked code or tracked documentation because the repository contract forbids committing personal identifiers. I revalidated the tracked surface with `tests\az-vm-smoke-tests.ps1` and `tests\documentation-contract-check.ps1`; the new shortcut URL contract passed, and only the two pre-existing unrelated smoke failures remained (`exec --file` parsing and the tracked timeout drift for `102-configure-autologon-settings`). I also reran `task --run-vm-update 10003 --group rg-bizyum-ate1-g1 --vm-name bizyum --perf` live in isolation and confirmed `warning=0`, `signal-warning=0`, and `error=0`, then verified that representative social/web shortcuts on `C:\Users\Public\Desktop` now resolve from the local override URLs.

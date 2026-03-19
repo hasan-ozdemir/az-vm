@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.19.364 - 2026-03-19
+
+### Summary
+This release makes the Windows Public Desktop social and business-web shortcuts configurable through local `.env` values without breaking the tracked generic shortcut contract. The `10003` task now reads optional override URLs for the managed `s1-s18` shortcut set, falls back cleanly when those values are blank, and the interactive `configure` editor exposes the same URL fields so local operators can manage them without editing task code.
+
+### Highlights
+- Added optional local `.env` override keys for the managed Windows social and business-web shortcut URLs used by `10003-create-public-desktop-shortcuts`.
+- Carried those URL overrides through the runtime context and task materialization pipeline so they work in normal runs and isolated `task --run-vm-update 10003` executions.
+- Updated the interactive `configure` schema and validation surface so every new shortcut URL key is visible and verified as an optional HTTP/HTTPS value.
+- Revalidated the behavior live in isolation on the active managed Windows VM: `10003-create-public-desktop-shortcuts` completed with `warning=0`, `signal-warning=0`, and `error=0`, and direct shortcut readback confirmed the business and personal social/web URLs now resolve from local `.env` overrides.
+
 ## Release 2026.3.19.363 - 2026-03-19
 
 ### Summary

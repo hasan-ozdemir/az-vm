@@ -6,6 +6,24 @@ $companyWebAddress = "__SELECTED_COMPANY_WEB_ADDRESS__"
 $companyEmailAddress = "__SELECTED_COMPANY_EMAIL_ADDRESS__"
 $employeeEmailAddress = "__SELECTED_EMPLOYEE_EMAIL_ADDRESS__"
 $employeeFullName = "__SELECTED_EMPLOYEE_FULL_NAME__"
+$shortcutSocialBusinessLinkedInUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_LINKEDIN_URL__"
+$shortcutSocialBusinessYouTubeUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_YOUTUBE_URL__"
+$shortcutSocialBusinessGitHubUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_GITHUB_URL__"
+$shortcutSocialBusinessTikTokUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_TIKTOK_URL__"
+$shortcutSocialBusinessInstagramUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_INSTAGRAM_URL__"
+$shortcutSocialBusinessFacebookUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_FACEBOOK_URL__"
+$shortcutSocialBusinessXUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_X_URL__"
+$shortcutSocialBusinessSnapchatUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_SNAPCHAT_URL__"
+$shortcutSocialBusinessNextSosyalUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_BUSINESS_NEXTSOSYAL_URL__"
+$shortcutSocialPersonalLinkedInUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_LINKEDIN_URL__"
+$shortcutSocialPersonalYouTubeUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_YOUTUBE_URL__"
+$shortcutSocialPersonalGitHubUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_GITHUB_URL__"
+$shortcutSocialPersonalTikTokUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_TIKTOK_URL__"
+$shortcutSocialPersonalInstagramUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_INSTAGRAM_URL__"
+$shortcutSocialPersonalFacebookUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_FACEBOOK_URL__"
+$shortcutSocialPersonalXUrl = "__WIN_PUBLIC_SHORTCUT_SOCIAL_PERSONAL_X_URL__"
+$shortcutWebBusinessHomeUrl = "__WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_HOME_URL__"
+$shortcutWebBusinessBlogUrl = "__WIN_PUBLIC_SHORTCUT_WEB_BUSINESS_BLOG_URL__"
 $managerUser = "__VM_ADMIN_USER__"
 $managerPassword = "__VM_ADMIN_PASS__"
 $assistantUser = "__ASSISTANT_USER__"
@@ -185,11 +203,30 @@ function Normalize-ShortcutUrl {
     return $trimmed.TrimEnd('/')
 }
 
+function Resolve-OptionalShortcutUrl {
+    param(
+        [string]$ConfiguredValue,
+        [string]$FallbackUrl
+    )
+
+    $normalizedFallback = Normalize-ShortcutUrl -Value $FallbackUrl
+    if ([string]::IsNullOrWhiteSpace([string]$ConfiguredValue)) {
+        return [string]$normalizedFallback
+    }
+
+    $trimmed = [string]$ConfiguredValue.Trim()
+    if ($trimmed.StartsWith('__', [System.StringComparison]::Ordinal) -and $trimmed.EndsWith('__', [System.StringComparison]::Ordinal)) {
+        return [string]$normalizedFallback
+    }
+    if (-not ($trimmed -match '^https?://')) {
+        return [string]$normalizedFallback
+    }
+
+    return (Normalize-ShortcutUrl -Value $trimmed)
+}
+
 if (Test-InvalidCompanyName -Value $companyName) {
     throw "SELECTED_COMPANY_NAME is required for the Windows business public desktop shortcut flow. Set SELECTED_COMPANY_NAME in .env before running 10002-create-public-desktop-shortcuts."
-}
-if (Test-InvalidCompanyWebAddress -Value $companyWebAddress) {
-    throw "SELECTED_COMPANY_WEB_ADDRESS is required for the Windows business public desktop shortcut flow. Set SELECTED_COMPANY_WEB_ADDRESS in .env before running 10002-create-public-desktop-shortcuts."
 }
 if (Test-InvalidEmployeeEmailAddress -Value $employeeEmailAddress) {
     throw "SELECTED_EMPLOYEE_EMAIL_ADDRESS is required for the Windows public desktop shortcut flow. Set SELECTED_EMPLOYEE_EMAIL_ADDRESS in .env before running 10002-create-public-desktop-shortcuts."
@@ -207,8 +244,25 @@ $employeeEmailBaseName = Get-EmployeeEmailBaseName -EmailAddress $employeeEmailA
 $companyDisplayName = ConvertTo-TitleCaseShortcutText -Value $companyName
 $companyChromeProfileDirectory = ConvertTo-LowerInvariantText -Value $companyName
 $employeeEmailBaseName = ConvertTo-LowerInvariantText -Value $employeeEmailBaseName
-$companyWebRootUrl = Normalize-ShortcutUrl -Value $companyWebAddress
-$companyBlogUrl = if ([string]::IsNullOrWhiteSpace([string]$companyWebRootUrl)) { '' } else { ($companyWebRootUrl + '/blog') }
+$defaultBusinessWebRootUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $companyWebAddress -FallbackUrl 'https://www.example.com'
+$companyWebRootUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutWebBusinessHomeUrl -FallbackUrl $defaultBusinessWebRootUrl
+$companyBlogUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutWebBusinessBlogUrl -FallbackUrl ($companyWebRootUrl + '/blog')
+$socialBusinessLinkedInUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessLinkedInUrl -FallbackUrl 'https://www.linkedin.com/company/'
+$socialPersonalLinkedInUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalLinkedInUrl -FallbackUrl 'https://www.linkedin.com/'
+$socialBusinessYouTubeUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessYouTubeUrl -FallbackUrl 'https://www.youtube.com/'
+$socialPersonalYouTubeUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalYouTubeUrl -FallbackUrl 'https://www.youtube.com/'
+$socialBusinessGitHubUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessGitHubUrl -FallbackUrl 'https://github.com/'
+$socialPersonalGitHubUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalGitHubUrl -FallbackUrl 'https://github.com/'
+$socialBusinessTikTokUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessTikTokUrl -FallbackUrl 'https://www.tiktok.com/'
+$socialPersonalTikTokUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalTikTokUrl -FallbackUrl 'https://www.tiktok.com/'
+$socialBusinessInstagramUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessInstagramUrl -FallbackUrl 'https://instagram.com/'
+$socialPersonalInstagramUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalInstagramUrl -FallbackUrl 'https://instagram.com/'
+$socialBusinessFacebookUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessFacebookUrl -FallbackUrl 'https://www.facebook.com/'
+$socialPersonalFacebookUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalFacebookUrl -FallbackUrl 'https://www.facebook.com/'
+$socialBusinessXUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessXUrl -FallbackUrl 'https://x.com/'
+$socialPersonalXUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialPersonalXUrl -FallbackUrl 'https://x.com/'
+$socialBusinessSnapchatUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessSnapchatUrl -FallbackUrl 'https://www.snapchat.com/'
+$socialBusinessNextSosyalUrl = Resolve-OptionalShortcutUrl -ConfiguredValue $shortcutSocialBusinessNextSosyalUrl -FallbackUrl 'https://sosyal.teknofest.app/'
 
 function Get-ChromeProfileDirectoryForShortcut {
     param(
@@ -1909,24 +1963,24 @@ $r14CicekSepetiPersonalName = ('r14{0} Personal' -f $cicekSepetiLabel)
 $q1EksiSozlukName = ('q1{0}' -f $eksiSozlukLabel)
 
 $socialWebShortcuts = @(
-    @{ Name = "s1LinkedIn Business"; Url = "https://www.linkedin.com/company/"; ProfileKind = "business" },
-    @{ Name = "s2LinkedIn Personal"; Url = "https://www.linkedin.com/"; ProfileKind = "personal" },
-    @{ Name = "s3YouTube Business"; Url = "https://www.youtube.com/"; ProfileKind = "business" },
-    @{ Name = "s4YouTube Personal"; Url = "https://www.youtube.com/"; ProfileKind = "personal" },
-    @{ Name = "s5GitHub Business"; Url = "https://github.com/"; ProfileKind = "business" },
-    @{ Name = "s6GitHub Personal"; Url = "https://github.com/"; ProfileKind = "personal" },
-    @{ Name = "s7TikTok Business"; Url = "https://www.tiktok.com/"; ProfileKind = "business" },
-    @{ Name = "s8TikTok Personal"; Url = "https://www.tiktok.com/"; ProfileKind = "personal" },
-    @{ Name = "s9Instagram Business"; Url = "https://instagram.com/"; ProfileKind = "business" },
-    @{ Name = "s10Instagram Personal"; Url = "https://instagram.com/"; ProfileKind = "personal" },
-    @{ Name = "s11Facebook Business"; Url = "https://www.facebook.com/"; ProfileKind = "business" },
-    @{ Name = "s12Facebook Personal"; Url = "https://www.facebook.com/"; ProfileKind = "personal" },
-    @{ Name = "s13X-Twitter Business"; Url = "https://x.com/"; ProfileKind = "business" },
-    @{ Name = "s14X-Twitter Personal"; Url = "https://x.com/"; ProfileKind = "personal" },
+    @{ Name = "s1LinkedIn Business"; Url = $socialBusinessLinkedInUrl; ProfileKind = "business" },
+    @{ Name = "s2LinkedIn Personal"; Url = $socialPersonalLinkedInUrl; ProfileKind = "personal" },
+    @{ Name = "s3YouTube Business"; Url = $socialBusinessYouTubeUrl; ProfileKind = "business" },
+    @{ Name = "s4YouTube Personal"; Url = $socialPersonalYouTubeUrl; ProfileKind = "personal" },
+    @{ Name = "s5GitHub Business"; Url = $socialBusinessGitHubUrl; ProfileKind = "business" },
+    @{ Name = "s6GitHub Personal"; Url = $socialPersonalGitHubUrl; ProfileKind = "personal" },
+    @{ Name = "s7TikTok Business"; Url = $socialBusinessTikTokUrl; ProfileKind = "business" },
+    @{ Name = "s8TikTok Personal"; Url = $socialPersonalTikTokUrl; ProfileKind = "personal" },
+    @{ Name = "s9Instagram Business"; Url = $socialBusinessInstagramUrl; ProfileKind = "business" },
+    @{ Name = "s10Instagram Personal"; Url = $socialPersonalInstagramUrl; ProfileKind = "personal" },
+    @{ Name = "s11Facebook Business"; Url = $socialBusinessFacebookUrl; ProfileKind = "business" },
+    @{ Name = "s12Facebook Personal"; Url = $socialPersonalFacebookUrl; ProfileKind = "personal" },
+    @{ Name = "s13X-Twitter Business"; Url = $socialBusinessXUrl; ProfileKind = "business" },
+    @{ Name = "s14X-Twitter Personal"; Url = $socialPersonalXUrl; ProfileKind = "personal" },
     @{ Name = ("s15{0} Web" -f $companyDisplayName); Url = $companyWebRootUrl; ProfileKind = "business" },
     @{ Name = ("s16{0} Blog" -f $companyDisplayName); Url = $companyBlogUrl; ProfileKind = "business" },
-    @{ Name = "s17SnapChat Business"; Url = "https://www.snapchat.com/@exampleorg"; ProfileKind = "business" },
-    @{ Name = "s18NextSosyal Business"; Url = "https://sosyal.teknofest.app/@exampleorg"; ProfileKind = "business" }
+    @{ Name = "s17SnapChat Business"; Url = $socialBusinessSnapchatUrl; ProfileKind = "business" },
+    @{ Name = "s18NextSosyal Business"; Url = $socialBusinessNextSosyalUrl; ProfileKind = "business" }
 )
 $bankShortcuts = @(
     @{ Name = "b1GarantiBank Business"; Url = "https://sube.garantibbva.com.tr/isube/login/login/passwordentrycorporate-tr"; ProfileKind = "business" },
