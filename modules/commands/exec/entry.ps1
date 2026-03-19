@@ -7,14 +7,16 @@ function Invoke-AzVmExecCommand {
     )
 
     $runtime = Initialize-AzVmExecCommandRuntimeContext
-    $commandText = [string](Get-AzVmCliOptionText -Options $Options -Name 'command')
+    $commandSource = Resolve-AzVmExecCommandTextFromOptions -Options $Options -RepoRoot ([string]$runtime.RepoRoot)
+    $commandText = [string]$commandSource.CommandText
+    $scriptFilePath = [string]$commandSource.ScriptFilePath
     $quietRequested = (Test-AzVmCliOptionPresent -Options $Options -Name 'quiet')
     if ($quietRequested -and [string]::IsNullOrWhiteSpace([string]$commandText)) {
         Throw-FriendlyError `
-            -Detail "exec --quiet requires --command or -c." `
+            -Detail "exec --quiet requires --command, -c, or --file." `
             -Code 61 `
             -Summary "Quiet exec requires one remote command." `
-            -Hint 'Use az-vm exec --quiet --command "<remote-command>".'
+            -Hint 'Use az-vm exec --quiet --command "<remote-command>" or az-vm exec --quiet --file <script-file>.'
     }
     if ($quietRequested) {
         $script:AzVmQuietOutput = $true
@@ -82,6 +84,9 @@ function Invoke-AzVmExecCommand {
         $commandWatch = $null
         if ($script:PerfMode -and -not $quietRequested) {
             $commandWatch = [System.Diagnostics.Stopwatch]::StartNew()
+        }
+        if (-not $quietRequested -and -not [string]::IsNullOrWhiteSpace([string]$scriptFilePath)) {
+            Write-Host ("Exec remote command source file: {0}" -f [string]$scriptFilePath) -ForegroundColor DarkCyan
         }
         $remoteCommandText = ConvertTo-AzVmExecRemoteCommandText -CommandText $commandText -Platform $replPlatform -Quiet:$quietRequested
 

@@ -69,3 +69,69 @@ function ConvertTo-AzVmExecRemoteCommandText {
     $encodedCommand = [Convert]::ToBase64String($encodedBytes)
     return ("powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand {0}" -f [string]$encodedCommand)
 }
+
+function Resolve-AzVmExecCommandTextFromOptions {
+    param(
+        [hashtable]$Options,
+        [string]$RepoRoot
+    )
+
+    $commandText = [string](Get-AzVmCliOptionText -Options $Options -Name 'command')
+    $filePathText = [string](Get-AzVmCliOptionText -Options $Options -Name 'file')
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$commandText) -and -not [string]::IsNullOrWhiteSpace([string]$filePathText)) {
+        Throw-FriendlyError `
+            -Detail 'exec accepts either --command or --file, but not both.' `
+            -Code 61 `
+            -Summary 'Exec command source is ambiguous.' `
+            -Hint 'Use either az-vm exec --command "<remote-command>" or az-vm exec --file <script-file>.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$filePathText)) {
+        return [pscustomobject]@{
+            CommandText = [string]$commandText
+            ScriptFilePath = ''
+        }
+    }
+
+    $candidatePaths = New-Object 'System.Collections.Generic.List[string]'
+    [void]$candidatePaths.Add([string]$filePathText)
+    if (-not [System.IO.Path]::IsPathRooted([string]$filePathText) -and -not [string]::IsNullOrWhiteSpace([string]$RepoRoot)) {
+        [void]$candidatePaths.Add((Join-Path $RepoRoot [string]$filePathText))
+    }
+
+    $resolvedPath = ''
+    foreach ($candidatePath in @($candidatePaths)) {
+        if ([string]::IsNullOrWhiteSpace([string]$candidatePath)) {
+            continue
+        }
+
+        $pathItem = Get-Item -LiteralPath $candidatePath -ErrorAction SilentlyContinue
+        if ($null -ne $pathItem -and -not $pathItem.PSIsContainer) {
+            $resolvedPath = [string]$pathItem.FullName
+            break
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$resolvedPath)) {
+        Throw-FriendlyError `
+            -Detail ("Script file was not found: {0}" -f [string]$filePathText) `
+            -Code 61 `
+            -Summary 'Exec script file was not found.' `
+            -Hint 'Pass one existing local script file path to az-vm exec --file.'
+    }
+
+    $scriptText = [string][System.IO.File]::ReadAllText($resolvedPath)
+    if ([string]::IsNullOrWhiteSpace([string]$scriptText)) {
+        Throw-FriendlyError `
+            -Detail ("Script file is empty: {0}" -f [string]$resolvedPath) `
+            -Code 61 `
+            -Summary 'Exec script file is empty.' `
+            -Hint 'Add remote command content to the script file before using az-vm exec --file.'
+    }
+
+    return [pscustomobject]@{
+        CommandText = [string]$scriptText
+        ScriptFilePath = [string]$resolvedPath
+    }
+}

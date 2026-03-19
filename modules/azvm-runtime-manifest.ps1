@@ -212,6 +212,7 @@
     'modules/commands/exec/parameters/help.ps1'
     'modules/commands/exec/parameters/group.ps1'
     'modules/commands/exec/parameters/vm-name.ps1'
+    'modules/commands/exec/parameters/file.ps1'
     'modules/commands/exec/parameters/command.ps1'
     'modules/commands/exec/parameters/quiet.ps1'
     'modules/commands/exec/contract.ps1'

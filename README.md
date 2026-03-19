@@ -382,6 +382,7 @@ Windows is the richest end-user path today. Linux is already reliable, intention
 | --- | --- | --- | --- | --- |
 | `.\az-vm.cmd exec --group <resource-group> --vm-name <vm-name>` | target selectors | Opens the interactive remote-shell path | Manual guest work | Interactive shell mode is used when no `--command` is provided. |
 | `.\az-vm.cmd exec --command "Get-Date" --group <resource-group> --vm-name <vm-name>` | `--command`, target selectors | Runs one remote command over SSH | One-shot diagnosis or manual admin action | Uses PowerShell on Windows and bash on Linux. |
+| `.\az-vm.cmd exec --file .\tools\scripts\sample-remote.ps1 --group <resource-group> --vm-name <vm-name>` | `--file`, target selectors | Runs one local script file remotely over SSH | Safer multi-line remote diagnosis or admin action | Reads the local file content and sends it through the same one-shot exec path. |
 | `.\az-vm.cmd exec --quiet --command "Get-Date" --group <resource-group> --vm-name <vm-name>` | `--quiet`, `--command`, target selectors | Runs one remote command and prints only its result | Script-friendly automation | Suppresses banner, progress, and completion chatter. |
 | `.\az-vm.cmd exec -c "uname -a" --group <resource-group> --vm-name <vm-name>` | `-c`, target selectors | Same one-shot remote command path with short syntax | Operator convenience | `-c` and `--command` are equivalent. |
 
@@ -631,7 +632,8 @@ Behavior notes:
 - ideal for isolated diagnosis or manual guest work
 - resolves only the selected VM plus SSH context
 - `--command` / `-c` runs one remote PowerShell or bash snippet without opening the interactive shell
-- `--quiet` / `-q` is valid only with `--command` / `-c` and prints only the remote command result
+- `--file` / `-f` reads one local script file and runs that content through the same remote exec path
+- `--quiet` / `-q` is valid only with `--command` / `-c` / `--file` and prints only the remote command result
 
 ### `connect`
 Purpose: launch the local Windows OpenSSH client or Remote Desktop client for a managed VM, or run connection tests without opening the client.

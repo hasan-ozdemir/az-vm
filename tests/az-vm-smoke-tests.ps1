@@ -667,6 +667,9 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedResizeHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedResizeHelp.Command -eq "resize") -Message "Resize command with --help parse failed."
     Assert-True -Condition ($parsedResizeHelp.Options.ContainsKey("help")) -Message "Resize command --help option was not captured."
+    $parsedExecFile = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("--file", ".\\script.ps1")
+    Assert-True -Condition ([string]$parsedExecFile.Options['file'] -eq '.\\script.ps1') -Message "Exec --file <value> parse failed."
+
 
     $parsedResizeShortHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("-h")
     Assert-True -Condition ([string]$parsedResizeShortHelp.Command -eq "resize") -Message "Resize command with -h parse failed."
@@ -4721,6 +4724,81 @@ Invoke-Test -Name "Exec command opens interactive shell when no command is provi
                 ConfiguredPySshClientPath = ''
                 SshConnectTimeoutSeconds = 30
             }
+Invoke-Test -Name "Exec command can load the remote command body from one local script file" -Action {
+    $script:ExecFilePythonArgs = @()
+    $tempScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-exec-file-" + [Guid]::NewGuid().ToString("N") + ".ps1")
+    try {
+        Set-Content -LiteralPath $tempScriptPath -Value "Get-Date`n'from-file'" -Encoding UTF8
+        function Initialize-AzVmExecCommandRuntimeContext {
+            return [pscustomobject]@{
+                RepoRoot = $RepoRoot
+                ConfigMap = @{
+                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+                    VM_NAME = 'samplevm'
+                    VM_ADMIN_USER = 'manager'
+                    VM_ADMIN_PASS = 'secret'
+                    VM_SSH_PORT = '444'
+                }
+                ConfiguredPySshClientPath = ''
+                SshConnectTimeoutSeconds = 30
+                SshCommandTimeoutSeconds = 180
+            }
+        }
+        function Resolve-AzVmManagedVmTarget {
+            param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
+            return [pscustomobject]@{
+                ResourceGroup = 'rg-samplevm-ate1-g1'
+                VmName = 'samplevm'
+            }
+        }
+        function Get-AzVmVmDetails {
+            param([hashtable]$Context)
+            return [pscustomobject]@{
+                VmFqdn = 'samplevm.example'
+                PublicIP = ''
+            }
+        }
+        function Ensure-AzVmPySshTools { param([string]$RepoRoot, [string]$ConfiguredPySshClientPath) return @{ PythonPath = 'Invoke-TestPyExecFile'; ClientPath = 'ssh_client.py' } }
+        function Initialize-AzVmSshHostKey { param() return [pscustomobject]@{ Output = '' } }
+        function az {
+            $global:LASTEXITCODE = 0
+            return '{"storageProfile":{"osDisk":{"osType":"Windows"}}}'
+        }
+        function Assert-LastExitCode { param([string]$Context) }
+        function Invoke-TestPyExecFile {
+            param([Parameter(ValueFromRemainingArguments = $true)]$Args)
+            $script:ExecFilePythonArgs = @($Args)
+            $global:LASTEXITCODE = 0
+        }
+
+        Invoke-AzVmExecCommand -Options @{ file = $tempScriptPath }
+
+        $pythonArgsText = @($script:ExecFilePythonArgs) -join ' '
+        Assert-True -Condition ($pythonArgsText -match [regex]::Escape('exec --host samplevm.example --port 444 --user manager --password secret --timeout 180 --command powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand ')) -Message 'Exec --file must use the wrapped one-shot Windows command path.'
+        $encodedCommandMatch = [regex]::Match($pythonArgsText, 'EncodedCommand\s+(?<encoded>[A-Za-z0-9+/=]+)')
+        Assert-True -Condition ($encodedCommandMatch.Success) -Message 'Exec --file must pass one encoded PowerShell command.'
+        $decodedCommandText = [System.Text.Encoding]::Unicode.GetString([Convert]::FromBase64String([string]$encodedCommandMatch.Groups['encoded'].Value))
+        Assert-True -Condition ($decodedCommandText -like '*Get-Date*') -Message 'Exec --file must execute the script file contents.'
+        Assert-True -Condition ($decodedCommandText -like '*from-file*') -Message 'Exec --file must preserve multi-line script content.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Initialize-AzVmExecCommandRuntimeContext',
+            'Resolve-AzVmManagedVmTarget',
+            'Get-AzVmVmDetails',
+            'Ensure-AzVmPySshTools',
+            'Initialize-AzVmSshHostKey',
+            'az',
+            'Assert-LastExitCode',
+            'Invoke-TestPyExecFile'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Item -LiteralPath $tempScriptPath -Force -ErrorAction SilentlyContinue
+        Remove-Variable -Name ExecFilePythonArgs -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
         }
         function Resolve-AzVmManagedVmTarget {
             param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)

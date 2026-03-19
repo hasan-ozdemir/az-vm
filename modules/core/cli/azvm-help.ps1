@@ -56,6 +56,7 @@ function Show-AzVmCommandHelpOverview {
         '  -v, --vm-name               Target VM name where required.'
         '  -s, --subscription-id       Target Azure subscription for Azure-touching commands.'
         '  -c, --command               Remote one-shot command text for exec.'
+        '  -f, --file                  Local script file to run remotely through exec.'
         '  -q, --quiet                 Exec-only quiet output mode for one-shot commands.'
         '  -h, --help                  Show this overview or command-specific help.'
         "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
@@ -72,6 +73,7 @@ function Show-AzVmCommandHelpOverview {
         '  az-vm task --save-app-state --source=lm --user=.current. --vm-update-task=115 --windows'
         '  az-vm task --restore-app-state --target=lm --user=.current. --vm-update-task=115 --windows'
         '  az-vm exec --command "Get-Date" --group <resource-group> --vm-name <vm-name>'
+        '  az-vm exec --file .\tools\scripts\sample-remote.ps1 --group <resource-group> --vm-name <vm-name>'
         '  az-vm exec --group <resource-group> --vm-name <vm-name>'
         '  az-vm connect --ssh --vm-name <vm-name> --test'
         '  az-vm connect --rdp --vm-name <vm-name> --user assistant'
@@ -102,6 +104,7 @@ function Show-AzVmCommandHelpDetailed {
             '  -v, --vm-name'
             '  -s, --subscription-id'
             '  -c, --command'
+            '  -f, --file'
             '  -q, --quiet              # exec one-shot quiet output only'
             '  -h, --help'
             "  Azure CLI sign-in via 'az login' is required for Azure-touching commands."
@@ -324,13 +327,15 @@ function Show-AzVmCommandHelpDetailed {
                 'Usage:'
                 '  az-vm exec [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
                 '  az-vm exec --command "<remote-command>" [--quiet] [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
+                '  az-vm exec --file <script-file> [--quiet] [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
                 '  az-vm exec -c "<remote-command>" [-q] [--group <resource-group>] [--vm-name <vm-name>] [--subscription-id <subscription-id>] [--perf]'
                 'Examples:'
                 '  az-vm exec --group <resource-group> --vm-name <vm-name>'
                 '  az-vm exec --command "Get-Date" --group <resource-group> --vm-name <vm-name>'
+                '  az-vm exec --file .\tools\scripts\sample-remote.ps1 --group <resource-group> --vm-name <vm-name>'
                 '  az-vm exec --quiet --command "Get-Date" --group <resource-group> --vm-name <vm-name>'
                 '  az-vm exec -c "uname -a" --group <resource-group> --vm-name <vm-name>'
-                'Notes: exec is SSH-only. When no --command is provided, it opens the interactive SSH shell for the actual target VM OS. When --command is provided, it runs one one-shot remote command and returns the exit result. --quiet / -q is valid only together with --command / -c and prints only the remote command result.'
+                'Notes: exec is SSH-only. When no --command or --file is provided, it opens the interactive SSH shell for the actual target VM OS. When --command or --file is provided, it runs one one-shot remote command and returns the exit result. --quiet / -q is valid only together with --command / -c / --file and prints only the remote command result.'
             )
             return
         }
