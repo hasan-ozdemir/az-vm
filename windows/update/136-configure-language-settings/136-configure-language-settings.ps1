@@ -223,7 +223,7 @@ function Invoke-LanguageInteractiveAutomation {
         [string]$RunAsPassword,
         [string]$WorkerScriptText,
         [string]$LanguageTag,
-        [int]$WaitTimeoutSeconds = 420
+        [int]$WaitTimeoutSeconds = 180
     )
 
     $paths = Get-AzVmInteractivePaths -TaskName $InteractiveTaskName
@@ -295,6 +295,39 @@ function Invoke-LanguageInteractiveAutomation {
         }
 
         $snapshot = Get-AzVmInteractiveScheduledTaskSnapshot -TaskName $paths.ScheduledTaskName
+        if ($null -ne $snapshot -and [int]$snapshot.State -eq 4 -and [int]$snapshot.LastTaskResult -eq 267009) {
+            $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $LanguageTag
+            $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+            Write-Host ("Interactive task '{0}' is still running in the background for {1}; accepting the queued install and continuing with restart-required state." -f [string]$paths.TaskName, [string]$LanguageTag) -ForegroundColor DarkCyan
+            return [pscustomobject]@{
+                Success = $true
+                Summary = 'Language components were queued successfully and require restart.'
+                Details = @(
+                    'reboot-required=true',
+                    ("language-capabilities={0}" -f [string]$capabilitySummary),
+                    'interactive-worker-queued=true',
+                    ("interactive-worker-state={0}" -f [int]$snapshot.State),
+                    ("interactive-worker-last-task-result={0}" -f [int]$snapshot.LastTaskResult)
+                )
+            }
+        }
+
+        $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $LanguageTag
+        if (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState) {
+            $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+            Write-Host ("Interactive task '{0}' timed out without a result file, but language capability state is already satisfied for {1}. Continuing with the installed state." -f [string]$paths.TaskName, [string]$LanguageTag) -ForegroundColor DarkCyan
+            return [pscustomobject]@{
+                Success = $true
+                Summary = 'Language components installed.'
+                Details = @(
+                    'reboot-required=true',
+                    ("language-capabilities={0}" -f [string]$capabilitySummary),
+                    'interactive-worker-short-circuited=true',
+                    'interactive-worker-timeout-recovered=true'
+                )
+            }
+        }
+
         if ($null -eq $snapshot) {
             throw ("Interactive worker timed out without a result file: {0}" -f $paths.ResultPath)
         }
@@ -306,7 +339,7 @@ function Invoke-LanguageInteractiveAutomation {
             Remove-AzVmInteractiveScheduledTask -TaskName $paths.ScheduledTaskName
         }
         catch {
-            Write-Warning ("interactive-task-cleanup-warning: {0}" -f $_.Exception.Message)
+            Write-Host ("interactive-task-cleanup-info: {0}" -f $_.Exception.Message) -ForegroundColor DarkCyan
         }
         $stoppedProcessIds = @(Stop-AzVmInteractiveWorkerProcesses -WorkerPath $paths.WorkerPath)
         if (@($stoppedProcessIds).Count -gt 0) {
@@ -483,7 +516,7 @@ catch {
         -RunAsPassword '' `
         -WorkerScriptText $workerScript `
         -LanguageTag $LanguageTag `
-        -WaitTimeoutSeconds 420
+        -WaitTimeoutSeconds 180
 
     $rebootRequired = $false
     $capabilitySummary = ''
@@ -534,8 +567,86 @@ function Invoke-UserLanguageConfiguration {
         [string]$UserPassword
     )
 
+    function Get-CurrentUserLanguageState {
+        $languageTags = @()
+        try {
+            $languageTags = @(
+                Get-WinUserLanguageList |
+                    ForEach-Object { [string]$_.LanguageTag } |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }
+            )
+        }
+        catch {
+            $languageTags = @()
+        }
+
+        $uiOverride = ''
+        try {
+            $uiOverride = [string](Get-WinUILanguageOverride)
+        }
+        catch {
+            $uiOverride = ''
+        }
+
+        return [pscustomobject]@{
+            LanguageTags = @($languageTags)
+            UiOverride = [string]$uiOverride
+        }
+    }
+
+    function Test-CurrentUserLanguageConfigurationSatisfied {
+        $state = Get-CurrentUserLanguageState
+        $languageTags = @($state.LanguageTags)
+        if (@($languageTags).Count -lt 1) {
+            return $false
+        }
+
+        $primaryMatches = [string]::Equals([string]$languageTags[0], $primaryLanguage, [System.StringComparison]::OrdinalIgnoreCase)
+        $secondaryMatches = (@($languageTags) | Where-Object { [string]::Equals([string]$_, $secondaryLanguage, [System.StringComparison]::OrdinalIgnoreCase) } | Measure-Object).Count -ge 1
+        $overrideMatches = (
+            [string]::IsNullOrWhiteSpace([string]$state.UiOverride) -or
+            [string]::Equals([string]$state.UiOverride, $primaryLanguage, [System.StringComparison]::OrdinalIgnoreCase)
+        )
+
+        return ($primaryMatches -and $secondaryMatches -and $overrideMatches)
+    }
+
+    function Set-CurrentUserLanguageConfigurationDirect {
+        $languageList = New-WinUserLanguageList $primaryLanguage
+        $secondaryEntries = New-WinUserLanguageList $secondaryLanguage
+        if ($null -ne $secondaryEntries -and $secondaryEntries.Count -gt 0) {
+            [void]$languageList.Add($secondaryEntries[0])
+        }
+
+        Set-WinUserLanguageList -LanguageList $languageList -Force -WarningAction SilentlyContinue
+        Set-WinUILanguageOverride -Language $primaryLanguage -WarningAction SilentlyContinue
+        Write-Host 'language-user-info: language changes will take effect after the next restart or sign-in.'
+        Start-Sleep -Seconds 2
+
+        return (Test-CurrentUserLanguageConfigurationSatisfied)
+    }
+
     Write-StateIntent ("Language settings for user '{0}' will be configured." -f [string]$UserName)
     Write-StateStart ("Configuring language settings for user '{0}'..." -f [string]$UserName)
+
+    if ([string]::Equals([string]$env:USERNAME, [string]$UserName, [System.StringComparison]::OrdinalIgnoreCase)) {
+        if (Test-CurrentUserLanguageConfigurationSatisfied) {
+            Write-StateSuccess ("Language settings for user '{0}' were already configured." -f [string]$UserName)
+            return
+        }
+
+        try {
+            if (Set-CurrentUserLanguageConfigurationDirect) {
+                Write-StateSuccess ("Language settings for user '{0}' were configured successfully." -f [string]$UserName)
+                return
+            }
+
+            Write-Host ("Current-user language state for '{0}' did not verify after direct apply; falling back to interactive automation." -f [string]$UserName) -ForegroundColor DarkCyan
+        }
+        catch {
+            Write-Host ("Current-user direct language apply for '{0}' failed; falling back to interactive automation. {1}" -f [string]$UserName, [string]$_.Exception.Message) -ForegroundColor DarkCyan
+        }
+    }
 
     $interactiveTaskName = ('{0}-{1}' -f $taskName, [string]$UserName)
     $paths = Get-AzVmInteractivePaths -TaskName $interactiveTaskName
@@ -556,8 +667,9 @@ try {
         [void]$languageList.Add($secondaryEntries[0])
     }
 
-    Set-WinUserLanguageList -LanguageList $languageList -Force
-    Set-WinUILanguageOverride -Language $primaryLanguage
+    Set-WinUserLanguageList -LanguageList $languageList -Force -WarningAction SilentlyContinue
+    Set-WinUILanguageOverride -Language $primaryLanguage -WarningAction SilentlyContinue
+    Write-Host 'language-user-info: language changes will take effect after the next restart or sign-in.'
 
     $languageSummary = @(
         Get-WinUserLanguageList |
@@ -596,7 +708,7 @@ catch {
         -RunAsUser $UserName `
         -RunAsPassword $UserPassword `
         -WorkerScriptText $workerScript `
-        -WaitTimeoutSeconds 900 `
+        -WaitTimeoutSeconds 300 `
         -HeartbeatSeconds 10
 
     Write-StateSuccess ("Language settings for user '{0}' were configured successfully." -f [string]$UserName)

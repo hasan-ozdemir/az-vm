@@ -26,6 +26,16 @@ function Write-Detail {
     Write-Host ([string]$Text)
 }
 
+function Write-CopyInfo {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Text)) {
+        return
+    }
+
+    Write-Host ([string]$Text) -ForegroundColor DarkCyan
+}
+
 function Add-CopySkipEvidence {
     param(
         [string]$Reason,
@@ -176,6 +186,17 @@ function Get-LocalUserProfilePath {
     return [string]$profile.ProfileImagePath
 }
 
+function Test-PortableProfileHiveReady {
+    param([string]$ProfilePath)
+
+    if ([string]::IsNullOrWhiteSpace([string]$ProfilePath) -or -not (Test-Path -LiteralPath $ProfilePath)) {
+        return $false
+    }
+
+    $ntUserPath = Join-Path $ProfilePath 'NTUSER.DAT'
+    return (Test-Path -LiteralPath $ntUserPath)
+}
+
 function Wait-AzVmCondition {
     param(
         [scriptblock]$Condition,
@@ -274,8 +295,13 @@ function Ensure-UserProfileMaterialized {
     Ensure-LocalUserExists -UserName $UserName
 
     $existingProfilePath = Get-LocalUserProfilePath -UserName $UserName
-    if (-not [string]::IsNullOrWhiteSpace([string]$existingProfilePath) -and (Test-Path -LiteralPath $existingProfilePath)) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$existingProfilePath) -and (Test-PortableProfileHiveReady -ProfilePath $existingProfilePath)) {
         Write-Detail ("copy-user-settings-profile-ready: {0} => {1}" -f $UserName, $existingProfilePath)
+        return [string]$existingProfilePath
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace([string]$existingProfilePath) -and (Test-Path -LiteralPath $existingProfilePath)) {
+        Write-Detail ("copy-user-settings-profile-partial: {0} => {1}" -f $UserName, $existingProfilePath)
         return [string]$existingProfilePath
     }
 
@@ -363,21 +389,30 @@ function Dismount-RegistryHive {
     catch {
     }
 
-    foreach ($attempt in 1..6) {
+    $registryBranch = "HKU\{0}" -f $MountName
+    foreach ($attempt in 1..12) {
         [System.GC]::Collect()
         [System.GC]::WaitForPendingFinalizers()
-        Start-Sleep -Milliseconds 250
+        Start-Sleep -Milliseconds 400
 
-        $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+        $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @($registryBranch)
         if ($exitCode -eq 0) {
             return
         }
 
-        Start-Sleep -Milliseconds 500
+        if (-not (Test-RegExeBranchExists -Path $registryBranch)) {
+            return
+        }
+
+        Start-Sleep -Milliseconds 800
     }
 
-    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @(("HKU\{0}" -f $MountName))
+    $exitCode = Invoke-RegQuiet -Verb 'unload' -Arguments @($registryBranch)
     if ($exitCode -eq 0) {
+        return
+    }
+
+    if (-not (Test-RegExeBranchExists -Path $registryBranch)) {
         return
     }
 
@@ -557,8 +592,56 @@ function Get-TargetPruneSkipReason {
         return 'access-denied'
     }
 
+    if ($normalized.Contains('file cannot be accessed by the system') -or $normalized.Contains('error 1920')) {
+        return 'device-specific-placeholder'
+    }
+
     if ($normalized.Contains('reparse point')) {
         return 'reparse-point'
+    }
+
+    if ($normalized.Contains('cloud file provider is not running') -or
+        $normalized.Contains('error 362') -or
+        $normalized.Contains('error 4390') -or
+        $normalized.Contains('tag present in the reparse point buffer is invalid')) {
+        return 'device-specific-placeholder'
+    }
+
+    return ''
+}
+
+function Get-RobocopyFailureSkipReason {
+    param([string]$DetailText)
+
+    $text = [string]$DetailText
+    if ([string]::IsNullOrWhiteSpace([string]$text)) {
+        return ''
+    }
+
+    $normalized = $text.ToLowerInvariant()
+    if ($normalized.Contains('being used by another process') -or
+        $normalized.Contains('cannot access the file') -or
+        $normalized.Contains('error 32')) {
+        return 'locked-file'
+    }
+
+    if ($normalized.Contains('access is denied') -or $normalized.Contains('error 5')) {
+        return 'access-denied'
+    }
+
+    if ($normalized.Contains('file cannot be accessed by the system') -or $normalized.Contains('error 1920')) {
+        return 'device-specific-placeholder'
+    }
+
+    if ($normalized.Contains('reparse point')) {
+        return 'reparse-point'
+    }
+
+    if ($normalized.Contains('cloud file provider is not running') -or
+        $normalized.Contains('error 362') -or
+        $normalized.Contains('error 4390') -or
+        $normalized.Contains('tag present in the reparse point buffer is invalid')) {
+        return 'device-specific-placeholder'
     }
 
     return ''
@@ -748,16 +831,24 @@ function Invoke-RobocopyBranch {
         $normalizedDetail = [string]$detailText
         $normalizedDetail = $normalizedDetail.ToLowerInvariant()
         if ($exitCode -gt 7 -and $normalizedDetail.Contains('webcachelock.dat') -and $normalizedDetail.Contains('error 32')) {
-            Write-Warning ("Ignoring locked WebCacheLock.dat while copying {0}; the live WebCache lock file is not required for the replicated profile." -f $Label)
+            Write-CopyInfo ("Ignoring locked WebCacheLock.dat while copying {0}; the live WebCache lock file is not required for the replicated profile." -f $Label)
             Add-CopySkipEvidence -Reason 'locked-file' -Label $Label -Path (Join-Path $SourcePath 'Microsoft\Windows\WebCacheLock.dat')
             Write-Detail ("copy-user-settings-file-skip: {0} locked WebCacheLock.dat" -f $Label)
             return
         }
 
         if ($exitCode -gt 7 -and ($normalizedDetail.Contains('access is denied') -or $normalizedDetail.Contains('error 5'))) {
-            Write-Warning ("Ignoring access denied items while copying {0}; protected or session-owned files are skipped for profile safety." -f $Label)
+            Write-CopyInfo ("Ignoring access denied items while copying {0}; protected or session-owned files are skipped for profile safety." -f $Label)
             Add-CopySkipEvidence -Reason 'access-denied' -Label $Label -Path $SourcePath
             Write-Detail ("copy-user-settings-file-skip: {0} access-denied => {1}" -f $Label, $SourcePath)
+            return
+        }
+
+        $skipReason = Get-RobocopyFailureSkipReason -DetailText $detailText
+        if (-not [string]::IsNullOrWhiteSpace([string]$skipReason)) {
+            Write-CopyInfo ("Skipping non-portable items while copying {0}; branch contained {1} artifacts that should not be mirrored." -f $Label, $skipReason)
+            Add-CopySkipEvidence -Reason $skipReason -Label $Label -Path $SourcePath
+            Write-Detail ("copy-user-settings-file-skip: {0} {1} => {2}" -f $Label, $skipReason, $SourcePath)
             return
         }
 
@@ -822,14 +913,14 @@ function Invoke-ProfileRelativeCopy {
         $normalizedMessage = $message.ToLowerInvariant()
         if ($normalizedMessage.Contains('access to the path') -or $normalizedMessage.Contains('access is denied')) {
             Add-CopySkipEvidence -Reason 'access-denied' -Label $Label -Path $sourcePath
-            Write-Warning ("Skipping access denied file while copying {0}: {1}" -f $Label, $sourcePath)
+            Write-CopyInfo ("Skipping access denied file while copying {0}: {1}" -f $Label, $sourcePath)
             Write-Detail ("copy-user-settings-file-skip: {0} access-denied => {1}" -f $Label, $RelativePath)
             return
         }
 
         if ($normalizedMessage.Contains('because it is being used by another process') -or $normalizedMessage.Contains('being used by another process')) {
             Add-CopySkipEvidence -Reason 'locked-file' -Label $Label -Path $sourcePath
-            Write-Warning ("Skipping locked file while copying {0}: {1}" -f $Label, $sourcePath)
+            Write-CopyInfo ("Skipping locked file while copying {0}: {1}" -f $Label, $sourcePath)
             Write-Detail ("copy-user-settings-file-skip: {0} locked-file => {1}" -f $Label, $RelativePath)
             return
         }
@@ -879,7 +970,7 @@ function Wait-UserSessionsAndProcessesToSettle {
         return
     }
 
-    Write-Warning ("Proceeding after the bounded user-settle wait expired for {0}; later copy steps will still validate the resulting state." -f $UserName)
+    Write-CopyInfo ("Proceeding after the bounded user-settle wait expired for {0}; later copy steps will still validate the resulting state." -f $UserName)
 }
 
 function Get-LoadedUserHiveRoots {
@@ -915,8 +1006,20 @@ function Get-PortableProfileExcludedDirectories {
         'AppData\Local\Temp',
         'AppData\LocalLow\Temp',
         'AppData\Local\CrashDumps',
+        'AppData\Local\ConnectedDevicesPlatform',
+        'AppData\Local\D3DSCache',
+        'AppData\Local\Comms',
+        'AppData\Local\Programs',
+        'AppData\Local\npm-cache',
+        'AppData\Local\Package Cache',
+        'AppData\Local\Ollama',
+        'AppData\Local\Docker',
+        'AppData\Local\Microsoft\WindowsApps',
         'AppData\Local\Microsoft\Windows\INetCache',
         'AppData\Local\Microsoft\Windows\WebCache',
+        'AppData\Local\Microsoft\Windows\Explorer',
+        'AppData\Local\Microsoft\Windows\Notifications',
+        'AppData\Local\Microsoft\Windows\DeliveryOptimization',
         'AppData\Local\Microsoft\Credentials',
         'AppData\Roaming\Microsoft\Credentials',
         'AppData\Local\Microsoft\Protect',
@@ -924,7 +1027,11 @@ function Get-PortableProfileExcludedDirectories {
         'AppData\Local\Microsoft\Vault',
         'AppData\Roaming\Microsoft\Vault',
         'AppData\Local\Microsoft\IdentityCRL',
-        'AppData\Roaming\Microsoft\IdentityCRL'
+        'AppData\Roaming\Microsoft\IdentityCRL',
+        'AppData\Roaming\npm',
+        'AppData\Local\Publishers',
+        'AppData\Local\docker-secrets-engine',
+        'AppData\Local\Packages'
     )
 }
 
@@ -937,7 +1044,11 @@ function Get-PortableProfileExcludedFiles {
         '*.temp',
         '*.etl',
         '*.log',
+        '*.db-shm',
+        '*.db-wal',
         '*.crdownload',
+        'thumbcache*',
+        'iconcache*',
         'WebCacheLock.dat',
         'Login Data*',
         'Cookies*'
@@ -1072,6 +1183,12 @@ function Invoke-PortableAssistantRegistryMirror {
         return
     }
 
+    if (-not (Test-Path -LiteralPath $ntUserPath)) {
+        Write-CopyInfo ("Skipping assistant registry mirror because the portable user hive is not materialized yet: {0}" -f $ntUserPath)
+        Add-CopySkipEvidence -Reason 'missing-assistant-hive' -Label 'assistant' -Path $ntUserPath
+        return
+    }
+
     $mainMountName = 'AzVmAssistantNtUser'
     $classesMountName = 'AzVmAssistantUsrClass'
     $mainRoot = $null
@@ -1110,6 +1227,12 @@ function Invoke-PortableDefaultProfileRegistryMirror {
 
     $ntUserPath = Join-Path $DefaultProfilePath 'NTUSER.DAT'
     $usrClassPath = Join-Path $DefaultProfilePath 'AppData\Local\Microsoft\Windows\UsrClass.dat'
+    if (-not (Test-Path -LiteralPath $ntUserPath)) {
+        Write-CopyInfo ("Skipping default-profile registry mirror because the portable user hive is not present: {0}" -f $ntUserPath)
+        Add-CopySkipEvidence -Reason 'missing-default-hive' -Label 'default-profile' -Path $ntUserPath
+        return
+    }
+
     $mainMountName = 'AzVmDefaultNtUser'
     $classesMountName = 'AzVmDefaultUsrClass'
     $mainRoot = $null
@@ -1169,10 +1292,15 @@ if (-not (Test-Path -LiteralPath $defaultProfilePath)) {
 }
 
 Invoke-PortableProfileMirror -SourceProfilePath $managerProfilePath -TargetProfilePath $assistantProfilePath -Label 'assistant'
+Write-Detail 'copy-user-settings-stage-ok: assistant-profile-mirror'
 Invoke-PortableProfileMirror -SourceProfilePath $managerProfilePath -TargetProfilePath $defaultProfilePath -Label 'default-profile'
+Write-Detail 'copy-user-settings-stage-ok: default-profile-mirror'
 Invoke-PortableAssistantRegistryMirror -UserName $assistantUser -ProfilePath $assistantProfilePath
+Write-Detail 'copy-user-settings-stage-ok: assistant-registry-mirror'
 Invoke-PortableDefaultProfileRegistryMirror -DefaultProfilePath $defaultProfilePath
+Write-Detail 'copy-user-settings-stage-ok: default-profile-registry-mirror'
 Invoke-PortableLogonRegistryMirror
+Write-Detail 'copy-user-settings-stage-ok: logon-registry-mirror'
 
 foreach ($requiredRelativePath in @(
     'Desktop',

@@ -5671,6 +5671,8 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\WindowsApps*') -Message "Copy user settings task must exclude WindowsApps shims that are not portable across profiles."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Packages*') -Message "Copy user settings task must exclude live packaged-app containers that are not portable across profiles."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('Start-Sleep -Seconds 5', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old fixed five-second post-logoff sleep."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('Get-ProfileCopySpecs', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the retired targeted copy-spec builder."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
@@ -7365,7 +7367,9 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         Assert-True -Condition (-not ($taskText -like ('*' + [string]$removedFragment + '*'))) -Message ("Language settings task must no longer own '{0}'." -f [string]$removedFragment)
     }
 
-    Assert-True -Condition ($taskJsonText -like '*"timeout": 1575*') -Message 'Language settings task must keep the normalized timeout 1575.'
+    Assert-True -Condition ($taskJsonText -like '*"timeout": 1635*') -Message 'Language settings task must keep the normalized timeout 1635.'
+    Assert-True -Condition ($taskText -like '*interactive-worker-timeout-recovered=true*') -Message 'Language settings task must recover timeout cases when capability state is already satisfied.'
+    Assert-True -Condition ($taskText -like '*interactive-worker-queued=true*') -Message 'Language settings task must accept the queued background install state when the SYSTEM worker is still running at timeout.'
     Assert-True -Condition (-not ($taskJsonText -like '*"appState"*')) -Message 'Language settings task must stay out of task-local app-state snapshot and restore.'
 
     foreach ($fragment in @(
