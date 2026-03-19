@@ -1,7 +1,7 @@
 {
   "priority": 120,
   "enabled": true,
-  "timeout": 90,
+  "timeout": 120,
   "assets": [
     {
       "local": "../../../modules/core/tasks/azvm-store-install-state.psm1",

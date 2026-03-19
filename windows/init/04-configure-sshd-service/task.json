@@ -1,7 +1,7 @@
 {
   "priority": 4,
   "enabled": true,
-  "timeout": 90,
+  "timeout": 300,
   "dependsOn": [
     "03-install-openssh-service"
   ]
