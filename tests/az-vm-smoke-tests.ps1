@@ -36,6 +36,21 @@ function Assert-True {
     }
 }
 
+function ConvertFrom-UnicodeCodePoints {
+    param([int[]]$CodePoints)
+
+    if ($null -eq $CodePoints -or @($CodePoints).Count -eq 0) {
+        return ''
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($codePoint in @($CodePoints)) {
+        [void]$builder.Append([char][int]$codePoint)
+    }
+
+    return $builder.ToString()
+}
+
 function Get-CurrentSmokeTaskName {
     param([string]$TaskName)
 
@@ -652,6 +667,9 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedExecShortCommand = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("-c", "Get-Date")
     Assert-True -Condition ([string]$parsedExecShortCommand.Options['command'] -eq 'Get-Date') -Message "Exec -c <value> parse failed."
 
+    $parsedExecFile = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("--file", ".\\script.ps1")
+    Assert-True -Condition ([string]$parsedExecFile.Options['file'] -eq '.\\script.ps1') -Message "Exec --file <value> parse failed."
+
     $parsedExecQuiet = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("--quiet", "--command", "Get-Date")
     Assert-True -Condition ($parsedExecQuiet.Options.ContainsKey('quiet')) -Message "Exec --quiet option was not captured."
     Assert-True -Condition ([string]$parsedExecQuiet.Options['command'] -eq 'Get-Date') -Message "Exec --quiet must preserve the one-shot command value."
@@ -667,9 +685,6 @@ Invoke-Test -Name "CLI parse help contracts" -Action {
     $parsedResizeHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("--help")
     Assert-True -Condition ([string]$parsedResizeHelp.Command -eq "resize") -Message "Resize command with --help parse failed."
     Assert-True -Condition ($parsedResizeHelp.Options.ContainsKey("help")) -Message "Resize command --help option was not captured."
-    $parsedExecFile = Parse-AzVmCliArguments -CommandToken "exec" -RawArgs @("--file", ".\\script.ps1")
-    Assert-True -Condition ([string]$parsedExecFile.Options['file'] -eq '.\\script.ps1') -Message "Exec --file <value> parse failed."
-
 
     $parsedResizeShortHelp = Parse-AzVmCliArguments -CommandToken "resize" -RawArgs @("-h")
     Assert-True -Condition ([string]$parsedResizeShortHelp.Command -eq "resize") -Message "Resize command with -h parse failed."
@@ -4709,21 +4724,6 @@ Invoke-Test -Name "Exec command uses the minimal runtime for remote command exec
     }
 }
 
-Invoke-Test -Name "Exec command opens interactive shell when no command is provided" -Action {
-    $script:ExecShellArgs = @()
-    try {
-        function Initialize-AzVmExecCommandRuntimeContext {
-            return [pscustomobject]@{
-                ConfigMap = @{
-                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
-                    VM_NAME = 'samplevm'
-                    VM_ADMIN_USER = 'manager'
-                    VM_ADMIN_PASS = 'secret'
-                    VM_SSH_PORT = '444'
-                }
-                ConfiguredPySshClientPath = ''
-                SshConnectTimeoutSeconds = 30
-            }
 Invoke-Test -Name "Exec command can load the remote command body from one local script file" -Action {
     $script:ExecFilePythonArgs = @()
     $tempScriptPath = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-exec-file-" + [Guid]::NewGuid().ToString("N") + ".ps1")
@@ -4799,6 +4799,21 @@ Invoke-Test -Name "Exec command can load the remote command body from one local 
     }
 }
 
+Invoke-Test -Name "Exec command opens interactive shell when no command is provided" -Action {
+    $script:ExecShellArgs = @()
+    try {
+        function Initialize-AzVmExecCommandRuntimeContext {
+            return [pscustomobject]@{
+                ConfigMap = @{
+                    RESOURCE_GROUP = 'rg-samplevm-ate1-g1'
+                    VM_NAME = 'samplevm'
+                    VM_ADMIN_USER = 'manager'
+                    VM_ADMIN_PASS = 'secret'
+                    VM_SSH_PORT = '444'
+                }
+                ConfiguredPySshClientPath = ''
+                SshConnectTimeoutSeconds = 30
+            }
         }
         function Resolve-AzVmManagedVmTarget {
             param([hashtable]$Options, [hashtable]$ConfigMap, [string]$OperationName)
@@ -5382,6 +5397,8 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like "*DockerDesktopPackageId = 'Docker.DockerDesktop'*") -Message 'Docker Desktop task must keep the Docker Desktop winget package id in its task-local config block.'
     Assert-True -Condition ($taskScript -like '*Ensure-WingetSourcesReady*') -Message 'Docker Desktop task must bound winget source repair before install.'
     Assert-True -Condition ($taskScript -like '*docker-step-repair: winget-source-list-exit=*') -Message 'Docker Desktop task must log the bounded source repair path.'
+    Assert-True -Condition ($taskScript -like '*docker-step-repair: stale-registration-cleared*') -Message 'Docker Desktop task must clear stale uninstall registration when winget reports Docker Desktop as installed without install evidence.'
+    Assert-True -Condition ($taskScript -like '*removed-stale-registration =>*') -Message 'Docker Desktop task must log which stale Docker Desktop uninstall registration key was removed.'
     Assert-True -Condition ($taskScript -match 'winget install \{0\}" -f \[string\]\$taskConfig\.DockerDesktopPackageId') -Message 'Docker Desktop task must label the install step as a winget Docker Desktop install.'
     Assert-True -Condition ($taskScript -match '-Arguments\s+@\(''install'',\s*''-e'',\s*''--id'',\s*\(\[string\]\$taskConfig\.DockerDesktopPackageId\)') -Message 'Docker Desktop task must install Docker Desktop through winget.'
     Assert-True -Condition ($taskScript -like '*Invoke-ProcessWithTimeout*') -Message 'Docker Desktop task must bound the winget install wait time.'
@@ -5389,7 +5406,9 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like '*docker-step-cleanup: removed-stale-run-once*') -Message 'Docker Desktop task must remove stale deferred RunOnce remnants before verifying the one-shot flow.'
     Assert-True -Condition (($taskScript.IndexOf('Register-DockerDesktopDeferredStart', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Docker Desktop task must not schedule deferred next-sign-in repair work.'
     Assert-True -Condition ($taskScript -like '*net start {0}*') -Message 'Docker Desktop task must bring Docker services up through net start.'
+    Assert-True -Condition ($taskScript -like '*Start-Service -Name*') -Message 'Docker Desktop task must first try native Start-Service before falling back to net start.'
     Assert-True -Condition ($taskScript -like '*docker-step-ok: prerequisite-service-started =>*') -Message 'Docker Desktop task must confirm prerequisite service startup.'
+    Assert-True -Condition ($taskScript -like '*docker-step-info: prerequisite-service-net-start-skip =>*') -Message 'Docker Desktop task must tolerate services such as vmcompute when net start is unsupported on the guest image.'
     Assert-True -Condition ($taskScript -like '*vmcompute*') -Message 'Docker Desktop task must explicitly satisfy the vmcompute prerequisite.'
     Assert-True -Condition ($taskScript -like '*wslservice*') -Message 'Docker Desktop task must explicitly satisfy the WSL service prerequisite when present.'
     Assert-True -Condition ($taskScript -like '*wsl --install --no-distribution*') -Message 'Docker Desktop task must bootstrap WSL prerequisites before daemon verification.'
@@ -5397,8 +5416,6 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like '*Invoke-AzVmInteractiveDesktopAutomation*') -Message 'Docker Desktop task must launch Docker Desktop through interactive desktop automation.'
     Assert-True -Condition ($taskScript -like '*master-profile-state*') -Message 'Docker Desktop task must seed the master Docker profile state before launch.'
     Assert-True -Condition ($taskScript -like '*currentContext": "desktop-linux"*') -Message 'Docker Desktop task must enforce the desktop-linux Docker context in the seeded profile.'
-    Assert-True -Condition ($taskScript -like '*docker-step-repair: stale-registration-cleared*') -Message 'Docker Desktop task must clear stale uninstall registration when winget reports Docker Desktop as installed without install evidence.'
-    Assert-True -Condition ($taskScript -like '*removed-stale-registration =>*') -Message 'Docker Desktop task must log which stale Docker Desktop uninstall registration key was removed.'
     Assert-True -Condition ($taskScript -like '*"LicenseTermsVersion": 2*') -Message 'Docker Desktop task must seed the accepted license terms version in the managed profile state.'
     Assert-True -Condition (($taskScript.IndexOf('docker-step-warning', [System.StringComparison]::Ordinal)) -lt 0) -Message 'Docker Desktop task must not keep soft warning-only service startup paths.'
     Assert-True -Condition ($taskScript -like '*Wait-DockerDaemonReady*') -Message 'Docker Desktop task must keep the bounded daemon readiness loop.'
@@ -5406,9 +5423,7 @@ Invoke-Test -Name "Windows Docker Desktop task clears stale installer locks" -Ac
     Assert-True -Condition ($taskScript -like '*docker desktop status*') -Message 'Docker Desktop task must include a bounded docker desktop status probe.'
     Assert-True -Condition ($taskScript -like '*docker info*') -Message 'Docker Desktop task must include a bounded docker info probe.'
     Assert-True -Condition ($taskScript -like '*Docker Desktop did not become daemon-ready in time*') -Message 'Docker Desktop task must fail when the daemon never becomes ready.'
-    Assert-True -Condition ($taskScript -like '*Start-Service -Name*') -Message 'Docker Desktop task must first try native Start-Service before falling back to net start.'
     Assert-True -Condition ($taskScript -like '*$global:LASTEXITCODE = 0*') -Message 'Docker Desktop task must clear non-fatal native exit codes before completing.'
-    Assert-True -Condition ($taskScript -like '*docker-step-info: prerequisite-service-net-start-skip =>*') -Message 'Docker Desktop task must tolerate services such as vmcompute when net start is unsupported on the guest image.'
 }
 
 Invoke-Test -Name "Windows AnyDesk task verifies the executable after non-fatal winget exits" -Action {
@@ -5656,6 +5671,8 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableProfileExcludedFiles*') -Message "Copy user settings task must define portable file exclusions."
     Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableRegistryExcludedPrefixes*') -Message "Copy user settings task must define portable registry exclusions."
     Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Microsoft\Credentials*') -Message "Copy user settings task must exclude portable-incompatible credential stores."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\WindowsApps*') -Message "Copy user settings task must exclude WindowsApps shims that are not portable across profiles."
+    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Packages*') -Message "Copy user settings task must exclude live packaged-app containers that are not portable across profiles."
     Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Protect*') -Message "Copy user settings task must exclude DPAPI-bound secret stores."
     Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\Vault*') -Message "Copy user settings task must exclude vault stores."
     Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\IdentityCRL*') -Message "Copy user settings task must exclude identity stores."
@@ -5671,8 +5688,6 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-RegQuiet*') -Message "Copy user settings task must run registry hive load and unload operations through the quiet helper."
     Assert-True -Condition ($copyUserSettingsBody -like '*with exit code*') -Message "Copy user settings task must include the unload exit code in terminal hive cleanup failures."
     Assert-True -Condition ($copyUserSettingsBody -like '*Wait-UserSessionsAndProcessesToSettle*') -Message "Copy user settings task must use a bounded settle helper instead of a fixed post-logoff sleep."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\WindowsApps*') -Message "Copy user settings task must exclude WindowsApps shims that are not portable across profiles."
-    Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Packages*') -Message "Copy user settings task must exclude live packaged-app containers that are not portable across profiles."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('Start-Sleep -Seconds 5', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the old fixed five-second post-logoff sleep."
     Assert-True -Condition (($copyUserSettingsBody.IndexOf('Get-ProfileCopySpecs', [System.StringComparison]::Ordinal)) -lt 0) -Message "Copy user settings task must not keep the retired targeted copy-spec builder."
     Assert-True -Condition (-not $resolvedCopyUserSettingsTask.PSObject.Properties.Match('InteractiveResultPath').Count) -Message "Copy user settings task must not publish reboot-resume metadata."
@@ -7069,12 +7084,17 @@ Invoke-Test -Name "Shortcut launcher threshold uses combined target and argument
     $targetPath = 'C:\Program Files\Test App\launcher.exe'
     $argumentsAtLimit = 'a' * (259 - $targetPath.Length - 1)
     $argumentsAboveLimit = 'a' * (260 - $targetPath.Length - 1)
+    $q1EksiSozlukName = ('q1{0}' -f (ConvertFrom-UnicodeCodePoints -CodePoints @(0x0045, 0x006B, 0x015F, 0x0069, 0x0053, 0x00F6, 0x007A, 0x006C, 0x00FC, 0x006B)))
+    $cicekSepetiBusinessName = ('r13{0} Business' -f (ConvertFrom-UnicodeCodePoints -CodePoints @(0x00C7, 0x0069, 0x00E7, 0x0065, 0x006B, 0x0053, 0x0065, 0x0070, 0x0065, 0x0074, 0x0069)))
+    $cicekSepetiMojibakeBusinessName = ConvertFrom-UnicodeCodePoints -CodePoints @(0x0072, 0x0031, 0x0033, 0x00C3, 0x2021, 0x0069, 0x00C3, 0x00A7, 0x0065, 0x006B, 0x0053, 0x0065, 0x0070, 0x0065, 0x0074, 0x0069, 0x0020, 0x0042, 0x0075, 0x0073, 0x0069, 0x006E, 0x0065, 0x0073, 0x0073)
 
     Assert-True -Condition ((Get-AzVmShortcutManagedInvocationLength -TargetPath $targetPath -Arguments $argumentsAtLimit) -eq 259) -Message 'Shortcut launcher helper must measure combined target and arguments length at the direct-write boundary.'
     Assert-True -Condition (-not (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $targetPath -Arguments $argumentsAtLimit -Threshold 259)) -Message 'Shortcut launcher helper must keep direct shortcut targets when the combined invocation length is 259.'
     Assert-True -Condition ((Get-AzVmShortcutManagedInvocationLength -TargetPath $targetPath -Arguments $argumentsAboveLimit) -eq 260) -Message 'Shortcut launcher helper must measure combined target and arguments length past the direct-write boundary.'
     Assert-True -Condition (Test-AzVmShortcutNeedsManagedLauncher -TargetPath $targetPath -Arguments $argumentsAboveLimit -Threshold 259) -Message 'Shortcut launcher helper must require a managed launcher when the combined invocation length exceeds 259.'
     Assert-True -Condition ([string]::Equals((Get-AzVmShortcutLauncherInvocationArguments -LauncherPath 'C:\ProgramData\az-vm\shortcut-launchers\public-desktop\r20ozon-personal.cmd'), '/c call "C:\ProgramData\az-vm\shortcut-launchers\public-desktop\r20ozon-personal.cmd"', [System.StringComparison]::Ordinal)) -Message 'Managed launcher shortcuts must invoke the launcher script through cmd.exe /c call "<path>".'
+    Assert-True -Condition ([string]::Equals((Get-AzVmShortcutLauncherFilePath -ShortcutName $q1EksiSozlukName -Subdirectory 'public-desktop'), 'C:\ProgramData\az-vm\shortcut-launchers\public-desktop\q1eksisozluk.cmd', [System.StringComparison]::OrdinalIgnoreCase)) -Message 'Shortcut launcher helper must transliterate Turkish shortcut names into stable ASCII-safe launcher paths.'
+    Assert-True -Condition ([string]::Equals((Get-AzVmShortcutNormalizedKey -Value $cicekSepetiMojibakeBusinessName), (Get-AzVmShortcutNormalizedKey -Value $cicekSepetiBusinessName), [System.StringComparison]::Ordinal)) -Message 'Shortcut normalization must treat mojibake Turkish names as the same managed shortcut key.'
     Assert-True -Condition ($shortcutTaskScript -like '*$managedShortcutInvocationThreshold = 259*') -Message 'Public desktop shortcut task must keep the managed-launcher threshold as an explicit 259-character contract.'
     Assert-True -Condition ($shortcutTaskScript -like '*Test-AzVmShortcutNeedsManagedLauncher -TargetPath $effectiveTargetPath -Arguments $effectiveArguments -Threshold $managedShortcutInvocationThreshold*') -Message 'Public desktop shortcut task must apply the 259-character rule to the combined target and arguments invocation.'
     Assert-True -Condition ($shortcutLauncherModuleText -like '*/c call "{0}"*') -Message 'Shared shortcut launcher helper must generate cmd.exe launcher invocations with call.'
