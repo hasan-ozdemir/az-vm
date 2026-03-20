@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.20.376] - 2026-03-20
+
+### Fixed
+- Fixed the Windows `06-configure-powershell-remoting` init task so idempotent reruns no longer degrade into a false vm-init warning when the managed admin account is already a member of `Remote Management Users`; the task now verifies membership first and uses a quiet bounded fallback path when the legacy `net localgroup` route is required.
+- Fixed managed public DNS label resolution for existing managed public IPs so full `update` runs preserve the current DNS label instead of inventing a new `vm{id}` suffix on every maintenance pass.
+- Fixed the Windows `136-configure-language-settings` post-worker verification so a language that is already installed no longer fails just because optional image-managed capability packages still report non-satisfied states.
+- Fixed the Windows `10003-create-public-desktop-shortcuts` verification path so Unicode shortcut labels that normalize to an existing written `.lnk` file are reconciled and accepted instead of raising a false missing-shortcut warning.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 160, Failed: 0`.
+- Revalidated live isolated `task --run-vm-init 06` on the active managed Windows target; it completed with `warning=0`, `error=0`, and confirmed WinRM listener readiness.
+- Revalidated a full live `update --auto --windows --perf` acceptance run after the fixes and confirmed `VM init stage summary: success=6, failed=0, warning=0, error=0, reboot=0` plus `VM update stage summary: success=45, failed=0, warning=0, signal-warning=0, error=0, reboot=2, final-restart=1`.
+- Revalidated `show`, `do --vm-action=status`, `connect --ssh --test`, `connect --rdp --test`, and a real WinRM `Invoke-Command`; all succeeded against the active managed Windows target after the final acceptance run.
+
 ## [2026.3.19.375] - 2026-03-19
 
 ### Changed

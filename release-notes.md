@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.20.376 - 2026-03-20
+
+### Summary
+This release closes the final regressions found during the live Windows production publish cycle. Full managed `update` runs now keep the existing public FQDN stable, the WinRM init task is cleanly idempotent during repeated maintenance passes, the language task no longer flags already-installed languages because of optional image-managed capability lag, and the Unicode Public Desktop shortcut verification path now accepts reconciled written filenames instead of raising a false warning.
+
+### Highlights
+- Fixed `06-configure-powershell-remoting` so repeated `vm-init` runs keep `Remote Management Users` membership quiet and deterministic instead of surfacing a false task-result warning.
+- Fixed managed public DNS label resolution for existing public IPs so maintenance updates preserve the current `vm_name-vm{id}` label instead of drifting to the next suffix.
+- Fixed `136-configure-language-settings` so installed-language state is accepted when optional language capability packages remain image-managed in the Windows image.
+- Fixed `10003-create-public-desktop-shortcuts` so Unicode shortcut names such as the Turkish public-web labels are verified through normalized reconciliation instead of exact-path-only checking.
+- Revalidated the full live acceptance path after the fixes: clean managed create already succeeded earlier in the same publish cycle, the final full natural-order `update --auto --windows --perf` run reached zero warnings and zero signal warnings, `show` and lifecycle status were healthy, SSH and RDP tests passed, and a real WinRM `Invoke-Command` succeeded with the managed `manager` account.
+
 ## Release 2026.3.19.375 - 2026-03-19
 
 ### Summary

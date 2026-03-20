@@ -794,8 +794,15 @@ function Assert-LanguageStateReadyForRestart {
     foreach ($languageTag in @($primaryLanguage, $secondaryLanguage)) {
         $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $languageTag
         $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
+        $installedLanguageRows = @(Get-InstalledLanguageSafe -LanguageTag $languageTag)
+        $installedLanguagePresent = (@($installedLanguageRows).Count -ge 1)
         Write-Host ("language-capabilities-final => {0} => {1}" -f [string]$languageTag, [string]$capabilitySummary)
         if (-not (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState)) {
+            if ($installedLanguagePresent) {
+                Write-Host ("language-capabilities-info => {0} => installed-language verification is already satisfied; optional capability packages remain image-managed. {1}" -f [string]$languageTag, [string]$capabilitySummary) -ForegroundColor DarkCyan
+                continue
+            }
+
             throw ("Language capability verification failed for '{0}'. {1}" -f [string]$languageTag, [string]$capabilitySummary)
         }
     }

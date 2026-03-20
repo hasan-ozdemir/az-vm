@@ -2413,8 +2413,13 @@ try {
 
         foreach ($expectedShortcutName in @($managedShortcutNames)) {
             $expectedShortcutPath = Join-Path $publicDesktop ($expectedShortcutName + ".lnk")
-            if (-not (Test-Path -LiteralPath $expectedShortcutPath)) {
+            $resolvedShortcutPath = Resolve-WrittenShortcutPath -ExpectedShortcutPath $expectedShortcutPath -OutputDirectory $publicDesktop -ShortcutName $expectedShortcutName
+            if (-not (Test-Path -LiteralPath $resolvedShortcutPath)) {
                 throw ("Managed public shortcut was not created: {0}" -f $expectedShortcutPath)
+            }
+
+            if (-not [string]::Equals([string]$resolvedShortcutPath, [string]$expectedShortcutPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                Write-Host ("public-shortcut-path-reconciled: {0} => {1}" -f [string]$expectedShortcutName, [string]$resolvedShortcutPath)
             }
         }
 

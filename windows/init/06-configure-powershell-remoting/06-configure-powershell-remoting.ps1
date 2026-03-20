@@ -33,7 +33,7 @@ function Assert-RegistryValue {
     }
 }
 
-function Ensure-LocalGroupMember {
+function Test-LocalGroupMemberPresent {
     param(
         [string]$GroupName,
         [string]$MemberName
@@ -46,14 +46,66 @@ function Ensure-LocalGroupMember {
                 ForEach-Object { [string]$_.Name }
         )
         if (@($currentMembers) -contains $resolvedMember -or @($currentMembers) -contains [string]$MemberName) {
-            return
+            return $true
         }
     }
 
-    $addOutput = @(& net.exe localgroup $GroupName $MemberName /add 2>&1)
-    $addExitCode = [int]$LASTEXITCODE
-    $detail = [string]((@($addOutput) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ' | ')
-    if ($addExitCode -ne 0 -and $detail -notmatch '(?i)1378|already a member') {
+    $groupOutput = @(& net.exe localgroup $GroupName 2>$null)
+    foreach ($line in @($groupOutput)) {
+        $trimmedLine = [string]([string]$line).Trim()
+        if ([string]::IsNullOrWhiteSpace([string]$trimmedLine)) {
+            continue
+        }
+
+        if ([string]::Equals($trimmedLine, $resolvedMember, [System.StringComparison]::OrdinalIgnoreCase) -or
+            [string]::Equals($trimmedLine, [string]$MemberName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Ensure-LocalGroupMember {
+    param(
+        [string]$GroupName,
+        [string]$MemberName
+    )
+
+    if (Test-LocalGroupMemberPresent -GroupName $GroupName -MemberName $MemberName) {
+        return
+    }
+
+    if (Get-Command Add-LocalGroupMember -ErrorAction SilentlyContinue) {
+        try {
+            Add-LocalGroupMember -Group $GroupName -Member $MemberName -ErrorAction Stop
+            return
+        }
+        catch {
+            if (Test-LocalGroupMemberPresent -GroupName $GroupName -MemberName $MemberName) {
+                return
+            }
+        }
+    }
+
+    $detail = ''
+    $stdoutFile = Join-Path $env:TEMP ("az-vm-net-localgroup-{0}-stdout.txt" -f ([guid]::NewGuid().ToString('N')))
+    $stderrFile = Join-Path $env:TEMP ("az-vm-net-localgroup-{0}-stderr.txt" -f ([guid]::NewGuid().ToString('N')))
+    try {
+        $process = Start-Process -FilePath 'net.exe' -ArgumentList @('localgroup', $GroupName, $MemberName, '/add') -NoNewWindow -PassThru -Wait -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+        $stdoutLines = if (Test-Path -LiteralPath $stdoutFile) { @(Get-Content -LiteralPath $stdoutFile -ErrorAction SilentlyContinue) } else { @() }
+        $stderrLines = if (Test-Path -LiteralPath $stderrFile) { @(Get-Content -LiteralPath $stderrFile -ErrorAction SilentlyContinue) } else { @() }
+        $detail = [string]((@($stdoutLines + $stderrLines) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) }) -join ' | ')
+        if ($process.ExitCode -ne 0 -and $detail -notmatch '(?i)1378|already a member') {
+            throw ("Failed to add '{0}' to local group '{1}'. detail: {2}" -f $MemberName, $GroupName, $detail)
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $stdoutFile -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $stderrFile -Force -ErrorAction SilentlyContinue
+    }
+
+    if (-not (Test-LocalGroupMemberPresent -GroupName $GroupName -MemberName $MemberName)) {
         throw ("Failed to add '{0}' to local group '{1}'. detail: {2}" -f $MemberName, $GroupName, $detail)
     }
 }

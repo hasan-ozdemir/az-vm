@@ -418,6 +418,11 @@ function Resolve-AzVmPublicDnsLabel {
     $attachedCount = 0
 
     foreach ($publicIpRow in @($publicIpRows)) {
+        $rowName = ''
+        if ($publicIpRow.PSObject.Properties.Match('name').Count -gt 0) {
+            $rowName = [string]$publicIpRow.name
+        }
+
         if (Test-AzVmManagedPublicIpAttached -PublicIpRow $publicIpRow) {
             $attachedCount++
         }
@@ -429,6 +434,11 @@ function Resolve-AzVmPublicDnsLabel {
             }
         }
         if (-not [string]::IsNullOrWhiteSpace([string]$domainNameLabel)) {
+            if (-not [string]::IsNullOrWhiteSpace([string]$PublicIpName) -and
+                [string]::Equals([string]$rowName, [string]$PublicIpName, [System.StringComparison]::OrdinalIgnoreCase)) {
+                return [string]($domainNameLabel.Trim().ToLowerInvariant())
+            }
+
             [void]$existingLabels.Add($domainNameLabel.Trim().ToLowerInvariant())
         }
     }
