@@ -803,13 +803,16 @@ Invoke-Test -Name "Guest task output relay is enabled for vm-init and vm-update 
     $runCommandRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\tasks\run-command\runner.ps1') -Raw)
 
     Assert-True -Condition ($sshProcessText -match [regex]::Escape('function Invoke-AzVmStreamingCapturedProcess')) -Message 'SSH process helpers must define the streaming capture path.'
-    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Write-Host $lineText')) -Message 'Streaming SSH capture must mirror stdout lines live.'
-    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Write-Warning $lineText')) -Message 'Streaming SSH capture must mirror stderr lines live.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Write-Host ([string]$normalizedLine)')) -Message 'Streaming SSH capture must mirror normalized stdout lines live.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Write-Warning ([string]$normalizedLine)')) -Message 'Streaming SSH capture must mirror normalized stderr lines live.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Normalize-AzVmProtocolLine -Text $lineText')) -Message 'Streaming SSH capture must normalize protocol-prefixed task output before relaying it.'
+    Assert-True -Condition ($sshProcessText -match [regex]::Escape('Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedLine)')) -Message 'Streaming SSH capture must suppress known task-output noise before relaying it.'
     Assert-True -Condition ($sshProcessText -match [regex]::Escape('[switch]$RelayOutput')) -Message 'SSH process retry helper must accept live output relay.'
     Assert-True -Condition ($sshSessionText -match [regex]::Escape('-RelayOutput')) -Message 'One-shot SSH task execution must enable live output relay.'
     Assert-True -Condition ($sshRunnerText -match [regex]::Escape('OutputRelayedLive = $true')) -Message 'Persistent SSH task execution must mark output as already relayed.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('$warningTasks = @()')) -Message 'SSH task runner must track warning tasks separately from hard failures.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Warning tasks:')) -Message 'SSH task runner must summarize warning tasks explicitly.'
+    Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Test-AzVmTaskOutputNoiseLine -Text ([string]$line)')) -Message 'SSH task runner must exclude known noise lines from warning-signal counting.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('WarningTasks = @($uniqueWarningTasks)')) -Message 'SSH task runner result contract must expose warning task names.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape("requested a restart. Restarting VM now")) -Message 'SSH task runner must restart immediately after reboot-signaling update tasks.'
     Assert-True -Condition ($sshTaskRunnerText -match [regex]::Escape('Running the final VM restart before vm-summary')) -Message 'SSH task runner must still support the workflow final vm-update restart.'
@@ -4361,6 +4364,8 @@ Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" 
 
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '0') -eq 0) -Message 'Task exit code parser must keep zero as zero.'
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '4294967295') -eq -1) -Message 'Task exit code parser must normalize unsigned 32-bit -1 markers back to -1.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "WARNING: Ignoring checksums due to feature checksumFiles turned off or option --ignore-checksums set.") -Message 'Protocol noise filters must suppress expected Chocolatey checksum warnings.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "errors pretty printing info") -Message 'Protocol noise filters must suppress transient Docker info pretty-print noise.'
 }
 
 Invoke-Test -Name "Persistent SSH task runner restores the session after transient task drops" -Action {
@@ -5562,9 +5567,13 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     Assert-True -Condition ($taskScript -like '*/api/version*') -Message 'Ollama install task must validate the Ollama HTTP API endpoint.'
     Assert-True -Condition ($taskScript -like '*cmd.exe /c start*') -Message 'Ollama install task must bootstrap ollama through cmd.exe /c start.'
     Assert-True -Condition ($taskScript -like '*start ""*') -Message 'Ollama install task must use a detached start wrapper for the Ollama bootstrap.'
-    Assert-True -Condition ($taskScript -like '*ollama-ls-ready*') -Message 'Ollama install task must verify ollama ls after bootstrap.'
+    Assert-True -Condition ($taskScript -like '*ollama-ls-ready: success=*') -Message 'Ollama install task must report whether ollama ls succeeded after bootstrap.'
+    Assert-True -Condition ($taskScript -like '*ollama-ls-info:*') -Message 'Ollama install task must record ollama ls probe details when the runtime is otherwise healthy.'
+    Assert-True -Condition ($taskScript -like '*ollama-runtime-deferred:*') -Message 'Ollama install task must defer list-only failures when process and API readiness are already satisfied.'
     Assert-True -Condition ($taskScript -like '*ollama-process-ready*') -Message 'Ollama install task must verify a running Ollama process after bootstrap.'
     Assert-True -Condition ($taskScript -like '*ollama-port-ready*') -Message 'Ollama install task must verify the local Ollama TCP port after bootstrap.'
+    Assert-True -Condition (($taskScript.IndexOf('Wait-OllamaProcessReady -TimeoutSeconds ([int]$taskConfig.OllamaProcessWaitTimeoutSeconds)', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Ollama install task must verify the process before treating ollama ls as the decisive check.'
+    Assert-True -Condition (($taskScript.IndexOf('Wait-OllamaApiReady -TimeoutSeconds $apiTimeoutSeconds', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Ollama install task must verify the API before treating ollama ls as the decisive check.'
     Assert-True -Condition ($taskScript -like '*Existing Ollama installation is already healthy. Skipping choco install.*') -Message 'Ollama install task must short-circuit when an existing installation is already healthy.'
     Assert-True -Condition ($taskScript -like '*RedirectStandardOutput*') -Message 'Ollama install task must bound external command output through redirected logs.'
     Assert-True -Condition ($taskScript -like '*RedirectStandardError*') -Message 'Ollama install task must bound external command error output through redirected logs.'
@@ -5577,6 +5586,7 @@ Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
     Assert-True -Condition ($taskScript -like '*Start-Process -FilePath $OllamaExe -ArgumentList ''serve''*') -Message 'Ollama install task must fall back to Start-Process ollama.exe serve when the detached ls bootstrap does not stay alive.'
     Assert-True -Condition (($taskScript.IndexOf('[string]$Host =', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Ollama install task must not shadow the built-in $Host variable with a parameter named Host.'
     Assert-True -Condition (($taskScript.IndexOf('[string]$HostName', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Ollama install task must use a non-reserved host-name parameter for TCP probes.'
+    Assert-True -Condition ($taskScript -like '*install-ollama-tool-completed: version={0}; processCount={1}; listReady={2}*') -Message 'Ollama install task must publish whether ollama ls was ready at task completion.'
     Assert-True -Condition (@($taskJson.appState.machineDirectories).Count -eq 0) -Message 'Ollama app-state must not replay machine-wide runtime directories.'
     Assert-True -Condition (@($taskJson.appState.profileDirectories).Count -eq 0) -Message 'Ollama app-state must not replay broad profile directories.'
     $profileFilePaths = @($taskJson.appState.profileFiles | ForEach-Object { [string]$_.path })
@@ -5864,6 +5874,10 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsAssetCopies.Count -ge 1) -Message "Copy user settings task must publish its required helper asset set."
     Assert-True -Condition ($copyUserSettingsJsonText -like '*C:/Windows/Temp/az-vm-interactive-session-helper.ps1*') -Message "Copy user settings helper remote path mismatch."
     Assert-True -Condition ($copyUserSettingsBody -like '*copy-user-settings-profile-materialized*') -Message "Copy user settings task must materialize the assistant profile."
+    Assert-True -Condition ($copyUserSettingsBody -like '*copy-user-settings-profile-ready*') -Message "Copy user settings task must log when the assistant profile hive is fully ready."
+    Assert-True -Condition ($copyUserSettingsBody -like '*copy-user-settings-profile-partial*') -Message "Copy user settings task must log partial assistant profile paths before retrying materialization."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Test-PortableProfileHiveReady*') -Message "Copy user settings task must require NTUSER.DAT readiness before treating a profile as materialized."
+    Assert-True -Condition ($copyUserSettingsBody -like '*User profile hive could not be materialized*') -Message "Copy user settings task must fail clearly when NTUSER.DAT never appears."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableProfileMirror*') -Message "Copy user settings task must mirror portable profile files."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableRegistryMirror*') -Message "Copy user settings task must mirror portable registry state."
     Assert-True -Condition ($copyUserSettingsBody -like '*Invoke-PortableAssistantRegistryMirror*') -Message "Copy user settings task must mirror portable manager state into assistant."
@@ -6526,6 +6540,7 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
         'wsl-feature => VirtualMachinePlatform => state=',
         'OLLAMA HEALTH:',
         'ollama-ls-probe =>',
+        'ollama-process-count =>',
         'Wait-OllamaApiReady',
         'docker-wsl-prereq-ready =>',
         'WSL HEALTH:'
@@ -6580,12 +6595,15 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition (-not ($captureHelperText -like '*import base64*')) -Message 'Shared app-state capture must not keep the retired base64 decode helper path.'
     Assert-True -Condition ($sshAssetsText -like '*Get-AzVmPscpExecutablePath*') -Message 'Windows SSH asset copy must resolve pscp.exe for the primary Windows SCP transport.'
     Assert-True -Condition ($sshAssetsText -like '*Get-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must resolve trusted SCP host key fingerprints dynamically.'
+    Assert-True -Condition ($sshAssetsText -like '*Resolve-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must resolve SCP host-key arguments without emitting fallback transport noise.'
     Assert-True -Condition ($sshAssetsText -like '*ssh-keyscan.exe*') -Message 'Windows SCP transport must use ssh-keyscan.exe to discover the current VM host keys.'
     Assert-True -Condition ($sshAssetsText -like '*ssh-keygen.exe*') -Message 'Windows SCP transport must use ssh-keygen.exe to derive PuTTY-compatible host key fingerprints.'
     Assert-True -Condition ($sshAssetsText -like '*mode=windows-scp*') -Message 'Windows SSH asset copy logs must identify the SCP transport mode.'
     Assert-True -Condition ($sshAssetsText -like '*-pwfile*') -Message 'Windows SCP transport must pass the password through a temp pwfile instead of the process command line.'
     Assert-True -Condition ($sshAssetsText -like '*-scp*') -Message 'Windows SCP transport must force the SCP protocol on Windows targets.'
     Assert-True -Condition ($sshAssetsText -like '*pscp fetch asset <-*') -Message 'Windows SSH asset fetch must also use SCP on Windows targets.'
+    Assert-True -Condition ($sshAssetsText -like '*Task asset copy fallback: pyssh windows copy ->*') -Message 'Windows SSH asset copy must log an explicit pyssh fallback when SCP host-key resolution cannot be established.'
+    Assert-True -Condition ($sshAssetsText -like '*Task asset fetch fallback: pyssh windows fetch <-*') -Message 'Windows SSH asset fetch must log an explicit pyssh fallback when SCP host-key resolution cannot be established.'
     Assert-True -Condition ($sshProcessText -like '*SkipPythonBytecodeFlag*') -Message 'Shared SSH process helpers must let non-Python transports opt out of the Python-specific -B prefix.'
     Assert-True -Condition ($localAppStateText -like '*Resolve-AzVmLocalAppStateProfileTargets*') -Message 'Local app-state helpers must resolve explicit Windows profile targets.'
     Assert-True -Condition ($localAppStateText -like '*restore-journal.json*') -Message 'Local app-state helpers must write a restore journal.'
@@ -7794,6 +7812,8 @@ Invoke-Test -Name "Windows auto-start task applies the approved startup profile 
     }
     Assert-True -Condition (($healthTaskText.IndexOf('Get-ManagerContext', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must read manager-scope startup locations through the manager hive."
     Assert-True -Condition (($healthTaskText.IndexOf('ollama-api-version-response => {{"version":"{0}"}}', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must escape literal JSON braces when formatting the Ollama API version response."
+    Assert-True -Condition (($healthTaskText.IndexOf('$ollamaApiWaitSeconds = if ($null -ne $ollamaStartupShortcutHealth -and [bool]$ollamaStartupShortcutHealth.Healthy) { 180 } else { 20 }', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must extend the Ollama API wait when the managed startup shortcut is already healthy."
+    Assert-True -Condition (($healthTaskText.IndexOf('if (-not [bool]$ollamaCliResult.Success -and -not [string]::IsNullOrWhiteSpace([string]$ollamaApiVersion) -and -not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {', [System.StringComparison]::Ordinal)) -ge 0) -Message "Health snapshot must rerun ollama ls after the API becomes reachable."
 }
 
 Invoke-Test -Name "Windows language task and health contract" -Action {
@@ -7813,6 +7833,8 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Get-WindowsCapability',
         'Language.Basic',
         'InstallPending',
+        'Test-LanguageCapabilityDeferredVerificationAllowed',
+        'QueuedInstallAccepted',
         'Set-SystemPreferredUILanguage',
         'Set-WinUILanguageOverride',
         'Set-WinUserLanguageList',
@@ -7823,7 +7845,9 @@ Invoke-Test -Name "Windows language task and health contract" -Action {
         'Applying system preferred UI language',
         'Collecting final language verification output',
         'language-capabilities-final => {0} => {1}',
+        'language-capabilities-deferred => {0} => {1}',
         'Assert-LanguageStateReadyForRestart',
+        'Assert-LanguageStateReadyForRestart -ComponentResults $systemLanguageState.ComponentResults',
         'direct apply for ''{0}'' is queued and will finish after the next restart or sign-in.'
     )) {
         Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("Language settings task must include fragment '{0}'." -f [string]$fragment)

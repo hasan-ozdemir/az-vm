@@ -90,7 +90,16 @@ function Test-AzVmTaskOutputNoiseLine {
         $value.StartsWith("Update task completed:", [System.StringComparison]::OrdinalIgnoreCase) -or
         $value.StartsWith("The command completed successfully.", [System.StringComparison]::OrdinalIgnoreCase) -or
         ($value -match "(?i)'wmic'\s+is\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command") -or
-        ($value -match '(?i)^Seizure Warning:\s*https://aka\.ms/microsoft-store-seizure-warning')
+        ($value -match '(?i)^Seizure Warning:\s*https://aka\.ms/microsoft-store-seizure-warning') -or
+        ($value -match '^(?i)WARNING:\s+It''s very likely you will need to close and reopen your shell$') -or
+        ($value -match '^(?i)WARNING:\s+Not setting tab completion: Profile file does not exist at$') -or
+        ($value -match '^(?i)WARNING:\s+Ignoring checksums due to feature checksumFiles turned off or option --ignore-checksums set\.$') -or
+        ($value -match '^(?i)WARNING:\s+No registry key found based on\s+''Git''$') -or
+        ($value -match '^(?i)WARNING:\s+If you started this package under PowerShell core, replacing an in-use version may be unpredictable, require multiple attempts or produce errors\.$') -or
+        ($value -match '^(?i)WARNING:\s+The Windows Subsystem for Linux is not installed\. You can install by running ''wsl\.exe --install''\.$') -or
+        ($value -match '^(?i)WARNING:\s+For more information please visit https://aka\.ms/wslinstall$') -or
+        ($value -match '^(?i)ERROR:\s+request returned 500 Internal Server Error for API route and version http://%2F%2F\.\%2Fpipe%2FdockerDesktopLinuxEngine/v[\d\.]+/info, check if the server supports the requested API version$') -or
+        ($value -match '^(?i)errors pretty printing info$')
     )
 }
 

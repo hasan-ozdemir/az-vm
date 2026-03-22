@@ -3,6 +3,19 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.385] - 2026-03-22
+
+### Fixed
+- Fixed Windows SSH task warning classification so known package-manager, WSL, Docker, and SCP host-key fallback noise is normalized or suppressed before live relay, warning-signal counting, and transcript readback. This keeps benign task chatter out of the `vm-update` warning summary while preserving real failures.
+- Fixed the Windows assistant-profile copy flow so `10005-copy-user-settings` no longer treats a partial profile directory as materialized. The task now waits for `NTUSER.DAT` readiness and fails clearly if the assistant hive never appears.
+- Fixed the Windows Ollama and language task readiness model for fresh-create runs. `135-install-ollama-tool` now treats process, port, and API health as the decisive runtime gates and records deferred `ollama ls` detail without warninging on cold starts, while `136-configure-language-settings` now accepts deferred capability verification when installs are queued for completion after the next restart or sign-in.
+- Fixed the Windows vm-summary Ollama readback so healthy managed startup shortcuts extend the API wait budget and trigger one more `ollama ls` probe after the API becomes reachable, reducing immediate post-reboot false negatives.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Revalidated `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the live-warning fix set.
+- Extended smoke coverage so the SSH relay/readback filters, Windows SCP fallback behavior, assistant profile hive readiness, deferred language verification, and Ollama cold-start readiness/readback contracts are asserted explicitly.
+
 ## [2026.3.22.384] - 2026-03-22
 
 ### Fixed

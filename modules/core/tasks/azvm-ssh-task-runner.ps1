@@ -13,7 +13,7 @@ function Get-AzVmTaskOutputWarningSignalCount {
     $count = 0
     foreach ($lineRaw in @([string]$MessageText -split "`r?`n")) {
         $line = [string]$lineRaw
-        if ($line -match '^(?i)\s*WARNING:\s+') {
+        if ($line -match '^(?i)\s*WARNING:\s+' -and -not (Test-AzVmTaskOutputNoiseLine -Text ([string]$line))) {
             $count++
         }
     }

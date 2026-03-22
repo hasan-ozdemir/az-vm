@@ -122,13 +122,36 @@ function Invoke-AzVmStreamingCapturedProcess {
             }
 
             $lineText = [string]$line
-            [void]$outputLines.Add($lineText)
+            $normalizedLine = Normalize-AzVmProtocolLine -Text $lineText
+            if ($null -eq $normalizedLine) {
+                $normalizedLine = ""
+            }
+            if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedLine)) {
+                if ($isStdoutTask) {
+                    $stdoutTask = $stdoutReader.ReadLineAsync()
+                }
+                else {
+                    $stderrTask = $stderrReader.ReadLineAsync()
+                }
+                continue
+            }
+            if ([string]::IsNullOrWhiteSpace([string]$normalizedLine)) {
+                if ($isStdoutTask) {
+                    $stdoutTask = $stdoutReader.ReadLineAsync()
+                }
+                else {
+                    $stderrTask = $stderrReader.ReadLineAsync()
+                }
+                continue
+            }
+
+            [void]$outputLines.Add([string]$normalizedLine)
             if ($isStdoutTask) {
-                Write-Host $lineText
+                Write-Host ([string]$normalizedLine)
                 $stdoutTask = $stdoutReader.ReadLineAsync()
             }
             else {
-                Write-Warning $lineText
+                Write-Warning ([string]$normalizedLine)
                 $stderrTask = $stderrReader.ReadLineAsync()
             }
         }
@@ -136,17 +159,21 @@ function Invoke-AzVmStreamingCapturedProcess {
         if ($proc.HasExited -and -not $stdoutClosed) {
             $stdoutTail = [string]$stdoutReader.ReadToEnd()
             foreach ($tailLine in @($stdoutTail -split "`r?`n")) {
-                if ([string]::IsNullOrWhiteSpace([string]$tailLine)) { continue }
-                [void]$outputLines.Add([string]$tailLine)
-                Write-Host ([string]$tailLine)
+                $normalizedTailLine = Normalize-AzVmProtocolLine -Text ([string]$tailLine)
+                if ([string]::IsNullOrWhiteSpace([string]$normalizedTailLine)) { continue }
+                if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
+                [void]$outputLines.Add([string]$normalizedTailLine)
+                Write-Host ([string]$normalizedTailLine)
             }
         }
         if ($proc.HasExited -and -not $stderrClosed) {
             $stderrTail = [string]$stderrReader.ReadToEnd()
             foreach ($tailLine in @($stderrTail -split "`r?`n")) {
-                if ([string]::IsNullOrWhiteSpace([string]$tailLine)) { continue }
-                [void]$outputLines.Add([string]$tailLine)
-                Write-Warning ([string]$tailLine)
+                $normalizedTailLine = Normalize-AzVmProtocolLine -Text ([string]$tailLine)
+                if ([string]::IsNullOrWhiteSpace([string]$normalizedTailLine)) { continue }
+                if (Test-AzVmTaskOutputNoiseLine -Text ([string]$normalizedTailLine)) { continue }
+                [void]$outputLines.Add([string]$normalizedTailLine)
+                Write-Warning ([string]$normalizedTailLine)
             }
         }
 

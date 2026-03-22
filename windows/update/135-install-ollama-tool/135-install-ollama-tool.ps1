@@ -518,42 +518,48 @@ function Confirm-OllamaRuntime {
     $loopbackPortOpen = $false
     $localhostPortOpen = $false
     $apiVersion = ''
+    $listReady = $false
     $runtimeFailure = ''
 
     foreach ($attemptLabel in @('bootstrap', 'serve-fallback')) {
-        $listResult = Wait-OllamaListReady -OllamaExe $OllamaExe -TimeoutSeconds $listTimeoutSeconds
-        if (-not [bool]$listResult.Success) {
-            $stdoutTail = if ($null -ne $listResult.Probe) { [string]$listResult.Probe.StdoutTail } else { '' }
-            $stderrTail = if ($null -ne $listResult.Probe) { [string]$listResult.Probe.StderrTail } else { '' }
-            $runtimeFailure = ("ollama ls did not complete successfully. stdoutTail={0}; stderrTail={1}" -f `
-                $(if ([string]::IsNullOrWhiteSpace([string]$stdoutTail)) { '(none)' } else { $stdoutTail }), `
-                $(if ([string]::IsNullOrWhiteSpace([string]$stderrTail)) { '(none)' } else { $stderrTail }))
+        $processResult = Wait-OllamaProcessReady -TimeoutSeconds ([int]$taskConfig.OllamaProcessWaitTimeoutSeconds)
+        if (-not [bool]$processResult.Success) {
+            $runtimeFailure = 'Ollama process was not observed after bootstrap.'
         }
         else {
-            $processResult = Wait-OllamaProcessReady -TimeoutSeconds ([int]$taskConfig.OllamaProcessWaitTimeoutSeconds)
-            if (-not [bool]$processResult.Success) {
-                $runtimeFailure = 'Ollama process was not observed after bootstrap.'
+            $loopbackPortOpen = Test-TcpPortReachable -HostName '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
+            $localhostPortOpen = Test-TcpPortReachable -HostName 'localhost' -Port ([int]$taskConfig.OllamaApiPort)
+            if (-not ([bool]$loopbackPortOpen -or [bool]$localhostPortOpen)) {
+                $runtimeFailure = ("Ollama TCP port {0} is not reachable on localhost or 127.0.0.1." -f [int]$taskConfig.OllamaApiPort)
             }
             else {
-                $loopbackPortOpen = Test-TcpPortReachable -HostName '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
-                $localhostPortOpen = Test-TcpPortReachable -HostName 'localhost' -Port ([int]$taskConfig.OllamaApiPort)
-                if (-not ([bool]$loopbackPortOpen -or [bool]$localhostPortOpen)) {
-                    $runtimeFailure = ("Ollama TCP port {0} is not reachable on localhost or 127.0.0.1." -f [int]$taskConfig.OllamaApiPort)
+                $apiVersion = Wait-OllamaApiReady -TimeoutSeconds $apiTimeoutSeconds
+                if ([string]::IsNullOrWhiteSpace([string]$apiVersion)) {
+                    $runtimeFailure = ("Ollama API did not respond on 127.0.0.1:{0} or localhost:{0}." -f [int]$taskConfig.OllamaApiPort)
                 }
                 else {
-                    $apiVersion = Wait-OllamaApiReady -TimeoutSeconds $apiTimeoutSeconds
-                    if ([string]::IsNullOrWhiteSpace([string]$apiVersion)) {
-                        $runtimeFailure = ("Ollama API did not respond on 127.0.0.1:{0} or localhost:{0}." -f [int]$taskConfig.OllamaApiPort)
-                    }
-                    else {
+                    $listResult = Wait-OllamaListReady -OllamaExe $OllamaExe -TimeoutSeconds $listTimeoutSeconds
+                    $listReady = ($null -ne $listResult -and [bool]$listResult.Success)
+                    if ([bool]$listReady) {
                         break
                     }
+
+                    $stdoutTail = if ($null -ne $listResult -and $null -ne $listResult.Probe) { [string]$listResult.Probe.StdoutTail } else { '' }
+                    $stderrTail = if ($null -ne $listResult -and $null -ne $listResult.Probe) { [string]$listResult.Probe.StderrTail } else { '' }
+                    Write-Host ("ollama-ls-info: exitCode={0}; stdoutTail={1}; stderrTail={2}" -f `
+                        $(if ($null -ne $listResult -and $null -ne $listResult.Probe) { [int]$listResult.Probe.ExitCode } else { -1 }), `
+                        $(if ([string]::IsNullOrWhiteSpace([string]$stdoutTail)) { '(none)' } else { [string]$stdoutTail }), `
+                        $(if ([string]::IsNullOrWhiteSpace([string]$stderrTail)) { '(none)' } else { [string]$stderrTail }))
+                    break
                 }
             }
         }
 
         if (-not $Bootstrap -or [string]$attemptLabel -ne 'bootstrap') {
-            throw $runtimeFailure
+            if (-not [string]::IsNullOrWhiteSpace([string]$runtimeFailure)) {
+                Write-Host ("ollama-runtime-deferred: {0}" -f [string]$runtimeFailure)
+            }
+            break
         }
 
         Write-Host ("Ollama headless runtime is not yet durable after cmd.exe /c start bootstrap. detail={0}" -f [string]$runtimeFailure)
@@ -563,17 +569,20 @@ function Confirm-OllamaRuntime {
         $apiTimeoutSeconds = [int]$taskConfig.OllamaApiWaitTimeoutSeconds
     }
 
-    Write-Host ("ollama-ls-ready: exitCode={0}; stdoutTail={1}; stderrTail={2}" -f `
-        [int]$listResult.Probe.ExitCode, `
-        $(if ([string]::IsNullOrWhiteSpace([string]$listResult.Probe.StdoutTail)) { '(none)' } else { [string]$listResult.Probe.StdoutTail }), `
-        $(if ([string]::IsNullOrWhiteSpace([string]$listResult.Probe.StderrTail)) { '(none)' } else { [string]$listResult.Probe.StderrTail }))
+    $effectiveListProbe = if ($null -ne $listResult) { $listResult.Probe } else { $null }
+    Write-Host ("ollama-ls-ready: success={0}; exitCode={1}; stdoutTail={2}; stderrTail={3}" -f `
+        [bool]$listReady, `
+        $(if ($null -ne $effectiveListProbe) { [int]$effectiveListProbe.ExitCode } else { -1 }), `
+        $(if ($null -eq $effectiveListProbe -or [string]::IsNullOrWhiteSpace([string]$effectiveListProbe.StdoutTail)) { '(none)' } else { [string]$effectiveListProbe.StdoutTail }), `
+        $(if ($null -eq $effectiveListProbe -or [string]::IsNullOrWhiteSpace([string]$effectiveListProbe.StderrTail)) { '(none)' } else { [string]$effectiveListProbe.StderrTail }))
     Write-Host ("ollama-process-ready: count={0}; processes={1}" -f @($processResult.Processes).Count, (Format-OllamaProcessSummary -Processes @($processResult.Processes)))
     Write-Host ("ollama-port-ready: 127.0.0.1={0}; localhost={1}; port={2}" -f [bool]$loopbackPortOpen, [bool]$localhostPortOpen, [int]$taskConfig.OllamaApiPort)
 
-    Write-Host ("ollama-api-ready: version={0}; port={1}" -f [string]$apiVersion, [int]$taskConfig.OllamaApiPort)
+    Write-Host ("ollama-api-ready: success={0}; version={1}; port={2}" -f (-not [string]::IsNullOrWhiteSpace([string]$apiVersion)), [string]$apiVersion, [int]$taskConfig.OllamaApiPort)
     return [pscustomobject]@{
         Version = [string]$apiVersion
         ProcessCount = @($processResult.Processes).Count
+        ListReady = [bool]$listReady
     }
 }
 
@@ -637,5 +646,5 @@ if ($versionExit -ne 0) {
 }
 
 $runtime = Confirm-OllamaRuntime -OllamaExe $ollamaExe -Bootstrap
-Write-Host ("install-ollama-tool-completed: version={0}; processCount={1}" -f [string]$runtime.Version, [int]$runtime.ProcessCount)
+Write-Host ("install-ollama-tool-completed: version={0}; processCount={1}; listReady={2}" -f [string]$runtime.Version, [int]$runtime.ProcessCount, [bool]$runtime.ListReady)
 Write-Host "Update task completed: install-ollama-tool"

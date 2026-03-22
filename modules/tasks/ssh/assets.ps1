@@ -164,6 +164,32 @@ function Get-AzVmWindowsScpHostKeyArguments {
     return @($cachedArgs)
 }
 
+function Resolve-AzVmWindowsScpHostKeyArguments {
+    param(
+        [string]$HostName,
+        [string]$Port
+    )
+
+    try {
+        return [pscustomobject]@{
+            Success = $true
+            Args = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+            Message = ''
+        }
+    }
+    catch {
+        if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $_.Exception.Message)) {
+            throw
+        }
+
+        return [pscustomobject]@{
+            Success = $false
+            Args = @()
+            Message = [string]$_.Exception.Message
+        }
+    }
+}
+
 function Test-AzVmWindowsScpFallbackCandidate {
     param(
         [AllowNull()]
@@ -407,9 +433,25 @@ function Copy-AzVmAssetToWindowsViaExec {
     $transferWatch = [System.Diagnostics.Stopwatch]::StartNew()
     $passwordFilePath = ''
     try {
-        try {
-            $pscpPath = Get-AzVmPscpExecutablePath
-            $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+        $pscpPath = Get-AzVmPscpExecutablePath
+        $hostKeyResolution = Resolve-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port
+        if (-not [bool]$hostKeyResolution.Success) {
+            Write-Host ("Task asset copy fallback: pyssh windows copy -> {0} ({1})" -f [string]$RemotePath, [string]$hostKeyResolution.Message)
+            $copyArgs = @(
+                [string]$PySshClientPath,
+                "copy",
+                "--host", [string]$HostName,
+                "--port", [string]$Port,
+                "--user", [string]$UserName,
+                "--password", [string]$Password,
+                "--timeout", [string]$ConnectTimeoutSeconds,
+                "--local", [string]$resolvedLocalPath,
+                "--remote", [string]$stagingRemotePath
+            )
+            Invoke-AzVmProcessWithRetry -FilePath $PySshPythonPath -Arguments $copyArgs -Label ("pyssh copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 2 | Out-Null
+        }
+        else {
+            $hostKeyArgs = @($hostKeyResolution.Args)
             $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
             $copyArgs = @(
                 '-batch',
@@ -423,25 +465,6 @@ function Copy-AzVmAssetToWindowsViaExec {
             )
 
             Invoke-AzVmProcessWithRetry -FilePath $pscpPath -Arguments $copyArgs -Label ("pscp copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 1 -SkipPythonBytecodeFlag | Out-Null
-        }
-        catch {
-            if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $_.Exception.Message)) {
-                throw
-            }
-
-            Write-Host ("Task asset copy fallback: pyssh windows copy -> {0} ({1})" -f [string]$RemotePath, [string]$_.Exception.Message)
-            $copyArgs = @(
-                [string]$PySshClientPath,
-                "copy",
-                "--host", [string]$HostName,
-                "--port", [string]$Port,
-                "--user", [string]$UserName,
-                "--password", [string]$Password,
-                "--timeout", [string]$ConnectTimeoutSeconds,
-                "--local", [string]$resolvedLocalPath,
-                "--remote", [string]$stagingRemotePath
-            )
-            Invoke-AzVmProcessWithRetry -FilePath $PySshPythonPath -Arguments $copyArgs -Label ("pyssh copy asset -> {0}" -f [string]$RemotePath) -MaxAttempts 2 | Out-Null
         }
 
         $finalizeScript = @(
@@ -585,10 +608,14 @@ function Copy-AzVmAssetFromVm {
     }
 
     if (Test-AzVmWindowsRemotePath -RemotePath $RemotePath) {
-        try {
-            $pscpPath = Get-AzVmPscpExecutablePath
-            $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $RemotePath
-            $hostKeyArgs = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
+        $pscpPath = Get-AzVmPscpExecutablePath
+        $remoteSpec = ConvertTo-AzVmWindowsScpRemoteSpec -HostName $HostName -RemotePath $RemotePath
+        $hostKeyResolution = Resolve-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port
+        if (-not [bool]$hostKeyResolution.Success) {
+            Write-Host ("Task asset fetch fallback: pyssh windows fetch <- {0} ({1})" -f [string]$RemotePath, [string]$hostKeyResolution.Message)
+        }
+        else {
+            $hostKeyArgs = @($hostKeyResolution.Args)
             $passwordFilePath = New-AzVmWindowsScpPasswordFilePath -Password $Password
             try {
                 $fetchArgs = @(
@@ -609,13 +636,6 @@ function Copy-AzVmAssetFromVm {
                     Remove-Item -LiteralPath $passwordFilePath -Force -ErrorAction SilentlyContinue
                 }
             }
-        }
-        catch {
-            if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $_.Exception.Message)) {
-                throw
-            }
-
-            Write-Host ("Task asset fetch fallback: pyssh windows fetch <- {0} ({1})" -f [string]$RemotePath, [string]$_.Exception.Message)
         }
 
         if (Test-Path -LiteralPath $LocalPath) {

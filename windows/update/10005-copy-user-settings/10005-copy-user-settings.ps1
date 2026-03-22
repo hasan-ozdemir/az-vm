@@ -302,7 +302,6 @@ function Ensure-UserProfileMaterialized {
 
     if (-not [string]::IsNullOrWhiteSpace([string]$existingProfilePath) -and (Test-Path -LiteralPath $existingProfilePath)) {
         Write-Detail ("copy-user-settings-profile-partial: {0} => {1}" -f $UserName, $existingProfilePath)
-        return [string]$existingProfilePath
     }
 
     $materializeTaskName = "{0}-materialize-{1}" -f $taskName, $UserName
@@ -334,9 +333,9 @@ Write-AzVmInteractiveResult -ResultPath $resultPath -TaskName $taskName -Success
 
     if (-not (Wait-AzVmCondition -Condition {
         $path = Get-LocalUserProfilePath -UserName $UserName
-        return (-not [string]::IsNullOrWhiteSpace([string]$path) -and (Test-Path -LiteralPath $path))
+        return (-not [string]::IsNullOrWhiteSpace([string]$path) -and (Test-PortableProfileHiveReady -ProfilePath $path))
     } -TimeoutSeconds 30)) {
-        throw ("User profile could not be materialized: {0}" -f $UserName)
+        throw ("User profile hive could not be materialized: {0}" -f $UserName)
     }
 
     $profilePath = Get-LocalUserProfilePath -UserName $UserName

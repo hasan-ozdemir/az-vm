@@ -2217,9 +2217,7 @@ $ollamaCliResult = [pscustomobject]@{
 if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
     $ollamaCliResult = Invoke-NativeCommandProbe -FilePath $ollamaExe -Arguments @('ls') -TimeoutSeconds 20 -SuppressOutput
 }
-Write-Host ("ollama-ls-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$ollamaCliResult.Success, [bool]$ollamaCliResult.TimedOut, [int]$ollamaCliResult.ExitCode)
 $ollamaProcesses = @(Get-Process -Name 'ollama*' -ErrorAction SilentlyContinue)
-Write-Host ("ollama-process-count => {0}" -f @($ollamaProcesses).Count)
 if (Test-Path -LiteralPath $ollamaStartupShortcutPath) {
     Write-ShortcutReadback -Label 'ollama-startup-shortcut' -ShortcutPath $ollamaStartupShortcutPath
     $ollamaStartupShortcutHealth = Get-ShortcutHealth -ShortcutPath $ollamaStartupShortcutPath
@@ -2228,7 +2226,14 @@ if (Test-Path -LiteralPath $ollamaStartupShortcutPath) {
 else {
     Write-Host ("ollama-startup-shortcut => missing => {0}" -f $ollamaStartupShortcutPath)
 }
-$ollamaApiVersion = if ([bool]$ollamaCliResult.Success) { Wait-OllamaApiReady -TimeoutSeconds 20 } else { Get-OllamaApiVersion }
+$ollamaApiWaitSeconds = if ($null -ne $ollamaStartupShortcutHealth -and [bool]$ollamaStartupShortcutHealth.Healthy) { 180 } else { 20 }
+$ollamaApiVersion = if ([bool]$ollamaCliResult.Success) { Wait-OllamaApiReady -TimeoutSeconds $ollamaApiWaitSeconds } else { Wait-OllamaApiReady -TimeoutSeconds $ollamaApiWaitSeconds }
+if (-not [bool]$ollamaCliResult.Success -and -not [string]::IsNullOrWhiteSpace([string]$ollamaApiVersion) -and -not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
+    $ollamaCliResult = Invoke-NativeCommandProbe -FilePath $ollamaExe -Arguments @('ls') -TimeoutSeconds 20 -SuppressOutput
+}
+$ollamaProcesses = @(Get-Process -Name 'ollama*' -ErrorAction SilentlyContinue)
+Write-Host ("ollama-ls-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$ollamaCliResult.Success, [bool]$ollamaCliResult.TimedOut, [int]$ollamaCliResult.ExitCode)
+Write-Host ("ollama-process-count => {0}" -f @($ollamaProcesses).Count)
 $ollamaPortOpen = Test-TcpPortReachable -HostName '127.0.0.1' -Port 11434 -TimeoutSeconds 5
 Write-Host ("ollama-port-11434-open => {0}" -f [bool]$ollamaPortOpen)
 Write-Host ("ollama-api-version => {0}" -f [string]$ollamaApiVersion)

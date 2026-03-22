@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.385 - 2026-03-22
+
+### Summary
+This release addresses the live `create --auto --windows --perf` warning set that blocked the zero-warning production target. The Windows task pipeline now filters known benign SSH/package-manager noise before it reaches warning summaries, requires a real assistant user hive before profile-copy completion, accepts deferred language-capability completion across restart boundaries, and treats Ollama process/API readiness as authoritative during cold starts while improving vm-summary readback timing.
+
+### Highlights
+- Changed the SSH task relay, warning-signal counter, and Windows SCP fallback path so known Chocolatey, WSL, Docker, and host-key fallback noise is normalized or suppressed before it can inflate `vm-update` warnings.
+- Changed `10005-copy-user-settings` to require `Test-PortableProfileHiveReady` and fail explicitly when `C:\Users\assistant\NTUSER.DAT` never materializes, preventing partial-profile false success.
+- Changed `135-install-ollama-tool` to prioritize process, port, and API readiness, log deferred `ollama ls` detail without surfacing a warning on cold starts, and publish `listReady` in the completion summary.
+- Changed `136-configure-language-settings` to carry component-level install results into restart verification and accept deferred capability states such as `InstallPending` when Windows still needs a restart or sign-in to finish language package application.
+- Changed the Windows vm-summary readback to extend Ollama API wait time when the managed startup shortcut is already healthy and to rerun `ollama ls` after the API becomes reachable.
+
 ## Release 2026.3.22.384 - 2026-03-22
 
 ### Summary

@@ -216,6 +216,30 @@ function Test-LanguageCapabilityStateSatisfied {
     return $true
 }
 
+function Test-LanguageCapabilityDeferredVerificationAllowed {
+    param([AllowNull()]$StateMap)
+
+    if ($null -eq $StateMap) {
+        return $false
+    }
+
+    foreach ($capabilityName in @('Language.Basic', 'Language.Handwriting', 'Language.OCR', 'Language.Speech', 'Language.TextToSpeech')) {
+        $capabilityState = 'Unavailable'
+        if ($StateMap.PSObject.Properties.Match($capabilityName).Count -gt 0) {
+            $candidate = [string]$StateMap.$capabilityName
+            if (-not [string]::IsNullOrWhiteSpace([string]$candidate)) {
+                $capabilityState = $candidate
+            }
+        }
+
+        if ($capabilityState -notin @('NotPresent', 'Unavailable', 'InstallPending', 'Installed')) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Invoke-LanguageInteractiveAutomation {
     param(
         [string]$InteractiveTaskName,
@@ -572,7 +596,13 @@ catch {
         Write-StateSuccess ("Language components for {0} were installed successfully." -f [string]$DisplayName)
     }
 
-    return [bool]$rebootRequired
+    return [pscustomobject]@{
+        LanguageTag = [string]$LanguageTag
+        RebootRequired = [bool]$rebootRequired
+        QueuedInstallAccepted = [bool]$queuedInstallAccepted
+        CapabilitySummary = [string]$capabilitySummary
+        InstalledLanguagePresent = (@($installedRows).Count -ge 1)
+    }
 }
 
 function Invoke-UserLanguageConfiguration {
@@ -770,8 +800,8 @@ function Set-SystemLanguageState {
     Write-StateIntent ('System language packages and UI settings will be configured.')
     Write-StateStart ('Configuring system language packages and UI settings...')
 
-    $englishRebootRequired = Install-LanguageComponents -LanguageTag $primaryLanguage -DisplayName 'English (United States)'
-    $turkishRebootRequired = Install-LanguageComponents -LanguageTag $secondaryLanguage -DisplayName 'Turkish (Turkey)'
+    $englishInstallResult = Install-LanguageComponents -LanguageTag $primaryLanguage -DisplayName 'English (United States)'
+    $turkishInstallResult = Install-LanguageComponents -LanguageTag $secondaryLanguage -DisplayName 'Turkish (Turkey)'
 
     Write-StateStart ("Applying system preferred UI language '{0}'..." -f $primaryLanguage)
     Set-SystemPreferredUILanguage -Language $primaryLanguage
@@ -783,14 +813,22 @@ function Set-SystemLanguageState {
 
     Write-StateSuccess('System language packages and UI settings were configured successfully.')
 
-    return (
-        [bool]$englishRebootRequired -or
-        [bool]$turkishRebootRequired -or
-        (-not [string]::Equals([string]$systemPreferredUiBefore, [string]$systemPreferredUiAfter, [System.StringComparison]::OrdinalIgnoreCase))
-    )
+    return [pscustomobject]@{
+        RebootRequired = (
+            [bool]$englishInstallResult.RebootRequired -or
+            [bool]$turkishInstallResult.RebootRequired -or
+            (-not [string]::Equals([string]$systemPreferredUiBefore, [string]$systemPreferredUiAfter, [System.StringComparison]::OrdinalIgnoreCase))
+        )
+        ComponentResults = [ordered]@{
+            ([string]$primaryLanguage) = $englishInstallResult
+            ([string]$secondaryLanguage) = $turkishInstallResult
+        }
+    }
 }
 
 function Assert-LanguageStateReadyForRestart {
+    param([hashtable]$ComponentResults = @{})
+
     foreach ($languageTag in @($primaryLanguage, $secondaryLanguage)) {
         $capabilityState = Get-LanguageCapabilityStateMap -LanguageTag $languageTag
         $capabilitySummary = Convert-LanguageCapabilityStateMapToSummary -StateMap $capabilityState
@@ -800,6 +838,26 @@ function Assert-LanguageStateReadyForRestart {
         if (-not (Test-LanguageCapabilityStateSatisfied -StateMap $capabilityState)) {
             if ($installedLanguagePresent) {
                 Write-Host ("language-capabilities-info => {0} => installed-language verification is already satisfied; optional capability packages remain image-managed. {1}" -f [string]$languageTag, [string]$capabilitySummary) -ForegroundColor DarkCyan
+                continue
+            }
+
+            $componentResult = $null
+            if ($null -ne $ComponentResults -and $ComponentResults.ContainsKey([string]$languageTag)) {
+                $componentResult = $ComponentResults[[string]$languageTag]
+            }
+
+            $allowDeferredVerification = $false
+            if ($null -ne $componentResult) {
+                if ($componentResult.PSObject.Properties.Match('QueuedInstallAccepted').Count -gt 0 -and [bool]$componentResult.QueuedInstallAccepted) {
+                    $allowDeferredVerification = $true
+                }
+                elseif ($componentResult.PSObject.Properties.Match('RebootRequired').Count -gt 0 -and [bool]$componentResult.RebootRequired) {
+                    $allowDeferredVerification = $true
+                }
+            }
+
+            if ($allowDeferredVerification -and (Test-LanguageCapabilityDeferredVerificationAllowed -StateMap $capabilityState)) {
+                Write-Host ("language-capabilities-deferred => {0} => {1}" -f [string]$languageTag, [string]$capabilitySummary) -ForegroundColor DarkCyan
                 continue
             }
 
@@ -818,7 +876,8 @@ try {
         throw 'Set-SystemPreferredUILanguage is not available on this image.'
     }
 
-    if (Set-SystemLanguageState) {
+    $systemLanguageState = Set-SystemLanguageState
+    if ([bool]$systemLanguageState.RebootRequired) {
         $rebootRequired = $true
     }
 
@@ -831,7 +890,7 @@ try {
     Write-Host ("language-targets => system-ui={0}; primary-language={1}; secondary-language={2}" -f $primaryLanguage, $primaryLanguage, $secondaryLanguage)
     Write-Host ("installed-language => {0} => {1}" -f $primaryLanguage, (Get-LanguageFeatureSummary -InstalledLanguage (@(Get-InstalledLanguageSafe -LanguageTag $primaryLanguage) | Select-Object -First 1)))
     Write-Host ("installed-language => {0} => {1}" -f $secondaryLanguage, (Get-LanguageFeatureSummary -InstalledLanguage (@(Get-InstalledLanguageSafe -LanguageTag $secondaryLanguage) | Select-Object -First 1)))
-    Assert-LanguageStateReadyForRestart
+    Assert-LanguageStateReadyForRestart -ComponentResults $systemLanguageState.ComponentResults
 
     Write-Host 'language-step-ok: restart-required-to-finalize'
     Write-Host 'TASK_REBOOT_REQUIRED:configure-language-settings'
