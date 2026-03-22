@@ -1085,6 +1085,12 @@ function Get-PortableRegistryExcludedPrefixes {
     )
 }
 
+function Get-PortableRegistryClassesExcludedPrefixes {
+    return @(
+        'Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository'
+    )
+}
+
 function Assert-RepresentativePathCopiedIfPresent {
     param(
         [string]$SourceProfilePath,
@@ -1178,7 +1184,7 @@ function Invoke-PortableRegistryMirror {
         Copy-RegistryBranch `
             -SourcePath $SourceClassesRoot `
             -TargetPath $TargetClassesRoot `
-            -ExcludedPrefixes @() `
+            -ExcludedPrefixes @(Get-PortableRegistryClassesExcludedPrefixes) `
             -RelativePath ''
         Write-Detail ("copy-user-settings-registry-classes-ok: {0}" -f $Label)
     }

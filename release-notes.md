@@ -2,6 +2,15 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.388 - 2026-03-22
+
+### Summary
+This release removes the last live `vm-update` warning still blocking the zero-warning Windows publish loop. `10005-copy-user-settings` now treats the `UsrClass` AppModel repository branch as non-portable and skips it during assistant/default classes-hive mirroring, preventing the access-denied `New-Item` failure that previously downgraded the task to a warning even though the assistant hive later existed.
+
+### Highlights
+- Added a dedicated classes-hive registry exclusion set for `10005-copy-user-settings`.
+- Excluded `Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository` from `UsrClass.dat` mirroring so mounted assistant/default target hives are no longer asked to recreate protected packaged-app repository keys.
+
 ## Release 2026.3.22.387 - 2026-03-22
 
 ### Summary

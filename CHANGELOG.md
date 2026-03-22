@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.388] - 2026-03-22
+
+### Fixed
+- Fixed the last live `10005-copy-user-settings` warning by excluding the non-portable `UsrClass` AppModel repository branch during assistant/default classes-hive mirroring. The task no longer tries to recreate protected `Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\...` keys inside the mounted target hive, so the live run stops surfacing `New-Item` access-denied warnings from that branch.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Revalidated `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the classes-hive exclusion fix.
+
 ## [2026.3.22.387] - 2026-03-22
 
 ### Fixed
