@@ -7491,6 +7491,9 @@ Invoke-Test -Name "Windows run-command tasks extend Azure CLI timeout to the tas
     $azCliHelperPath = Join-Path $RepoRoot 'modules\core\system\azvm-az-cli.ps1'
     $runnerText = [string](Get-Content -LiteralPath $runnerPath -Raw)
     $azCliHelperText = [string](Get-Content -LiteralPath $azCliHelperPath -Raw)
+    . $runnerPath
+
+    $generatedWrapper = [string](New-AzVmRunCommandTaskWrapperScript -TaskName 'probe-task' -TaskScript 'Write-Host "probe-output"' -TimeoutSeconds 60 -CombinedShell powershell)
 
     foreach ($fragment in @(
         'Invoke-AzVmWithAzCliTimeoutSeconds',
@@ -7514,6 +7517,17 @@ Invoke-Test -Name "Windows run-command tasks extend Azure CLI timeout to the tas
     )) {
         Assert-True -Condition ($azCliHelperText -like ('*' + [string]$fragment + '*')) -Message ("Azure CLI helper must include fragment '{0}'." -f [string]$fragment)
     }
+
+    foreach ($fragment in @(
+        'param([string]$TaskScriptPath)',
+        '-TaskScriptPath',
+        '.payload.ps1',
+        '*>&1 | ForEach-Object'
+    )) {
+        Assert-True -Condition ($generatedWrapper.Contains([string]$fragment)) -Message ("Generated Windows run-command wrapper must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    Assert-True -Condition (-not ($generatedWrapper -like '*$taskScriptBase64 = '''' + $taskScriptBase64 + ''''*')) -Message 'Generated Windows run-command wrapper must not leave the task base64 assignment uninterpolated.'
 }
 
 Invoke-Test -Name "Windows autologon manager task and health contract" -Action {

@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.384 - 2026-03-22
+
+### Summary
+This release hardens the second Windows run-command follow-up before the live production rerun. Instead of embedding the decoded guest task through a quote-sensitive inline Base64 assignment inside the generated wrapper, Azure Run Command now writes the decoded task body to a temporary payload script, passes that payload path into the nested hidden `powershell.exe`, and relays merged task output deterministically before the explicit nested result marker is classified.
+
+### Highlights
+- Changed the Windows Azure Run Command wrapper to write the decoded guest task body to a temporary `.payload.ps1` file and invoke the nested worker with `-TaskScriptPath`, eliminating the earlier quote-fragile inline Base64 assignment path.
+- Changed the nested Windows guest worker to execute the payload file content directly and relay merged `*>&1` task output back into the Azure Run Command transcript before `AZ_VM_NESTED_RESULT:success|error` is emitted.
+- Extended the smoke contract to generate the wrapper script at test time and assert the new payload handoff fragments while explicitly proving the old uninterpolated Base64 assignment fragment is gone.
+
 ## Release 2026.3.22.383 - 2026-03-22
 
 ### Summary

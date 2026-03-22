@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.384] - 2026-03-22
+
+### Fixed
+- Fixed the Windows Azure Run Command payload wrapper so generated guest-task scripts no longer risk malformed inline Base64 assignment when the task body contains quote-heavy content. The wrapper now writes the decoded task payload to a temporary `.payload.ps1`, passes that path into the nested hidden `powershell.exe`, and relays merged task output through stdout before the explicit `AZ_VM_NESTED_RESULT:success|error` marker is emitted.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Revalidated `tests\code-quality-check.ps1`, `tests\documentation-contract-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally before branch alignment and publish.
+- Extended smoke coverage so the generated Windows run-command wrapper is asserted from `New-AzVmRunCommandTaskWrapperScript`, including the `.payload.ps1` handoff and the removal of the earlier uninterpolated Base64 assignment fragment.
+
 ## [2026.3.22.383] - 2026-03-22
 
 ### Fixed
