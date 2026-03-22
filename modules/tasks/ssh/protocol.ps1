@@ -91,8 +91,8 @@ function Test-AzVmTaskOutputNoiseLine {
         $value.StartsWith("The command completed successfully.", [System.StringComparison]::OrdinalIgnoreCase) -or
         ($value -match "(?i)'wmic'\s+is\s+not\s+recognized\s+as\s+an\s+internal\s+or\s+external\s+command") -or
         ($value -match '(?i)^Seizure Warning:\s*https://aka\.ms/microsoft-store-seizure-warning') -or
-        ($value -match '^(?i)WARNING:\s+It''s very likely you will need to close and reopen your shell$') -or
-        ($value -match '^(?i)WARNING:\s+Not setting tab completion: Profile file does not exist at$') -or
+        ($value -match '^(?i)WARNING:\s+It''s very likely you will need to close and reopen your shell\b') -or
+        ($value -match '^(?i)WARNING:\s+Not setting tab completion: Profile file does not exist at\b') -or
         ($value -match '^(?i)WARNING:\s+Ignoring checksums due to feature checksumFiles turned off or option --ignore-checksums set\.$') -or
         ($value -match '^(?i)WARNING:\s+No registry key found based on\s+''Git''$') -or
         ($value -match '^(?i)WARNING:\s+If you started this package under PowerShell core, replacing an in-use version may be unpredictable, require multiple attempts or produce errors\.$') -or

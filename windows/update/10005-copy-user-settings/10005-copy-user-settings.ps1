@@ -750,6 +750,8 @@ function Invoke-RobocopyBranch {
         [string]$TargetPath,
         [string[]]$ExcludedDirectories = @(),
         [string[]]$ExcludedFiles = @(),
+        [string[]]$TargetPruneExcludedDirectories = @(),
+        [string[]]$TargetPruneExcludedFiles = @(),
         [string]$Label
     )
 
@@ -765,8 +767,15 @@ function Invoke-RobocopyBranch {
         throw "robocopy.exe was not found."
     }
 
+    if ($PSBoundParameters.ContainsKey('TargetPruneExcludedDirectories') -eq $false -or $null -eq $TargetPruneExcludedDirectories) {
+        $TargetPruneExcludedDirectories = @($ExcludedDirectories)
+    }
+    if ($PSBoundParameters.ContainsKey('TargetPruneExcludedFiles') -eq $false -or $null -eq $TargetPruneExcludedFiles) {
+        $TargetPruneExcludedFiles = @($ExcludedFiles)
+    }
+
     Write-ExistingCopyExclusions -SourcePath $SourcePath -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles -Label $Label
-    Remove-StaleExcludedTargetPaths -TargetPath $TargetPath -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles -Label $Label
+    Remove-StaleExcludedTargetPaths -TargetPath $TargetPath -ExcludedDirectories $TargetPruneExcludedDirectories -ExcludedFiles $TargetPruneExcludedFiles -Label $Label
 
     $argumentList = @(
         $SourcePath,
@@ -1054,6 +1063,18 @@ function Get-PortableProfileExcludedFiles {
     )
 }
 
+function Get-PortableProfileTargetPruneExcludedFiles {
+    return @(
+        @(Get-PortableProfileExcludedFiles) |
+            Where-Object {
+                [string]$_ -notin @(
+                    'NTUSER.DAT*',
+                    'UsrClass.dat*'
+                )
+            }
+    )
+}
+
 function Get-PortableRegistryExcludedPrefixes {
     return @(
         'Software\Classes',
@@ -1131,6 +1152,7 @@ function Invoke-PortableProfileMirror {
         -TargetPath $TargetProfilePath `
         -ExcludedDirectories @(Get-PortableProfileExcludedDirectories) `
         -ExcludedFiles @(Get-PortableProfileExcludedFiles) `
+        -TargetPruneExcludedFiles @(Get-PortableProfileTargetPruneExcludedFiles) `
         -Label $Label
 }
 

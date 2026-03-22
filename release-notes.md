@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.386 - 2026-03-22
+
+### Summary
+This release closes the two issues that still blocked the second live Windows recreate loop: transcript noise from the Windows SCP host-key fallback path and accidental removal of the assistant profile hive during `10005-copy-user-settings`. It also finishes the Chocolatey noise filter so first-run bootstrap chatter no longer surfaces as a task warning signal.
+
+### Highlights
+- Changed the Windows SCP host-key resolver to use a non-throwing probe path before falling back to `pyssh`, eliminating repeated `PS>TerminatingError()` host-key noise from otherwise successful task asset copies.
+- Changed the SSH task-output noise matcher so Chocolatey bootstrap warnings about reopening the shell and missing tab-completion profile files are filtered in the same split-line form seen during live `01-install-choco-tool` runs.
+- Changed `10005-copy-user-settings` so source exclusions and target pruning are separated: `NTUSER.DAT*` and `UsrClass.dat*` remain excluded from profile mirroring, but they are no longer deleted from the assistant or default target profiles before registry replay.
+
 ## Release 2026.3.22.385 - 2026-03-22
 
 ### Summary

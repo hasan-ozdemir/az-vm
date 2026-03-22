@@ -5886,6 +5886,8 @@ Invoke-Test -Name "Windows UX helper asset and validation model" -Action {
     Assert-True -Condition ($copyUserSettingsBody -like '*HKEY_USERS\.DEFAULT*') -Message "Copy user settings task must seed the logon-screen hive."
     Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableProfileExcludedDirectories*') -Message "Copy user settings task must define portable profile-directory exclusions."
     Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableProfileExcludedFiles*') -Message "Copy user settings task must define portable file exclusions."
+    Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableProfileTargetPruneExcludedFiles*') -Message "Copy user settings task must define a target-prune exclusion set that preserves target-owned profile hives."
+    Assert-True -Condition ($copyUserSettingsBody -like '*-TargetPruneExcludedFiles @(Get-PortableProfileTargetPruneExcludedFiles)*') -Message "Copy user settings task must avoid pruning NTUSER.DAT and UsrClass.dat from the assistant target profile."
     Assert-True -Condition ($copyUserSettingsBody -like '*Get-PortableRegistryExcludedPrefixes*') -Message "Copy user settings task must define portable registry exclusions."
     Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Roaming\Microsoft\Credentials*') -Message "Copy user settings task must exclude portable-incompatible credential stores."
     Assert-True -Condition ($copyUserSettingsBody -like '*AppData\Local\Microsoft\WindowsApps*') -Message "Copy user settings task must exclude WindowsApps shims that are not portable across profiles."
@@ -6595,6 +6597,7 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     Assert-True -Condition (-not ($captureHelperText -like '*import base64*')) -Message 'Shared app-state capture must not keep the retired base64 decode helper path.'
     Assert-True -Condition ($sshAssetsText -like '*Get-AzVmPscpExecutablePath*') -Message 'Windows SSH asset copy must resolve pscp.exe for the primary Windows SCP transport.'
     Assert-True -Condition ($sshAssetsText -like '*Get-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must resolve trusted SCP host key fingerprints dynamically.'
+    Assert-True -Condition ($sshAssetsText -like '*Try-Get-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must expose a non-throwing SCP host-key resolver for pyssh fallback paths.'
     Assert-True -Condition ($sshAssetsText -like '*Resolve-AzVmWindowsScpHostKeyArguments*') -Message 'Windows SSH asset copy must resolve SCP host-key arguments without emitting fallback transport noise.'
     Assert-True -Condition ($sshAssetsText -like '*ssh-keyscan.exe*') -Message 'Windows SCP transport must use ssh-keyscan.exe to discover the current VM host keys.'
     Assert-True -Condition ($sshAssetsText -like '*ssh-keygen.exe*') -Message 'Windows SCP transport must use ssh-keygen.exe to derive PuTTY-compatible host key fingerprints.'

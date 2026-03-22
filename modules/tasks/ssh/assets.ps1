@@ -93,75 +93,118 @@ function ConvertTo-AzVmWindowsScpRemoteSpec {
     return ('{0}:{1}' -f [string]$HostName, [string]$normalizedRemotePath)
 }
 
+function Try-Get-AzVmWindowsScpHostKeyArguments {
+    param(
+        [string]$HostName,
+        [string]$Port
+    )
+
+    try {
+        $cacheKey = ('{0}:{1}' -f [string]$HostName, [string]$Port)
+        if ($script:AzVmWindowsScpHostKeyCache.ContainsKey($cacheKey)) {
+            return [pscustomobject]@{
+                Success = $true
+                Args = @($script:AzVmWindowsScpHostKeyCache[$cacheKey])
+                Message = ''
+            }
+        }
+
+        $sshKeyScan = Get-Command ssh-keyscan.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        $sshKeyGen = Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($null -eq $sshKeyScan -or $null -eq $sshKeyGen) {
+            return [pscustomobject]@{
+                Success = $false
+                Args = @()
+                Message = 'Windows SCP transport requires ssh-keyscan.exe and ssh-keygen.exe on the local operator machine.'
+            }
+        }
+
+        $scanResult = Invoke-AzVmCapturedProcess -FilePath ([string]$sshKeyScan.Source) -Arguments @('-p', [string]$Port, [string]$HostName)
+        if ([int]$scanResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace([string]$scanResult.Output)) {
+            return [pscustomobject]@{
+                Success = $false
+                Args = @()
+                Message = ("Windows SCP transport could not resolve an SSH host key for {0}:{1}." -f [string]$HostName, [string]$Port)
+            }
+        }
+
+        $hostKeyArgs = New-Object 'System.Collections.Generic.List[string]'
+        $seenFingerprints = @{}
+        $scanLines = @([string]$scanResult.Output -split "`r?`n" | Where-Object {
+                -not [string]::IsNullOrWhiteSpace([string]$_) -and -not ([string]$_).TrimStart().StartsWith('#')
+            })
+        foreach ($scanLine in @($scanLines)) {
+            $parts = @(([string]$scanLine).Trim() -split '\s+')
+            if (@($parts).Count -lt 3) {
+                continue
+            }
+
+            $algorithm = [string]$parts[1]
+            if ([string]::IsNullOrWhiteSpace([string]$algorithm)) {
+                continue
+            }
+
+            $tempKeyPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-scp-hostkey-' + ([guid]::NewGuid().ToString('N')) + '.pub')
+            try {
+                [System.IO.File]::WriteAllText($tempKeyPath, ([string]$scanLine + [Environment]::NewLine), [System.Text.Encoding]::ASCII)
+                $fingerprintResult = Invoke-AzVmCapturedProcess -FilePath ([string]$sshKeyGen.Source) -Arguments @('-l', '-f', [string]$tempKeyPath)
+                if ([int]$fingerprintResult.ExitCode -ne 0) {
+                    continue
+                }
+
+                if ([string]$fingerprintResult.Output -match '^\s*(\d+)\s+SHA256:([A-Za-z0-9+/=]+)\s+') {
+                    $bits = [string]$matches[1]
+                    $fingerprint = ('{0} {1} SHA256:{2}' -f [string]$algorithm, [string]$bits, [string]$matches[2])
+                    $normalizedFingerprint = [string]$fingerprint.Trim()
+                    if (-not $seenFingerprints.ContainsKey($normalizedFingerprint)) {
+                        $hostKeyArgs.Add('-hostkey') | Out-Null
+                        $hostKeyArgs.Add($normalizedFingerprint) | Out-Null
+                        $seenFingerprints[$normalizedFingerprint] = $true
+                    }
+                }
+            }
+            finally {
+                Remove-Item -LiteralPath $tempKeyPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        if ($hostKeyArgs.Count -lt 2) {
+            return [pscustomobject]@{
+                Success = $false
+                Args = @()
+                Message = ("Windows SCP transport could not build a trusted host key fingerprint for {0}:{1}." -f [string]$HostName, [string]$Port)
+            }
+        }
+
+        $cachedArgs = @($hostKeyArgs.ToArray())
+        $script:AzVmWindowsScpHostKeyCache[$cacheKey] = $cachedArgs
+        return [pscustomobject]@{
+            Success = $true
+            Args = @($cachedArgs)
+            Message = ''
+        }
+    }
+    catch {
+        return [pscustomobject]@{
+            Success = $false
+            Args = @()
+            Message = [string]$_.Exception.Message
+        }
+    }
+}
+
 function Get-AzVmWindowsScpHostKeyArguments {
     param(
         [string]$HostName,
         [string]$Port
     )
 
-    $cacheKey = ('{0}:{1}' -f [string]$HostName, [string]$Port)
-    if ($script:AzVmWindowsScpHostKeyCache.ContainsKey($cacheKey)) {
-        return @($script:AzVmWindowsScpHostKeyCache[$cacheKey])
+    $resolution = Try-Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port
+    if (-not [bool]$resolution.Success) {
+        throw [string]$resolution.Message
     }
 
-    $sshKeyScan = Get-Command ssh-keyscan.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    $sshKeyGen = Get-Command ssh-keygen.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -eq $sshKeyScan -or $null -eq $sshKeyGen) {
-        throw "Windows SCP transport requires ssh-keyscan.exe and ssh-keygen.exe on the local operator machine."
-    }
-
-    $scanResult = Invoke-AzVmCapturedProcess -FilePath ([string]$sshKeyScan.Source) -Arguments @('-p', [string]$Port, [string]$HostName)
-    if ([int]$scanResult.ExitCode -ne 0 -or [string]::IsNullOrWhiteSpace([string]$scanResult.Output)) {
-        throw ("Windows SCP transport could not resolve an SSH host key for {0}:{1}." -f [string]$HostName, [string]$Port)
-    }
-
-    $hostKeyArgs = New-Object 'System.Collections.Generic.List[string]'
-    $seenFingerprints = @{}
-    $scanLines = @([string]$scanResult.Output -split "`r?`n" | Where-Object {
-            -not [string]::IsNullOrWhiteSpace([string]$_) -and -not ([string]$_).TrimStart().StartsWith('#')
-        })
-    foreach ($scanLine in @($scanLines)) {
-        $parts = @(([string]$scanLine).Trim() -split '\s+')
-        if (@($parts).Count -lt 3) {
-            continue
-        }
-
-        $algorithm = [string]$parts[1]
-        if ([string]::IsNullOrWhiteSpace([string]$algorithm)) {
-            continue
-        }
-
-        $tempKeyPath = Join-Path ([System.IO.Path]::GetTempPath()) ('az-vm-scp-hostkey-' + ([guid]::NewGuid().ToString('N')) + '.pub')
-        try {
-            [System.IO.File]::WriteAllText($tempKeyPath, ([string]$scanLine + [Environment]::NewLine), [System.Text.Encoding]::ASCII)
-            $fingerprintResult = Invoke-AzVmCapturedProcess -FilePath ([string]$sshKeyGen.Source) -Arguments @('-l', '-f', [string]$tempKeyPath)
-            if ([int]$fingerprintResult.ExitCode -ne 0) {
-                continue
-            }
-
-            if ([string]$fingerprintResult.Output -match '^\s*(\d+)\s+SHA256:([A-Za-z0-9+/=]+)\s+') {
-                $bits = [string]$matches[1]
-                $fingerprint = ('{0} {1} SHA256:{2}' -f [string]$algorithm, [string]$bits, [string]$matches[2])
-                $normalizedFingerprint = [string]$fingerprint.Trim()
-                if (-not $seenFingerprints.ContainsKey($normalizedFingerprint)) {
-                    $hostKeyArgs.Add('-hostkey') | Out-Null
-                    $hostKeyArgs.Add($normalizedFingerprint) | Out-Null
-                    $seenFingerprints[$normalizedFingerprint] = $true
-                }
-            }
-        }
-        finally {
-            Remove-Item -LiteralPath $tempKeyPath -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    if ($hostKeyArgs.Count -lt 2) {
-        throw ("Windows SCP transport could not build a trusted host key fingerprint for {0}:{1}." -f [string]$HostName, [string]$Port)
-    }
-
-    $cachedArgs = @($hostKeyArgs.ToArray())
-    $script:AzVmWindowsScpHostKeyCache[$cacheKey] = $cachedArgs
-    return @($cachedArgs)
+    return @($resolution.Args)
 }
 
 function Resolve-AzVmWindowsScpHostKeyArguments {
@@ -170,24 +213,16 @@ function Resolve-AzVmWindowsScpHostKeyArguments {
         [string]$Port
     )
 
-    try {
-        return [pscustomobject]@{
-            Success = $true
-            Args = @(Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port)
-            Message = ''
-        }
+    $resolution = Try-Get-AzVmWindowsScpHostKeyArguments -HostName $HostName -Port $Port
+    if ([bool]$resolution.Success) {
+        return $resolution
     }
-    catch {
-        if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $_.Exception.Message)) {
-            throw
-        }
 
-        return [pscustomobject]@{
-            Success = $false
-            Args = @()
-            Message = [string]$_.Exception.Message
-        }
+    if (-not (Test-AzVmWindowsScpFallbackCandidate -Message $resolution.Message)) {
+        throw [string]$resolution.Message
     }
+
+    return $resolution
 }
 
 function Test-AzVmWindowsScpFallbackCandidate {

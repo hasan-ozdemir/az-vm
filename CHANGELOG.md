@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.386] - 2026-03-22
+
+### Fixed
+- Fixed the Windows SCP host-key fallback path so expected host-key discovery failures now resolve through a non-throwing helper before switching to `pyssh`. This removes the repeated `PS>TerminatingError()` transcript noise that still leaked through the first live rerun even though the copy itself succeeded.
+- Fixed Windows task-output noise matching for the Chocolatey bootstrap shell warnings by accepting the real split-line forms emitted during first-run install. This prevents `01-install-choco-tool` from contributing `signal-warning` counts in otherwise healthy `vm-update` runs.
+- Fixed `10005-copy-user-settings` so the portable-profile mirror no longer prunes target-owned `NTUSER.DAT*` and `UsrClass.dat*` files. Source copy exclusions stay intact, but the assistant and default target hives are now preserved for the later registry-mirror and vm-summary checks.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Extended smoke coverage so the Windows SCP helper exposes a non-throwing host-key resolution path and the copy-user-settings profile mirror asserts a dedicated target-prune exclusion set that preserves target-owned hives.
+
 ## [2026.3.22.385] - 2026-03-22
 
 ### Fixed
