@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.379 - 2026-03-22
+
+### Summary
+This release closes the create-path regression that the March 22 live publish exposed: when `VM_ENABLE_HIBERNATION=true` targeted a VM size that Azure already reported as unsupported, the old flow still created the VM and only failed afterwards during post-deploy feature enablement. The Step 1 precheck now validates known hibernation and nested-virtualization compatibility before Azure mutation, so create/update stops cleanly with a config error instead of leaving behind a partially published managed VM.
+
+### Highlights
+- Added `Assert-AzVmFeaturePreconditions` to the shared feature-support runtime and wired it into `Invoke-AzVmPrecheckStep`, so Step 1 now validates `VM_ENABLE_HIBERNATION` and `VM_ENABLE_NESTED_VIRTUALIZATION` against the selected region, VM size, and security type before resource-group, network, or VM deployment work begins.
+- Hardened the failure mode for known unsupported feature combinations: hibernation now fails fast when Azure does not advertise `HibernationSupported=true`, and nested virtualization now fails fast when the requested VM size is known unsupported or when the VM is configured with `VM_SECURITY_TYPE=TrustedLaunch`.
+- Extended the maintained smoke suite with direct fail-fast coverage for unsupported hibernation, Trusted Launch plus nested virtualization, and the new precheck call order.
+
 ## Release 2026.3.22.378 - 2026-03-22
 
 ### Summary
