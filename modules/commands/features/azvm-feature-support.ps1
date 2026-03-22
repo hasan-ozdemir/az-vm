@@ -305,6 +305,81 @@ function Get-AzVmNestedVirtualizationSupportInfo {
     return [pscustomobject]$result
 }
 
+# Handles Assert-AzVmFeaturePreconditions.
+function Assert-AzVmFeaturePreconditions {
+    param(
+        [hashtable]$Context
+    )
+
+    if ($null -eq $Context) {
+        return
+    }
+
+    $vmName = Get-AzVmSafeTrimmedText -Value $Context.VmName
+    $location = Get-AzVmSafeTrimmedText -Value $Context.AzLocation
+    $vmSize = Get-AzVmSafeTrimmedText -Value $Context.VmSize
+    $securityType = Get-AzVmSafeTrimmedText -Value $Context.VmSecurityType
+    $hibernationDesired = $false
+    $nestedDesired = $false
+    if ($Context.ContainsKey('VmEnableHibernation')) {
+        $hibernationDesired = [bool]$Context.VmEnableHibernation
+    }
+    if ($Context.ContainsKey('VmEnableNestedVirtualization')) {
+        $nestedDesired = [bool]$Context.VmEnableNestedVirtualization
+    }
+
+    if (-not $hibernationDesired) {
+        Write-AzVmFeatureSkipMessage -FeatureLabel 'Hibernation' -Reason 'VM_ENABLE_HIBERNATION=false.'
+    }
+    else {
+        $hibernationSupport = Get-AzVmHibernationSupportInfo -Location $location -VmSize $vmSize
+        $hibernationSupportReason = Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Hibernation' -CapabilityLabel 'HibernationSupported' -ReasonCode ([string]$hibernationSupport.Message) -Evidence @($hibernationSupport.Evidence)
+        if ([bool]$hibernationSupport.Known -and [bool]$hibernationSupport.Supported) {
+            Write-Host ("Azure confirmed hibernation support for VM size '{0}' in region '{1}'." -f $vmSize, $location) -ForegroundColor DarkCyan
+        }
+        elseif ([bool]$hibernationSupport.Known) {
+            Throw-FriendlyError `
+                -Detail ("VM_ENABLE_HIBERNATION=true requires Azure hibernation support for VM '{0}', but VM size '{1}' in region '{2}' cannot enable it. {3}" -f $vmName, $vmSize, $location, $hibernationSupportReason) `
+                -Code 22 `
+                -Summary "Hibernation precheck failed." `
+                -Hint "Use a VM size that supports hibernation, or set VM_ENABLE_HIBERNATION=false before retrying."
+        }
+        else {
+            Write-AzVmFeatureMetadataFallbackMessage -FeatureLabel 'Hibernation'
+        }
+    }
+
+    if (-not $nestedDesired) {
+        Write-AzVmFeatureSkipMessage -FeatureLabel 'Nested virtualization' -Reason 'VM_ENABLE_NESTED_VIRTUALIZATION=false.'
+        return
+    }
+
+    if ([string]::Equals([string]$securityType, 'TrustedLaunch', [System.StringComparison]::OrdinalIgnoreCase)) {
+        Throw-FriendlyError `
+            -Detail ("VM_ENABLE_NESTED_VIRTUALIZATION=true requires security type 'Standard', but VM '{0}' is configured with security type '{1}'. {2}" -f $vmName, $securityType, (Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode 'nested-requires-standard-security')) `
+            -Code 22 `
+            -Summary "Nested virtualization precheck failed." `
+            -Hint "Use VM_SECURITY_TYPE=Standard for this VM, or set VM_ENABLE_NESTED_VIRTUALIZATION=false before retrying."
+    }
+
+    $nestedSupport = Get-AzVmNestedVirtualizationSupportInfo -Location $location -VmSize $vmSize
+    $nestedSupportReason = Resolve-AzVmFeatureSupportReasonText -FeatureLabel 'Nested virtualization' -CapabilityLabel 'nested' -ReasonCode ([string]$nestedSupport.Message) -Evidence @($nestedSupport.Evidence)
+    if ([bool]$nestedSupport.Known -and [bool]$nestedSupport.Supported) {
+        Write-Host ("Azure confirmed nested virtualization support for VM size '{0}' in region '{1}'." -f $vmSize, $location) -ForegroundColor DarkCyan
+        return
+    }
+
+    if ([bool]$nestedSupport.Known) {
+        Throw-FriendlyError `
+            -Detail ("VM_ENABLE_NESTED_VIRTUALIZATION=true requires Azure nested virtualization support for VM '{0}', but VM size '{1}' in region '{2}' cannot enable it. {3}" -f $vmName, $vmSize, $location, $nestedSupportReason) `
+            -Code 22 `
+            -Summary "Nested virtualization precheck failed." `
+            -Hint "Use a VM size that supports nested virtualization, or set VM_ENABLE_NESTED_VIRTUALIZATION=false before retrying."
+    }
+
+    Write-AzVmFeatureMetadataFallbackMessage -FeatureLabel 'Nested virtualization'
+}
+
 # Handles Ensure-AzVmDeallocatedForFeatureUpdate.
 function Ensure-AzVmDeallocatedForFeatureUpdate {
     param(

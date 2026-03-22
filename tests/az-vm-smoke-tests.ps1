@@ -1160,6 +1160,117 @@ Invoke-Test -Name "Configure save readiness blocks unresolved create-critical va
     }
 }
 
+Invoke-Test -Name "Feature preconditions fail fast when hibernation is unsupported" -Action {
+    try {
+        function Get-AzVmHibernationSupportInfo {
+            param([string]$Location, [string]$VmSize)
+            return [pscustomobject]@{
+                Known = $true
+                Supported = $false
+                Evidence = @('HibernationSupported=false')
+                Message = 'hibernation-not-supported'
+            }
+        }
+        function Get-AzVmNestedVirtualizationSupportInfo {
+            param([string]$Location, [string]$VmSize)
+            return [pscustomobject]@{
+                Known = $true
+                Supported = $true
+                Evidence = @('NestedVirtualizationSupported=true')
+                Message = 'nested-supported'
+            }
+        }
+
+        $threw = $false
+        try {
+            Assert-AzVmFeaturePreconditions -Context @{
+                VmName = 'samplevm'
+                AzLocation = 'austriaeast'
+                VmSize = 'Standard_D4as_v6'
+                VmSecurityType = 'Standard'
+                VmEnableHibernation = $true
+                VmEnableNestedVirtualization = $false
+            }
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Data['Summary'] -eq 'Hibernation precheck failed.') -Message 'Unsupported hibernation must fail during precheck.'
+            Assert-True -Condition ([string]$_.Exception.Message -like '*Standard_D4as_v6*') -Message 'Unsupported hibernation precheck must mention the VM size.'
+        }
+
+        Assert-True -Condition $threw -Message 'Unsupported hibernation must stop the create/update precheck before Azure mutation.'
+    }
+    finally {
+        foreach ($functionName in @('Get-AzVmHibernationSupportInfo','Get-AzVmNestedVirtualizationSupportInfo')) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+Invoke-Test -Name "Feature preconditions fail fast when nested virtualization requires Standard security" -Action {
+    $threw = $false
+    try {
+        try {
+            Assert-AzVmFeaturePreconditions -Context @{
+                VmName = 'samplevm'
+                AzLocation = 'austriaeast'
+                VmSize = 'Standard_D4as_v6'
+                VmSecurityType = 'TrustedLaunch'
+                VmEnableHibernation = $false
+                VmEnableNestedVirtualization = $true
+            }
+        }
+        catch {
+            $threw = $true
+            Assert-True -Condition ([string]$_.Exception.Data['Summary'] -eq 'Nested virtualization precheck failed.') -Message 'TrustedLaunch nested virtualization mismatch must fail during precheck.'
+            Assert-True -Condition ([string]$_.Exception.Message -like '*TrustedLaunch*') -Message 'Nested virtualization precheck must mention the conflicting security type.'
+        }
+
+        Assert-True -Condition $threw -Message 'Nested virtualization must fail fast when the selected security type is incompatible.'
+    }
+    finally {
+    }
+}
+
+Invoke-Test -Name "Precheck step validates feature compatibility before deployment" -Action {
+    $script:PrecheckCallOrder = @()
+    try {
+        function Show-AzVmStepFirstUseValues { param([string]$StepLabel, [hashtable]$Context, [string[]]$Keys) }
+        function Assert-LocationExists { param([string]$Location) $script:PrecheckCallOrder += 'location' }
+        function Assert-VmImageAvailable { param([string]$Location, [string]$ImageUrn) $script:PrecheckCallOrder += 'image' }
+        function Assert-VmSkuAvailableViaRest { param([string]$Location, [string]$VmSize) $script:PrecheckCallOrder += 'sku' }
+        function Assert-VmOsDiskSizeCompatible { param([string]$Location, [string]$ImageUrn, [string]$VmDiskSizeGb) $script:PrecheckCallOrder += 'disk' }
+        function Assert-AzVmSecurityTypePreconditions { param([hashtable]$Context) $script:PrecheckCallOrder += 'security' }
+        function Assert-AzVmFeaturePreconditions { param([hashtable]$Context) $script:PrecheckCallOrder += 'feature' }
+
+        Invoke-AzVmPrecheckStep -Context @{
+            AzLocation = 'austriaeast'
+            VmImage = 'publisher:offer:sku:latest'
+            VmSize = 'Standard_D4as_v6'
+            VmDiskSize = '256'
+            VmSecurityType = 'Standard'
+            VmEnableHibernation = $true
+            VmEnableNestedVirtualization = $true
+        }
+
+        Assert-True -Condition ((@($script:PrecheckCallOrder) -join ',') -eq 'location,image,sku,disk,security,feature') -Message 'Precheck step must validate feature compatibility after the base availability checks.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Show-AzVmStepFirstUseValues',
+            'Assert-LocationExists',
+            'Assert-VmImageAvailable',
+            'Assert-VmSkuAvailableViaRest',
+            'Assert-VmOsDiskSizeCompatible',
+            'Assert-AzVmSecurityTypePreconditions',
+            'Assert-AzVmFeaturePreconditions'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        Remove-Variable -Name PrecheckCallOrder -Scope Script -ErrorAction SilentlyContinue
+    }
+}
+
 Invoke-Test -Name "Subscription resolver uses CLI then env then active precedence and persists CLI overrides" -Action {
     $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("az-vm-subscription-test-" + [guid]::NewGuid().ToString('N'))
     $null = New-Item -ItemType Directory -Path $tempRoot -Force

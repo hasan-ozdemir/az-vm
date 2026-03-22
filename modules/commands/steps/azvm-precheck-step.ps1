@@ -16,4 +16,5 @@ function Invoke-AzVmPrecheckStep {
     Assert-VmSkuAvailableViaRest -Location $Context.AzLocation -VmSize $Context.VmSize
     Assert-VmOsDiskSizeCompatible -Location $Context.AzLocation -ImageUrn $Context.VmImage -VmDiskSizeGb $Context.VmDiskSize
     Assert-AzVmSecurityTypePreconditions -Context $Context
+    Assert-AzVmFeaturePreconditions -Context $Context
 }
