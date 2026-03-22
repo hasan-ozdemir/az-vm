@@ -3,6 +3,22 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.377] - 2026-03-22
+
+### Changed
+- Added the Windows `07-configure-all-users` init task immediately after local-account provisioning so existing managed local users are materialized before later init and update work depends on per-user profile files or registry hives.
+- Shifted the tracked Windows init priorities so `07-configure-all-users` runs before the existing RDP, OpenSSH, firewall, and PowerShell remoting configuration tasks without renaming the established task folders.
+
+### Fixed
+- Fixed the Windows temporary-profile repair path so a user stuck on a live `C:\Users\TEMP` mapping is repaired in place by exporting the loaded user hives, copying the stable registry values back to the live SID registration, and tolerating locked transaction-log artifacts as explicit info-only skips instead of failing the task.
+- Fixed the assistant-side JAWS replay prerequisite on the managed Windows flow: the new init task now seeds `C:\Users\assistant\NTUSER.DAT`, repairs the active `ProfileList` mapping back to `C:\Users\assistant`, and removes the earlier `assistant => no-hive-file` registry replay skip that the March 20 live logs recorded for `133-install-jaws-application`.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 161, Failed: 0`.
+- Revalidated live isolated `task --run-vm-init 07 --windows --perf` on the active managed Windows target; it completed with `success=1`, `warning=0`, `error=0`, and reported `assistant => C:\Users\assistant` plus `manager => C:\Users\manager`.
+- Revalidated the repaired assistant profile state live over SSH and confirmed the active SID mapping now resolves to `C:\Users\assistant`, `State=0`, `RefCount=0`, `.bak` is absent, and `C:\Users\assistant\NTUSER.DAT` exists.
+- Revalidated live isolated `task --run-vm-update 133 --windows --perf` on the active managed Windows target; `133-install-jaws-application` completed successfully and its app-state replay finished with `profiles=2`, `user-registry=2`, `skipped=0`, and no assistant hive warning.
+
 ## [2026.3.20.376] - 2026-03-20
 
 ### Fixed

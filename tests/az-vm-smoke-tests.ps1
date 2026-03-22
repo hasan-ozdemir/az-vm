@@ -5147,8 +5147,9 @@ Invoke-Test -Name "Windows vm-update tracked catalog order and timeouts" -Action
     $autologonTask = @($initActive | Where-Object { [string]$_.Name -eq '102-configure-autologon-settings' } | Select-Object -First 1)
     Assert-True -Condition (@($sysinternalsTask).Count -eq 0) -Message 'Windows init catalog must no longer include 101-install-sysinternals-tool.'
     Assert-True -Condition (@($autologonTask).Count -eq 0) -Message 'Windows init catalog must no longer include 102-configure-autologon-settings.'
-    Assert-True -Condition ($initActive.Count -ge 6) -Message 'Windows init catalog must include the WinRM init task.'
-    Assert-True -Condition ([string]$initActive[5].Name -eq '06-configure-powershell-remoting') -Message 'Windows init catalog must keep configure-powershell-remoting after firewall configuration.'
+    Assert-True -Condition ($initActive.Count -ge 7) -Message 'Windows init catalog must include the profile materialization and WinRM init tasks.'
+    Assert-True -Condition ([string]$initActive[1].Name -eq '07-configure-all-users') -Message 'Windows init catalog must run configure-all-users immediately after local user creation.'
+    Assert-True -Condition ([string]$initActive[6].Name -eq '06-configure-powershell-remoting') -Message 'Windows init catalog must keep configure-powershell-remoting after firewall configuration.'
 }
 
 Invoke-Test -Name "Exec quiet mode suppresses operator chatter for one-shot commands" -Action {
@@ -7460,6 +7461,37 @@ Invoke-Test -Name "Windows OpenSSH init tasks recover missing sshd registration"
     }
 }
 
+Invoke-Test -Name "Windows configure-all-users init task contract" -Action {
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage init -TaskName '07-configure-all-users'
+    $taskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage init -TaskName '07-configure-all-users'
+
+    Assert-True -Condition (Test-Path -LiteralPath $taskPath) -Message 'configure-all-users init task file was not found.'
+    Assert-True -Condition (Test-Path -LiteralPath $taskJsonPath) -Message 'configure-all-users init task json was not found.'
+
+    $taskText = [string](Get-Content -LiteralPath $taskPath -Raw)
+    $taskJsonText = [string](Get-Content -LiteralPath $taskJsonPath -Raw)
+
+    foreach ($fragment in @(
+        'Init task started: configure-all-users',
+        'Get-LocalUser',
+        'CreateProfile',
+        'NTUSER.DAT',
+        'profile-ready:',
+        'profile-materialized:',
+        'configure-all-users-ready:',
+        'AppData\Roaming',
+        'Documents',
+        'Downloads',
+        'Desktop'
+    )) {
+        Assert-True -Condition ($taskText -like ('*' + [string]$fragment + '*')) -Message ("configure-all-users init task must include fragment '{0}'." -f [string]$fragment)
+    }
+
+    Assert-True -Condition ($taskJsonText -like '*"priority": 2*') -Message 'configure-all-users init task priority must stay 2.'
+    Assert-True -Condition ($taskJsonText -like '*"timeout": 120*') -Message 'configure-all-users init task timeout must stay 120.'
+    Assert-True -Condition ($taskJsonText -like '*01-ensure-local-user-accounts*') -Message 'configure-all-users init task must depend on local user creation.'
+}
+
 Invoke-Test -Name "Windows PowerShell remoting init and summary contract" -Action {
     $remotingTaskPath = Get-RepoTaskScriptPath -Platform windows -Stage init -TaskName '06-configure-powershell-remoting'
     $remotingTaskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage init -TaskName '06-configure-powershell-remoting'
@@ -7496,7 +7528,7 @@ Invoke-Test -Name "Windows PowerShell remoting init and summary contract" -Actio
         Assert-True -Condition ($remotingTaskText -like ('*' + [string]$fragment + '*')) -Message ("PowerShell remoting init task must include fragment '{0}'." -f [string]$fragment)
     }
 
-    Assert-True -Condition ($remotingTaskJsonText -like '*"priority": 6*') -Message 'PowerShell remoting init task priority must stay 6.'
+    Assert-True -Condition ($remotingTaskJsonText -like '*"priority": 7*') -Message 'PowerShell remoting init task priority must stay 7.'
     Assert-True -Condition ($remotingTaskJsonText -like '*05-configure-firewall-settings*') -Message 'PowerShell remoting init task must depend on firewall configuration.'
     Assert-True -Condition ($platformDefaultsText -like '*5985*') -Message 'Default TCP ports must include 5985 for WinRM.'
     Assert-True -Condition ($envExampleText -like '*5985*') -Message '.env.example TCP port defaults must include 5985 for WinRM.'

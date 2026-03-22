@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.377 - 2026-03-22
+
+### Summary
+This release adds an explicit Windows user-profile materialization step ahead of the rest of `vm-init`, which closes the remaining assistant-profile drift that was still surfacing in live accessibility flows. The new `07-configure-all-users` task now materializes the managed local users before later tasks or app-state replay touch their profile files and hives, repairs temporary-profile registrations back to the intended profile path when needed, and removes the JAWS replay warning that the latest March 20 production logs still showed for the `assistant` user.
+
+### Highlights
+- Added `07-configure-all-users` to the tracked Windows init catalog and positioned it directly after `01-ensure-local-user-accounts`.
+- Hardened the Windows profile-repair path so loaded user hives are exported into the durable profile root, the live SID registration is repaired back to the intended profile path, and locked hive transaction logs are treated as best-effort informational skips instead of task failures.
+- Cleared the assistant-side JAWS replay prerequisite: after the new init task runs, the live assistant profile resolves to `C:\Users\assistant` with a real `NTUSER.DAT` hive instead of a temporary-profile mapping.
+- Revalidated the change live in isolation on the active managed Windows target: `task --run-vm-init 07 --windows --perf` completed successfully, direct profile readback confirmed the repaired assistant mapping, and a follow-up isolated rerun of `task --run-vm-update 133 --windows --perf` finished with `profiles=2`, `user-registry=2`, `skipped=0`, and no `assistant => no-hive-file` warning during the JAWS app-state replay.
+
 ## Release 2026.3.20.376 - 2026-03-20
 
 ### Summary
