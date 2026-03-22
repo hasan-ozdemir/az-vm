@@ -4366,6 +4366,9 @@ Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" 
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '4294967295') -eq -1) -Message 'Task exit code parser must normalize unsigned 32-bit -1 markers back to -1.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "WARNING: Ignoring checksums due to feature checksumFiles turned off or option --ignore-checksums set.") -Message 'Protocol noise filters must suppress expected Chocolatey checksum warnings.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "[stderr] WARNING: The Windows Subsystem for Linux is not installed. You can install by running 'wsl.exe --install'.") -Message 'Protocol noise filters must suppress stderr-prefixed WSL bootstrap warnings.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text 'WARNING: wsl.exe : The Windows Subsystem for Linux is not installed. You ') -Message 'Protocol noise filters must suppress split WSL bootstrap warning headers.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "WARNING: can install by running 'wsl.exe --install'.") -Message 'Protocol noise filters must suppress split WSL bootstrap continuation lines.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text 'WARNING: +     FullyQualifiedErrorId : NativeCommandError') -Message 'Protocol noise filters must suppress benign WSL NativeCommandError metadata.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text 'WARNING: npm notice New minor version of npm available! 11.9.0 -> 11.12.0') -Message 'Protocol noise filters must suppress benign npm notice chatter.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text 'WARNING: npm warn deprecated prebuild-install@7.1.3: No longer maintained.') -Message 'Protocol noise filters must suppress benign npm deprecation chatter.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "errors pretty printing info") -Message 'Protocol noise filters must suppress transient Docker info pretty-print noise.'
@@ -6656,6 +6659,9 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
         'Get-WindowsOptionalFeatureState',
         'Test-WslBootstrapSatisfied',
         'Test-WslBenignBootstrapLine',
+        '$previousErrorActionPreference = $ErrorActionPreference',
+        '$ErrorActionPreference = ''Continue''',
+        '$ErrorActionPreference = $previousErrorActionPreference',
         'Write-WslFeatureState',
         '@(& $Action 2>&1)',
         'wsl-feature-state => Microsoft-Windows-Subsystem-Linux =>',

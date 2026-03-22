@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.391 - 2026-03-22
+
+### Summary
+This release fixes the next zero-warning blocker found during the restarted Windows create loop after the SSH asset-copy recovery patch. The fresh run successfully passed the earlier `114-install-teams-application` failure point, but `121-install-wsl-feature` still surfaced split `NativeCommandError` transcript lines while `wsl.exe --install --no-distribution` was bootstrapping WSL for the first time. The task now treats that stderr as expected bootstrap noise, the shared SSH protocol filter suppresses the split warning shape, and isolated live reruns of `121` finish cleanly with zero warnings.
+
+### Highlights
+- Changed `121-install-wsl-feature` so its native WSL bootstrap command runs with a temporary local `ErrorActionPreference='Continue'` guard, preventing benign first-run stderr from aborting the task before its exit code and output filters are evaluated.
+- Extended the shared SSH task-output warning filter to discard the exact split WSL bootstrap lines seen in the live transcript, including the relayed `wsl.exe : ...`, call-site, and `NativeCommandError` metadata fragments.
+- Revalidated the fix locally in `tests\az-vm-smoke-tests.ps1` and live in isolation on the active managed Windows VM, where `task --run-vm-update 121 --windows --perf` completed with `warning=0`, `signal-warning=0`, and `error=0`.
+
 ## Release 2026.3.22.390 - 2026-03-22
 
 ### Summary

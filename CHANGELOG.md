@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.391] - 2026-03-22
+
+### Fixed
+- Hardened `121-install-wsl-feature` so first-run `wsl.exe --install --no-distribution` stderr no longer aborts the task as a PowerShell `NativeCommandError` record. The task now captures native output with `ErrorActionPreference='Continue'`, restores the prior preference immediately afterward, and still honors the real command exit code plus the existing local bootstrap-line filter.
+- Extended the shared SSH task-output noise filter to suppress the split-line WSL bootstrap transcript shape observed during the latest live create rerun, including the `wsl.exe : ...`, call-site, and `FullyQualifiedErrorId : NativeCommandError` metadata lines that were inflating `vm-update` warnings even though WSL installation was progressing normally.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 165, Failed: 0` after adding coverage for the split WSL bootstrap lines and the temporary `ErrorActionPreference` downgrade inside `121-install-wsl-feature`.
+- Revalidated live in isolation on the active managed Windows VM with `task --run-vm-update 121 --windows --perf`; `121-install-wsl-feature` completed with `success=1`, `warning=0`, `signal-warning=0`, `error=0`, and `reboot=1`.
+
 ## [2026.3.22.390] - 2026-03-22
 
 ### Fixed

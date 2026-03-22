@@ -29,8 +29,19 @@ function Invoke-NativeStep {
     )
 
     Write-Host ("Running: {0}" -f $Label)
-    $commandOutput = @(& $Action 2>&1)
-    $exitCode = [int]$LASTEXITCODE
+    $previousErrorActionPreference = $ErrorActionPreference
+    $commandOutput = @()
+    $exitCode = 0
+    try {
+        # Native stderr from first-run WSL bootstrap can surface as NativeCommandError records;
+        # rely on the command exit code and local filtering instead of letting that abort the task.
+        $ErrorActionPreference = 'Continue'
+        $commandOutput = @(& $Action 2>&1)
+        $exitCode = [int]$LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
     foreach ($line in @($commandOutput)) {
         $lineText = [string]$line
         if (-not [string]::IsNullOrWhiteSpace([string]$lineText)) {
@@ -58,7 +69,14 @@ function Test-WslBenignBootstrapLine {
 
     return (
         ([string]$Text -match '^(?i)The Windows Subsystem for Linux is not installed\. You can install by running ''wsl\.exe --install''\.$') -or
-        ([string]$Text -match '^(?i)For more information please visit https://aka\.ms/wslinstall$')
+        ([string]$Text -match '^(?i)wsl\.exe : The Windows Subsystem for Linux is not installed\. You\s*$') -or
+        ([string]$Text -match '^(?i)can install by running ''wsl\.exe --install''\.$') -or
+        ([string]$Text -match '^(?i)For more information please visit https://aka\.ms/wslinstall$') -or
+        ([string]$Text -match '^(?i)At .+az-vm-task-.*\.ps1:\d+ char:\d+$') -or
+        ([string]$Text -match '^(?i)\+\s+wsl\.exe --install --no-distribution$') -or
+        ([string]$Text -match '^(?i)\+\s+~+$') -or
+        ([string]$Text -match '^(?i)\+\s+CategoryInfo\s+:.*NativeCommandError$') -or
+        ([string]$Text -match '^(?i)\+\s+FullyQualifiedErrorId\s+: NativeCommandError$')
     )
 }
 
