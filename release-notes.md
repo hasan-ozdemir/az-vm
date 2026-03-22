@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.383 - 2026-03-22
+
+### Summary
+This release closes the follow-up false negative that still remained after the first Windows run-command timeout hardening. Successful Windows guest tasks no longer fall through as `task-result` warnings just because the nested hidden `powershell.exe` returned an ambiguous exit code; the nested worker now emits an explicit success/error marker and the outer Azure Run Command wrapper classifies task outcome from that structured marker.
+
+### Highlights
+- Added explicit `AZ_VM_NESTED_RESULT:success|error` markers to the nested Windows guest task worker used by Azure Run Command.
+- Changed the outer Windows run-command wrapper to trust the nested result marker first, keep the task timeout enforcement, and only treat missing markers as a failure condition.
+- Extended smoke coverage for the new nested result markers and the missing-marker failure path.
+
 ## Release 2026.3.22.382 - 2026-03-22
 
 ### Summary

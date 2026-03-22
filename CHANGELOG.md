@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.383] - 2026-03-22
+
+### Fixed
+- Fixed the Windows Azure Run Command timeout wrapper follow-up so successful guest tasks are no longer misclassified as `task-result` warnings when the nested hidden `powershell.exe` process finishes cleanly. The nested child script now emits explicit `AZ_VM_NESTED_RESULT:success|error` markers, and the outer wrapper now classifies success from that structured marker instead of trusting the raw child exit code alone.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Added smoke coverage that proves the Windows run-command wrapper now carries the explicit nested result markers and the missing-marker failure text used by the live false-negative fix.
+
 ## [2026.3.22.382] - 2026-03-22
 
 ### Fixed

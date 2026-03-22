@@ -7499,7 +7499,10 @@ Invoke-Test -Name "Windows run-command tasks extend Azure CLI timeout to the tas
         'Start-Process -FilePath',
         'WaitForExit(',
         'Task timed out after {0} second(s).',
-        'Stop-Process -Id $process.Id -Force'
+        'Stop-Process -Id $process.Id -Force',
+        'AZ_VM_NESTED_RESULT:success',
+        'AZ_VM_NESTED_RESULT:error',
+        'Nested PowerShell ended without a result marker.'
     )) {
         Assert-True -Condition ($runnerText -like ('*' + [string]$fragment + '*')) -Message ("Run-command runner must include fragment '{0}'." -f [string]$fragment)
     }
