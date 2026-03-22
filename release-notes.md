@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.393 - 2026-03-22
+
+### Summary
+This release fixes the next zero-warning blocker found in the restarted live Windows create loop after the WSL cleanup. A fresh `create --auto --windows --perf` rerun progressed past `121-install-wsl-feature`, but `124-install-openai-codex-tool` still surfaced raw `npm notice` version-banner lines as `WARNING:` records even though the command already used `--loglevel error`. The npm-backed CLI tasks now capture merged native output locally, discard only the known benign notice/deprecation chatter, and continue to treat the real npm exit code as authoritative.
+
+### Highlights
+- Changed `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, and `126-install-google-gemini-tool` so each task runs `npm install -g` through a local merged-output capture guarded by `ErrorActionPreference='Continue'`.
+- Filtered only the known benign `npm notice` and `npm warn deprecated` lines before replaying task output, preventing one-shot SSH task execution from inflating the live transcript with warning-only npm chatter.
+- Revalidated the change locally in `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed after the npm-task hardening.
+
 ## Release 2026.3.22.392 - 2026-03-22
 
 ### Summary

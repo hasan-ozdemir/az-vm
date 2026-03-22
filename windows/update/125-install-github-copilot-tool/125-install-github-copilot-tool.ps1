@@ -96,6 +96,20 @@ function Test-GlobalNpmPackageInstalled {
     return $true
 }
 
+function Test-BenignNpmInstallNoiseLine {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Text)) {
+        return $false
+    }
+
+    $normalizedText = [string]$Text
+    return (
+        ($normalizedText -match '^(?i)npm notice(?:\b|$)') -or
+        ($normalizedText -match '^(?i)npm warn deprecated\b')
+    )
+}
+
 function Install-GlobalNpmPackage {
     param(
         [string]$NpmExe,
@@ -103,10 +117,38 @@ function Install-GlobalNpmPackage {
     )
 
     Write-Host ("Running: npm install -g --no-audit --no-fund --no-progress --loglevel error {0}" -f [string]$InstallSpec)
-    & $NpmExe @('install', '-g', '--no-audit', '--no-fund', '--no-progress', '--loglevel', 'error', [string]$InstallSpec)
-    if ($LASTEXITCODE -ne 0) {
-        throw ("npm install failed with exit code {0}." -f $LASTEXITCODE)
+    $previousErrorActionPreference = $ErrorActionPreference
+    $commandOutput = @()
+    $exitCode = 0
+    try {
+        # Native npm notice/deprecated chatter can still surface as warning records under SSH task execution;
+        # capture merged output locally, filter only the known benign lines, and keep the real exit code authoritative.
+        $ErrorActionPreference = 'Continue'
+        $commandOutput = @(& $NpmExe @('install', '-g', '--no-audit', '--no-fund', '--no-progress', '--loglevel', 'error', [string]$InstallSpec) 2>&1)
+        $exitCode = [int]$LASTEXITCODE
     }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    foreach ($line in @($commandOutput)) {
+        $lineText = [string]$line
+        if ([string]::IsNullOrWhiteSpace([string]$lineText)) {
+            continue
+        }
+
+        if (Test-BenignNpmInstallNoiseLine -Text $lineText) {
+            continue
+        }
+
+        Write-Host $lineText
+    }
+
+    if ($exitCode -ne 0) {
+        throw ("npm install failed with exit code {0}." -f $exitCode)
+    }
+
+    Write-Host ("npm install exit code: {0}" -f $exitCode)
 }
 
 Refresh-SessionPath

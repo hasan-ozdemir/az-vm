@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.393] - 2026-03-22
+
+### Fixed
+- Fixed the next zero-warning full-create blocker in the Windows npm CLI tasks. Even with `--loglevel error`, fresh `vm-update` runs could still surface `npm notice` lines from `124-install-openai-codex-tool` as transcript warnings under one-shot SSH execution.
+- Hardened `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, and `126-install-google-gemini-tool` so each task now captures merged npm output with a temporary local `ErrorActionPreference='Continue'` guard, filters only the known benign `npm notice` and `npm warn deprecated` chatter before replay, and still fails strictly from the real npm exit code.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 165, Failed: 0` after extending the npm task contract to cover the local merged-output capture/filter path.
+- Revalidated `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the npm task warning-suppression hardening.
+
 ## [2026.3.22.392] - 2026-03-22
 
 ### Fixed
