@@ -6657,8 +6657,11 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
 
     foreach ($fragment in @(
         'Get-WindowsOptionalFeatureState',
+        'function Test-WslReady',
         'Test-WslBootstrapSatisfied',
         'Test-WslBenignBootstrapLine',
+        '$wslVersionOutput = @(& wsl.exe --version 2>&1)',
+        'if (Test-WslBenignBootstrapLine -Text $lineText)',
         '$previousErrorActionPreference = $ErrorActionPreference',
         '$ErrorActionPreference = ''Continue''',
         '$ErrorActionPreference = $previousErrorActionPreference',

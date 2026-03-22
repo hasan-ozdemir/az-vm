@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.392] - 2026-03-22
+
+### Fixed
+- Fixed the remaining full-create `121-install-wsl-feature` warning path by hardening `Test-WslReady`. The readiness probe now captures `wsl.exe --version` output with a local `ErrorActionPreference='Continue'` guard, filters the known benign bootstrap lines before they reach the transcript, and returns readiness strictly from the native exit code.
+- This closes the next live zero-warning blocker found immediately after the previous WSL transcript fix: the latest fresh `create --auto --windows --perf` rerun still stopped at `121-install-wsl-feature` because the readiness probe emitted plain `WARNING: The Windows Subsystem for Linux is not installed...` lines before the winget bootstrap.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 165, Failed: 0` after extending the WSL task contract to cover the quiet readiness-probe path.
+- Revalidated `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the `Test-WslReady` warning-suppression change.
+- Revalidated live in isolation on the active managed Windows VM with `task --run-vm-update 121 --windows --perf`; `121-install-wsl-feature` completed with `success=1`, `warning=0`, `signal-warning=0`, `error=0`, and `reboot=1`.
+
 ## [2026.3.22.391] - 2026-03-22
 
 ### Fixed

@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.392 - 2026-03-22
+
+### Summary
+This release fixes the remaining full-create WSL warning that was still stopping the zero-warning Windows publish loop after the previous `NativeCommandError` cleanup. The latest fresh recreate reached `121-install-wsl-feature`, but its internal readiness probe still called `wsl.exe --version` raw and surfaced the plain bootstrap guidance as `WARNING:` lines before the winget bootstrap completed. The readiness probe now captures and filters that benign first-run output locally, so the task stays warning-clean in both isolated reruns and the next full recreate attempt.
+
+### Highlights
+- Changed `121-install-wsl-feature` so `Test-WslReady` now runs `wsl.exe --version` through a local merged-output capture with `ErrorActionPreference='Continue'`, keeping the benign first-run bootstrap guidance out of the task transcript while still returning readiness from the real exit code.
+- Preserved visibility for unexpected probe output by replaying only non-benign captured lines, instead of letting the known bootstrap guidance surface as transcript warnings.
+- Revalidated the change locally across smoke, static audit, PowerShell compatibility, and shell syntax gates, then reran isolated live task `121-install-wsl-feature` on the active managed Windows VM and confirmed `warning=0`, `signal-warning=0`, and `error=0`.
+
 ## Release 2026.3.22.391 - 2026-03-22
 
 ### Summary

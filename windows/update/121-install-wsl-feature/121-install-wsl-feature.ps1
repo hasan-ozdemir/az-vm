@@ -90,8 +90,29 @@ function Test-WslReady {
         return $false
     }
 
-    & wsl.exe --version
-    return ([int]$LASTEXITCODE -eq 0)
+    $previousErrorActionPreference = $ErrorActionPreference
+    $wslVersionOutput = @()
+    $exitCode = 0
+    try {
+        $ErrorActionPreference = 'Continue'
+        $wslVersionOutput = @(& wsl.exe --version 2>&1)
+        $exitCode = [int]$LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    foreach ($line in @($wslVersionOutput)) {
+        $lineText = [string]$line
+        if (-not [string]::IsNullOrWhiteSpace([string]$lineText)) {
+            if (Test-WslBenignBootstrapLine -Text $lineText) {
+                continue
+            }
+            Write-Host $lineText
+        }
+    }
+
+    return ($exitCode -eq 0)
 }
 
 function Test-WslBootstrapSatisfied {
