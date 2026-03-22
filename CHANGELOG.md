@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.382] - 2026-03-22
+
+### Fixed
+- Fixed the Windows Azure Run Command task wrapper so the guest-side task timeout now applies to the actual PowerShell task process instead of only extending the outer Azure CLI deadline. Windows isolated task execution now writes the decoded task body to a temporary `.ps1`, starts a nested hidden `powershell.exe`, captures stdout/stderr, forces termination when the task exceeds its manifest timeout, and returns the guest failure text cleanly instead of hanging the entire init/update stage.
+- Reduced the Windows `07-configure-all-users` interactive profile-materialization wait budget from 180 seconds to a task-configured 20 seconds so the task respects its 120-second manifest timeout during fresh-create runs and stops blocking later init tasks behind the Azure Run Command single-flight lock.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Extended smoke coverage so the Windows run-command wrapper contract now proves the nested process timeout enforcement fragments are present and the `configure-all-users` task contract now proves the shorter interactive materialization budget is wired through task config.
+
 ## [2026.3.22.381] - 2026-03-22
 
 ### Fixed

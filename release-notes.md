@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.382 - 2026-03-22
+
+### Summary
+This release hardens the Windows live publish path after the March 22 fresh-create run exposed a real guest-task timeout gap. The Windows Azure Run Command wrapper now enforces the task manifest timeout against the actual nested PowerShell task process, and the new `07-configure-all-users` init task now keeps its interactive profile-materialization wait bounded so it fits within its declared timeout budget instead of blocking the whole init stage behind Azure's one-at-a-time Run Command lock.
+
+### Highlights
+- Changed the Windows run-command wrapper to execute guest task bodies through a temporary nested `powershell.exe -File <temp-script>` process, capture stdout/stderr explicitly, force-stop that child process when it exceeds the task timeout, and surface the guest failure text back into the stage transcript.
+- Reduced the `07-configure-all-users` interactive materialization wait to a task-configured 20 seconds so the task can still create the durable user profile when needed without overrunning its 120-second manifest timeout during fresh create or partial init reruns.
+- Extended the maintained smoke suite to cover the new nested-process timeout fragments and the shorter `configure-all-users` wait-budget contract.
+
 ## Release 2026.3.22.381 - 2026-03-22
 
 ### Summary

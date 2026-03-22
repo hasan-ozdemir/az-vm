@@ -7495,7 +7495,11 @@ Invoke-Test -Name "Windows run-command tasks extend Azure CLI timeout to the tas
     foreach ($fragment in @(
         'Invoke-AzVmWithAzCliTimeoutSeconds',
         '$taskTimeoutSeconds + 120',
-        'Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds $azTimeoutSeconds'
+        'Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds $azTimeoutSeconds',
+        'Start-Process -FilePath',
+        'WaitForExit(',
+        'Task timed out after {0} second(s).',
+        'Stop-Process -Id $process.Id -Force'
     )) {
         Assert-True -Condition ($runnerText -like ('*' + [string]$fragment + '*')) -Message ("Run-command runner must include fragment '{0}'." -f [string]$fragment)
     }
@@ -7607,6 +7611,8 @@ Invoke-Test -Name "Windows configure-all-users init task contract" -Action {
         'Get-LocalUser',
         'CreateProfile',
         'NTUSER.DAT',
+        'InteractiveMaterializationWaitSeconds = 20',
+        'InteractiveMaterializationWaitSeconds)',
         'profile-ready:',
         'profile-materialized:',
         'configure-all-users-ready:',

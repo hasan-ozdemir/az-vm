@@ -8,6 +8,7 @@ $assistantPass = "__ASSISTANT_PASS__"
 
 # Task config
 $taskConfig = [ordered]@{
+    InteractiveMaterializationWaitSeconds = 20
     ProfileReadyWaitSeconds = 20
     ProfileReadyPollMilliseconds = 250
     StandardProfileDirectories = @(
@@ -856,7 +857,7 @@ function Ensure-LocalUserProfileMaterialized {
     $managedPassword = Get-ManagedLocalUserPassword -UserName $userName
     if (-not [string]::IsNullOrWhiteSpace([string]$managedPassword)) {
         try {
-            $null = Invoke-AzVmInteractiveProfileMaterialization -TaskName ("configure-all-users-materialize-{0}" -f [string]$userName) -RunAsUser $userName -RunAsPassword $managedPassword -WaitTimeoutSeconds 180
+            $null = Invoke-AzVmInteractiveProfileMaterialization -TaskName ("configure-all-users-materialize-{0}" -f [string]$userName) -RunAsUser $userName -RunAsPassword $managedPassword -WaitTimeoutSeconds ([int]$taskConfig.InteractiveMaterializationWaitSeconds)
         }
         catch {
             Write-Host ("profile-materialization-fallback: {0} => {1}" -f [string]$userName, [string]$_.Exception.Message)
