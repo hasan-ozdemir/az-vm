@@ -4365,6 +4365,9 @@ Invoke-Test -Name "Persistent SSH protocol normalizes spinner-prefixed markers" 
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '0') -eq 0) -Message 'Task exit code parser must keep zero as zero.'
     Assert-True -Condition ((Convert-AzVmProtocolTaskExitCode -Text '4294967295') -eq -1) -Message 'Task exit code parser must normalize unsigned 32-bit -1 markers back to -1.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "WARNING: Ignoring checksums due to feature checksumFiles turned off or option --ignore-checksums set.") -Message 'Protocol noise filters must suppress expected Chocolatey checksum warnings.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "[stderr] WARNING: The Windows Subsystem for Linux is not installed. You can install by running 'wsl.exe --install'.") -Message 'Protocol noise filters must suppress stderr-prefixed WSL bootstrap warnings.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text 'WARNING: npm notice New minor version of npm available! 11.9.0 -> 11.12.0') -Message 'Protocol noise filters must suppress benign npm notice chatter.'
+    Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text 'WARNING: npm warn deprecated prebuild-install@7.1.3: No longer maintained.') -Message 'Protocol noise filters must suppress benign npm deprecation chatter.'
     Assert-True -Condition (Test-AzVmTaskOutputNoiseLine -Text "errors pretty printing info") -Message 'Protocol noise filters must suppress transient Docker info pretty-print noise.'
 }
 
@@ -6531,7 +6534,9 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
     foreach ($fragment in @(
         'Get-WindowsOptionalFeatureState',
         'Test-WslBootstrapSatisfied',
+        'Test-WslBenignBootstrapLine',
         'Write-WslFeatureState',
+        '@(& $Action 2>&1)',
         'wsl-feature-state => Microsoft-Windows-Subsystem-Linux =>',
         'wsl-feature-state => VirtualMachinePlatform =>',
         'wsl --set-default-version 2',
@@ -7468,9 +7473,9 @@ Invoke-Test -Name "Windows app install task contracts cover new shortcut-backed 
         '119-install-whatsapp-application.ps1' = @('9NKSQGP7F2NH', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'Write-AzVmStoreInstallState')
         '120-install-codex-application.ps1' = @('9PLM9XGG6VKS', 'OpenAI.Codex', 'Codex.exe', 'Invoke-AzVmInteractiveDesktopAutomation', 'Get-AzVmInteractivePaths', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'Write-AzVmStoreInstallState', 'cannot be deferred to a later boot')
         '122-install-icloud-application.ps1' = @('9PKTQ5699M62', "PackageSource = 'msstore'", 'iCloudHome.exe', 'Get-StartApps', 'Invoke-AzVmInteractiveDesktopAutomation', 'RunAsMode ''interactiveToken''', 'Wait-AzVmUserInteractiveDesktopReady', 'New-AzVmInteractiveDesktopBlockMessage', 'Write-AzVmInteractiveDesktopStatusLine', 'cannot be deferred to a later boot', 'Write-AzVmStoreInstallState')
-        '124-install-openai-codex-tool.ps1' = @('@openai/codex@latest', '@openai/codex', 'codex.cmd', 'install-openai-codex-tool-completed')
-        '125-install-github-copilot-tool.ps1' = @('@github/copilot@latest', '@github/copilot', 'copilot.cmd', 'install-github-copilot-tool-completed')
-        '126-install-google-gemini-tool.ps1' = @('@google/gemini-cli@latest', '@google/gemini-cli', 'gemini.cmd', 'install-google-gemini-tool-completed')
+        '124-install-openai-codex-tool.ps1' = @('@openai/codex@latest', '@openai/codex', '--loglevel error', 'codex.cmd', 'install-openai-codex-tool-completed')
+        '125-install-github-copilot-tool.ps1' = @('@github/copilot@latest', '@github/copilot', '--loglevel error', 'copilot.cmd', 'install-github-copilot-tool-completed')
+        '126-install-google-gemini-tool.ps1' = @('@google/gemini-cli@latest', '@google/gemini-cli', '--loglevel error', 'gemini.cmd', 'install-google-gemini-tool-completed')
         '129-install-google-drive-application.ps1' = @('Google.GoogleDrive', 'GoogleDriveFS.exe')
         '131-install-vlc-application.ps1' = @('VideoLAN.VLC', 'vlc.exe')
         '132-install-vs2022community-application.ps1' = @('visualstudio2022community', 'choco install', 'devenv.exe', 'Wait-DevenvReady', 'install-vs2022community-application-completed')

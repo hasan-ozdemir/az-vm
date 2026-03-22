@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.389] - 2026-03-22
+
+### Fixed
+- Suppressed benign WSL bootstrap warnings in `121-install-wsl-feature` by capturing merged native output, filtering the known first-run `wsl.exe` bootstrap lines before they are relayed back into the task stream, and keeping real failures unchanged.
+- Suppressed benign npm chatter in the global CLI install tasks by running `npm install -g` with `--loglevel error` for `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, and `126-install-google-gemini-tool`, so live `vm-update` runs stop surfacing `npm notice` and `npm warn deprecated` lines as stage warnings.
+- Extended the SSH task-output noise filter so stderr-prefixed relayed lines are normalized before pattern matching and the known benign WSL/npm warning lines are discarded consistently during remote task execution.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0` after adding coverage for stderr-prefixed WSL bootstrap warnings, benign npm warning suppression, the merged-output WSL task path, and the new npm `--loglevel error` contract.
+- Re-ran isolated live `vm-update` task checks against the active managed VM for `121-install-wsl-feature`, `124-install-openai-codex-tool`, `125-install-github-copilot-tool`, `126-install-google-gemini-tool`, and `10005-copy-user-settings`; each completed with `warning=0`, `signal-warning=0`, and `error=0`.
+
 ## [2026.3.22.388] - 2026-03-22
 
 ### Fixed

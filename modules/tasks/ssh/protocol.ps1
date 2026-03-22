@@ -74,6 +74,9 @@ function Test-AzVmTaskOutputNoiseLine {
     }
 
     $value = [string]$Text
+    if ($value.StartsWith("[stderr] ", [System.StringComparison]::OrdinalIgnoreCase)) {
+        $value = $value.Substring(9)
+    }
     if ([string]::IsNullOrWhiteSpace($value)) {
         return $false
     }
@@ -98,6 +101,8 @@ function Test-AzVmTaskOutputNoiseLine {
         ($value -match '^(?i)WARNING:\s+If you started this package under PowerShell core, replacing an in-use version may be unpredictable, require multiple attempts or produce errors\.$') -or
         ($value -match '^(?i)WARNING:\s+The Windows Subsystem for Linux is not installed\. You can install by running ''wsl\.exe --install''\.$') -or
         ($value -match '^(?i)WARNING:\s+For more information please visit https://aka\.ms/wslinstall$') -or
+        ($value -match '^(?i)WARNING:\s+npm notice(?:\b|$)') -or
+        ($value -match '^(?i)WARNING:\s+npm warn deprecated\b') -or
         ($value -match '^(?i)ERROR:\s+request returned 500 Internal Server Error for API route and version http://%2F%2F\.\%2Fpipe%2FdockerDesktopLinuxEngine/v[\d\.]+/info, check if the server supports the requested API version$') -or
         ($value -match '^(?i)errors pretty printing info$')
     )

@@ -29,11 +29,14 @@ function Invoke-NativeStep {
     )
 
     Write-Host ("Running: {0}" -f $Label)
-    $commandOutput = @(& $Action)
+    $commandOutput = @(& $Action 2>&1)
     $exitCode = [int]$LASTEXITCODE
     foreach ($line in @($commandOutput)) {
         $lineText = [string]$line
         if (-not [string]::IsNullOrWhiteSpace([string]$lineText)) {
+            if (Test-WslBenignBootstrapLine -Text $lineText) {
+                continue
+            }
             Write-Host $lineText
         }
     }
@@ -44,6 +47,19 @@ function Invoke-NativeStep {
         Write-Host ("{0} exit code: {1}" -f $Label, $exitCode)
     }
     return $exitCode
+}
+
+function Test-WslBenignBootstrapLine {
+    param([string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Text)) {
+        return $false
+    }
+
+    return (
+        ([string]$Text -match '^(?i)The Windows Subsystem for Linux is not installed\. You can install by running ''wsl\.exe --install''\.$') -or
+        ([string]$Text -match '^(?i)For more information please visit https://aka\.ms/wslinstall$')
+    )
 }
 
 function Test-WslPackageInstalled {

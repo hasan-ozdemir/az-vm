@@ -102,8 +102,8 @@ function Install-GlobalNpmPackage {
         [string]$InstallSpec
     )
 
-    Write-Host ("Running: npm install -g --no-audit --no-fund --no-progress {0}" -f [string]$InstallSpec)
-    & $NpmExe @('install', '-g', '--no-audit', '--no-fund', '--no-progress', [string]$InstallSpec)
+    Write-Host ("Running: npm install -g --no-audit --no-fund --no-progress --loglevel error {0}" -f [string]$InstallSpec)
+    & $NpmExe @('install', '-g', '--no-audit', '--no-fund', '--no-progress', '--loglevel', 'error', [string]$InstallSpec)
     if ($LASTEXITCODE -ne 0) {
         throw ("npm install failed with exit code {0}." -f $LASTEXITCODE)
     }

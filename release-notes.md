@@ -2,6 +2,17 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.389 - 2026-03-22
+
+### Summary
+This release hardens the zero-warning live publish path after the `10005-copy-user-settings` fix. The remote task protocol now suppresses stderr-prefixed benign WSL and npm chatter, the WSL feature task filters its own first-run bootstrap notices at source, and the npm-based CLI install tasks emit errors only. Together these changes remove the remaining warning-only noise that caused an otherwise healthy live `create --auto --windows --perf` run to be stopped and restarted.
+
+### Highlights
+- Filtered known benign WSL bootstrap lines directly inside `121-install-wsl-feature` after merging native stdout/stderr so the task no longer replays the `wsl.exe --install` guidance as transcript warnings.
+- Added stderr-prefix normalization plus benign WSL/npm warning patterns to the SSH task-output protocol filter so remote task relays stay warning-clean.
+- Changed the npm global install commands in `124`, `125`, and `126` to use `--loglevel error`, removing `npm notice` and `npm warn deprecated` chatter from live `vm-update` runs.
+- Revalidated the changed paths locally in `tests\az-vm-smoke-tests.ps1` and by isolated live reruns of `121`, `124`, `125`, `126`, and `10005` on the active managed VM; each isolated rerun finished with zero warnings and zero errors.
+
 ## Release 2026.3.22.388 - 2026-03-22
 
 ### Summary
