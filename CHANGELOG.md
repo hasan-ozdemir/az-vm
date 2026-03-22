@@ -3,7 +3,7 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
-## [2026.3.22.379] - 2026-03-22
+## [2026.3.22.381] - 2026-03-22
 
 ### Fixed
 - Fixed the create/update precheck so known-unsupported VM feature combinations now fail before Azure mutation instead of after `az vm create` has already produced a managed VM. `Assert-AzVmFeaturePreconditions` now checks the selected region, VM size, security type, `VM_ENABLE_HIBERNATION`, and `VM_ENABLE_NESTED_VIRTUALIZATION` combination during Step 1 and blocks Azure-known unsupported hibernation or nested-virtualization requests up front.
