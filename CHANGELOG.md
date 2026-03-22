@@ -3,6 +3,17 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.390] - 2026-03-22
+
+### Fixed
+- Hardened Windows one-shot SSH task execution so task asset copies now run inside the task retry loop instead of outside it. A transient SSH failure during pre-task asset upload no longer aborts the entire `vm-update` stage before the task retry policy can engage.
+- Added one bounded one-shot SSH recovery path before retrying a failed task attempt: the runner now rechecks VM provisioning health, waits for TCP reachability on the SSH port, and reboots the pyssh connection bootstrap before retrying after transient banner or transport drops.
+- This specifically fixes the live `create --auto --windows --perf` failure seen at `114-install-teams-application`, where copying `az-vm-store-install-state.psm1` failed with `paramiko.ssh_exception.SSHException: Error reading SSH protocol banner` and aborted the run even though the VM itself remained healthy.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 165, Failed: 0` after adding coverage for one-shot SSH asset copy retry-and-recovery behavior.
+- Revalidated `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the SSH runner recovery change.
+
 ## [2026.3.22.389] - 2026-03-22
 
 ### Fixed

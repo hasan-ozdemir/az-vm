@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.390 - 2026-03-22
+
+### Summary
+This release fixes the next live blocker discovered after the zero-warning cleanup work. During a fresh Windows create run, `vm-update` reached `114-install-teams-application` and then died while copying `az-vm-store-install-state.psm1` over pyssh because Paramiko could not read the SSH protocol banner. The VM was still healthy, but the asset-copy path lived outside the task retry loop, so one transient SSH drop aborted the whole publish flow. The SSH runner now retries task asset preparation through the same bounded task recovery path used for transport failures.
+
+### Highlights
+- Moved Windows and Linux task asset uploads inside the bounded task retry loop so transient pre-task copy failures no longer bypass task retry policy.
+- Added one-shot SSH retry recovery that rechecks provisioning health, waits for SSH port reachability, and re-runs the pyssh connection bootstrap before retrying.
+- Added smoke coverage that simulates a first-attempt `Error reading SSH protocol banner` during Windows task asset copy and verifies the runner recovers without inflating warning counts.
+
 ## Release 2026.3.22.389 - 2026-03-22
 
 ### Summary

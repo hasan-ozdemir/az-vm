@@ -120,6 +120,43 @@ function Invoke-AzVmSshTaskBlocks {
             -DefaultTaskTimeoutSeconds $SshTaskTimeoutSeconds)
     }
 
+    function Invoke-AzVmOneShotTaskTransportRecovery {
+        param(
+            [string]$Reason
+        )
+
+        Write-Warning ("Attempting one-shot SSH recovery: {0}" -f [string]$Reason)
+        if (-not [string]::IsNullOrWhiteSpace([string]$ResourceGroup) -and -not [string]::IsNullOrWhiteSpace([string]$VmName)) {
+            $repairResult = Wait-AzVmProvisioningReadyOrRepair -ResourceGroup $ResourceGroup -VmName $VmName
+            if (-not [bool]$repairResult.Ready) {
+                throw ("VM '{0}' in resource group '{1}' did not recover from provisioning issues while restoring one-shot SSH execution. {2}" -f [string]$VmName, [string]$ResourceGroup, (Format-AzVmVmLifecycleSummaryText -Snapshot $repairResult.Snapshot))
+            }
+        }
+
+        $sshReachable = Wait-AzVmTcpPortReachable `
+            -HostName $SshHost `
+            -Port ([int]$SshPort) `
+            -MaxAttempts 18 `
+            -DelaySeconds 5 `
+            -TimeoutSeconds 5 `
+            -Label 'ssh'
+        if (-not [bool]$sshReachable) {
+            throw ("SSH port {0} on '{1}' did not recover in time while restoring one-shot SSH execution." -f [string]$SshPort, [string]$SshHost)
+        }
+
+        $bootstrap = Initialize-AzVmSshHostKey `
+            -PySshPythonPath ([string]$pySsh.PythonPath) `
+            -PySshClientPath ([string]$pySsh.ClientPath) `
+            -HostName $SshHost `
+            -UserName $SshUser `
+            -Password $SshPassword `
+            -Port $SshPort `
+            -ConnectTimeoutSeconds $SshConnectTimeoutSeconds
+        if (-not [string]::IsNullOrWhiteSpace([string]$bootstrap.Output)) {
+            Write-Host ([string]$bootstrap.Output)
+        }
+    }
+
     try {
         if ($persistentSessionEnabled) {
             Write-Host 'VM update stage mode: tasks run one-by-one over a persistent SSH session.'
@@ -174,30 +211,30 @@ function Invoke-AzVmSshTaskBlocks {
             if ($task.PSObject.Properties.Match('AssetCopies').Count -gt 0 -and $null -ne $task.AssetCopies) {
                 $assetCopies = @(ConvertTo-ObjectArrayCompat -InputObject $task.AssetCopies)
             }
-            foreach ($asset in @($assetCopies)) {
-                $assetLocalPath = [string]$asset.LocalPath
-                $assetRemotePath = [string]$asset.RemotePath
-                if ([string]::IsNullOrWhiteSpace([string]$assetLocalPath) -or [string]::IsNullOrWhiteSpace([string]$assetRemotePath)) {
-                    continue
-                }
-
-                Write-Host ("Task asset copy started: {0} -> {1}" -f $assetLocalPath, $assetRemotePath)
-                Copy-AzVmAssetToVm `
-                    -PySshPythonPath ([string]$pySsh.PythonPath) `
-                    -PySshClientPath ([string]$pySsh.ClientPath) `
-                    -HostName $SshHost `
-                    -UserName $SshUser `
-                    -Password $SshPassword `
-                    -Port $SshPort `
-                    -LocalPath $assetLocalPath `
-                    -RemotePath $assetRemotePath `
-                    -ConnectTimeoutSeconds $SshConnectTimeoutSeconds | Out-Null
-                Write-Host ("Task asset copy completed: {0}" -f $assetRemotePath)
-            }
-
             for ($attempt = 1; $attempt -le $SshMaxRetries; $attempt++) {
                 $taskInvocationError = $null
                 try {
+                    foreach ($asset in @($assetCopies)) {
+                        $assetLocalPath = [string]$asset.LocalPath
+                        $assetRemotePath = [string]$asset.RemotePath
+                        if ([string]::IsNullOrWhiteSpace([string]$assetLocalPath) -or [string]::IsNullOrWhiteSpace([string]$assetRemotePath)) {
+                            continue
+                        }
+
+                        Write-Host ("Task asset copy started: {0} -> {1}" -f $assetLocalPath, $assetRemotePath)
+                        Copy-AzVmAssetToVm `
+                            -PySshPythonPath ([string]$pySsh.PythonPath) `
+                            -PySshClientPath ([string]$pySsh.ClientPath) `
+                            -HostName $SshHost `
+                            -UserName $SshUser `
+                            -Password $SshPassword `
+                            -Port $SshPort `
+                            -LocalPath $assetLocalPath `
+                            -RemotePath $assetRemotePath `
+                            -ConnectTimeoutSeconds $SshConnectTimeoutSeconds | Out-Null
+                        Write-Host ("Task asset copy completed: {0}" -f $assetRemotePath)
+                    }
+
                     $taskResult = Invoke-AzVmSshTaskScript `
                         -Session $(if ($persistentSessionEnabled) { $session } else { $null }) `
                         -PySshPythonPath ([string]$pySsh.PythonPath) `
@@ -228,7 +265,13 @@ function Invoke-AzVmSshTaskBlocks {
                             }
                         }
                         else {
-                            Write-Warning ("One-shot SSH task execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
+                            Write-Warning ("One-shot SSH task preparation or execution failed for '{0}' (attempt {1}/{2}): {3}" -f $taskName, $attempt, $SshMaxRetries, $_.Exception.Message)
+                            try {
+                                Invoke-AzVmOneShotTaskTransportRecovery -Reason ("retry {0}/{1} for task '{2}'" -f $attempt, $SshMaxRetries, $taskName)
+                            }
+                            catch {
+                                Write-Warning ("One-shot SSH recovery probe failed before retrying '{0}': {1}" -f $taskName, $_.Exception.Message)
+                            }
                         }
                     }
                 }

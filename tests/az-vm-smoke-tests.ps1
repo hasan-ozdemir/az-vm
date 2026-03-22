@@ -4378,13 +4378,134 @@ Invoke-Test -Name "Persistent SSH task runner restores the session after transie
     $runnerText = [string](Get-Content -LiteralPath $runnerPath -Raw)
     foreach ($fragment in @(
         'function Restore-AzVmTaskSession',
+        'function Invoke-AzVmOneShotTaskTransportRecovery',
         'Wait-AzVmTcpPortReachable',
         'Attempting persistent SSH session recovery:',
+        'Attempting one-shot SSH recovery:',
         'pre-task bootstrap for',
         'post-warning recovery after task',
-        'Persistent SSH session recovery is still unavailable after task'
+        'Persistent SSH session recovery is still unavailable after task',
+        'One-shot SSH task preparation or execution failed for',
+        'One-shot SSH recovery probe failed before retrying'
     )) {
         Assert-True -Condition ($runnerText -like ('*' + [string]$fragment + '*')) -Message ("Persistent SSH task runner must include fragment '{0}'." -f [string]$fragment)
+    }
+}
+
+Invoke-Test -Name "Windows SSH task runner retries asset copy failures through one-shot recovery" -Action {
+    $script:RetryingAssetCopyCalls = 0
+    $script:RetryingTaskScriptCalls = 0
+    $script:RetryingTcpReachabilityCalls = @()
+    $script:RetryingBootstrapCalls = 0
+    try {
+        function Ensure-AzVmPySshTools {
+            param([string]$RepoRoot, [string]$ConfiguredPySshClientPath)
+            return @{ PythonPath = 'python.exe'; ClientPath = 'ssh_client.py' }
+        }
+        function Initialize-AzVmSshHostKey {
+            param()
+            $script:RetryingBootstrapCalls++
+            return [pscustomobject]@{ Output = ''; HostKey = 'auto-add'; ExitCode = 0 }
+        }
+        function Wait-AzVmProvisioningReadyOrRepair {
+            param([string]$ResourceGroup, [string]$VmName)
+            return [pscustomobject]@{ Ready = $true; Snapshot = [pscustomobject]@{} }
+        }
+        function Wait-AzVmTcpPortReachable {
+            param([string]$HostName, [int]$Port, [int]$MaxAttempts, [int]$DelaySeconds, [int]$TimeoutSeconds, [string]$Label)
+            $script:RetryingTcpReachabilityCalls += ,([pscustomobject]@{
+                HostName = $HostName
+                Port = $Port
+                MaxAttempts = $MaxAttempts
+                DelaySeconds = $DelaySeconds
+                TimeoutSeconds = $TimeoutSeconds
+                Label = $Label
+            })
+            return $true
+        }
+        function Get-AzVmTaskTimeoutSeconds {
+            param([psobject]$TaskBlock, [int]$DefaultTimeoutSeconds)
+            return 60
+        }
+        function Copy-AzVmAssetToVm {
+            param()
+            $script:RetryingAssetCopyCalls++
+            if ($script:RetryingAssetCopyCalls -eq 1) {
+                throw 'Error reading SSH protocol banner'
+            }
+        }
+        function Invoke-AzVmSshTaskScript {
+            param()
+            $script:RetryingTaskScriptCalls++
+            return [pscustomobject]@{
+                ExitCode = 0
+                Output = 'task-ok'
+                OutputRelayedLive = $false
+            }
+        }
+        function Invoke-AzVmTaskAppStatePostProcess { return $null }
+        function Test-AzVmOutputIndicatesRebootRequired { return $false }
+
+        $taskBlocks = @(
+            [pscustomobject]@{
+                Name = '114-install-teams-application'
+                Script = 'Write-Host ok'
+                TimeoutSeconds = 120
+                AssetCopies = @(
+                    [pscustomobject]@{
+                        LocalPath = 'modules\\core\\tasks\\azvm-store-install-state.psm1'
+                        RemotePath = 'C:/Windows/Temp/az-vm-store-install-state.psm1'
+                    }
+                )
+            }
+        )
+
+        $result = Invoke-AzVmSshTaskBlocks `
+            -Platform 'windows' `
+            -RepoRoot $RepoRoot `
+            -SshHost 'samplevm.example' `
+            -SshUser 'manager' `
+            -SshPassword 'secret' `
+            -SshPort '444' `
+            -ResourceGroup 'rg-samplevm-ate1-g1' `
+            -VmName 'samplevm' `
+            -TaskBlocks $taskBlocks `
+            -TaskOutcomeMode 'continue' `
+            -PerfTaskCategory 'vm-update-task' `
+            -SshMaxRetries 3 `
+            -SshTaskTimeoutSeconds 180 `
+            -SshConnectTimeoutSeconds 30 `
+            -ConfiguredPySshClientPath ''
+
+        Assert-True -Condition ([int]$script:RetryingAssetCopyCalls -eq 2) -Message 'One-shot SSH asset copy failures must retry on the next task attempt.'
+        Assert-True -Condition ([int]$script:RetryingTaskScriptCalls -eq 1) -Message 'Task execution must continue after the asset copy retry succeeds.'
+        Assert-True -Condition (@($script:RetryingTcpReachabilityCalls).Count -ge 1) -Message 'One-shot SSH asset copy recovery must re-check SSH reachability before retrying.'
+        Assert-True -Condition ([int]$script:RetryingBootstrapCalls -ge 2) -Message 'One-shot SSH asset copy recovery must re-bootstrap SSH before retrying.'
+        Assert-True -Condition ([int]$result.SuccessCount -eq 1) -Message 'Successful retry after asset copy recovery must preserve the task success count.'
+        Assert-True -Condition ([int]$result.WarningCount -eq 0) -Message 'Successful retry after asset copy recovery must avoid warning inflation.'
+    }
+    finally {
+        foreach ($functionName in @(
+            'Ensure-AzVmPySshTools',
+            'Initialize-AzVmSshHostKey',
+            'Wait-AzVmProvisioningReadyOrRepair',
+            'Wait-AzVmTcpPortReachable',
+            'Get-AzVmTaskTimeoutSeconds',
+            'Copy-AzVmAssetToVm',
+            'Invoke-AzVmSshTaskScript',
+            'Invoke-AzVmTaskAppStatePostProcess',
+            'Test-AzVmOutputIndicatesRebootRequired'
+        )) {
+            Remove-Item ("Function:\{0}" -f $functionName) -ErrorAction SilentlyContinue
+        }
+        foreach ($variableName in @(
+            'RetryingAssetCopyCalls',
+            'RetryingTaskScriptCalls',
+            'RetryingTcpReachabilityCalls',
+            'RetryingBootstrapCalls'
+        )) {
+            Remove-Variable -Name $variableName -Scope Script -ErrorAction SilentlyContinue
+        }
     }
 }
 
