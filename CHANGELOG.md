@@ -3,6 +3,20 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.378] - 2026-03-22
+
+### Changed
+- Changed the Windows `135-install-ollama-tool` update task to prefer a clean Chocolatey-based install and bounded runtime validation: it now uninstalls stale winget/choco footprints when a reinstall is needed, runs `choco install ollama -y --no-progress --ignore-detected-reboot`, bootstraps Ollama through `cmd.exe /c start "" "<ollama.exe>" ls`, and falls back to a detached `Start-Process "<ollama.exe>" serve` path only when the headless `ls` bootstrap does not leave a durable process and API listener.
+- Narrowed the Windows Ollama task-local app-state contract to config files only, so future managed app-state exports no longer replay low-value runtime payloads such as local databases, WAL files, PID markers, updater trees, or embedded WebView caches.
+- Changed the Windows vm-summary readback so the Ollama health block performs a quiet bounded `ollama ls` probe plus a short API wait before it reports process, port, and API readiness, which prevents the earlier cold-start false negative that the March 20 logs still showed immediately after reboot.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 161, Failed: 0`.
+- Revalidated `tests\sensitive-content-check.ps1`, `tests\documentation-contract-check.ps1`, and `tools\scripts\app-state-audit.ps1`; all passed locally after the Ollama install, summary, and app-state contract changes.
+- Revalidated a live clean-uninstall cycle on the active managed Windows target via `exec`; the final cleanup confirmed `wingetExit=0`, `chocoExit=0`, `ollamaExeExists=False`, `processCount=0`, and `port11434=False`.
+- Revalidated live isolated `task --run-vm-update 135 --windows --perf`; `135-install-ollama-tool` completed with `success=1`, `warning=0`, `signal-warning=0`, `error=0`, and reported `ollama-ls-ready`, `ollama-process-ready`, `ollama-port-ready`, and `ollama-api-ready` after the clean Chocolatey install.
+- Revalidated the post-install startup path live with isolated `task --run-vm-update 10002 --windows --perf`, an explicit VM restart, and `update --step vm-summary --windows --perf`; the final transcript `az-vm-log-22mar26-111959.txt` now records `ollama-ls-probe => success=True`, `ollama-process-count => 2`, `ollama-port-11434-open => True`, and `ollama-api-probe => success=True; timed-out=False`.
+
 ## [2026.3.22.377] - 2026-03-22
 
 ### Changed

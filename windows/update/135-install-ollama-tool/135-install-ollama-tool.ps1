@@ -2,8 +2,14 @@ $ErrorActionPreference = "Stop"
 Write-Host "Update task started: install-ollama-tool"
 
 $taskConfig = [ordered]@{
-    PortableWingetPath = 'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
-    OllamaPackageId = 'Ollama.Ollama'
+    ChocoExecutableFallbackCandidates = @(
+        'C:\ProgramData\chocolatey\bin\choco.exe'
+    )
+    WingetExecutableFallbackCandidates = @(
+        'C:\ProgramData\az-vm\tools\winget-x64\winget.exe'
+    )
+    ChocoPackageId = 'ollama'
+    WingetPackageId = 'Ollama.Ollama'
     OllamaApiVersionUris = @(
         'http://127.0.0.1:11434/api/version',
         'http://localhost:11434/api/version'
@@ -12,19 +18,32 @@ $taskConfig = [ordered]@{
         (Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'),
         'C:\Program Files\Ollama\ollama.exe'
     )
+    OllamaCleanupPaths = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Ollama'),
+        'C:\Program Files\Ollama',
+        'C:\ProgramData\Ollama',
+        (Join-Path $env:LOCALAPPDATA 'Ollama'),
+        (Join-Path $env:APPDATA 'Ollama'),
+        (Join-Path $env:APPDATA 'ollama app.exe')
+    )
+    OllamaStartupShortcutPaths = @(
+        (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup\Ollama.lnk')
+    )
     OllamaApiPort = 11434
-    InstallerCommandLineRegex = 'ProgramData\\az-vm\\tools\\winget-x64|WinGet\\defaultState'
-    InstallerNameRegex = '^(winget|msiexec|MSTeamsSetupx64|AppInstallerCLI|WindowsPackageManagerServer)\.exe$'
-    WingetInstallTimeoutSeconds = 600
-    OllamaApiWaitTimeoutSeconds = 60
-    OllamaApiRetryCount = 2
-    OllamaApiRetryBackoffSeconds = 5
-    OllamaServeEarlyExitCheckSeconds = 1
-    InstallerSettleTimeoutSeconds = 8
-    InstallerFastProceedSeconds = 2
+    ChocoInstallTimeoutSeconds = 600
+    OllamaExeWaitTimeoutSeconds = 45
+    OllamaExeWaitPollSeconds = 3
+    OllamaBootstrapSettleSeconds = 2
+    OllamaBootstrapValidationTimeoutSeconds = 20
+    OllamaServeSettleSeconds = 2
+    OllamaListProbeTimeoutSeconds = 20
+    OllamaListWaitTimeoutSeconds = 90
+    OllamaListRetryDelaySeconds = 4
+    OllamaProcessWaitTimeoutSeconds = 30
+    OllamaProcessPollSeconds = 2
+    OllamaApiWaitTimeoutSeconds = 90
     OllamaApiProbeTimeoutSeconds = 5
     OllamaApiProbeDelayMilliseconds = 1000
-    OllamaServeGraceTimeoutSeconds = 45
     LogTailLineCount = 12
 }
 
@@ -34,32 +53,25 @@ function Refresh-SessionPath {
     Refresh-AzVmSessionPath | Out-Null
 }
 
-function Resolve-WingetExe {
-    $portableCandidate = [string]$taskConfig.PortableWingetPath
-    if (Test-Path -LiteralPath $portableCandidate) {
-        return $portableCandidate
-    }
+function Resolve-CommandFromCandidates {
+    param(
+        [string[]]$CommandNames = @(),
+        [string[]]$PathCandidates = @()
+    )
 
-    $cmd = Get-Command winget -ErrorAction SilentlyContinue
-    if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
-        return [string]$cmd.Source
-    }
+    foreach ($commandName in @($CommandNames)) {
+        if ([string]::IsNullOrWhiteSpace([string]$commandName)) {
+            continue
+        }
 
-    return ""
-}
-
-function Resolve-OllamaExe {
-    $commandCandidates = @('ollama.exe', 'ollama')
-    foreach ($commandName in @($commandCandidates)) {
         $cmd = Get-Command $commandName -ErrorAction SilentlyContinue
         if ($cmd -and -not [string]::IsNullOrWhiteSpace([string]$cmd.Source)) {
             return [string]$cmd.Source
         }
     }
 
-    $pathCandidates = @($taskConfig.OllamaExecutableFallbackCandidates)
-    foreach ($candidate in @($pathCandidates)) {
-        if (Test-Path -LiteralPath $candidate) {
+    foreach ($candidate in @($PathCandidates)) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$candidate) -and (Test-Path -LiteralPath $candidate)) {
             return [string]$candidate
         }
     }
@@ -67,22 +79,116 @@ function Resolve-OllamaExe {
     return ''
 }
 
-function Write-OllamaVersion {
+function Resolve-ChocoExe {
+    return (Resolve-CommandFromCandidates -CommandNames @('choco.exe', 'choco') -PathCandidates @($taskConfig.ChocoExecutableFallbackCandidates))
+}
+
+function Resolve-WingetExe {
+    return (Resolve-CommandFromCandidates -CommandNames @('winget.exe', 'winget') -PathCandidates @($taskConfig.WingetExecutableFallbackCandidates))
+}
+
+function Resolve-OllamaExe {
+    return (Resolve-CommandFromCandidates -CommandNames @('ollama.exe', 'ollama') -PathCandidates @($taskConfig.OllamaExecutableFallbackCandidates))
+}
+
+function Resolve-CmdExe {
+    return (Resolve-CommandFromCandidates -CommandNames @('cmd.exe', 'cmd') -PathCandidates @((Join-Path $env:WINDIR 'System32\cmd.exe')))
+}
+
+function Get-LogTailText {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$OllamaExe
+        [string]$Path,
+        [int]$LineCount = 12
     )
 
-    $versionLines = @(& $OllamaExe --version 2>&1 | ForEach-Object { [string]$_ } | Where-Object {
-        -not [string]::IsNullOrWhiteSpace([string]$_) -and
-        -not ([string]$_ -match '^(?i)warning:')
-    })
-    $exitCode = [int]$LASTEXITCODE
-    foreach ($line in @($versionLines)) {
-        Write-Host $line
+    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
+        return ''
     }
 
-    return $exitCode
+    try {
+        $tailLines = @(Get-Content -LiteralPath $Path -Tail $LineCount -ErrorAction Stop)
+        if (@($tailLines).Count -eq 0) {
+            return ''
+        }
+
+        return ([string](($tailLines -join ' | ') -replace '\s+', ' ')).Trim()
+    }
+    catch {
+        return ''
+    }
+}
+
+function Invoke-ProcessWithTimeout {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [string[]]$ArgumentList = @(),
+        [int]$TimeoutSeconds = 600,
+        [string]$Label = 'process'
+    )
+
+    $logRoot = Join-Path $env:TEMP 'az-vm-ollama'
+    [void](New-Item -ItemType Directory -Path $logRoot -Force)
+    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
+    $stdoutLog = Join-Path $logRoot ("{0}-{1}.stdout.log" -f $Label.Replace(' ', '-'), $stamp)
+    $stderrLog = Join-Path $logRoot ("{0}-{1}.stderr.log" -f $Label.Replace(' ', '-'), $stamp)
+    $process = Start-Process `
+        -FilePath $FilePath `
+        -ArgumentList $ArgumentList `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $stdoutLog `
+        -RedirectStandardError $stderrLog `
+        -PassThru
+
+    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+        try {
+            Stop-Process -Id ([int]$process.Id) -Force -ErrorAction Stop
+        }
+        catch {
+        }
+
+        throw ("{0} timed out after {1} seconds. stdoutLog={2}; stderrLog={3}" -f `
+            $Label, `
+            $TimeoutSeconds, `
+            $stdoutLog, `
+            $stderrLog)
+    }
+
+    return [pscustomobject]@{
+        ProcessId = [int]$process.Id
+        ExitCode = [int]$process.ExitCode
+        StdoutLog = [string]$stdoutLog
+        StderrLog = [string]$stderrLog
+    }
+}
+
+function Test-TcpPortReachable {
+    param(
+        [string]$HostName = '127.0.0.1',
+        [int]$Port = 11434,
+        [int]$TimeoutMilliseconds = 1000
+    )
+
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $asyncResult = $client.BeginConnect($HostName, $Port, $null, $null)
+        if (-not $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds)) {
+            return $false
+        }
+
+        $client.EndConnect($asyncResult)
+        return $client.Connected
+    }
+    catch {
+        return $false
+    }
+    finally {
+        try {
+            $client.Close()
+        }
+        catch {
+        }
+    }
 }
 
 function Get-OllamaApiVersion {
@@ -162,504 +268,374 @@ function Wait-OllamaApiReady {
     return ''
 }
 
-function Test-TcpPortReachable {
+function Wait-OllamaExeReady {
     param(
-        [string]$HostName = '127.0.0.1',
-        [int]$Port = 11434,
-        [int]$TimeoutMilliseconds = 1000
+        [int]$TimeoutSeconds = 45
     )
 
-    $client = New-Object System.Net.Sockets.TcpClient
-    try {
-        $asyncResult = $client.BeginConnect($HostName, $Port, $null, $null)
-        if (-not $asyncResult.AsyncWaitHandle.WaitOne($TimeoutMilliseconds)) {
-            return $false
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        Refresh-SessionPath
+        $ollamaExe = Resolve-OllamaExe
+        if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
+            return [string]$ollamaExe
         }
 
-        $client.EndConnect($asyncResult)
-        return $client.Connected
+        Start-Sleep -Seconds ([int]$taskConfig.OllamaExeWaitPollSeconds)
     }
-    catch {
-        return $false
+
+    return (Resolve-OllamaExe)
+}
+
+function Write-OllamaVersion {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OllamaExe
+    )
+
+    $versionLines = @(& $OllamaExe --version 2>&1 | ForEach-Object { [string]$_ } | Where-Object {
+        -not [string]::IsNullOrWhiteSpace([string]$_) -and
+        -not ([string]$_ -match '^(?i)warning:')
+    })
+    $exitCode = [int]$LASTEXITCODE
+    foreach ($line in @($versionLines)) {
+        Write-Host $line
     }
-    finally {
-        try {
-            $client.Close()
-        }
-        catch {
-        }
+
+    return $exitCode
+}
+
+function Invoke-OllamaListProbe {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OllamaExe
+    )
+
+    $probeResult = Invoke-ProcessWithTimeout `
+        -FilePath $OllamaExe `
+        -ArgumentList @('ls') `
+        -TimeoutSeconds ([int]$taskConfig.OllamaListProbeTimeoutSeconds) `
+        -Label 'ollama-ls'
+
+    return [pscustomobject]@{
+        ExitCode = [int]$probeResult.ExitCode
+        StdoutLog = [string]$probeResult.StdoutLog
+        StderrLog = [string]$probeResult.StderrLog
+        StdoutTail = [string](Get-LogTailText -Path ([string]$probeResult.StdoutLog) -LineCount ([int]$taskConfig.LogTailLineCount))
+        StderrTail = [string](Get-LogTailText -Path ([string]$probeResult.StderrLog) -LineCount ([int]$taskConfig.LogTailLineCount))
     }
 }
 
-function Get-StaleInstallerProcesses {
-    $commandLineRegex = [string]$taskConfig.InstallerCommandLineRegex
-    $nameRegex = [string]$taskConfig.InstallerNameRegex
+function Wait-OllamaListReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$OllamaExe,
+        [int]$TimeoutSeconds = 90
+    )
 
-    $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $name = [string]$_.Name
-        $commandLine = [string]$_.CommandLine
-        ($name -match $nameRegex) -or ($commandLine -match $commandLineRegex)
-    } | Select-Object ProcessId, Name, CommandLine
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastProbe = $null
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $lastProbe = Invoke-OllamaListProbe -OllamaExe $OllamaExe
+        if ([int]$lastProbe.ExitCode -eq 0) {
+            return [pscustomobject]@{
+                Success = $true
+                Probe = $lastProbe
+            }
+        }
 
-    return @($processes)
+        Start-Sleep -Seconds ([int]$taskConfig.OllamaListRetryDelaySeconds)
+    }
+
+    return [pscustomobject]@{
+        Success = $false
+        Probe = $lastProbe
+    }
 }
 
-function Format-InstallerProcessSummary {
-    param(
-        [object[]]$Processes
+function Get-OllamaProcessRows {
+    return @(
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+            Where-Object {
+                [string]$_.Name -like 'ollama*'
+            } |
+            Select-Object ProcessId, Name, ExecutablePath, CommandLine
     )
+}
+
+function Format-OllamaProcessSummary {
+    param([object[]]$Processes)
 
     if ($null -eq $Processes -or @($Processes).Count -eq 0) {
         return '(none)'
     }
 
     return (@($Processes) | ForEach-Object {
-        $commandLine = [string]$_.CommandLine
-        if ($commandLine.Length -gt 160) {
-            $commandLine = $commandLine.Substring(0, 160) + '...'
+        $path = [string]$_.ExecutablePath
+        if ([string]::IsNullOrWhiteSpace([string]$path)) {
+            $path = [string]$_.CommandLine
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$path)) {
+            $path = '(no-path)'
+        }
+        if ($path.Length -gt 160) {
+            $path = $path.Substring(0, 160) + '...'
         }
 
-        return ("{0}:{1}:{2}" -f [int]$_.ProcessId, [string]$_.Name, $commandLine)
+        return ("{0}:{1}:{2}" -f [int]$_.ProcessId, [string]$_.Name, $path)
     }) -join ' | '
 }
 
-function Stop-StaleInstallerProcesses {
-    param(
-        [string]$CurrentPackageId = ''
-    )
+function Wait-OllamaProcessReady {
+    param([int]$TimeoutSeconds = 30)
 
-    $staleProcesses = Get-StaleInstallerProcesses | Where-Object {
-        $commandLine = [string]$_.CommandLine
-        if ([string]::IsNullOrWhiteSpace([string]$CurrentPackageId)) {
-            return $true
-        }
-
-        return ($commandLine -notmatch [regex]::Escape($CurrentPackageId))
-    }
-
-    if (@($staleProcesses).Count -eq 0) {
-        return @()
-    }
-
-    Write-Host ("Stopping stale installer processes before Ollama install: {0}" -f (Format-InstallerProcessSummary -Processes $staleProcesses))
-    foreach ($proc in @($staleProcesses | Sort-Object ProcessId -Descending)) {
-        try {
-            Stop-Process -Id ([int]$proc.ProcessId) -Force -ErrorAction Stop
-        }
-        catch {
-        }
-    }
-
-    Start-Sleep -Seconds 3
-    $remaining = Get-StaleInstallerProcesses | Where-Object {
-        $commandLine = [string]$_.CommandLine
-        if ([string]::IsNullOrWhiteSpace([string]$CurrentPackageId)) {
-            return $true
-        }
-
-        return ($commandLine -notmatch [regex]::Escape($CurrentPackageId))
-    }
-    if (@($remaining).Count -gt 0) {
-        throw ("Stale installer processes still active before Ollama install: {0}" -f (Format-InstallerProcessSummary -Processes $remaining))
-    }
-
-    return @($staleProcesses)
-}
-
-function Wait-InstallerProcessesSettled {
-    param(
-        [int]$TimeoutSeconds = 30,
-        [string]$OllamaExe = ''
-    )
-
-    if ($TimeoutSeconds -lt 5) {
-        $TimeoutSeconds = 5
-    }
-
-    $fastProceedSeconds = [Math]::Max(1, [int]$taskConfig.InstallerFastProceedSeconds)
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    $lastProcesses = @()
     while ([DateTime]::UtcNow -lt $deadline) {
-        $activeInstallers = @(Get-StaleInstallerProcesses)
-        if (@($activeInstallers).Count -eq 0) {
-            return $true
-        }
-
-        if (-not [string]::IsNullOrWhiteSpace([string]$OllamaExe) -and (Test-Path -LiteralPath $OllamaExe)) {
-            Write-Host ("Waiting for installer descendants to settle before Ollama readiness check: {0}" -f (Format-InstallerProcessSummary -Processes $activeInstallers))
-            Start-Sleep -Seconds $fastProceedSeconds
-            $stillActiveInstallers = @(Get-StaleInstallerProcesses)
-            if (@($stillActiveInstallers).Count -gt 0) {
-                Write-Host ("Proceeding with Ollama readiness while installer descendants finish cleanup: {0}" -f (Format-InstallerProcessSummary -Processes $stillActiveInstallers))
-                return $false
-            }
-
-            return $true
-        }
-
-        Write-Host ("Waiting for installer descendants to settle before Ollama readiness check: {0}" -f (Format-InstallerProcessSummary -Processes $activeInstallers))
-        Start-Sleep -Seconds 5
-    }
-
-    $remaining = @(Get-StaleInstallerProcesses)
-    if (@($remaining).Count -gt 0) {
-        Write-Warning ("Installer descendants are still active before Ollama readiness check: {0}" -f (Format-InstallerProcessSummary -Processes $remaining))
-    }
-
-    return $false
-}
-
-function Invoke-ProcessWithTimeout {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$FilePath,
-        [Parameter(Mandatory = $true)]
-        [string[]]$ArgumentList,
-        [int]$TimeoutSeconds = 600,
-        [string]$Label = 'process'
-    )
-
-    $logRoot = Join-Path $env:TEMP 'az-vm-ollama'
-    [void](New-Item -ItemType Directory -Path $logRoot -Force)
-    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
-    $stdoutLog = Join-Path $logRoot ("{0}-{1}.stdout.log" -f $Label.Replace(' ', '-'), $stamp)
-    $stderrLog = Join-Path $logRoot ("{0}-{1}.stderr.log" -f $Label.Replace(' ', '-'), $stamp)
-    $process = Start-Process `
-        -FilePath $FilePath `
-        -ArgumentList $ArgumentList `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $stdoutLog `
-        -RedirectStandardError $stderrLog `
-        -PassThru
-
-    if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-        $activeInstallers = Get-StaleInstallerProcesses
-        if (@($activeInstallers).Count -gt 0) {
-            Write-Host ("Stopping installer processes after timeout: {0}" -f (Format-InstallerProcessSummary -Processes $activeInstallers))
-            foreach ($installerProc in @($activeInstallers | Sort-Object ProcessId -Descending)) {
-                try {
-                    Stop-Process -Id ([int]$installerProc.ProcessId) -Force -ErrorAction Stop
-                }
-                catch {
-                }
+        $lastProcesses = @(Get-OllamaProcessRows)
+        if (@($lastProcesses).Count -gt 0) {
+            return [pscustomobject]@{
+                Success = $true
+                Processes = @($lastProcesses)
             }
         }
 
-        try {
-            Stop-Process -Id ([int]$process.Id) -Force -ErrorAction Stop
-        }
-        catch {
-        }
-
-        throw ("{0} timed out after {1} seconds. stdoutLog={2}; stderrLog={3}; activeInstallerProcesses={4}" -f `
-            $Label, `
-            $TimeoutSeconds, `
-            $stdoutLog, `
-            $stderrLog, `
-            (Format-InstallerProcessSummary -Processes $activeInstallers))
+        Start-Sleep -Seconds ([int]$taskConfig.OllamaProcessPollSeconds)
     }
 
     return [pscustomobject]@{
-        ProcessId = [int]$process.Id
-        ExitCode = [int]$process.ExitCode
-        StdoutLog = [string]$stdoutLog
-        StderrLog = [string]$stderrLog
+        Success = $false
+        Processes = @($lastProcesses)
     }
 }
 
-function Start-OllamaServeDetached {
+function Start-OllamaBootstrap {
     param(
         [Parameter(Mandatory = $true)]
         [string]$OllamaExe
     )
 
-    $logRoot = Join-Path $env:TEMP 'az-vm-ollama'
-    [void](New-Item -ItemType Directory -Path $logRoot -Force)
-    $stamp = Get-Date -Format 'yyyyMMddHHmmss'
-    $stdoutLog = Join-Path $logRoot ("ollama-serve-{0}.stdout.log" -f $stamp)
-    $stderrLog = Join-Path $logRoot ("ollama-serve-{0}.stderr.log" -f $stamp)
-    $process = Start-Process `
-        -FilePath $OllamaExe `
-        -ArgumentList 'serve' `
-        -WindowStyle Hidden `
-        -RedirectStandardOutput $stdoutLog `
-        -RedirectStandardError $stderrLog `
-        -PassThru
-
-    return [pscustomobject]@{
-        Process = $process
-        StdoutLog = [string]$stdoutLog
-        StderrLog = [string]$stderrLog
+    $cmdExe = Resolve-CmdExe
+    if ([string]::IsNullOrWhiteSpace([string]$cmdExe)) {
+        throw 'cmd.exe was not found.'
     }
+
+    $bootstrapCommand = ('start "" "{0}" ls' -f [string]$OllamaExe)
+    Write-Host ("Running bootstrap: {0} /c {1}" -f [string]$cmdExe, [string]$bootstrapCommand)
+    & $cmdExe /c $bootstrapCommand
+    $bootstrapExit = [int]$LASTEXITCODE
+    if ($bootstrapExit -ne 0) {
+        throw ("cmd.exe /c start bootstrap failed with exit code {0}." -f $bootstrapExit)
+    }
+
+    Start-Sleep -Seconds ([int]$taskConfig.OllamaBootstrapSettleSeconds)
 }
 
-function Get-LogTailText {
+function Start-OllamaServe {
     param(
-        [string]$Path,
-        [int]$LineCount = 12
+        [Parameter(Mandatory = $true)]
+        [string]$OllamaExe
     )
 
-    if ([string]::IsNullOrWhiteSpace([string]$Path) -or -not (Test-Path -LiteralPath $Path)) {
-        return ''
-    }
-
-    try {
-        $tailLines = @(Get-Content -LiteralPath $Path -Tail $LineCount -ErrorAction Stop)
-        if (@($tailLines).Count -eq 0) {
-            return ''
-        }
-
-        return ([string](($tailLines -join ' | ') -replace '\s+', ' ')).Trim()
-    }
-    catch {
-        return ''
-    }
+    Write-Host ("Running fallback: Start-Process -FilePath {0} -ArgumentList 'serve'" -f [string]$OllamaExe)
+    $serveProcess = Start-Process -FilePath $OllamaExe -ArgumentList 'serve' -WindowStyle Hidden -PassThru
+    Write-Host ("ollama-serve-started: pid={0}" -f [int]$serveProcess.Id)
+    Start-Sleep -Seconds ([int]$taskConfig.OllamaServeSettleSeconds)
 }
 
-function Stop-OllamaServeLaunch {
-    param(
-        [AllowNull()]
-        [object]$ServeLaunch
-    )
-
-    if ($null -eq $ServeLaunch -or $null -eq $ServeLaunch.Process) {
-        return
-    }
-
-    try {
-        if (-not $ServeLaunch.Process.HasExited) {
-            Stop-Process -Id ([int]$ServeLaunch.Process.Id) -Force -ErrorAction SilentlyContinue
-        }
-    }
-    catch {
-    }
-}
-
-function Get-OllamaServeFailureDetail {
-    param(
-        [AllowNull()]
-        [object]$ServeLaunch
-    )
-
-    if ($null -eq $ServeLaunch) {
-        return ''
-    }
-
-    $parts = @()
-    if ($null -ne $ServeLaunch.Process) {
-        $parts += ("servePid={0}" -f [int]$ServeLaunch.Process.Id)
+function Stop-OllamaProcesses {
+    foreach ($process in @(Get-Process -Name 'ollama*' -ErrorAction SilentlyContinue)) {
         try {
-            if ($ServeLaunch.Process.HasExited) {
-                $parts += ("serveExitCode={0}" -f [int]$ServeLaunch.Process.ExitCode)
-            }
-            else {
-                $parts += 'serveExitCode=running'
-            }
+            Stop-Process -Id ([int]$process.Id) -Force -ErrorAction Stop
         }
         catch {
         }
     }
-
-    $stdoutTail = Get-LogTailText -Path ([string]$ServeLaunch.StdoutLog) -LineCount ([int]$taskConfig.LogTailLineCount)
-    if (-not [string]::IsNullOrWhiteSpace([string]$stdoutTail)) {
-        $parts += ("stdoutTail={0}" -f $stdoutTail)
-    }
-
-    $stderrTail = Get-LogTailText -Path ([string]$ServeLaunch.StderrLog) -LineCount ([int]$taskConfig.LogTailLineCount)
-    if (-not [string]::IsNullOrWhiteSpace([string]$stderrTail)) {
-        $parts += ("stderrTail={0}" -f $stderrTail)
-    }
-
-    return ($parts -join '; ')
 }
 
-function Test-OllamaServeListeningHint {
-    param(
-        [AllowNull()]
-        [object]$ServeLaunch
-    )
+function Remove-OllamaArtifacts {
+    param([string]$ChocoExe)
 
-    if ($null -eq $ServeLaunch) {
-        return $false
+    Stop-OllamaProcesses
+
+    $wingetExe = Resolve-WingetExe
+    if (-not [string]::IsNullOrWhiteSpace([string]$wingetExe)) {
+        Write-Host ("Running cleanup: winget uninstall --id {0} --exact --accept-source-agreements --disable-interactivity" -f [string]$taskConfig.WingetPackageId)
+        & $wingetExe uninstall --id ([string]$taskConfig.WingetPackageId) --exact --accept-source-agreements --disable-interactivity
+        Write-Host ("ollama-cleanup-winget-exit => {0}" -f [int]$LASTEXITCODE)
     }
 
-    foreach ($path in @([string]$ServeLaunch.StdoutLog, [string]$ServeLaunch.StderrLog)) {
-        $tailText = Get-LogTailText -Path $path -LineCount ([int]$taskConfig.LogTailLineCount)
-        if ([string]::IsNullOrWhiteSpace([string]$tailText)) {
+    if (-not [string]::IsNullOrWhiteSpace([string]$ChocoExe) -and (Test-Path -LiteralPath $ChocoExe)) {
+        Write-Host ("Running cleanup: choco uninstall {0} -y --no-progress" -f [string]$taskConfig.ChocoPackageId)
+        & $ChocoExe uninstall ([string]$taskConfig.ChocoPackageId) -y --no-progress
+        Write-Host ("ollama-cleanup-choco-exit => {0}" -f [int]$LASTEXITCODE)
+    }
+
+    foreach ($path in @([string[]]$taskConfig.OllamaCleanupPaths)) {
+        if ([string]::IsNullOrWhiteSpace([string]$path) -or -not (Test-Path -LiteralPath $path)) {
             continue
         }
 
-        if ($tailText.IndexOf(("Listening on 127.0.0.1:{0}" -f [int]$taskConfig.OllamaApiPort), [System.StringComparison]::OrdinalIgnoreCase) -ge 0) {
-            return $true
+        try {
+            Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction Stop
+            Write-Host ("ollama-cleanup-removed => {0}" -f [string]$path)
+        }
+        catch {
+            Write-Host ("ollama-cleanup-skip => {0} => {1}" -f [string]$path, [string]$_.Exception.Message)
         }
     }
 
-    return $false
+    foreach ($shortcutPath in @([string[]]$taskConfig.OllamaStartupShortcutPaths)) {
+        if ([string]::IsNullOrWhiteSpace([string]$shortcutPath) -or -not (Test-Path -LiteralPath $shortcutPath)) {
+            continue
+        }
+
+        try {
+            Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction Stop
+            Write-Host ("ollama-cleanup-shortcut-removed => {0}" -f [string]$shortcutPath)
+        }
+        catch {
+            Write-Host ("ollama-cleanup-shortcut-skip => {0} => {1}" -f [string]$shortcutPath, [string]$_.Exception.Message)
+        }
+    }
 }
 
-function Ensure-OllamaApiReady {
+function Confirm-OllamaRuntime {
     param(
         [Parameter(Mandatory = $true)]
         [string]$OllamaExe,
-        [string]$Reason = ("Ollama API is not responding on 127.0.0.1:{0} yet." -f [int]$taskConfig.OllamaApiPort)
+        [switch]$Bootstrap
     )
 
-    $ollamaVersion = Get-OllamaApiVersion -TimeoutSeconds 5
-    $serveLaunch = $null
-    $failureDetail = ''
-    if ([string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
-        $attemptCount = [Math]::Max(1, [int]$taskConfig.OllamaApiRetryCount)
-        for ($attempt = 1; $attempt -le $attemptCount; $attempt++) {
-            if ($attempt -eq 1) {
-                Write-Host ("{0} Starting 'ollama serve' (attempt {1}/{2})." -f $Reason, $attempt, $attemptCount)
+    if ($Bootstrap) {
+        Start-OllamaBootstrap -OllamaExe $OllamaExe
+    }
+
+    $listTimeoutSeconds = if ($Bootstrap) { [int]$taskConfig.OllamaBootstrapValidationTimeoutSeconds } else { [int]$taskConfig.OllamaListWaitTimeoutSeconds }
+    $apiTimeoutSeconds = if ($Bootstrap) { [int]$taskConfig.OllamaBootstrapValidationTimeoutSeconds } else { [int]$taskConfig.OllamaApiWaitTimeoutSeconds }
+    $listResult = $null
+    $processResult = $null
+    $loopbackPortOpen = $false
+    $localhostPortOpen = $false
+    $apiVersion = ''
+    $runtimeFailure = ''
+
+    foreach ($attemptLabel in @('bootstrap', 'serve-fallback')) {
+        $listResult = Wait-OllamaListReady -OllamaExe $OllamaExe -TimeoutSeconds $listTimeoutSeconds
+        if (-not [bool]$listResult.Success) {
+            $stdoutTail = if ($null -ne $listResult.Probe) { [string]$listResult.Probe.StdoutTail } else { '' }
+            $stderrTail = if ($null -ne $listResult.Probe) { [string]$listResult.Probe.StderrTail } else { '' }
+            $runtimeFailure = ("ollama ls did not complete successfully. stdoutTail={0}; stderrTail={1}" -f `
+                $(if ([string]::IsNullOrWhiteSpace([string]$stdoutTail)) { '(none)' } else { $stdoutTail }), `
+                $(if ([string]::IsNullOrWhiteSpace([string]$stderrTail)) { '(none)' } else { $stderrTail }))
+        }
+        else {
+            $processResult = Wait-OllamaProcessReady -TimeoutSeconds ([int]$taskConfig.OllamaProcessWaitTimeoutSeconds)
+            if (-not [bool]$processResult.Success) {
+                $runtimeFailure = 'Ollama process was not observed after bootstrap.'
             }
             else {
-                Write-Host ("Ollama API is still not responding on 127.0.0.1:{0}. Restarting 'ollama serve' (attempt {1}/{2})." -f [int]$taskConfig.OllamaApiPort, $attempt, $attemptCount)
-            }
-
-            $serveLaunch = Start-OllamaServeDetached -OllamaExe $OllamaExe
-            Start-Sleep -Seconds ([int]$taskConfig.OllamaServeEarlyExitCheckSeconds)
-            $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds ([int]$taskConfig.OllamaApiWaitTimeoutSeconds)
-            if (-not [string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
-                break
-            }
-
-            $listeningHintPresent = Test-OllamaServeListeningHint -ServeLaunch $serveLaunch
-            $portReachable = Test-TcpPortReachable -HostName '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
-            if (($listeningHintPresent -or $portReachable) -and $null -ne $serveLaunch.Process -and -not $serveLaunch.Process.HasExited) {
-                Write-Host "Ollama service signalled local readiness without an immediate /api/version response. Allowing one short grace wait before a restart."
-                $ollamaVersion = Wait-OllamaApiReady -TimeoutSeconds ([int]$taskConfig.OllamaServeGraceTimeoutSeconds)
-                if (-not [string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
-                    break
+                $loopbackPortOpen = Test-TcpPortReachable -HostName '127.0.0.1' -Port ([int]$taskConfig.OllamaApiPort)
+                $localhostPortOpen = Test-TcpPortReachable -HostName 'localhost' -Port ([int]$taskConfig.OllamaApiPort)
+                if (-not ([bool]$loopbackPortOpen -or [bool]$localhostPortOpen)) {
+                    $runtimeFailure = ("Ollama TCP port {0} is not reachable on localhost or 127.0.0.1." -f [int]$taskConfig.OllamaApiPort)
+                }
+                else {
+                    $apiVersion = Wait-OllamaApiReady -TimeoutSeconds $apiTimeoutSeconds
+                    if ([string]::IsNullOrWhiteSpace([string]$apiVersion)) {
+                        $runtimeFailure = ("Ollama API did not respond on 127.0.0.1:{0} or localhost:{0}." -f [int]$taskConfig.OllamaApiPort)
+                    }
+                    else {
+                        break
+                    }
                 }
             }
-
-            $failureDetail = Get-OllamaServeFailureDetail -ServeLaunch $serveLaunch
-            if ($attempt -lt $attemptCount) {
-                Write-Warning ("Ollama API is still not ready after serve attempt {0}/{1}. Retrying after {2} seconds. {3}" -f `
-                    $attempt, `
-                    $attemptCount, `
-                    [int]$taskConfig.OllamaApiRetryBackoffSeconds, `
-                    $failureDetail)
-                Stop-OllamaServeLaunch -ServeLaunch $serveLaunch
-                Start-Sleep -Seconds ([int]$taskConfig.OllamaApiRetryBackoffSeconds)
-            }
         }
+
+        if (-not $Bootstrap -or [string]$attemptLabel -ne 'bootstrap') {
+            throw $runtimeFailure
+        }
+
+        Write-Host ("Ollama headless runtime is not yet durable after cmd.exe /c start bootstrap. detail={0}" -f [string]$runtimeFailure)
+        Stop-OllamaProcesses
+        Start-OllamaServe -OllamaExe $OllamaExe
+        $listTimeoutSeconds = [int]$taskConfig.OllamaListWaitTimeoutSeconds
+        $apiTimeoutSeconds = [int]$taskConfig.OllamaApiWaitTimeoutSeconds
     }
 
+    Write-Host ("ollama-ls-ready: exitCode={0}; stdoutTail={1}; stderrTail={2}" -f `
+        [int]$listResult.Probe.ExitCode, `
+        $(if ([string]::IsNullOrWhiteSpace([string]$listResult.Probe.StdoutTail)) { '(none)' } else { [string]$listResult.Probe.StdoutTail }), `
+        $(if ([string]::IsNullOrWhiteSpace([string]$listResult.Probe.StderrTail)) { '(none)' } else { [string]$listResult.Probe.StderrTail }))
+    Write-Host ("ollama-process-ready: count={0}; processes={1}" -f @($processResult.Processes).Count, (Format-OllamaProcessSummary -Processes @($processResult.Processes)))
+    Write-Host ("ollama-port-ready: 127.0.0.1={0}; localhost={1}; port={2}" -f [bool]$loopbackPortOpen, [bool]$localhostPortOpen, [int]$taskConfig.OllamaApiPort)
+
+    Write-Host ("ollama-api-ready: version={0}; port={1}" -f [string]$apiVersion, [int]$taskConfig.OllamaApiPort)
     return [pscustomobject]@{
-        Version = [string]$ollamaVersion
-        ServeLaunch = $serveLaunch
-        FailureDetail = [string]$failureDetail
+        Version = [string]$apiVersion
+        ProcessCount = @($processResult.Processes).Count
     }
 }
 
 Refresh-SessionPath
 
-$ollamaExe = Resolve-OllamaExe
-if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
-    Write-Host "Resolved existing Ollama executable: $ollamaExe"
-    $existingVersionExit = Write-OllamaVersion -OllamaExe $ollamaExe
+$chocoExe = Resolve-ChocoExe
+if ([string]::IsNullOrWhiteSpace([string]$chocoExe)) {
+    throw 'choco command is not available.'
+}
+
+$existingOllamaExe = Resolve-OllamaExe
+if (-not [string]::IsNullOrWhiteSpace([string]$existingOllamaExe)) {
+    Write-Host ("Resolved existing Ollama executable: {0}" -f [string]$existingOllamaExe)
+    $existingVersionExit = Write-OllamaVersion -OllamaExe $existingOllamaExe
     if ($existingVersionExit -eq 0) {
-        $existingReadiness = Ensure-OllamaApiReady -OllamaExe $ollamaExe -Reason ("Existing Ollama API is not responding on 127.0.0.1:{0} yet." -f [int]$taskConfig.OllamaApiPort)
-        if (-not [string]::IsNullOrWhiteSpace([string]$existingReadiness.Version)) {
-            if ($null -ne $existingReadiness.ServeLaunch) {
-                Write-Host ("ollama-api-ready: version={0}; port={1}; startedPid={2}; stdoutLog={3}; stderrLog={4}" -f `
-                    [string]$existingReadiness.Version, `
-                    [int]$taskConfig.OllamaApiPort, `
-                    [int]$existingReadiness.ServeLaunch.Process.Id, `
-                    [string]$existingReadiness.ServeLaunch.StdoutLog, `
-                    [string]$existingReadiness.ServeLaunch.StderrLog)
+        try {
+            $existingApiVersion = Get-OllamaApiVersion -TimeoutSeconds 3
+            $existingHealth = Confirm-OllamaRuntime -OllamaExe $existingOllamaExe -Bootstrap:([string]::IsNullOrWhiteSpace([string]$existingApiVersion))
+            if ($null -ne $existingHealth) {
+                Write-Host ("Existing Ollama installation is already healthy. Skipping choco install. version={0}; processCount={1}" -f [string]$existingHealth.Version, [int]$existingHealth.ProcessCount)
+                Write-Host "Update task completed: install-ollama-tool"
+                return
             }
-            else {
-                Write-Host ("ollama-api-ready: version={0}; port={1}" -f [string]$existingReadiness.Version, [int]$taskConfig.OllamaApiPort)
-            }
-
-            Write-Host "Existing Ollama installation is already healthy. Skipping winget install."
-            Write-Host "Update task completed: install-ollama-tool"
-            return
         }
-
-        if ($null -ne $existingReadiness.ServeLaunch -and -not $existingReadiness.ServeLaunch.Process.HasExited) {
-            Stop-Process -Id $existingReadiness.ServeLaunch.Process.Id -Force -ErrorAction SilentlyContinue
+        catch {
+            Write-Host ("Existing Ollama installation is not healthy. Clean reinstall will be attempted. detail={0}" -f [string]$_.Exception.Message)
         }
-
-        Write-Host "Existing Ollama installation did not become healthy. Reinstall will be attempted."
     }
     else {
-        Write-Host ("Existing Ollama executable failed version check with exit code {0}. Reinstall will be attempted." -f $existingVersionExit)
+        Write-Host ("Existing Ollama executable failed version check with exit code {0}. Clean reinstall will be attempted." -f $existingVersionExit)
     }
+
+    Remove-OllamaArtifacts -ChocoExe $chocoExe
 }
 
-$wingetExe = Resolve-WingetExe
-if ([string]::IsNullOrWhiteSpace([string]$wingetExe)) {
-    throw "winget command is not available."
-}
-
-Stop-StaleInstallerProcesses -CurrentPackageId ([string]$taskConfig.OllamaPackageId) | Out-Null
-
-Write-Host "Resolved winget executable: $wingetExe"
-Write-Host ("Running: winget install -e --id {0} --no-upgrade --accept-source-agreements --accept-package-agreements --silent --disable-interactivity" -f [string]$taskConfig.OllamaPackageId)
-$wingetResult = Invoke-ProcessWithTimeout `
-    -FilePath $wingetExe `
-    -ArgumentList @('install', '-e', '--id', ([string]$taskConfig.OllamaPackageId), '--no-upgrade', '--accept-source-agreements', '--accept-package-agreements', '--silent', '--disable-interactivity') `
-    -TimeoutSeconds ([int]$taskConfig.WingetInstallTimeoutSeconds) `
-    -Label 'winget-install-ollama-tool'
-$wingetExit = [int]$wingetResult.ExitCode
-if ($wingetExit -ne 0 -and $wingetExit -ne -1978335189) {
-    throw ("winget install {0} failed with exit code {1}. stdoutLog={2}; stderrLog={3}" -f `
-        [string]$taskConfig.OllamaPackageId, `
-        $wingetExit, `
-        [string]$wingetResult.StdoutLog, `
-        [string]$wingetResult.StderrLog)
-}
-if ($wingetExit -eq -1978335189) {
-    Write-Host "winget reported Ollama is already installed and no newer version is available."
-}
+Write-Host 'Running: choco install ollama -y --no-progress --ignore-detected-reboot'
+$installResult = Invoke-ProcessWithTimeout `
+    -FilePath $chocoExe `
+    -ArgumentList @('install', ([string]$taskConfig.ChocoPackageId), '-y', '--no-progress', '--ignore-detected-reboot') `
+    -TimeoutSeconds ([int]$taskConfig.ChocoInstallTimeoutSeconds) `
+    -Label 'choco-install-ollama-tool'
+$installExit = [int]$installResult.ExitCode
 
 Refresh-SessionPath
-$ollamaExe = Resolve-OllamaExe
+$ollamaExe = Wait-OllamaExeReady -TimeoutSeconds ([int]$taskConfig.OllamaExeWaitTimeoutSeconds)
 if ([string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
-    throw "ollama executable was not found after install."
+    throw ("ollama executable was not found after choco install. exitCode={0}; stdoutLog={1}; stderrLog={2}" -f `
+        $installExit, `
+        [string]$installResult.StdoutLog, `
+        [string]$installResult.StderrLog)
 }
 
-Wait-InstallerProcessesSettled -TimeoutSeconds ([int]$taskConfig.InstallerSettleTimeoutSeconds) -OllamaExe $ollamaExe | Out-Null
+if ($installExit -notin @(0, 2, 1641, 3010)) {
+    Write-Host ("choco install {0} returned exit code {1}, but ollama.exe was resolved. Continuing with runtime validation." -f [string]$taskConfig.ChocoPackageId, $installExit)
+}
 
-Write-Host "Resolved Ollama executable: $ollamaExe"
+Write-Host ("Resolved Ollama executable: {0}" -f [string]$ollamaExe)
 $versionExit = Write-OllamaVersion -OllamaExe $ollamaExe
 if ($versionExit -ne 0) {
-    throw "ollama --version failed with exit code $versionExit."
+    throw ("ollama --version failed with exit code {0}." -f $versionExit)
 }
 
-$readiness = Ensure-OllamaApiReady -OllamaExe $ollamaExe
-$ollamaVersion = [string]$readiness.Version
-$serveLaunch = $readiness.ServeLaunch
-$failureDetail = [string]$readiness.FailureDetail
-
-if ([string]::IsNullOrWhiteSpace([string]$ollamaVersion)) {
-    Stop-OllamaServeLaunch -ServeLaunch $serveLaunch
-
-    $logHint = ''
-    if ($null -ne $serveLaunch) {
-        $logHint = (" stdoutLog={0}; stderrLog={1}" -f [string]$serveLaunch.StdoutLog, [string]$serveLaunch.StderrLog)
-    }
-    $detailHint = ''
-    if (-not [string]::IsNullOrWhiteSpace([string]$failureDetail)) {
-        $detailHint = (" detail={0}" -f $failureDetail)
-    }
-    throw ("Ollama API did not respond on 127.0.0.1:{0} after install.{1}{2}" -f [int]$taskConfig.OllamaApiPort, $logHint, $detailHint)
-}
-
-if ($null -ne $serveLaunch) {
-    Write-Host ("ollama-api-ready: version={0}; port={1}; startedPid={2}; stdoutLog={3}; stderrLog={4}" -f `
-        $ollamaVersion, `
-        [int]$taskConfig.OllamaApiPort, `
-        [int]$serveLaunch.Process.Id, `
-        [string]$serveLaunch.StdoutLog, `
-        [string]$serveLaunch.StderrLog)
-}
-else {
-    Write-Host ("ollama-api-ready: version={0}; port={1}" -f $ollamaVersion, [int]$taskConfig.OllamaApiPort)
-}
-
+$runtime = Confirm-OllamaRuntime -OllamaExe $ollamaExe -Bootstrap
+Write-Host ("install-ollama-tool-completed: version={0}; processCount={1}" -f [string]$runtime.Version, [int]$runtime.ProcessCount)
 Write-Host "Update task completed: install-ollama-tool"
-

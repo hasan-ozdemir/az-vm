@@ -3,110 +3,23 @@
   "enabled": true,
   "timeout": 540,
   "appState": {
-    "machineDirectories": [
-      {
-        "path": "C:\\ProgramData\\Ollama",
-        "targetProfiles": [],
-        "excludeNames": [],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": []
-      }
-    ],
+    "machineDirectories": [],
     "machineFiles": [],
-    "profileDirectories": [
+    "profileDirectories": [],
+    "profileFiles": [
       {
-        "path": ".ollama",
-        "targetProfiles": [],
-        "excludeNames": [
-          "Cache",
-          "Code Cache",
-          "GPUCache",
-          "DawnCache",
-          "Crashpad",
-          "CrashDumps",
-          "Temp",
-          "tmp",
-          "Logs",
-          "models"
-        ],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": [
-          "*.lock",
-          "*.tmp",
-          "*.etl",
-          "*.log"
-        ]
+        "path": "AppData\\Local\\Ollama\\config.json",
+        "targetProfiles": []
       },
       {
-        "path": "AppData\\Local\\Ollama",
-        "targetProfiles": [],
-        "excludeNames": [
-          "Cache",
-          "Code Cache",
-          "GPUCache",
-          "DawnCache",
-          "Crashpad",
-          "CrashDumps",
-          "Temp",
-          "tmp",
-          "Logs",
-          "updates_v2"
-        ],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": [
-          "*.lock",
-          "*.tmp",
-          "*.etl",
-          "*.log"
-        ]
+        "path": "AppData\\Roaming\\Ollama\\config.json",
+        "targetProfiles": []
       },
       {
-        "path": "AppData\\Roaming\\Ollama",
-        "targetProfiles": [],
-        "excludeNames": [
-          "Cache",
-          "Code Cache",
-          "GPUCache",
-          "DawnCache",
-          "Crashpad",
-          "CrashDumps",
-          "Temp",
-          "tmp",
-          "Logs"
-        ],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": [
-          "*.lock",
-          "*.tmp",
-          "*.etl",
-          "*.log"
-        ]
-      },
-      {
-        "path": "AppData\\Roaming\\ollama app.exe",
-        "targetProfiles": [],
-        "excludeNames": [
-          "Cache",
-          "Code Cache",
-          "GPUCache",
-          "DawnCache",
-          "Crashpad",
-          "CrashDumps",
-          "Temp",
-          "tmp",
-          "Logs",
-          "EBWebView"
-        ],
-        "excludePathPatterns": [],
-        "excludeFilePatterns": [
-          "*.lock",
-          "*.tmp",
-          "*.etl",
-          "*.log"
-        ]
+        "path": "AppData\\Roaming\\ollama app.exe\\config.json",
+        "targetProfiles": []
       }
     ],
-    "profileFiles": [],
     "machineRegistryKeys": [],
     "userRegistryKeys": []
   }

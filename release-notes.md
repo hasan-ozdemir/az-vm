@@ -2,6 +2,18 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.378 - 2026-03-22
+
+### Summary
+This release closes the remaining live Windows Ollama follow-up that was still visible in the March 20 production logs. The managed Windows Ollama install task now performs a clean Chocolatey reinstall path, verifies the client, process, TCP listener, and API explicitly, and keeps a bounded `serve` fallback for the headless Windows case where `cmd.exe /c start ... ollama ls` alone does not leave a durable runtime. The Ollama task-local app-state contract is now settings-first and limited to config files, and the Windows vm-summary readback now uses a quiet `ollama ls` health probe plus a short API wait so cold-start timing no longer produces a false unhealthy readback immediately after reboot.
+
+### Highlights
+- Switched `135-install-ollama-tool` to a clean `choco install ollama -y --no-progress --ignore-detected-reboot` flow with explicit pre-reinstall cleanup of stale Ollama footprints.
+- Added bounded post-install runtime validation in `135`: detached `cmd.exe /c start ... ollama.exe ls` bootstrap, verified `ollama ls`, confirmed a running `ollama.exe` process, and validated `127.0.0.1:11434` plus `/api/version`; when the detached `ls` bootstrap is not durable on Windows, the task now falls back to hidden `Start-Process "<ollama.exe>" serve`.
+- Reduced the maintained Ollama app-state contract to the three small managed config files instead of replaying the broader `AppData\Local\Ollama`, `.ollama`, and `ollama app.exe` runtime trees.
+- Hardened the Windows vm-summary readback so the Ollama health section now reports the real post-bootstrap state: the latest live `vm-summary` transcript records `ollama-ls-probe => success=True`, `ollama-process-count => 2`, `ollama-port-11434-open => True`, and `ollama-api-probe => success=True; timed-out=False`.
+- Revalidated the full live closure path on the active managed Windows target with a clean remote uninstall, isolated reruns of `task --run-vm-update 135` and `task --run-vm-update 10002`, explicit restarts, and a final `update --step vm-summary --windows --perf` run against the latest live VM.
+
 ## Release 2026.3.22.377 - 2026-03-22
 
 ### Summary

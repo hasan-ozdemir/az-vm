@@ -122,7 +122,8 @@ function Invoke-NativeCommandProbe {
     param(
         [string]$FilePath,
         [string[]]$Arguments = @(),
-        [int]$TimeoutSeconds = 15
+        [int]$TimeoutSeconds = 15,
+        [switch]$SuppressOutput
     )
 
     $job = Start-Job -ScriptBlock {
@@ -167,7 +168,7 @@ function Invoke-NativeCommandProbe {
         $invocationFailed = [bool]$probeResult.InvocationFailed
     }
 
-    if (-not [string]::IsNullOrWhiteSpace([string]$outputText)) {
+    if ((-not $SuppressOutput) -and -not [string]::IsNullOrWhiteSpace([string]$outputText)) {
         foreach ($line in @([string]$outputText -split "(`r`n|`n|`r)")) {
             if (-not [string]::IsNullOrWhiteSpace([string]$line)) {
                 Write-Host $line
@@ -602,6 +603,26 @@ function Get-OllamaApiVersion {
         }
     }
     catch {
+    }
+
+    return ''
+}
+
+function Wait-OllamaApiReady {
+    param([int]$TimeoutSeconds = 20)
+
+    if ($TimeoutSeconds -lt 1) {
+        $TimeoutSeconds = 1
+    }
+
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+    while ([DateTime]::UtcNow -lt $deadline) {
+        $version = Get-OllamaApiVersion -TimeoutSeconds 4
+        if (-not [string]::IsNullOrWhiteSpace([string]$version)) {
+            return [string]$version
+        }
+
+        Start-Sleep -Seconds 1
     }
 
     return ''
@@ -2187,6 +2208,16 @@ Write-Host ("docker-engine-ready => {0}" -f ([bool]$dockerCliResult.Success -and
 Write-Host "OLLAMA HEALTH:"
 $ollamaExe = Resolve-CommandPath -CommandName 'ollama' -FallbackCandidates @((Join-Path $env:LOCALAPPDATA 'Programs\Ollama\ollama.exe'), 'C:\Program Files\Ollama\ollama.exe')
 Write-Host ("ollama-cli => {0}" -f $(if ([string]::IsNullOrWhiteSpace([string]$ollamaExe)) { 'not-found' } else { $ollamaExe }))
+$ollamaCliResult = [pscustomobject]@{
+    Success = $false
+    TimedOut = $false
+    ExitCode = -1
+    Output = ''
+}
+if (-not [string]::IsNullOrWhiteSpace([string]$ollamaExe)) {
+    $ollamaCliResult = Invoke-NativeCommandProbe -FilePath $ollamaExe -Arguments @('ls') -TimeoutSeconds 20 -SuppressOutput
+}
+Write-Host ("ollama-ls-probe => success={0}; timed-out={1}; exit-code={2}" -f [bool]$ollamaCliResult.Success, [bool]$ollamaCliResult.TimedOut, [int]$ollamaCliResult.ExitCode)
 $ollamaProcesses = @(Get-Process -Name 'ollama*' -ErrorAction SilentlyContinue)
 Write-Host ("ollama-process-count => {0}" -f @($ollamaProcesses).Count)
 if (Test-Path -LiteralPath $ollamaStartupShortcutPath) {
@@ -2197,11 +2228,11 @@ if (Test-Path -LiteralPath $ollamaStartupShortcutPath) {
 else {
     Write-Host ("ollama-startup-shortcut => missing => {0}" -f $ollamaStartupShortcutPath)
 }
+$ollamaApiVersion = if ([bool]$ollamaCliResult.Success) { Wait-OllamaApiReady -TimeoutSeconds 20 } else { Get-OllamaApiVersion }
 $ollamaPortOpen = Test-TcpPortReachable -HostName '127.0.0.1' -Port 11434 -TimeoutSeconds 5
 Write-Host ("ollama-port-11434-open => {0}" -f [bool]$ollamaPortOpen)
-$ollamaApiVersion = Get-OllamaApiVersion
 Write-Host ("ollama-api-version => {0}" -f [string]$ollamaApiVersion)
-$ollamaApiProbeVersion = Get-OllamaApiVersion -TimeoutSeconds 10
+$ollamaApiProbeVersion = if (-not [string]::IsNullOrWhiteSpace([string]$ollamaApiVersion)) { [string]$ollamaApiVersion } else { Wait-OllamaApiReady -TimeoutSeconds 10 }
 $ollamaApiProbeSuccess = -not [string]::IsNullOrWhiteSpace([string]$ollamaApiProbeVersion)
 $ollamaApiProbeTimedOut = $false
 if ($ollamaApiProbeSuccess) {

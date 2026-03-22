@@ -5441,25 +5441,38 @@ Invoke-Test -Name "Malformed nested local task folders warn and skip" -Action {
 }
 
 Invoke-Test -Name "Windows Ollama task verifies API readiness" -Action {
-    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '116-install-ollama-tool'
+    $taskPath = Get-RepoTaskScriptPath -Platform windows -Stage update -TaskName '135-install-ollama-tool'
+    $taskJsonPath = Get-RepoTaskJsonPath -Platform windows -Stage update -TaskName '135-install-ollama-tool'
     $taskScript = [string](Get-Content -LiteralPath $taskPath -Raw)
-    Assert-True -Condition ($taskScript -like '*Ollama.Ollama*') -Message 'Ollama install task must use the Ollama.Ollama winget package id.'
+    $taskJson = Get-Content -LiteralPath $taskJsonPath -Raw | ConvertFrom-Json
+    Assert-True -Condition ($taskScript -like '*ChocoPackageId = ''ollama''*') -Message 'Ollama install task must use the ollama Chocolatey package id.'
     Assert-True -Condition ($taskScript -like '*127.0.0.1:11434*') -Message 'Ollama install task must check the default Ollama port.'
     Assert-True -Condition ($taskScript -like '*http://localhost:11434/api/version*') -Message 'Ollama install task must keep a localhost API probe fallback for slow local cold starts.'
     Assert-True -Condition ($taskScript -like '*/api/version*') -Message 'Ollama install task must validate the Ollama HTTP API endpoint.'
-    Assert-True -Condition ($taskScript -like '*ollama serve*') -Message 'Ollama install task must start ollama serve when the API is not already ready.'
-    Assert-True -Condition ($taskScript -like '*Existing Ollama installation is already healthy. Skipping winget install.*') -Message 'Ollama install task must short-circuit when an existing installation is already healthy.'
-    Assert-True -Condition ($taskScript -like '*RedirectStandardOutput*') -Message 'Ollama install task must detach ollama serve stdout from the SSH session.'
-    Assert-True -Condition ($taskScript -like '*RedirectStandardError*') -Message 'Ollama install task must detach ollama serve stderr from the SSH session.'
-    Assert-True -Condition ($taskScript -like '*Stopping stale installer processes before Ollama install*') -Message 'Ollama install task must clear stale installer locks instead of waiting indefinitely.'
-    Assert-True -Condition ($taskScript -like '*Waiting for installer descendants to settle before Ollama readiness check*') -Message 'Ollama install task must wait briefly for post-winget installer descendants to settle.'
-    Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'Ollama install task must bound the winget install wait time.'
-    Assert-True -Condition ($taskScript -like '*timed out after*') -Message 'Ollama install task must fail clearly when winget install exceeds the timeout.'
-    Assert-True -Condition ($taskScript -like '*Retrying after*') -Message 'Ollama install task must retry bounded serve readiness when the first cold-start probe misses.'
-    Assert-True -Condition ($taskScript -like '*detail=*') -Message 'Ollama install task must include serve failure detail when readiness still fails.'
-    Assert-True -Condition (-not ($taskScript -like '*windscribe|whatsapp|anydesk|vscode*')) -Message 'Ollama stale-installer detection must not match generic installed app names.'
+    Assert-True -Condition ($taskScript -like '*cmd.exe /c start*') -Message 'Ollama install task must bootstrap ollama through cmd.exe /c start.'
+    Assert-True -Condition ($taskScript -like '*start ""*') -Message 'Ollama install task must use a detached start wrapper for the Ollama bootstrap.'
+    Assert-True -Condition ($taskScript -like '*ollama-ls-ready*') -Message 'Ollama install task must verify ollama ls after bootstrap.'
+    Assert-True -Condition ($taskScript -like '*ollama-process-ready*') -Message 'Ollama install task must verify a running Ollama process after bootstrap.'
+    Assert-True -Condition ($taskScript -like '*ollama-port-ready*') -Message 'Ollama install task must verify the local Ollama TCP port after bootstrap.'
+    Assert-True -Condition ($taskScript -like '*Existing Ollama installation is already healthy. Skipping choco install.*') -Message 'Ollama install task must short-circuit when an existing installation is already healthy.'
+    Assert-True -Condition ($taskScript -like '*RedirectStandardOutput*') -Message 'Ollama install task must bound external command output through redirected logs.'
+    Assert-True -Condition ($taskScript -like '*RedirectStandardError*') -Message 'Ollama install task must bound external command error output through redirected logs.'
+    Assert-True -Condition ($taskScript -like '*WaitForExit*') -Message 'Ollama install task must bound choco and ollama command waits.'
+    Assert-True -Condition ($taskScript -like '*timed out after*') -Message 'Ollama install task must fail clearly when install or list probes exceed the timeout.'
+    Assert-True -Condition ($taskScript -like '*choco install ollama -y --no-progress --ignore-detected-reboot*') -Message 'Ollama install task must install with choco install ollama.'
+    Assert-True -Condition ($taskScript -like '*ollama-cleanup-winget-exit*') -Message 'Ollama install task must clean old winget-based installs before a clean choco reinstall.'
+    Assert-True -Condition (-not ($taskScript -like '*Write-Warning*')) -Message 'Ollama install task must avoid emitting warning-channel noise during bounded retries.'
+    Assert-True -Condition (-not ($taskScript -like '*winget install*')) -Message 'Ollama install task must no longer install through winget.'
+    Assert-True -Condition ($taskScript -like '*Start-Process -FilePath $OllamaExe -ArgumentList ''serve''*') -Message 'Ollama install task must fall back to Start-Process ollama.exe serve when the detached ls bootstrap does not stay alive.'
     Assert-True -Condition (($taskScript.IndexOf('[string]$Host =', [System.StringComparison]::OrdinalIgnoreCase)) -lt 0) -Message 'Ollama install task must not shadow the built-in $Host variable with a parameter named Host.'
     Assert-True -Condition (($taskScript.IndexOf('[string]$HostName', [System.StringComparison]::Ordinal)) -ge 0) -Message 'Ollama install task must use a non-reserved host-name parameter for TCP probes.'
+    Assert-True -Condition (@($taskJson.appState.machineDirectories).Count -eq 0) -Message 'Ollama app-state must not replay machine-wide runtime directories.'
+    Assert-True -Condition (@($taskJson.appState.profileDirectories).Count -eq 0) -Message 'Ollama app-state must not replay broad profile directories.'
+    $profileFilePaths = @($taskJson.appState.profileFiles | ForEach-Object { [string]$_.path })
+    Assert-True -Condition (@($profileFilePaths).Count -eq 3) -Message 'Ollama app-state must be limited to the small set of managed config files.'
+    Assert-True -Condition (($profileFilePaths -contains 'AppData\Local\Ollama\config.json')) -Message 'Ollama app-state must allow AppData\\Local\\Ollama\\config.json.'
+    Assert-True -Condition (($profileFilePaths -contains 'AppData\Roaming\Ollama\config.json')) -Message 'Ollama app-state must allow AppData\\Roaming\\Ollama\\config.json.'
+    Assert-True -Condition (($profileFilePaths -contains 'AppData\Roaming\ollama app.exe\config.json')) -Message 'Ollama app-state must allow AppData\\Roaming\\ollama app.exe\\config.json.'
 }
 
 Invoke-Test -Name "Windows VS Code task short-circuits healthy installs" -Action {
@@ -6400,6 +6413,9 @@ Invoke-Test -Name "Windows WSL and health contracts expose Docker prerequisite s
         'WSL FEATURE STATE:',
         'wsl-feature => Microsoft-Windows-Subsystem-Linux => state=',
         'wsl-feature => VirtualMachinePlatform => state=',
+        'OLLAMA HEALTH:',
+        'ollama-ls-probe =>',
+        'Wait-OllamaApiReady',
         'docker-wsl-prereq-ready =>',
         'WSL HEALTH:'
     )) {
@@ -6478,8 +6494,12 @@ Invoke-Test -Name "App-state runtime keeps managed VM targeting strict and local
     }
     Assert-True -Condition (-not ($copySettingsTaskJsonText -like '*"appState"*')) -Message '10005-copy-user-settings must stay out of task-local app-state snapshot and restore.'
     Assert-True -Condition (Test-Path -LiteralPath (Get-RepoSummaryReadbackScriptPath -Platform windows)) -Message 'Windows vm-summary readback script must exist after removing the health task.'
-    Assert-True -Condition ($ollamaTaskJsonText -like '*updates_v2*') -Message 'Task-local Ollama capture specs must exclude installer update payloads.'
-    Assert-True -Condition ($ollamaTaskJsonText -like '*EBWebView*') -Message 'Task-local app-state specs must exclude embedded WebView runtime payloads where they are not durable settings.'
+    Assert-True -Condition ($ollamaTaskJsonText -like '*AppData\\Local\\Ollama\\config.json*') -Message 'Task-local Ollama capture specs must keep the local config.json path.'
+    Assert-True -Condition ($ollamaTaskJsonText -like '*AppData\\Roaming\\Ollama\\config.json*') -Message 'Task-local Ollama capture specs must keep the roaming config.json path.'
+    Assert-True -Condition ($ollamaTaskJsonText -like '*AppData\\Roaming\\ollama app.exe\\config.json*') -Message 'Task-local Ollama capture specs must keep the shell-host config.json path.'
+    Assert-True -Condition (-not ($ollamaTaskJsonText -like '*AppData\\Local\\Ollama\"*')) -Message 'Task-local Ollama capture specs must not keep the broad AppData\\Local\\Ollama directory.'
+    Assert-True -Condition (-not ($ollamaTaskJsonText -like '*updates_v2*')) -Message 'Task-local Ollama capture specs must not mention installer update payloads after narrowing to config files.'
+    Assert-True -Condition (-not ($ollamaTaskJsonText -like '*EBWebView*')) -Message 'Task-local Ollama capture specs must not mention embedded WebView runtime payloads after narrowing to config files.'
     Assert-True -Condition ($azdTaskJsonText -like '*telemetry*') -Message 'Task-local azd capture specs must exclude telemetry payloads.'
     Assert-True -Condition ($azureCliTaskJsonText -like '*telemetry*') -Message 'Task-local Azure CLI capture specs must exclude telemetry payloads.'
     Assert-True -Condition (-not ($ghCliTaskJsonText -like '*AppData\Local\GitHub CLI*')) -Message 'Task-local GitHub CLI capture specs must not keep the heavy local cache tree.'
@@ -7757,6 +7777,7 @@ Invoke-Test -Name "Windows install tasks short-circuit healthy installs and avoi
         '106-install-7zip-tool.ps1' = @('Existing 7-Zip installation is already healthy. Skipping choco install.')
         '133-install-sysinternals-tool.ps1' = @('Existing Sysinternals installation is already healthy:', 'choco install sysinternals')
         '109-install-ffmpeg-tool.ps1' = @('Existing FFmpeg installation is already healthy. Skipping choco install.')
+        '135-install-ollama-tool.ps1' = @('Existing Ollama installation is already healthy. Skipping choco install.', 'choco install ollama')
         '112-install-azd-tool.ps1' = @('Existing azd installation is already healthy. Skipping winget install.')
         '118-install-teams-application.ps1' = @('Existing Microsoft Teams installation is already healthy. Skipping winget install.')
         '122-install-anydesk-application.ps1' = @('Existing AnyDesk installation is already healthy', 'function Test-AnyDeskInstalled')
