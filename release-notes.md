@@ -2,6 +2,15 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.387 - 2026-03-22
+
+### Summary
+This release closes the last live blocker from the assistant-profile mirror path. The dedicated target-prune exclusion set already existed, but one post-copy cleanup call still used the broader source exclusion list; that stale call is now aligned so target-owned profile hives survive the full `10005-copy-user-settings` workflow.
+
+### Highlights
+- Changed the post-copy `Remove-StaleExcludedTargetPaths` call inside `Invoke-RobocopyBranch` to use `TargetPruneExcludedDirectories` and `TargetPruneExcludedFiles`, not the broader source exclusion lists.
+- This specifically preserves `C:\Users\assistant\NTUSER.DAT*` and `UsrClass.dat*` during the assistant mirror pass while still excluding those files from the copied manager source profile.
+
 ## Release 2026.3.22.386 - 2026-03-22
 
 ### Summary

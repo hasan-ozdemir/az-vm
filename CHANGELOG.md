@@ -3,6 +3,15 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.387] - 2026-03-22
+
+### Fixed
+- Fixed the remaining assistant-hive regression in `10005-copy-user-settings`: the post-copy cleanup path inside `Invoke-RobocopyBranch` now also uses the dedicated target-prune exclusion set instead of falling back to the broader source exclusion list. This closes the last path that could still delete `C:\Users\assistant\NTUSER.DAT*` and `UsrClass.dat*` during live profile mirroring.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 164, Failed: 0`.
+- Extended smoke coverage so the copy-user-settings script asserts the `Remove-StaleExcludedTargetPaths` call itself uses `TargetPruneExcludedDirectories` and `TargetPruneExcludedFiles`.
+
 ## [2026.3.22.386] - 2026-03-22
 
 ### Fixed

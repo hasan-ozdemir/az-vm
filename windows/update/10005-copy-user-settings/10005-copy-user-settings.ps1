@@ -867,7 +867,7 @@ function Invoke-RobocopyBranch {
         throw ("robocopy failed for {0} with exit code {1}. detail: {2}" -f $Label, $exitCode, $detailText)
     }
 
-    Remove-StaleExcludedTargetPaths -TargetPath $TargetPath -ExcludedDirectories $ExcludedDirectories -ExcludedFiles $ExcludedFiles -Label $Label
+    Remove-StaleExcludedTargetPaths -TargetPath $TargetPath -ExcludedDirectories $TargetPruneExcludedDirectories -ExcludedFiles $TargetPruneExcludedFiles -Label $Label
     Write-Detail ("copy-user-settings-file-ok: {0}" -f $Label)
 }
 
