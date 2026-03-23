@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.23.397] - 2026-03-23
+
+### Changed
+- Documented the completed zero-warning live Windows publish cycle for the current managed profile. The maintained release record now reflects that the final fresh `create`, isolated `10005-copy-user-settings` rerun, natural-order `update`, `show`, `do --vm-action=status`, `connect --ssh --test`, and `connect --rdp --test` all completed successfully on the final managed VM.
+- Recorded the full production publish loop and fix-and-recreate sequence in `docs/prompt-history.md`, including the final state where no live warning or error remained.
+
+### Tests
+- Revalidated the final live acceptance evidence at the documentation layer: the final fresh `create --auto --windows --perf` completed with `warning=0`, the isolated live `task --run-vm-update 10005` rerun completed with `warning=0`, and the final natural-order `update --auto --windows --perf` completed with `warning=0`, `signal-warning=0`, and `error=0`.
+- Revalidated the final operational checks on the published VM: `show` kept `VM_ADMIN_PASS` and `VM_ASSISTANT_PASS` redacted, `do --vm-action=status` reported `VM running` with `hibernation-enabled = true`, `connect --ssh --test` passed for `manager`, and `connect --rdp --test` passed for `assistant`.
+
 ## [2026.3.22.395] - 2026-03-22
 
 ### Fixed

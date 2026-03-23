@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.23.397 - 2026-03-23
+
+### Summary
+This documentation update closes the production publish loop by recording the final zero-warning live acceptance result for the managed Windows VM. After the last runtime fixes landed, the final fresh `create`, isolated `10005-copy-user-settings` rerun, natural-order `update`, redacted `show`, `do --vm-action=status`, `connect --ssh --test`, and `connect --rdp --test` all completed successfully with no remaining live warning or error.
+
+### Highlights
+- Recorded the completed zero-warning publish cycle in the maintained release notes and prompt history.
+- Confirmed the final live `show` output still redacts `VM_ADMIN_PASS` and `VM_ASSISTANT_PASS` while reporting `Hibernation enabled: True` and `Nested virtualization enabled: True`.
+- Confirmed the final published VM remained healthy and reachable at the end of the loop: `VM running`, `Provisioning succeeded`, SSH test passed for `manager`, and RDP test passed for `assistant`.
+
 ## Release 2026.3.22.395 - 2026-03-22
 
 ### Summary
