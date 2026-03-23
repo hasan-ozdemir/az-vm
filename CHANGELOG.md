@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.395] - 2026-03-22
+
+### Fixed
+- Fixed the next live acceptance blocker in the shared task restart helper. After the refreshed create loop succeeded, a natural-order `update --auto --windows --perf` rerun reached `136-configure-language-settings`, requested a reboot correctly, and then failed because the Azure CLI `az vm restart` call hit the default 300-second timeout before Azure finished the restart operation.
+- Hardened `Invoke-AzVmRestartAndWait` so task-triggered Azure restarts now run under an explicit extended Azure CLI timeout budget. The helper keeps the existing post-restart power-state, provisioning, and SSH recovery checks unchanged, but no longer aborts early on slower guest restarts triggered by heavy Windows configuration tasks.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 166, Failed: 0` after adding a shared contract check that task-triggered Azure restarts run through `Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds 900`.
+- Revalidated `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the task-restart timeout hardening.
+
 ## [2026.3.22.394] - 2026-03-22
 
 ### Fixed

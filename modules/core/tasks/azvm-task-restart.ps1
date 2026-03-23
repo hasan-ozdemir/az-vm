@@ -45,9 +45,11 @@ function Invoke-AzVmRestartAndWait {
     )
 
     Write-Host ([string]$StartMessage) -ForegroundColor Cyan
-    Invoke-TrackedAction -Label ("az vm restart -g {0} -n {1}" -f [string]$ResourceGroup, [string]$VmName) -Action {
-        az vm restart -g $ResourceGroup -n $VmName -o none --only-show-errors
-        Assert-LastExitCode "az vm restart"
+    Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds 900 -Action {
+        Invoke-TrackedAction -Label ("az vm restart -g {0} -n {1}" -f [string]$ResourceGroup, [string]$VmName) -Action {
+            az vm restart -g $ResourceGroup -n $VmName -o none --only-show-errors
+            Assert-LastExitCode "az vm restart"
+        } | Out-Null
     } | Out-Null
 
     $running = Wait-AzVmVmPowerState -ResourceGroup $ResourceGroup -VmName $VmName -DesiredPowerState 'VM running' -MaxAttempts 36 -DelaySeconds 10

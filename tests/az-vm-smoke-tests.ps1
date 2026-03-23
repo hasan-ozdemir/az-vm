@@ -776,6 +776,19 @@ Invoke-Test -Name "Create waits for provisioning recovery before vm-init and ext
     }
 }
 
+Invoke-Test -Name "Task restart helper extends Azure restart timeout" -Action {
+    $taskRestartText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-task-restart.ps1') -Raw)
+
+    foreach ($fragment in @(
+        'Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds 900',
+        'az vm restart -g {0} -n {1}',
+        'Wait-AzVmVmPowerState',
+        'Wait-AzVmProvisioningReadyOrRepair'
+    )) {
+        Assert-True -Condition ($taskRestartText -like ('*' + [string]$fragment + '*')) -Message ("Task restart helper must include fragment '{0}'." -f [string]$fragment)
+    }
+}
+
 Invoke-Test -Name "Isolated vm-update task runs do not request the final vm-update restart" -Action {
     $taskRuntimeText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\commands\task\runtime.ps1') -Raw)
     $sshTaskRunnerText = [string](Get-Content -LiteralPath (Join-Path $RepoRoot 'modules\core\tasks\azvm-ssh-task-runner.ps1') -Raw)

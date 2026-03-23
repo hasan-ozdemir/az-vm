@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.395 - 2026-03-22
+
+### Summary
+This release fixes the next blocker found during the restarted live `update` acceptance run after the Public Desktop cleanup fix. The rerun progressed through `136-configure-language-settings`, requested a reboot as expected, and then failed because the shared `az vm restart` wrapper still used the default 300-second Azure CLI timeout. Task-triggered restarts now run under an explicit longer Azure CLI timeout, while the existing running-state, provisioning, and SSH recovery checks stay intact.
+
+### Highlights
+- Wrapped the shared task restart helper in `Invoke-AzVmWithAzCliTimeoutSeconds -TimeoutSeconds 900` so slower Azure restart operations triggered by heavyweight Windows tasks no longer fail at the default 300-second CLI boundary.
+- Kept the downstream restart recovery contract unchanged: the helper still waits for `VM running`, repairs provisioning state when needed, and verifies SSH reachability when the caller requires SSH before continuing.
+- Revalidated the change locally in `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed after the restart-timeout hardening.
+
 ## Release 2026.3.22.394 - 2026-03-22
 
 ### Summary
