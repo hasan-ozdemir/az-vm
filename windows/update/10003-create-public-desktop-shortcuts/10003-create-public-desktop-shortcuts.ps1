@@ -1841,6 +1841,94 @@ function Test-PublicDesktopAlreadyNormalized {
     return $true
 }
 
+function Test-ShortcutRemovalLockedMessage {
+    param([string]$Message)
+
+    if ([string]::IsNullOrWhiteSpace([string]$Message)) {
+        return $false
+    }
+
+    $normalizedMessage = ([string]$Message).ToLowerInvariant()
+    return (
+        $normalizedMessage.Contains('because it is being used by another process') -or
+        $normalizedMessage.Contains('being used by another process') -or
+        $normalizedMessage.Contains('cannot access the file')
+    )
+}
+
+function Test-ExistingPublicShortcutMatchesManagedSpec {
+    param(
+        [string]$ShortcutPath,
+        [string]$ShortcutBaseName,
+        [object]$Spec
+    )
+
+    if ([string]::IsNullOrWhiteSpace([string]$ShortcutPath) -or
+        [string]::IsNullOrWhiteSpace([string]$ShortcutBaseName) -or
+        $null -eq $Spec -or
+        -not (Test-Path -LiteralPath $ShortcutPath)) {
+        return $false
+    }
+
+    try {
+        $existingDetails = Get-ShortcutDetails -ShortcutPath $ShortcutPath
+    }
+    catch {
+        return $false
+    }
+
+    return (Test-ShortcutDetailsMatchManagedSpec -Details $existingDetails -ShortcutBaseName $ShortcutBaseName -Spec $Spec)
+}
+
+function Remove-ExistingPublicShortcut {
+    param(
+        [System.IO.FileInfo]$ShortcutFile,
+        [string]$ShortcutBaseName,
+        [object]$MatchedSpec,
+        [int]$MaxAttempts = 6,
+        [int]$RetryDelaySeconds = 2
+    )
+
+    if ($null -eq $ShortcutFile) {
+        throw "Shortcut file metadata is required."
+    }
+
+    $shortcutPath = [string]$ShortcutFile.FullName
+    $lastErrorMessage = ''
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction Stop
+            return [pscustomobject]@{
+                Removed = $true
+                Retained = $false
+            }
+        }
+        catch {
+            $lastErrorMessage = [string]$_.Exception.Message
+            if (($null -ne $MatchedSpec) -and
+                (Test-ShortcutRemovalLockedMessage -Message $lastErrorMessage) -and
+                (Test-ExistingPublicShortcutMatchesManagedSpec -ShortcutPath $shortcutPath -ShortcutBaseName $ShortcutBaseName -Spec $MatchedSpec)) {
+                Write-Host ("public-desktop-retained: {0} => locked-managed-shortcut" -f $ShortcutFile.Name)
+                return [pscustomobject]@{
+                    Removed = $false
+                    Retained = $true
+                }
+            }
+
+            if (($attempt -lt $MaxAttempts) -and (Test-ShortcutRemovalLockedMessage -Message $lastErrorMessage)) {
+                Write-Host ("public-desktop-remove-retry: {0} => attempt {1}/{2}" -f $ShortcutFile.Name, $attempt, $MaxAttempts)
+                Start-Sleep -Seconds $RetryDelaySeconds
+                continue
+            }
+
+            throw ("Failed to remove existing public shortcut '{0}': {1}" -f $shortcutPath, $lastErrorMessage)
+        }
+    }
+
+    throw ("Failed to remove existing public shortcut '{0}': {1}" -f $shortcutPath, $lastErrorMessage)
+}
+
 function Resolve-IconLocation {
     param(
         [string]$PreferredPath,
@@ -2393,8 +2481,8 @@ try {
                 continue
             }
 
-            try {
-                Remove-Item -LiteralPath $existingShortcutFile.FullName -Force -ErrorAction Stop
+            $removalResult = Remove-ExistingPublicShortcut -ShortcutFile $existingShortcutFile -ShortcutBaseName $shortcutBaseName -MatchedSpec $matchedSpec
+            if ([bool]$removalResult.Removed) {
                 if ($null -ne $matchedSpec) {
                     Write-Host ("public-desktop-removed: {0} => managed-by {1}" -f $existingShortcutFile.Name, [string]$matchedSpec.Name)
                 }
@@ -2402,13 +2490,19 @@ try {
                     Write-Host ("public-desktop-removed: {0} => inactive-managed-shortcut" -f $existingShortcutFile.Name)
                 }
             }
-            catch {
-                throw ("Failed to remove existing public shortcut '{0}': {1}" -f $existingShortcutFile.FullName, $_.Exception.Message)
-            }
         }
 
-        Get-ChildItem -LiteralPath $stagingRoot -Filter "*.lnk" -File -ErrorAction SilentlyContinue | ForEach-Object {
-            Move-Item -LiteralPath $_.FullName -Destination (Join-Path $publicDesktop $_.Name) -Force
+        foreach ($stagedShortcutFile in @(Get-ChildItem -LiteralPath $stagingRoot -Filter "*.lnk" -File -ErrorAction SilentlyContinue)) {
+            $shortcutName = [System.IO.Path]::GetFileNameWithoutExtension([string]$stagedShortcutFile.Name)
+            $destinationPath = Join-Path $publicDesktop $stagedShortcutFile.Name
+            $matchedSpec = Find-ManagedShortcutSpecByName -Specs $shortcutSpecs -ShortcutBaseName $shortcutName
+            if (($null -ne $matchedSpec) -and (Test-ExistingPublicShortcutMatchesManagedSpec -ShortcutPath $destinationPath -ShortcutBaseName $shortcutName -Spec $matchedSpec)) {
+                Write-Host ("public-shortcut-path-retained: {0} => existing-managed-shortcut" -f [string]$shortcutName)
+                Remove-Item -LiteralPath $stagedShortcutFile.FullName -Force -ErrorAction SilentlyContinue
+                continue
+            }
+
+            Move-Item -LiteralPath $stagedShortcutFile.FullName -Destination $destinationPath -Force
         }
 
         foreach ($expectedShortcutName in @($managedShortcutNames)) {

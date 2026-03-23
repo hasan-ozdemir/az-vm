@@ -2,6 +2,16 @@
 
 This document uses `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## Release 2026.3.22.394 - 2026-03-22
+
+### Summary
+This release fixes the next zero-warning blocker found during the live acceptance `update` rerun after the fresh Windows create completed cleanly. The update reached `10003-create-public-desktop-shortcuts`, where removing `C:\Users\Public\Desktop\s7TikTok Business.lnk` failed because the shortcut was temporarily in use by another process. Public Desktop cleanup now retries short-lived lock collisions and keeps an existing shortcut in place when it is already semantically normalized to the current managed spec.
+
+### Highlights
+- Added a bounded retry path for locked Public Desktop `.lnk` files inside `10003-create-public-desktop-shortcuts` instead of failing on the first transient “used by another process” collision.
+- Added a semantic retain path that keeps an already-correct managed shortcut in place when it remains locked, avoiding redundant replacement work and warning-only transcript noise during steady-state updates.
+- Revalidated the change locally in `tests\az-vm-smoke-tests.ps1`, `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed after the Public Desktop cleanup hardening.
+
 ## Release 2026.3.22.393 - 2026-03-22
 
 ### Summary

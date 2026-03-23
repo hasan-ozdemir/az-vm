@@ -3,6 +3,16 @@
 All notable changes to `az-vm` are documented here. The structure follows a Keep a Changelog style, while the content is curated from the repository commit history and the reconstructed Codex development record.
 Documented versions use `YYYY.M.D.N`, where `N` is the cumulative repository commit count at the documented release point.
 
+## [2026.3.22.394] - 2026-03-22
+
+### Fixed
+- Fixed the next live zero-warning blocker in `10003-create-public-desktop-shortcuts`. A natural-order `update --auto --windows --perf` rerun on the freshly created VM stopped when `C:\Users\Public\Desktop\s7TikTok Business.lnk` was temporarily locked by another process during managed Public Desktop cleanup.
+- Hardened Public Desktop cleanup with a bounded locked-file retry path and an already-normalized keep path. Managed shortcuts that are briefly locked but already match the current spec are now retained without inflating warnings, while truly stale managed shortcuts still fail deterministically after the retry budget is exhausted.
+
+### Tests
+- Revalidated `tests\az-vm-smoke-tests.ps1`; the maintained smoke suite passed with `Passed: 165, Failed: 0` after extending the Public Desktop shortcut contract to cover locked-shortcut retry/retain behavior.
+- Revalidated `tests\code-quality-check.ps1`, `tests\powershell-compatibility-check.ps1`, and `tests\bash-syntax-check.ps1`; all passed locally after the Public Desktop cleanup hardening.
+
 ## [2026.3.22.393] - 2026-03-22
 
 ### Fixed
